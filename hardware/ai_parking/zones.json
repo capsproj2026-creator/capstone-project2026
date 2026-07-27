@@ -1,0 +1,31 @@
+{
+  "version": 1,
+  "calibrated": false,
+  "image_width": 2560,
+  "image_height": 1440,
+  "notes": "Run: python calibrate_zones.py  — click polygon points per zone, press N for next, S to save. Set calibrated=true when done.",
+  "zones": [
+    {"id": "AI-01", "type": "slot", "label": "AI-01", "points": []},
+    {"id": "AI-02", "type": "slot", "label": "AI-02", "points": []},
+    {"id": "AI-03", "type": "slot", "label": "AI-03", "points": []},
+    {"id": "AI-04", "type": "slot", "label": "AI-04", "points": []},
+    {"id": "AI-05", "type": "slot", "label": "AI-05", "points": []},
+    {"id": "AI-06", "type": "slot", "label": "AI-06", "points": []},
+    {"id": "AI-07", "type": "slot", "label": "AI-07", "points": []},
+    {"id": "AI-08", "type": "slot", "label": "AI-08", "points": []},
+    {"id": "AI-09", "type": "slot", "label": "AI-09", "points": []},
+    {"id": "AI-10", "type": "slot", "label": "AI-10", "points": []},
+    {"id": "AI-11", "type": "slot", "label": "AI-11", "points": []},
+    {"id": "AI-12", "type": "slot", "label": "AI-12", "points": []},
+    {"id": "AI-13", "type": "slot", "label": "AI-13", "points": []},
+    {"id": "AI-14", "type": "slot", "label": "AI-14", "points": []},
+    {"id": "AI-15", "type": "slot", "label": "AI-15", "points": []},
+    {"id": "AI-16", "type": "slot", "label": "AI-16", "points": []},
+    {"id": "AI-17", "type": "slot", "label": "AI-17", "points": []},
+    {"id": "AI-18", "type": "slot", "label": "AI-18", "points": []},
+    {"id": "AI-19", "type": "slot", "label": "AI-19", "points": []},
+    {"id": "AI-20", "type": "slot", "label": "AI-20", "points": []},
+    {"id": "no-park-1", "type": "no_parking", "label": "No Parking", "points": []},
+    {"id": "aisle-1", "type": "aisle", "label": "Aisle", "points": []}
+  ]
+}

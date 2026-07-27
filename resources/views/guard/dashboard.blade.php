@@ -1,0 +1,111 @@
+@extends('layouts.guard')
+
+@section('title', 'Guard Dashboard')
+
+@section('content')
+    @include('partials.shell.page-header', [
+        'title' => 'Guard Dashboard',
+        'subtitle' => 'Monitor and control vehicle access',
+    ])
+
+    <div class="mb-8 grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-4">
+        <div class="rounded-xl border border-gray-200 bg-white p-6">
+            <div class="mb-2 flex items-center justify-between">
+                <span class="text-gray-600">Vehicles Inside</span>
+                <i data-lucide="car" class="h-5 w-5 text-green-600"></i>
+            </div>
+            <div class="text-3xl font-semibold text-gray-900">{{ $vehiclesInside }}</div>
+            <p class="mt-1 text-sm text-gray-500">Occupied parking slots</p>
+        </div>
+        <div class="rounded-xl border border-gray-200 bg-white p-6">
+            <div class="mb-2 flex items-center justify-between">
+                <span class="text-gray-600">Today's Entries</span>
+                <i data-lucide="clock" class="h-5 w-5 text-blue-600"></i>
+            </div>
+            <div class="text-3xl font-semibold text-gray-900">{{ $todayEntries }}</div>
+            <p class="mt-1 text-sm text-gray-500">{{ $pending }} pending registrations</p>
+        </div>
+        <div class="rounded-xl border border-gray-200 bg-white p-6">
+            <div class="mb-2 flex items-center justify-between">
+                <span class="text-gray-600">Active Violations</span>
+                <i data-lucide="triangle-alert" class="h-5 w-5 text-orange-600"></i>
+            </div>
+            <div class="text-3xl font-semibold text-gray-900">{{ $activeViolations }}</div>
+            <p class="mt-1 text-sm text-gray-500">Requires attention</p>
+        </div>
+        <div class="rounded-xl border border-gray-200 bg-white p-6">
+            <div class="mb-2 flex items-center justify-between">
+                <span class="text-gray-600">Available Slots</span>
+                <i data-lucide="circle-check" class="h-5 w-5 text-purple-600"></i>
+            </div>
+            <div class="text-3xl font-semibold text-gray-900">{{ $availableSlots }}</div>
+            <p class="mt-1 text-sm text-gray-500">Out of {{ $totalSlots }} total</p>
+        </div>
+    </div>
+
+    <div class="mb-8 grid grid-cols-1 gap-6 md:grid-cols-2">
+        <div class="rounded-xl border border-gray-200 bg-white p-6">
+            <div class="mb-4 flex items-center gap-3">
+                <div class="flex h-12 w-12 items-center justify-center rounded-lg bg-green-100">
+                    <i data-lucide="scan" class="h-6 w-6 text-green-600"></i>
+                </div>
+                <div>
+                    <h3 class="font-semibold text-gray-900">RFID Scan</h3>
+                    <p class="text-sm text-gray-500">Scan vehicle for entry/exit</p>
+                </div>
+            </div>
+            <a href="{{ route('guard.gate') }}" class="block w-full rounded-lg bg-gradient-to-r from-green-500 to-green-700 py-3 text-center text-white transition-all hover:shadow-lg">
+                Open Live Gate Monitor
+            </a>
+        </div>
+        <div class="rounded-xl border border-gray-200 bg-white p-6">
+            <div class="mb-4 flex items-center gap-3">
+                <div class="flex h-12 w-12 items-center justify-center rounded-lg bg-orange-100">
+                    <i data-lucide="triangle-alert" class="h-6 w-6 text-orange-600"></i>
+                </div>
+                <div>
+                    <h3 class="font-semibold text-gray-900">Report Violation</h3>
+                    <p class="text-sm text-gray-500">Log parking or access violation</p>
+                </div>
+            </div>
+            <a href="{{ route('guard.violations') }}" class="block w-full rounded-lg bg-gradient-to-r from-orange-500 to-orange-700 py-3 text-center text-white transition-all hover:shadow-lg">
+                Report Violation
+            </a>
+        </div>
+    </div>
+
+    <div class="rounded-xl border border-gray-200 bg-white">
+        <div class="border-b border-gray-200 p-6">
+            <h3 class="font-semibold text-gray-900">Recent Access Activity</h3>
+        </div>
+        <div class="divide-y divide-gray-200">
+            @forelse ($recentGateActivity as $log)
+                <div class="flex items-center justify-between p-4 hover:bg-gray-50">
+                    <div class="flex items-center gap-4">
+                        <div class="@class([
+                            'flex h-10 w-10 items-center justify-center rounded-lg',
+                            'bg-green-100' => $log->action === 'Entry',
+                            'bg-blue-100' => $log->action === 'Exit',
+                        ])">
+                            <i data-lucide="car" class="@class(['h-5 w-5', 'text-green-600' => $log->action === 'Entry', 'text-blue-600' => $log->action === 'Exit'])"></i>
+                        </div>
+                        <div>
+                            <p class="font-medium text-gray-900">{{ $log->user?->plate_number ?? '—' }}</p>
+                            <p class="text-sm text-gray-500">{{ $log->user?->fullname ?? 'Unknown' }}</p>
+                        </div>
+                    </div>
+                    <div class="text-right">
+                        <span class="@class([
+                            'inline-flex rounded-full px-2.5 py-1 text-xs font-medium',
+                            'bg-green-100 text-green-700' => $log->action === 'Entry',
+                            'bg-blue-100 text-blue-700' => $log->action === 'Exit',
+                        ])">{{ $log->action }}</span>
+                        <p class="mt-1 text-sm text-gray-500">{{ $log->timestamp?->diffForHumans() }}</p>
+                    </div>
+                </div>
+            @empty
+                <p class="p-6 text-center text-sm text-gray-500">No gate activity recorded yet.</p>
+            @endforelse
+        </div>
+    </div>
+@endsection
