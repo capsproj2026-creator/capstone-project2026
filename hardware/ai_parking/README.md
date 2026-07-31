@@ -2,6 +2,24 @@
 
 Zone-level occupancy, slot polygons, violation rules, ByteTrack tracking, optional EasyOCR plates, Laravel ingest.
 
+## Quick connect (Windows)
+
+```powershell
+# From repo root
+.\scripts\setup-yolov9.ps1
+copy .env.example .env
+# Edit .env: AI_PARKING_API_TOKEN, AI_CAMERA_IP, AI_CAMERA_PASS
+
+php artisan db:seed --class=AiTestLotSeeder
+php artisan serve --host=0.0.0.0 --port=8000
+
+# Second terminal
+.\scripts\start-ai-parking.ps1
+php artisan ai-parking:check --probe-stream
+```
+
+The guard/admin UI loads video through Laravel (`/guard/ai-parking/stream`) so browsers on other devices do not need direct access to port 8090.
+
 ## Setup
 
 ```powershell

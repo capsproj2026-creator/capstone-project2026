@@ -296,6 +296,7 @@ class AiParkingOccupancyService
                 'ai_monitored' => (int) $slot->area_id === $aiAreaId,
             ])->values(),
             'ai' => $this->latestSnapshot(),
+            'ai_health' => app(AiParkingHealthService::class)->status(str_contains((string) request()->route()?->getName(), 'guard.')),
             'stream_url' => config('services.ai_parking.stream_url'),
             'updated_at' => now()->format('h:i:s A'),
         ];

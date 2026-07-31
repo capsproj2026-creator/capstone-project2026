@@ -104,6 +104,7 @@ Route::prefix('admin')->middleware(['auth', 'verified', 'granted', 'no.cache', '
     Route::get('/access-logs', [AccessLogController::class, 'index'])->name('access-logs');
     Route::get('/access-logs/events', [AccessLogController::class, 'events'])->name('access-logs.events');
     Route::get('/live-cameras', [LiveCameraController::class, 'index'])->name('live-cameras');
+    Route::get('/ai-parking/stream', [LiveCameraController::class, 'stream'])->name('ai-parking.stream');
     Route::get('/reports', [ReportController::class, 'index'])
         ->middleware('permission:view_reports')
         ->name('reports');
@@ -130,6 +131,7 @@ Route::prefix('guard')->middleware(['auth', 'verified', 'granted', 'no.cache', '
     Route::get('/access-logs/events', [AccessLogController::class, 'events'])->name('access-logs.events');
     Route::get('/live-cameras', [LiveCameraController::class, 'index'])->name('live-cameras');
     Route::get('/ai-parking', [LiveCameraController::class, 'aiMonitor'])->name('ai-parking');
+    Route::get('/ai-parking/stream', [LiveCameraController::class, 'stream'])->name('ai-parking.stream');
     Route::get('/monitor', [UserMonitorController::class, 'index'])->name('monitor');
     Route::get('/gate', [GateMonitorController::class, 'index'])->name('gate');
     Route::get('/gate/events', [GateMonitorController::class, 'events'])->name('gate.events');

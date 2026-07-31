@@ -10,7 +10,7 @@ from typing import Optional
 import cv2
 import numpy as np
 
-OCR_ENABLED = os.getenv("AI_PARKING_OCR_ENABLED", "1") == "1"
+OCR_ENABLED = os.getenv("AI_PARKING_OCR_ENABLED", "0") == "1"
 OCR_EVERY_SEC = float(os.getenv("AI_PARKING_OCR_EVERY_SEC", "8"))
 OCR_MIN_CONF = float(os.getenv("AI_PARKING_OCR_MIN_CONF", "0.35"))
 

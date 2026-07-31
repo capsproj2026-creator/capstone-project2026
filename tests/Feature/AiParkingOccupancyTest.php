@@ -91,6 +91,40 @@ class AiParkingOccupancyTest extends TestCase
         }
     }
 
+    public function test_guard_ai_parking_stream_requires_auth(): void
+    {
+        $this->get(route('guard.ai-parking.stream'))->assertRedirect();
+
+        $guard = User::query()->where('email', 'guard@my.cspc.edu.ph')->first();
+        if (! $guard) {
+            $this->markTestSkipped('Guard user not seeded.');
+        }
+
+        $this->actingAs($guard)
+            ->get(route('guard.ai-parking.stream'))
+            ->assertStatus(503);
+    }
+
+    public function test_status_payload_includes_ai_health(): void
+    {
+        $guard = User::query()->where('email', 'guard@my.cspc.edu.ph')->first();
+        if (! $guard) {
+            $this->markTestSkipped('Guard user not seeded.');
+        }
+
+        $this->actingAs($guard)
+            ->getJson(route('guard.parking.status'))
+            ->assertOk()
+            ->assertJsonStructure([
+                'ai_health' => [
+                    'configured',
+                    'stream_reachable',
+                    'ingest_active',
+                    'connected',
+                ],
+            ]);
+    }
+
     public function test_guard_ai_parking_monitor_loads(): void
     {
         $guard = User::query()->where('email', 'guard@my.cspc.edu.ph')->first();

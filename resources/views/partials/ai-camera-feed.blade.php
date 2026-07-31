@@ -150,6 +150,21 @@
                 if (eventCount) eventCount.textContent = (ai.events || []).length;
                 if (modeEl) modeEl.textContent = `Mode: ${ai.mode || 'count'}`;
 
+                const streamStatus = document.getElementById('ai-stream-status');
+                if (streamStatus && data.ai_health) {
+                    const h = data.ai_health;
+                    if (h.connected) {
+                        streamStatus.textContent = 'Live';
+                        streamStatus.className = 'rounded px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide bg-emerald-500/20 text-emerald-300';
+                    } else if (h.stream_reachable) {
+                        streamStatus.textContent = 'Stream only';
+                        streamStatus.className = 'rounded px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide bg-amber-500/20 text-amber-300';
+                    } else {
+                        streamStatus.textContent = 'Offline';
+                        streamStatus.className = 'rounded px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide bg-red-500/20 text-red-300';
+                    }
+                }
+
                 if (detectionsList) {
                     detectionsList.replaceChildren();
                     const dets = ai.detections || [];

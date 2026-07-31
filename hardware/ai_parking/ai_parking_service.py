@@ -29,8 +29,11 @@ import cv2
 from ultralytics import YOLO
 
 from geometry import draw_zones, load_zones
+from load_env import load_project_env
 from parking_rules import ParkingIntelligence
 from plate_ocr import OCR_EVERY_SEC, PlateOCR
+
+load_project_env()
 
 BASE_DIR = Path(__file__).resolve().parent
 MODEL_PATH = BASE_DIR / "models" / "yolov9c.pt"
@@ -58,6 +61,10 @@ MAX_DET = 50
 POST_EVERY_SEC = 2.5
 USE_WEBCAM = os.getenv("AI_USE_WEBCAM", "0") == "1"
 TRACKER = os.getenv("AI_PARKING_TRACKER", "bytetrack.yaml")
+INFER_EVERY_SEC = float(os.getenv("AI_PARKING_INFER_EVERY_SEC", "0.8"))
+PREVIEW_MAX_WIDTH = int(os.getenv("AI_PARKING_PREVIEW_MAX_WIDTH", "960"))
+STREAM_TARGET_FPS = float(os.getenv("AI_PARKING_STREAM_FPS", "20"))
+STREAM_JPEG_QUALITY = int(os.getenv("AI_PARKING_STREAM_JPEG_QUALITY", "65"))
 
 DETECT_CLASS_IDS = [0, 2, 3, 5, 7]  # person, car, motorcycle, bus, truck
 VEHICLE_CLASS_IDS = {2, 3, 5, 7}
@@ -263,7 +270,7 @@ def post_json(path: str, payload: dict) -> bool:
         method="POST",
     )
     try:
-        with urlrequest.urlopen(req, timeout=8) as resp:
+        with urlrequest.urlopen(req, timeout=15) as resp:
             print(f"Laravel HTTP {resp.status}: {path} vehicles={payload.get('vehicle_count')} slots={len(payload.get('slots') or [])} events={len(payload.get('events') or [])}")
             return True
     except HTTPError as e:
@@ -273,6 +280,107 @@ def post_json(path: str, payload: dict) -> bool:
     except Exception as e:
         print(f"Laravel POST error: {e}")
     return False
+
+
+def post_occupancy_async(vehicle_count, detections, slots, events):
+    payload = {
+        "camera_id": CAMERA_ID,
+        "area_id": AREA_ID,
+        "vehicle_count": vehicle_count,
+        "detections": list(detections),
+        "slots": list(slots) if slots else [],
+        "events": list(events),
+        "mode": "slots" if slots else "count",
+    }
+    thread = threading.Thread(target=post_json, args=("/api/ai-parking/occupancy", payload), daemon=True)
+    thread.start()
+
+
+def resize_for_infer(frame, max_width: int):
+    h, w = frame.shape[:2]
+    if w <= max_width:
+        return frame, 1.0
+    scale = max_width / w
+    new_size = (max_width, max(1, int(h * scale)))
+    return cv2.resize(frame, new_size, interpolation=cv2.INTER_AREA), scale
+
+
+def scale_annotated_boxes(boxes, scale: float):
+    if scale == 1.0:
+        return boxes
+    inv = 1.0 / scale
+    scaled = []
+    for x1, y1, x2, y2, name, conf, track_id, plate in boxes:
+        scaled.append((
+            int(x1 * inv), int(y1 * inv), int(x2 * inv), int(y2 * inv),
+            name, conf, track_id, plate,
+        ))
+    return scaled
+
+
+def scale_vehicles(vehicles, scale: float):
+    if scale == 1.0:
+        return vehicles
+    inv = 1.0 / scale
+    scaled = []
+    for vehicle in vehicles:
+        x1, y1, x2, y2 = vehicle["xyxy"]
+        scaled.append({
+            **vehicle,
+            "xyxy": (int(x1 * inv), int(y1 * inv), int(x2 * inv), int(y2 * inv)),
+        })
+    return scaled
+
+
+def scale_boxes_to_frame(boxes, src_shape, dst_shape):
+    """Scale box coords from src frame size to dst frame size."""
+    sh, sw = src_shape[:2]
+    dh, dw = dst_shape[:2]
+    if sw == dw and sh == dh:
+        return boxes
+    sx = dw / sw
+    sy = dh / sh
+    scaled = []
+    for x1, y1, x2, y2, name, conf, track_id, plate in boxes:
+        scaled.append((
+            int(x1 * sx), int(y1 * sy), int(x2 * sx), int(y2 * sy),
+            name, conf, track_id, plate,
+        ))
+    return scaled
+
+
+class SharedSceneState:
+    def __init__(self):
+        self.lock = threading.Lock()
+        self.data = {
+            "annotated_boxes": [],
+            "person_count": 0,
+            "vehicle_count": 0,
+            "occupied_slots": set(),
+            "active_events": [],
+            "use_poly": False,
+            "detections": [],
+            "slot_statuses": [],
+            "events": [],
+        }
+
+    def update(self, **kwargs):
+        with self.lock:
+            self.data.update(kwargs)
+
+    def snapshot(self):
+        with self.lock:
+            return {
+                "annotated_boxes": list(self.data["annotated_boxes"]),
+                "person_count": self.data["person_count"],
+                "vehicle_count": self.data["vehicle_count"],
+                "occupied_slots": set(self.data["occupied_slots"]),
+                "active_events": list(self.data["active_events"]),
+                "use_poly": self.data["use_poly"],
+                "detections": list(self.data["detections"]),
+                "slot_statuses": list(self.data["slot_statuses"]),
+                "events": list(self.data["events"]),
+            }
 
 
 def post_occupancy(vehicle_count, detections, slots, events):
@@ -314,19 +422,23 @@ class MjpegHandler(BaseHTTPRequestHandler):
         self.send_header("Content-Type", "multipart/x-mixed-replace; boundary=frame")
         self.end_headers()
 
+        last_sent = None
         try:
             while True:
                 jpeg = STATE.get_jpeg()
                 if jpeg is None:
-                    time.sleep(0.05)
+                    time.sleep(0.01)
                     continue
+                if jpeg is last_sent:
+                    time.sleep(0.005)
+                    continue
+                last_sent = jpeg
                 self.wfile.write(b"--frame\r\n")
                 self.wfile.write(b"Content-Type: image/jpeg\r\n")
                 self.wfile.write(f"Content-Length: {len(jpeg)}\r\n\r\n".encode("ascii"))
                 self.wfile.write(jpeg)
                 self.wfile.write(b"\r\n")
-                time.sleep(0.05)
-        except (BrokenPipeError, ConnectionResetError):
+        except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError):
             return
 
 
@@ -344,7 +456,7 @@ def __blank_frame():
     frame = np.zeros((480, 640, 3), dtype=np.uint8)
     cv2.putText(
         frame,
-        "Camera offline — AI service running",
+        "Camera offline - AI service running",
         (40, 240),
         cv2.FONT_HERSHEY_SIMPLEX,
         0.7,
@@ -353,6 +465,139 @@ def __blank_frame():
         cv2.LINE_AA,
     )
     return frame
+
+
+def preview_loop(reader, zones_holder, scene: SharedSceneState, running: threading.Event):
+    """Encode MJPEG frames on a fixed schedule; never blocked by YOLO."""
+    interval = 1.0 / max(1.0, STREAM_TARGET_FPS)
+    encode_params = [int(cv2.IMWRITE_JPEG_QUALITY), STREAM_JPEG_QUALITY]
+
+    while running.is_set():
+        started = time.perf_counter()
+        zones_data = zones_holder[0]
+
+        if reader is None:
+            frame = __blank_frame()
+            src_shape = frame.shape
+        else:
+            ret, frame = reader.read()
+            if not ret:
+                time.sleep(0.005)
+                continue
+            src_shape = frame.shape
+
+        display, _ = resize_for_infer(frame, PREVIEW_MAX_WIDTH)
+        state = scene.snapshot()
+        boxes = scale_boxes_to_frame(state["annotated_boxes"], src_shape, display.shape)
+
+        annotated = draw_scene(
+            display,
+            boxes,
+            zones_data,
+            state["occupied_slots"],
+            state["active_events"],
+            state["person_count"],
+            state["vehicle_count"],
+            state["use_poly"],
+        )
+        ok, jpeg = cv2.imencode(".jpg", annotated, encode_params)
+        if ok:
+            STATE.set_frame(jpeg.tobytes(), state["vehicle_count"], state["detections"])
+
+        elapsed = time.perf_counter() - started
+        time.sleep(max(0.0, interval - elapsed))
+
+
+def inference_loop(reader, model, device, zones_holder, intelligence, ocr, scene: SharedSceneState, running: threading.Event):
+    """Run YOLO on a slower cadence without blocking the live preview."""
+    last_post = 0.0
+    last_infer = 0.0
+    zones_mtime = ZONES_PATH.stat().st_mtime if ZONES_PATH.is_file() else 0
+
+    while running.is_set():
+        zones_data = zones_holder[0]
+        try:
+            mtime = ZONES_PATH.stat().st_mtime
+            if mtime != zones_mtime:
+                zones_holder[0] = load_zones(ZONES_PATH)
+                zones_mtime = mtime
+                print(f"Reloaded zones.json (calibrated={zones_holder[0].get('calibrated')})")
+        except OSError:
+            pass
+
+        now = time.time()
+        if now - last_infer < INFER_EVERY_SEC:
+            time.sleep(0.05)
+            continue
+
+        if reader is None:
+            time.sleep(0.2)
+            continue
+
+        ret, frame = reader.read()
+        if not ret:
+            time.sleep(0.01)
+            continue
+
+        infer_frame, scale = resize_for_infer(frame, PREVIEW_MAX_WIDTH)
+        try:
+            results = model.track(
+                infer_frame,
+                imgsz=IMG_SIZE,
+                conf=CONF,
+                iou=IOU,
+                max_det=MAX_DET,
+                classes=DETECT_CLASS_IDS,
+                device=device,
+                verbose=False,
+                persist=True,
+                tracker=TRACKER,
+            )
+        except Exception as e:
+            print(f"track() failed ({e}); using predict()")
+            results = model(
+                infer_frame,
+                imgsz=IMG_SIZE,
+                conf=CONF,
+                iou=IOU,
+                max_det=MAX_DET,
+                classes=DETECT_CLASS_IDS,
+                device=device,
+                verbose=False,
+            )
+
+        annotated_boxes, detections, vehicles, person_count, vehicle_count = parse_tracks(
+            results[0], infer_frame, ocr, intelligence
+        )
+        vehicles = scale_vehicles(vehicles, scale)
+        annotated_boxes = scale_annotated_boxes(annotated_boxes, scale)
+        slot_statuses, events, occupied_slots, use_poly = intelligence.analyze(
+            vehicles, zones_data, frame.shape
+        )
+
+        scene.update(
+            annotated_boxes=annotated_boxes,
+            person_count=person_count,
+            vehicle_count=vehicle_count,
+            occupied_slots=occupied_slots,
+            active_events=list(intelligence.active_events),
+            use_poly=use_poly,
+            detections=detections,
+            slot_statuses=slot_statuses,
+            events=events,
+        )
+        last_infer = now
+
+        if now - last_post >= POST_EVERY_SEC:
+            post_events = list(events)
+            for evt in post_events:
+                tid = evt.get("track_id")
+                if tid is not None and not evt.get("plate"):
+                    mem = intelligence.tracks.get(int(tid))
+                    if mem and mem.plate:
+                        evt["plate"] = mem.plate
+            post_occupancy_async(vehicle_count, detections, slot_statuses, post_events)
+            last_post = now
 
 
 def main():
@@ -390,90 +635,41 @@ def main():
 
     start_stream_server()
     print(f"Posting occupancy to {API_BASE}/api/ai-parking/occupancy (area_id={AREA_ID})")
-    last_post = 0.0
-    zones_mtime = ZONES_PATH.stat().st_mtime if ZONES_PATH.is_file() else 0
+    print(
+        f"Stream {STREAM_TARGET_FPS:.0f} fps @ {PREVIEW_MAX_WIDTH}px | "
+        f"inference every {INFER_EVERY_SEC}s | OCR={'on' if ocr.enabled else 'off'}"
+    )
 
-    while True:
-        # hot-reload zones.json after calibration
-        try:
-            mtime = ZONES_PATH.stat().st_mtime
-            if mtime != zones_mtime:
-                zones_data = load_zones(ZONES_PATH)
-                zones_mtime = mtime
-                print(f"Reloaded zones.json (calibrated={zones_data.get('calibrated')})")
-        except OSError:
-            pass
+    scene = SharedSceneState()
+    running = threading.Event()
+    running.set()
+    zones_holder = [zones_data]
 
-        if reader is None:
-            frame = __blank_frame()
-        else:
-            ret, frame = reader.read()
-            if not ret:
-                time.sleep(0.01)
-                continue
+    threads = [
+        threading.Thread(
+            target=preview_loop,
+            args=(reader, zones_holder, scene, running),
+            name="preview",
+            daemon=True,
+        ),
+        threading.Thread(
+            target=inference_loop,
+            args=(reader, model, device, zones_holder, intelligence, ocr, scene, running),
+            name="inference",
+            daemon=True,
+        ),
+    ]
+    for thread in threads:
+        thread.start()
 
-        try:
-            results = model.track(
-                frame,
-                imgsz=IMG_SIZE,
-                conf=CONF,
-                iou=IOU,
-                max_det=MAX_DET,
-                classes=DETECT_CLASS_IDS,
-                device=device,
-                verbose=False,
-                persist=True,
-                tracker=TRACKER,
-            )
-        except Exception as e:
-            # Fallback if tracker weights missing
-            print(f"track() failed ({e}); using predict()")
-            results = model(
-                frame,
-                imgsz=IMG_SIZE,
-                conf=CONF,
-                iou=IOU,
-                max_det=MAX_DET,
-                classes=DETECT_CLASS_IDS,
-                device=device,
-                verbose=False,
-            )
-
-        annotated_boxes, detections, vehicles, person_count, vehicle_count = parse_tracks(
-            results[0], frame, ocr, intelligence
-        )
-        slot_statuses, events, occupied_slots, use_poly = intelligence.analyze(
-            vehicles, zones_data, frame.shape
-        )
-
-        # unauthorized hint: plate present but Laravel decides; flag event when plate OCR returns
-        # (Laravel maps unknown/banned plates). Python only forwards plates on vehicles/events.
-
-        annotated = draw_scene(
-            frame,
-            annotated_boxes,
-            zones_data,
-            occupied_slots,
-            intelligence.active_events,
-            person_count,
-            vehicle_count,
-            use_poly,
-        )
-        ok, jpeg = cv2.imencode(".jpg", annotated, [int(cv2.IMWRITE_JPEG_QUALITY), 75])
-        if ok:
-            STATE.set_frame(jpeg.tobytes(), vehicle_count, detections)
-
-        now = time.time()
-        if now - last_post >= POST_EVERY_SEC:
-            # Enrich events with latest known plates from track memory
-            for evt in events:
-                tid = evt.get("track_id")
-                if tid is not None and not evt.get("plate"):
-                    mem = intelligence.tracks.get(int(tid))
-                    if mem and mem.plate:
-                        evt["plate"] = mem.plate
-            post_occupancy(vehicle_count, detections, slot_statuses, events)
-            last_post = now
+    try:
+        while True:
+            time.sleep(1)
+    except KeyboardInterrupt:
+        running.clear()
+        if reader is not None:
+            reader.stop()
+        print("Stopped.")
 
 
 if __name__ == "__main__":

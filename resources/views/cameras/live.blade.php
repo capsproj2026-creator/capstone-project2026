@@ -203,6 +203,18 @@
         });
 
         if (window.lucide) window.lucide.createIcons();
+
+        // Reload MJPEG if the browser stalls on a single frame
+        document.querySelectorAll('[data-stream-img]').forEach((img) => {
+            const base = img.getAttribute('src');
+            if (!base) return;
+            const reload = () => {
+                const url = new URL(base, window.location.origin);
+                url.searchParams.set('t', String(Date.now()));
+                img.src = url.toString();
+            };
+            window.setInterval(reload, 60000);
+        });
     })();
 </script>
 @endpush

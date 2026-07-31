@@ -3,13 +3,17 @@
 namespace App\Http\Controllers;
 
 use App\Models\ParkingArea;
+use App\Services\AiParkingHealthService;
 use App\Services\AiParkingOccupancyService;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Response;
+use Illuminate\Support\Facades\Http;
 use Illuminate\View\View;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class LiveCameraController extends Controller
 {
-    public function index(AiParkingOccupancyService $ai): View
+    public function index(AiParkingOccupancyService $ai, AiParkingHealthService $health): View
     {
         $routeName = request()->route()?->getName() ?? '';
         $isGuard = str_contains($routeName, 'guard.');
@@ -17,8 +21,9 @@ class LiveCameraController extends Controller
         $areaId = $ai->monitoredAreaId();
         $area = ParkingArea::query()->find($areaId);
         $areaName = $area?->area_name ?? 'AI Test Lot';
-        $streamUrl = config('services.ai_parking.stream_url');
-        $aiOnline = filled($streamUrl);
+        $aiHealth = $health->status($isGuard);
+        $streamUrl = $health->streamBrowserUrl();
+        $aiOnline = $aiHealth['connected'] || $aiHealth['stream_reachable'];
 
         $parkingUrl = $isGuard
             ? route('guard.parking', ['zone_id' => $areaId])
@@ -108,6 +113,7 @@ class LiveCameraController extends Controller
             'layout' => $layout,
             'streamUrl' => $streamUrl,
             'ai' => $ai->latestSnapshot(),
+            'aiHealth' => $aiHealth,
             'aiAreaId' => $areaId,
             'aiAreaName' => $areaName,
             'cameras' => $cameras,
@@ -123,18 +129,68 @@ class LiveCameraController extends Controller
         ]);
     }
 
-    public function aiMonitor(AiParkingOccupancyService $ai): View
+    public function aiMonitor(AiParkingOccupancyService $ai, AiParkingHealthService $health): View
     {
         $areaId = $ai->monitoredAreaId();
         $area = ParkingArea::query()->find($areaId);
+        $aiHealth = $health->status(true);
 
         return view('guard.ai-parking-monitor', [
-            'streamUrl' => config('services.ai_parking.stream_url'),
+            'streamUrl' => $health->streamBrowserUrl(),
             'ai' => $ai->latestSnapshot(),
+            'aiHealth' => $aiHealth,
             'aiAreaId' => $areaId,
             'aiAreaName' => $area?->area_name ?? 'AI Test Lot',
             'statusUrl' => route('guard.parking.status'),
             'parkingUrl' => route('guard.parking', ['zone_id' => $areaId]),
+        ]);
+    }
+
+    public function stream(AiParkingHealthService $health): StreamedResponse|Response
+    {
+        $upstream = $health->upstreamStreamUrl();
+        if ($upstream === null) {
+            abort(503, 'AI parking stream is not configured.');
+        }
+
+        try {
+            $response = Http::timeout(5)
+                ->withOptions(['stream' => true, 'read_timeout' => 300])
+                ->get($upstream);
+        } catch (\Throwable) {
+            abort(503, 'AI parking stream is unreachable.');
+        }
+
+        if (! $response->successful()) {
+            abort(503, 'AI parking stream returned an error.');
+        }
+
+        $contentType = $response->header('Content-Type') ?: 'multipart/x-mixed-replace; boundary=frame';
+
+        return response()->stream(function () use ($response) {
+            $body = $response->toPsrResponse()->getBody();
+
+            try {
+                while (! $body->eof()) {
+                    if (connection_aborted()) {
+                        break;
+                    }
+
+                    echo $body->read(8192);
+
+                    if (ob_get_level() > 0) {
+                        ob_flush();
+                    }
+
+                    flush();
+                }
+            } finally {
+                $body->close();
+            }
+        }, 200, [
+            'Content-Type' => $contentType,
+            'Cache-Control' => 'no-cache, private',
+            'Pragma' => 'no-cache',
         ]);
     }
 
