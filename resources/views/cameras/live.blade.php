@@ -126,30 +126,28 @@
                             $camKey = (string) ($camera['camera_id'] ?? '');
                             $camSnap = ($aiCameras[$camKey] ?? null);
                             $topDet = is_array($camSnap) ? (($camSnap['detections'] ?? [])[0] ?? null) : null;
+                            $plateLine = '—';
+                            if (is_array($topDet)) {
+                                if (($topDet['plate_status'] ?? '') === 'unreadable') {
+                                    $plateLine = 'Plate Unreadable';
+                                } elseif (! empty($topDet['registered']) && ! empty($topDet['owner_name'])) {
+                                    $plateLine = $topDet['owner_name'].' · '.($topDet['plate'] ?? '');
+                                    if (! empty($topDet['vehicle_details'])) {
+                                        $plateLine .= ' · '.$topDet['vehicle_details'];
+                                    }
+                                } elseif (! empty($topDet['plate'])) {
+                                    $plateLine = 'Unknown Vehicle · Plate Not Registered ('.$topDet['plate'].')';
+                                } else {
+                                    $plateLine = 'Waiting for plate…';
+                                }
+                            }
                         @endphp
                         <p class="mt-2 text-xs text-gray-500" data-ai-stats data-camera-id="{{ $camKey }}">
                             Vehicles: <span class="js-live-vehicles font-semibold text-gray-800">{{ $camera['vehicle_count'] ?? '—' }}</span>
                             · Occupied: <span class="js-live-occupied font-semibold text-gray-800">{{ $camera['occupied'] ?? '—' }}</span>
                             · Free: <span class="js-live-available font-semibold text-gray-800">{{ $camera['available'] ?? '—' }}</span>
                         </p>
-                        <p class="js-live-plate mt-1 truncate text-xs text-gray-600" data-camera-id="{{ $camKey }}">
-                            @if (is_array($topDet))
-                                @if (($topDet['plate_status'] ?? '') === 'unreadable')
-                                    Plate Unreadable
-                                @elseif (! empty($topDet['registered']) && ! empty($topDet['owner_name']))
-                                    {{ $topDet['owner_name'] }} · {{ $topDet['plate'] ?? '' }}
-                                    @if (! empty($topDet['vehicle_details']))
-                                        · {{ $topDet['vehicle_details'] }}
-                                    @endif
-                                @elseif (! empty($topDet['plate']))
-                                    Unknown Vehicle · Plate Not Registered ({{ $topDet['plate'] }})
-                                @else
-                                    Waiting for plate…
-                                @endif
-                            @else
-                                —
-                            @endif
-                        </p>
+                        <p class="js-live-plate mt-1 truncate text-xs text-gray-600" data-camera-id="{{ $camKey }}">{{ $plateLine }}</p>
                     @endif
                     @if (! empty($camera['parking_url']))
                         <a href="{{ $camera['parking_url'] }}" class="mt-2 inline-block text-xs font-medium text-blue-600 hover:underline">
