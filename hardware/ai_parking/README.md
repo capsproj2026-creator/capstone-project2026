@@ -95,10 +95,14 @@ UI: `/admin/live-cameras`, `/guard/live-cameras`, `/guard/ai-parking`
 | `AI_PARKING_OVERTIME_MINUTES` | `30` | Slot dwell before overtime |
 | `AI_PARKING_VIOLATION_DEBOUNCE_MINUTES` | `10` | Python + Laravel debounce |
 | `AI_PARKING_OCR_ENABLED` | `0` in code / set `1` in `.env` | EasyOCR on/off (enable for plate → owner names) |
-| `AI_PARKING_OCR_EVERY_SEC` | `8` | OCR interval per track |
-| `AI_PARKING_INFER_EVERY_SEC` | `0.8` | YOLO inference cadence (not every camera frame) |
+| `AI_PARKING_OCR_EVERY_SEC` | `6` | OCR interval per track |
+| `AI_PARKING_OCR_MIN_CONF` | `0.45` | Min OCR conf to accept a plate |
+| `AI_PARKING_PLATE_VOTE_NEEDED` | `2` | Matching OCR reads before locking plate |
+| `AI_PARKING_TRACK_HOLD_SEC` | `2.5` | Keep lost tracks briefly (less re-OCR flicker) |
+| `AI_PARKING_CONF` | `0.50` | YOLO confidence (higher = fewer false positives) |
+| `AI_PARKING_INFER_EVERY_SEC` | `0.7` | YOLO inference cadence (not every camera frame) |
 
-YOLO does **not** run on every frame — about every `AI_PARKING_INFER_EVERY_SEC` seconds. Plate OCR runs about every `AI_PARKING_OCR_EVERY_SEC` seconds per tracked vehicle.
+YOLO does **not** run on every frame — about every `AI_PARKING_INFER_EVERY_SEC` seconds. Plate OCR runs about every `AI_PARKING_OCR_EVERY_SEC` seconds per tracked vehicle, and only until a plate is locked with enough votes.
 
 ## Event → violation mapping
 
@@ -108,9 +112,15 @@ YOLO does **not** run on every frame — about every `AI_PARKING_INFER_EVERY_SEC
 | `overtime` | Overtime Parking |
 | `unauthorized` | Unauthorized Parking |
 
-Citations require a **registered** plate (same as guard flow). Unknown plates show on the AI monitor only.
+Citations require a **registered** plate (same as guard flow). UI labels:
 
-Laravel matches OCR plates to `users.plate_number` (hyphens/spaces ignored) and attaches **owner name** on detections/events for the AI Parking Monitor. Enable OCR:
+| Case | Display |
+|------|---------|
+| Matched plate | Owner full name, plate, vehicle type, Registered |
+| Readable but unknown | Unknown Vehicle · Plate Not Registered |
+| Low OCR confidence | Plate Unreadable |
+
+Laravel matches OCR plates to `users.plate_number` (hyphens/spaces ignored) and enriches detections for the AI Parking Monitor, Live Cameras, and Parking pages. Enable OCR:
 
 ```env
 AI_PARKING_OCR_ENABLED=1

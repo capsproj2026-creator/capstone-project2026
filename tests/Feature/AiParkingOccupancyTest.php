@@ -304,6 +304,8 @@ class AiParkingOccupancyTest extends TestCase
             $this->assertSame('ABC1234', $det['plate']);
             $this->assertTrue($det['registered']);
             $this->assertSame('Plate Owner Test', $det['owner_name']);
+            $this->assertSame('Registered', $det['registration_status']);
+            $this->assertSame('Plate Owner Test', $det['owner_label']);
             $this->assertEquals($owner->id, $det['user_id']);
         } finally {
             \App\Support\PlateLookup::forgetIndex();
@@ -311,6 +313,61 @@ class AiParkingOccupancyTest extends TestCase
                 $owner->delete();
             }
         }
+    }
+
+    public function test_occupancy_marks_unknown_vehicle_when_plate_not_registered(): void
+    {
+        \App\Support\PlateLookup::forgetIndex();
+
+        $response = $this->withHeaders(['X-AI-TOKEN' => self::TOKEN])
+            ->postJson('/api/ai-parking/occupancy', [
+                'camera_id' => 'CAM-AI-1',
+                'area_id' => AiTestLotSeeder::AREA_ID,
+                'vehicle_count' => 1,
+                'detections' => [
+                    [
+                        'class' => 'car',
+                        'confidence' => 0.88,
+                        'plate' => 'ZZZ9999',
+                        'plate_status' => 'ok',
+                        'track_id' => 7,
+                    ],
+                ],
+            ])
+            ->assertOk();
+
+        $det = $response->json('data.detections.0');
+        $this->assertSame('ZZZ9999', $det['plate']);
+        $this->assertFalse($det['registered']);
+        $this->assertSame('Unknown Vehicle', $det['owner_label']);
+        $this->assertSame('Plate Not Registered', $det['registration_status']);
+        $this->assertNull($det['owner_name']);
+    }
+
+    public function test_occupancy_marks_unreadable_plate_without_inventing_text(): void
+    {
+        $response = $this->withHeaders(['X-AI-TOKEN' => self::TOKEN])
+            ->postJson('/api/ai-parking/occupancy', [
+                'camera_id' => 'CAM-AI-1',
+                'area_id' => AiTestLotSeeder::AREA_ID,
+                'vehicle_count' => 1,
+                'detections' => [
+                    [
+                        'class' => 'car',
+                        'confidence' => 0.9,
+                        'plate_status' => 'unreadable',
+                        'ocr_confidence' => 0.2,
+                        'track_id' => 9,
+                    ],
+                ],
+            ])
+            ->assertOk();
+
+        $det = $response->json('data.detections.0');
+        $this->assertSame('unreadable', $det['plate_status']);
+        $this->assertSame('Plate Unreadable', $det['plate_label']);
+        $this->assertNull($det['plate']);
+        $this->assertNull($det['owner_name']);
     }
 
     public function test_ai_test_lot_area_exists(): void

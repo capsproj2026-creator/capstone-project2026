@@ -287,7 +287,12 @@ class AiParkingOccupancyService
     }
 
     /**
-     * Attach registered owner identity to detections/events that include a plate.
+     * Attach plate status + registered owner identity to detections/events.
+     *
+     * Display contract:
+     * - plate_status=unreadable → "Plate Unreadable" (no invented plate text)
+     * - registered match → owner full name, plate, vehicle details, registration status
+     * - readable but unmatched → "Unknown Vehicle" / "Plate Not Registered"
      *
      * @param  list<array<string, mixed>>  $rows
      * @return list<array<string, mixed>>
@@ -296,7 +301,14 @@ class AiParkingOccupancyService
     {
         $hasPlate = false;
         foreach ($rows as $row) {
-            if (is_array($row) && trim((string) ($row['plate'] ?? '')) !== '') {
+            if (! is_array($row)) {
+                continue;
+            }
+            $status = strtolower(trim((string) ($row['plate_status'] ?? '')));
+            if ($status === 'unreadable') {
+                continue;
+            }
+            if (trim((string) ($row['plate'] ?? '')) !== '') {
                 $hasPlate = true;
                 break;
             }
@@ -311,18 +323,53 @@ class AiParkingOccupancyService
                 return $row;
             }
 
-            $plate = (string) ($row['plate'] ?? '');
-            if (trim($plate) === '') {
+            $status = strtolower(trim((string) ($row['plate_status'] ?? '')));
+            $plate = trim((string) ($row['plate'] ?? ''));
+
+            if ($status === 'unreadable' || strcasecmp($plate, 'UNREADABLE') === 0) {
+                $row['plate'] = null;
+                $row['plate_status'] = 'unreadable';
+                $row['plate_label'] = 'Plate Unreadable';
+                $row['owner_name'] = null;
+                $row['owner_label'] = null;
+                $row['owner_id_number'] = null;
+                $row['owner_role'] = null;
+                $row['user_id'] = null;
+                $row['registered'] = null;
+                $row['vehicle_details'] = null;
+                $row['registration_status'] = null;
+
+                return $row;
+            }
+
+            if ($plate === '') {
+                $row['plate_status'] = $status !== '' ? $status : 'pending';
+                $row['plate_label'] = null;
+                $row['owner_label'] = null;
+
                 return $row;
             }
 
             $identity = PlateLookup::identity($plate);
             $row['plate'] = $identity['plate'] !== '' ? $identity['plate'] : $plate;
+            $row['plate_status'] = 'ok';
+            $row['plate_label'] = $row['plate'];
             $row['registered'] = $identity['registered'];
             $row['owner_name'] = $identity['owner_name'];
             $row['owner_id_number'] = $identity['id_number'];
             $row['owner_role'] = $identity['role'];
             $row['user_id'] = $identity['user_id'];
+            $row['vehicle_details'] = $identity['vehicle_details'];
+            $row['registration_status'] = $identity['registration_status'];
+
+            if ($identity['registered']) {
+                $row['owner_label'] = $identity['owner_name'];
+                $row['registration_status'] = $identity['registration_status'] ?: 'Registered';
+            } else {
+                $row['owner_label'] = 'Unknown Vehicle';
+                $row['registration_status'] = 'Plate Not Registered';
+                $row['owner_name'] = null;
+            }
 
             return $row;
         }, $rows);

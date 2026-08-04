@@ -53,7 +53,7 @@ class PlateLookup
         }
 
         $user = User::query()
-            ->with('role')
+            ->with(['role', 'vehicleType'])
             ->whereIn('plate_number', $candidates)
             ->first();
 
@@ -69,16 +69,32 @@ class PlateLookup
             return null;
         }
 
-        return User::query()->with('role')->where('id', $userId)->first();
+        return User::query()->with(['role', 'vehicleType'])->where('id', $userId)->first();
     }
 
     /**
-     * @return array{plate: string, user_id: int|string|null, owner_name: string|null, id_number: string|null, role: string|null, registered: bool}
+     * @return array{
+     *     plate: string,
+     *     user_id: int|string|null,
+     *     owner_name: string|null,
+     *     id_number: string|null,
+     *     role: string|null,
+     *     registered: bool,
+     *     vehicle_details: string|null,
+     *     registration_status: string|null
+     * }
      */
     public static function identity(?string $plate): array
     {
         $normalized = self::normalize($plate);
         $user = $normalized !== '' ? self::findUser($plate) : null;
+
+        $registrationStatus = null;
+        if ($user) {
+            $registrationStatus = $user->isGranted()
+                ? 'Registered'
+                : (string) ($user->status ?: 'Registered');
+        }
 
         return [
             'plate' => $normalized !== '' ? $normalized : strtoupper(trim((string) $plate)),
@@ -87,6 +103,8 @@ class PlateLookup
             'id_number' => $user?->id_number,
             'role' => $user?->roleName(),
             'registered' => $user !== null,
+            'vehicle_details' => $user?->vehicleType?->vehicle_name,
+            'registration_status' => $registrationStatus,
         ];
     }
 

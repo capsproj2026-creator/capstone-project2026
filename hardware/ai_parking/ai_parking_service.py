@@ -48,14 +48,17 @@ AI_API_TOKEN = os.getenv("AI_PARKING_API_TOKEN", "capstone-ai-parking-dev-token-
 STREAM_HOST = os.getenv("AI_STREAM_HOST", "0.0.0.0")
 STREAM_PORT = int(os.getenv("AI_STREAM_PORT", "8090"))
 
-IMG_SIZE = 640
-CONF = 0.45
-IOU = 0.50
-MAX_DET = 50
-POST_EVERY_SEC = 2.5
+IMG_SIZE = int(os.getenv("AI_PARKING_IMG_SIZE", "640"))
+# Slightly higher conf cuts false positives; IoU NMS reduces duplicate boxes.
+CONF = float(os.getenv("AI_PARKING_CONF", "0.50"))
+IOU = float(os.getenv("AI_PARKING_IOU", "0.45"))
+MAX_DET = int(os.getenv("AI_PARKING_MAX_DET", "40"))
+# Ignore tiny / distant vehicle boxes (fraction of frame area) to cut false positives.
+MIN_BOX_AREA_FRAC = float(os.getenv("AI_PARKING_MIN_BOX_AREA", "0.004"))
+POST_EVERY_SEC = float(os.getenv("AI_PARKING_POST_EVERY_SEC", "2.0"))
 USE_WEBCAM = os.getenv("AI_USE_WEBCAM", "0") == "1"
 TRACKER = os.getenv("AI_PARKING_TRACKER", "bytetrack.yaml")
-INFER_EVERY_SEC = float(os.getenv("AI_PARKING_INFER_EVERY_SEC", "0.8"))
+INFER_EVERY_SEC = float(os.getenv("AI_PARKING_INFER_EVERY_SEC", "0.7"))
 PREVIEW_MAX_WIDTH = int(os.getenv("AI_PARKING_PREVIEW_MAX_WIDTH", "960"))
 STREAM_TARGET_FPS = float(os.getenv("AI_PARKING_STREAM_FPS", "20"))
 STREAM_JPEG_QUALITY = int(os.getenv("AI_PARKING_STREAM_JPEG_QUALITY", "65"))
@@ -64,6 +67,8 @@ OPEN_LOCK = threading.Lock()
 
 DETECT_CLASS_IDS = [0, 2, 3, 5, 7]  # person, car, motorcycle, bus, truck
 VEHICLE_CLASS_IDS = {2, 3, 5, 7}
+# Persons are drawn on the stream but excluded from occupancy / LPR payloads.
+POST_PERSON_DETECTIONS = os.getenv("AI_PARKING_POST_PERSONS", "0") == "1"
 COCO_NAMES = {
     0: "person",
     2: "car",
@@ -280,18 +285,54 @@ def open_rtsp(
     return None
 
 
+def _box_iou(a, b) -> float:
+    ax1, ay1, ax2, ay2 = a
+    bx1, by1, bx2, by2 = b
+    ix1, iy1 = max(ax1, bx1), max(ay1, by1)
+    ix2, iy2 = min(ax2, bx2), min(ay2, by2)
+    iw, ih = max(0, ix2 - ix1), max(0, iy2 - iy1)
+    inter = iw * ih
+    if inter <= 0:
+        return 0.0
+    area_a = max(0, ax2 - ax1) * max(0, ay2 - ay1)
+    area_b = max(0, bx2 - bx1) * max(0, by2 - by1)
+    union = area_a + area_b - inter
+    return inter / union if union > 0 else 0.0
+
+
+def _dedupe_vehicle_rows(rows: list[dict], iou_thresh: float = 0.65) -> list[dict]:
+    """Keep highest-confidence box when two same-class vehicles heavily overlap."""
+    if len(rows) <= 1:
+        return rows
+    rows = sorted(rows, key=lambda r: float(r.get("confidence") or 0), reverse=True)
+    kept: list[dict] = []
+    for row in rows:
+        xy = row["xyxy"]
+        cls = row.get("class")
+        if any(
+            k.get("class") == cls and _box_iou(xy, k["xyxy"]) >= iou_thresh
+            for k in kept
+        ):
+            continue
+        kept.append(row)
+    return kept
+
+
 def parse_tracks(result, frame, ocr: PlateOCR, intelligence: ParkingIntelligence):
     """Build detection list + vehicle dicts with track ids and optional plates."""
     annotated_boxes = []
     detections = []
     vehicles = []
     person_count = 0
-    vehicle_count = 0
     boxes = result.boxes
     if boxes is None or len(boxes) == 0:
         return annotated_boxes, detections, vehicles, 0, 0
 
     now = time.time()
+    fh, fw = frame.shape[:2]
+    frame_area = max(1, fh * fw)
+    raw_vehicles: list[dict] = []
+
     for box in boxes:
         x1, y1, x2, y2 = map(int, box.xyxy[0].tolist())
         cls_id = int(box.cls[0])
@@ -301,46 +342,89 @@ def parse_tracks(result, frame, ocr: PlateOCR, intelligence: ParkingIntelligence
         if box.id is not None:
             track_id = int(box.id[0])
 
-        det = {"class": name, "confidence": round(conf, 3), "track_id": track_id}
-        detections.append(det)
-        annotated_boxes.append((x1, y1, x2, y2, name, conf, track_id, None))
-
         if cls_id == 0:
             person_count += 1
+            annotated_boxes.append((x1, y1, x2, y2, name, conf, track_id, None))
+            if POST_PERSON_DETECTIONS:
+                detections.append({"class": name, "confidence": round(conf, 3), "track_id": track_id})
             continue
         if cls_id not in VEHICLE_CLASS_IDS:
             continue
 
-        vehicle_count += 1
+        box_area = max(0, x2 - x1) * max(0, y2 - y1)
+        if box_area / frame_area < MIN_BOX_AREA_FRAC:
+            continue
+
+        raw_vehicles.append({
+            "xyxy": (x1, y1, x2, y2),
+            "track_id": track_id,
+            "class": name,
+            "confidence": conf,
+            "cls_id": cls_id,
+        })
+
+    for row in _dedupe_vehicle_rows(raw_vehicles):
+        x1, y1, x2, y2 = row["xyxy"]
+        conf = float(row["confidence"])
+        name = row["class"]
+        track_id = row.get("track_id")
+
         plate = None
+        plate_status = "pending"
+        ocr_confidence = 0.0
+
         if track_id is not None:
-            mem = intelligence.tracks.get(track_id)
-            if mem and mem.plate:
+            mem = intelligence.touch_track(track_id, now)
+            if mem.plate_status == "ok" and mem.plate:
                 plate = mem.plate
-            elif ocr.enabled and (mem is None or now - mem.last_ocr_at >= OCR_EVERY_SEC):
-                plate = ocr.read_plate(frame, (x1, y1, x2, y2))
-                if mem is None:
-                    from parking_rules import TrackMemory
+                plate_status = "ok"
+                ocr_confidence = mem.ocr_confidence
+            elif ocr.enabled and (now - mem.last_ocr_at >= OCR_EVERY_SEC):
+                read = ocr.read_plate(frame, (x1, y1, x2, y2))
+                mem.last_ocr_at = now
+                mem.apply_ocr_vote(read.plate, read.status, read.confidence)
+                plate = mem.plate
+                plate_status = mem.plate_status
+                ocr_confidence = mem.ocr_confidence
+            else:
+                plate = mem.plate
+                plate_status = mem.plate_status
+                ocr_confidence = mem.ocr_confidence
+        elif ocr.enabled:
+            read = ocr.read_plate(frame, (x1, y1, x2, y2))
+            if read.status == "ok" and read.plate:
+                plate = read.plate
+                plate_status = "ok"
+                ocr_confidence = read.confidence
+            elif read.status == "unreadable":
+                plate_status = "unreadable"
+                ocr_confidence = read.confidence
 
-                    intelligence.tracks[track_id] = TrackMemory(first_seen=now, last_ocr_at=now, plate=plate)
-                else:
-                    mem.last_ocr_at = now
-                    if plate:
-                        mem.plate = plate
-                if plate:
-                    det["plate"] = plate
-
+        det = {
+            "class": name,
+            "confidence": round(conf, 3),
+            "track_id": track_id,
+            "plate_status": plate_status,
+        }
         if plate:
-            annotated_boxes[-1] = (x1, y1, x2, y2, name, conf, track_id, plate)
+            det["plate"] = plate
+        if ocr_confidence > 0:
+            det["ocr_confidence"] = round(float(ocr_confidence), 3)
+        if plate_status == "unreadable":
+            det["plate"] = None
 
+        detections.append(det)
+        annotated_boxes.append((x1, y1, x2, y2, name, conf, track_id, plate))
         vehicles.append({
             "xyxy": (x1, y1, x2, y2),
             "track_id": track_id,
             "class": name,
             "confidence": conf,
             "plate": plate,
+            "plate_status": plate_status,
         })
 
+    vehicle_count = len(vehicles)
     return annotated_boxes, detections, vehicles, person_count, vehicle_count
 
 
@@ -958,10 +1042,15 @@ class CameraWorker:
                 post_events = list(events)
                 for evt in post_events:
                     tid = evt.get("track_id")
-                    if tid is not None and not evt.get("plate"):
+                    if tid is not None:
                         mem = self.intelligence.tracks.get(int(tid))
-                        if mem and mem.plate:
-                            evt["plate"] = mem.plate
+                        if mem:
+                            if not evt.get("plate") and mem.plate:
+                                evt["plate"] = mem.plate
+                            if mem.plate_status:
+                                evt["plate_status"] = mem.plate_status
+                            if mem.ocr_confidence:
+                                evt["ocr_confidence"] = round(float(mem.ocr_confidence), 3)
                 post_occupancy_async(
                     self.config.camera_id,
                     self.config.area_id,

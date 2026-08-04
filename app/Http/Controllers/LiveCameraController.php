@@ -88,6 +88,7 @@ class LiveCameraController extends Controller
             'layout' => $layout,
             'streamUrl' => $streamUrl,
             'ai' => $ai->latestSnapshot($primary),
+            'aiCameras' => $ai->allSnapshots(),
             'aiHealth' => $aiHealth,
             'aiCamerasHealth' => $health->statusAll($isGuard),
             'aiAreaId' => $areaId,

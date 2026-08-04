@@ -13,16 +13,50 @@ from geometry import assign_zones_for_box, has_calibrated_slots, usable_zones
 OVERTIME_MINUTES = float(os.getenv("AI_PARKING_OVERTIME_MINUTES", "30"))
 DEBOUNCE_MINUTES = float(os.getenv("AI_PARKING_VIOLATION_DEBOUNCE_MINUTES", "10"))
 IOU_THRESHOLD = float(os.getenv("AI_PARKING_ZONE_IOU", "0.12"))
+# Keep lost tracks briefly so ByteTrack ID flicker does not wipe plate memory / re-OCR.
+TRACK_HOLD_SEC = float(os.getenv("AI_PARKING_TRACK_HOLD_SEC", "2.5"))
+# Require this many matching OCR reads before locking a plate on a track.
+PLATE_VOTE_NEEDED = int(os.getenv("AI_PARKING_PLATE_VOTE_NEEDED", "2"))
 
 
 @dataclass
 class TrackMemory:
     first_seen: float
+    last_seen: float = 0.0
     slot_id: str | None = None
     slot_since: float | None = None
     plate: str | None = None
+    # pending | ok | unreadable
+    plate_status: str = "pending"
+    ocr_confidence: float = 0.0
+    plate_votes: dict[str, int] = field(default_factory=dict)
+    unreadable_votes: int = 0
     last_ocr_at: float = 0.0
+    hit_streak: int = 0
     last_zones: list[str] = field(default_factory=list)
+
+    def note_seen(self, now: float) -> None:
+        self.last_seen = now
+        self.hit_streak += 1
+
+    def apply_ocr_vote(self, plate: str | None, status: str, confidence: float) -> None:
+        """Stabilize plate text across frames; avoid locking on a single bad read."""
+        self.ocr_confidence = max(self.ocr_confidence, float(confidence or 0.0))
+        if status == "ok" and plate:
+            self.plate_votes[plate] = self.plate_votes.get(plate, 0) + 1
+            votes = self.plate_votes[plate]
+            if votes >= PLATE_VOTE_NEEDED or (votes >= 1 and confidence >= 0.75):
+                self.plate = plate
+                self.plate_status = "ok"
+                self.unreadable_votes = 0
+            return
+
+        if status == "unreadable":
+            self.unreadable_votes += 1
+            # Only mark unreadable once we have tried enough and never locked a plate.
+            if self.plate_status != "ok" and self.unreadable_votes >= PLATE_VOTE_NEEDED:
+                self.plate = None
+                self.plate_status = "unreadable"
 
 
 class ParkingIntelligence:
@@ -30,6 +64,16 @@ class ParkingIntelligence:
         self.tracks: dict[int, TrackMemory] = {}
         self._debounce: dict[tuple, float] = {}
         self.active_events: list[dict[str, Any]] = []
+
+    def touch_track(self, track_id: int, now: float | None = None) -> TrackMemory:
+        now = now if now is not None else time.time()
+        mem = self.tracks.get(track_id)
+        if mem is None:
+            mem = TrackMemory(first_seen=now, last_seen=now, hit_streak=1)
+            self.tracks[track_id] = mem
+        else:
+            mem.note_seen(now)
+        return mem
 
     def _should_emit(self, key: tuple) -> bool:
         now = time.time()
@@ -87,14 +131,16 @@ class ParkingIntelligence:
             xyxy = v["xyxy"]
             tid = v.get("track_id")
             plate = v.get("plate")
+            plate_status = v.get("plate_status") or "pending"
             if tid is not None:
                 seen_tracks.add(int(tid))
-                mem = self.tracks.get(int(tid))
-                if mem is None:
-                    mem = TrackMemory(first_seen=now)
-                    self.tracks[int(tid)] = mem
-                if plate:
+                mem = self.touch_track(int(tid), now)
+                if plate and plate_status == "ok":
                     mem.plate = plate
+                    mem.plate_status = "ok"
+                elif plate_status == "unreadable" and mem.plate_status != "ok":
+                    mem.plate_status = "unreadable"
+                    mem.plate = None
 
             matched_slots = []
             matched_rules = []
@@ -165,8 +211,11 @@ class ParkingIntelligence:
                     if evt:
                         events.append(evt)
 
-        # prune stale tracks
-        stale = [t for t in self.tracks if t not in seen_tracks]
+        # Soft-prune stale tracks (hold briefly to survive tracker flicker / brief occlusion).
+        stale = [
+            t for t, mem in self.tracks.items()
+            if t not in seen_tracks and (now - (mem.last_seen or mem.first_seen)) > TRACK_HOLD_SEC
+        ]
         for t in stale:
             del self.tracks[t]
 

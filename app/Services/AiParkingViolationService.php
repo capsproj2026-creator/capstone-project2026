@@ -197,6 +197,9 @@ class AiParkingViolationService
             if ($plate === '') {
                 continue;
             }
+            if (strtolower((string) ($det['plate_status'] ?? '')) === 'unreadable') {
+                continue;
+            }
 
             $cacheKey = 'ai_parking:unauth:'.$plate;
             if (Cache::has($cacheKey)) {

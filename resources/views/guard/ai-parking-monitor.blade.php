@@ -102,19 +102,30 @@
                             <div class="min-w-0">
                                 <p class="font-medium text-gray-800">
                                     {{ $det['class'] ?? 'vehicle' }}
-                                    @if (! empty($det['plate']))
+                                    @if (($det['plate_status'] ?? '') === 'unreadable')
+                                        <span class="ml-1 text-xs text-slate-500">[Plate Unreadable]</span>
+                                    @elseif (! empty($det['plate']))
                                         <span class="ml-1 text-xs text-indigo-600">[{{ $det['plate'] }}]</span>
                                     @endif
                                 </p>
-                                @if (! empty($det['owner_name']))
+                                @if (($det['plate_status'] ?? '') === 'unreadable')
+                                    <p class="mt-0.5 text-xs text-slate-500">Plate Unreadable</p>
+                                @elseif (! empty($det['registered']) && ! empty($det['owner_name']))
                                     <p class="mt-0.5 truncate text-xs text-emerald-700">
                                         {{ $det['owner_name'] }}
                                         @if (! empty($det['owner_id_number']))
                                             <span class="text-gray-400">· {{ $det['owner_id_number'] }}</span>
                                         @endif
                                     </p>
+                                    <p class="mt-0.5 truncate text-[11px] text-gray-500">
+                                        {{ $det['registration_status'] ?? 'Registered' }}
+                                        @if (! empty($det['vehicle_details']))
+                                            · {{ $det['vehicle_details'] }}
+                                        @endif
+                                    </p>
                                 @elseif (! empty($det['plate']))
-                                    <p class="mt-0.5 text-xs text-amber-700">Unregistered plate</p>
+                                    <p class="mt-0.5 text-xs text-amber-700">Unknown Vehicle</p>
+                                    <p class="mt-0.5 text-[11px] text-amber-600">Plate Not Registered</p>
                                 @endif
                             </div>
                             <span class="shrink-0 text-gray-500">{{ isset($det['confidence']) ? round($det['confidence'] * 100).'%' : '—' }}</span>
@@ -138,13 +149,15 @@
                                 <span class="rounded bg-amber-100 px-2 py-0.5 text-xs font-semibold uppercase text-amber-800">{{ $evt['type'] ?? 'event' }}</span>
                                 <span class="text-xs text-gray-500">{{ $evt['zone_id'] ?? '' }}</span>
                             </div>
-                            @if (! empty($evt['plate']))
+                            @if (($evt['plate_status'] ?? '') === 'unreadable')
+                                <p class="mt-1 text-xs text-slate-500">Plate Unreadable</p>
+                            @elseif (! empty($evt['plate']))
                                 <p class="mt-1 text-xs text-gray-600">
                                     Plate {{ $evt['plate'] }}
                                     @if (! empty($evt['owner_name']))
                                         <span class="text-emerald-700">· {{ $evt['owner_name'] }}</span>
                                     @elseif (($evt['registered'] ?? null) === false)
-                                        <span class="text-amber-700">· Unregistered</span>
+                                        <span class="text-amber-700">· Unknown Vehicle · Plate Not Registered</span>
                                     @endif
                                 </p>
                             @endif
@@ -209,25 +222,46 @@
                             const name = document.createElement('p');
                             name.className = 'font-medium text-gray-800';
                             name.textContent = det.class || 'vehicle';
-                            if (det.plate) {
+                            if (det.plate_status === 'unreadable') {
+                                const plate = document.createElement('span');
+                                plate.className = 'ml-1 text-xs text-slate-500';
+                                plate.textContent = '[Plate Unreadable]';
+                                name.append(plate);
+                            } else if (det.plate) {
                                 const plate = document.createElement('span');
                                 plate.className = 'ml-1 text-xs text-indigo-600';
                                 plate.textContent = `[${det.plate}]`;
                                 name.append(plate);
                             }
                             left.append(name);
-                            if (det.owner_name) {
+                            if (det.plate_status === 'unreadable') {
+                                const note = document.createElement('p');
+                                note.className = 'mt-0.5 text-xs text-slate-500';
+                                note.textContent = 'Plate Unreadable';
+                                left.append(note);
+                            } else if (det.registered && det.owner_name) {
                                 const owner = document.createElement('p');
                                 owner.className = 'mt-0.5 truncate text-xs text-emerald-700';
                                 owner.textContent = det.owner_id_number
                                     ? `${det.owner_name} · ${det.owner_id_number}`
                                     : det.owner_name;
                                 left.append(owner);
+                                const meta = document.createElement('p');
+                                meta.className = 'mt-0.5 truncate text-[11px] text-gray-500';
+                                meta.textContent = [
+                                    det.registration_status || 'Registered',
+                                    det.vehicle_details || null,
+                                ].filter(Boolean).join(' · ');
+                                left.append(meta);
                             } else if (det.plate) {
                                 const unknown = document.createElement('p');
                                 unknown.className = 'mt-0.5 text-xs text-amber-700';
-                                unknown.textContent = 'Unregistered plate';
+                                unknown.textContent = 'Unknown Vehicle';
                                 left.append(unknown);
+                                const reg = document.createElement('p');
+                                reg.className = 'mt-0.5 text-[11px] text-amber-600';
+                                reg.textContent = 'Plate Not Registered';
+                                left.append(reg);
                             }
                             const conf = document.createElement('span');
                             conf.className = 'shrink-0 text-gray-500';
@@ -260,14 +294,19 @@
                             zone.textContent = evt.zone_id || '';
                             row.append(badge, zone);
                             li.append(row);
-                            if (evt.plate) {
+                            if (evt.plate_status === 'unreadable') {
+                                const p = document.createElement('p');
+                                p.className = 'mt-1 text-xs text-slate-500';
+                                p.textContent = 'Plate Unreadable';
+                                li.append(p);
+                            } else if (evt.plate) {
                                 const p = document.createElement('p');
                                 p.className = 'mt-1 text-xs text-gray-600';
                                 let label = `Plate ${evt.plate}`;
                                 if (evt.owner_name) {
                                     label += ` · ${evt.owner_name}`;
                                 } else if (evt.registered === false) {
-                                    label += ' · Unregistered';
+                                    label += ' · Unknown Vehicle · Plate Not Registered';
                                 }
                                 p.textContent = label;
                                 li.append(p);

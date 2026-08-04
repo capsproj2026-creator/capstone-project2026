@@ -140,6 +140,38 @@
             AI camera last reported <strong id="ai-lot-vehicles">{{ $aiSnapshot['vehicle_count'] ?? 0 }}</strong> vehicle(s)
             at <span id="ai-lot-updated">{{ $aiSnapshot['updated_at_label'] ?? '—' }}</span>.
         </div>
+        <div class="border-b border-gray-100 px-5 py-3">
+            <p class="text-xs font-semibold uppercase tracking-wide text-gray-500">AI plate recognition</p>
+            <ul id="ai-parking-detections" class="mt-2 max-h-40 space-y-2 overflow-y-auto text-sm">
+                @forelse (($aiSnapshot['detections'] ?? []) as $det)
+                    <li class="rounded-lg border border-gray-100 bg-gray-50 px-3 py-2">
+                        <p class="font-medium text-gray-800">
+                            {{ $det['class'] ?? 'vehicle' }}
+                            @if (($det['plate_status'] ?? '') === 'unreadable')
+                                <span class="text-slate-500">· Plate Unreadable</span>
+                            @elseif (! empty($det['plate']))
+                                <span class="text-indigo-600">· {{ $det['plate'] }}</span>
+                            @endif
+                        </p>
+                        @if (($det['plate_status'] ?? '') === 'unreadable')
+                            <p class="text-xs text-slate-500">Plate Unreadable</p>
+                        @elseif (! empty($det['registered']) && ! empty($det['owner_name']))
+                            <p class="text-xs text-emerald-700">
+                                {{ $det['owner_name'] }}
+                                · {{ $det['registration_status'] ?? 'Registered' }}
+                                @if (! empty($det['vehicle_details']))
+                                    · {{ $det['vehicle_details'] }}
+                                @endif
+                            </p>
+                        @elseif (! empty($det['plate']))
+                            <p class="text-xs text-amber-700">Unknown Vehicle · Plate Not Registered</p>
+                        @endif
+                    </li>
+                @empty
+                    <li id="ai-parking-detections-empty" class="text-xs text-gray-500">No plate detections yet.</li>
+                @endforelse
+            </ul>
+        </div>
     @endif
 
     @if ($slots->isEmpty())
@@ -239,6 +271,50 @@
                 if (data.ai) {
                     setText('ai-lot-vehicles', data.ai.vehicle_count ?? 0);
                     setText('ai-lot-updated', data.ai.updated_at_label || data.updated_at);
+                    const list = document.getElementById('ai-parking-detections');
+                    if (list) {
+                        list.replaceChildren();
+                        const dets = data.ai.detections || [];
+                        if (!dets.length) {
+                            const empty = document.createElement('li');
+                            empty.className = 'text-xs text-gray-500';
+                            empty.textContent = 'No plate detections yet.';
+                            list.append(empty);
+                        } else {
+                            dets.forEach((det) => {
+                                const li = document.createElement('li');
+                                li.className = 'rounded-lg border border-gray-100 bg-gray-50 px-3 py-2';
+                                const title = document.createElement('p');
+                                title.className = 'font-medium text-gray-800';
+                                let titleText = det.class || 'vehicle';
+                                if (det.plate_status === 'unreadable') titleText += ' · Plate Unreadable';
+                                else if (det.plate) titleText += ` · ${det.plate}`;
+                                title.textContent = titleText;
+                                li.append(title);
+                                const meta = document.createElement('p');
+                                meta.className = 'text-xs';
+                                if (det.plate_status === 'unreadable') {
+                                    meta.className += ' text-slate-500';
+                                    meta.textContent = 'Plate Unreadable';
+                                } else if (det.registered && det.owner_name) {
+                                    meta.className += ' text-emerald-700';
+                                    meta.textContent = [
+                                        det.owner_name,
+                                        det.registration_status || 'Registered',
+                                        det.vehicle_details || null,
+                                    ].filter(Boolean).join(' · ');
+                                } else if (det.plate) {
+                                    meta.className += ' text-amber-700';
+                                    meta.textContent = 'Unknown Vehicle · Plate Not Registered';
+                                } else {
+                                    meta.className += ' text-gray-500';
+                                    meta.textContent = 'Waiting for plate…';
+                                }
+                                li.append(meta);
+                                list.append(li);
+                            });
+                        }
+                    }
                 }
 
                 (data.slots || []).forEach((slot) => {
