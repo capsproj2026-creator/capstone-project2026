@@ -59,30 +59,58 @@ class AiParkingHealthService
         return $this->upstreamStreamUrl($cameraId);
     }
 
+    /**
+     * Fast JSON health URL for the Python MJPEG service (never hit endless .mjpg).
+     */
+    public function serviceHealthUrl(): ?string
+    {
+        $base = trim((string) config('services.ai_parking.stream_base', ''));
+        if ($base === '') {
+            $stream = $this->upstreamStreamUrl();
+            if ($stream === null) {
+                return null;
+            }
+            $parts = parse_url($stream);
+            if (! is_array($parts) || empty($parts['scheme']) || empty($parts['host'])) {
+                return null;
+            }
+            $port = isset($parts['port']) ? ':'.$parts['port'] : '';
+            $base = $parts['scheme'].'://'.$parts['host'].$port;
+        }
+
+        return rtrim($base, '/').'/health';
+    }
+
     public function isStreamReachable(?string $url = null): bool
     {
-        $url ??= $this->upstreamStreamUrl();
-        if ($url === null) {
+        // Prefer the lightweight /health JSON endpoint. Opening MJPEG with Http::get()
+        // can hang until PHP max_execution_time because the multipart stream never ends.
+        $healthUrl = $this->serviceHealthUrl();
+        $probeUrl = $healthUrl ?? $url ?? $this->upstreamStreamUrl();
+        if ($probeUrl === null) {
             return false;
         }
 
-        $cacheKey = 'ai_parking:stream_reachable:'.md5($url);
+        $cacheKey = 'ai_parking:stream_reachable:'.md5($probeUrl);
 
-        return (bool) Cache::remember($cacheKey, now()->addSeconds(45), function () use ($url) {
+        return (bool) Cache::remember($cacheKey, now()->addSeconds(45), function () use ($probeUrl, $healthUrl) {
             try {
-                $response = Http::timeout(3)
-                    ->withOptions(['stream' => true, 'read_timeout' => 3])
-                    ->get($url);
+                if ($healthUrl !== null && $probeUrl === $healthUrl) {
+                    $response = Http::connectTimeout(1)
+                        ->timeout(1.5)
+                        ->acceptJson()
+                        ->get($healthUrl);
 
-                if (! $response->successful()) {
-                    return false;
+                    return $response->successful();
                 }
 
-                $body = $response->toPsrResponse()->getBody();
-                $chunk = $body->read(512);
-                $body->close();
+                // Fallback: tiny ranged GET — still keep timeouts aggressive.
+                $response = Http::connectTimeout(1)
+                    ->timeout(1.5)
+                    ->withHeaders(['Range' => 'bytes=0-63'])
+                    ->get($probeUrl);
 
-                return $chunk !== '';
+                return $response->status() < 500;
             } catch (\Throwable) {
                 return false;
             }
@@ -107,10 +135,42 @@ class AiParkingHealthService
     }
 
     /**
+     * Page-load safe status: no HTTP stream probe (uses cache/config/ingest only).
+     *
      * @return array<string, mixed>
      */
-    public function status(bool $isGuard = true, ?string $cameraId = null): array
+    public function statusFast(bool $isGuard = true, ?string $cameraId = null): array
     {
+        $upstream = $this->upstreamStreamUrl($cameraId);
+        $snapshot = app(AiParkingOccupancyService::class)->latestSnapshot($cameraId);
+        $ingestActive = $this->isIngestActive($cameraId);
+
+        return [
+            'camera_id' => $cameraId ?? app(AiCameraRegistry::class)->primaryCameraId(),
+            'configured' => $upstream !== null,
+            'stream_reachable' => $upstream !== null,
+            'ingest_active' => $ingestActive,
+            'connected' => $ingestActive || $upstream !== null,
+            'upstream_stream_url' => $upstream,
+            'stream_proxy_url' => $this->streamProxyUrl($isGuard, $cameraId),
+            'stream_browser_url' => $this->streamBrowserUrl($cameraId),
+            'last_update' => is_array($snapshot) ? ($snapshot['updated_at'] ?? null) : null,
+            'last_update_label' => is_array($snapshot) ? ($snapshot['updated_at_label'] ?? null) : null,
+            'vehicle_count' => is_array($snapshot) ? ($snapshot['vehicle_count'] ?? null) : null,
+            'occupied' => is_array($snapshot) ? ($snapshot['occupied'] ?? null) : null,
+            'available' => is_array($snapshot) ? ($snapshot['available'] ?? null) : null,
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function status(bool $isGuard = true, ?string $cameraId = null, bool $probeStream = true): array
+    {
+        if (! $probeStream) {
+            return $this->statusFast($isGuard, $cameraId);
+        }
+
         $upstream = $this->upstreamStreamUrl($cameraId);
         $snapshot = app(AiParkingOccupancyService::class)->latestSnapshot($cameraId);
         $streamReachable = $upstream !== null && $this->isStreamReachable($upstream);
@@ -136,11 +196,11 @@ class AiParkingHealthService
     /**
      * @return array<string, array<string, mixed>>
      */
-    public function statusAll(bool $isGuard = true): array
+    public function statusAll(bool $isGuard = true, bool $probeStream = true): array
     {
         $out = [];
         foreach (app(AiCameraRegistry::class)->cameras() as $camera) {
-            $out[$camera['id']] = $this->status($isGuard, $camera['id']);
+            $out[$camera['id']] = $this->status($isGuard, $camera['id'], $probeStream);
         }
 
         return $out;

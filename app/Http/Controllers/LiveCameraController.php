@@ -25,15 +25,16 @@ class LiveCameraController extends Controller
 
         $cameras = [];
         foreach ($registry->cameras() as $cam) {
-            $camHealth = $health->status($isGuard, $cam['id']);
+            // Do not probe MJPEG here — that blocked Live Cameras for 60s+.
+            $streamUrl = $health->streamBrowserUrl($cam['id']) ?? ($cam['stream_url'] ?? null);
             $snap = $ai->latestSnapshot($cam['id']);
             $area = ParkingArea::query()->find($cam['area_id']);
             $parkingUrl = $isGuard
                 ? route('guard.parking', ['zone_id' => $cam['area_id']])
                 : route('admin.parking', ['zone_id' => $cam['area_id']]);
 
-            $streamUrl = $camHealth['stream_browser_url'] ?? $cam['stream_url'] ?? null;
             $hasStream = filled($streamUrl);
+            $ingestActive = $health->isIngestActive($cam['id']);
 
             $cameras[] = [
                 'id' => strtolower(str_replace('_', '-', $cam['id'])),
@@ -41,8 +42,7 @@ class LiveCameraController extends Controller
                 'name' => $area?->area_name ?? $cam['name'],
                 'location' => $cam['location'],
                 'stream_url' => $streamUrl,
-                // Show the <img> whenever a stream URL is configured so the browser
-                // can connect as soon as the Python MJPEG service comes up.
+                // Configured URL is enough for the <img>; browser reports offline on error.
                 'online' => $hasStream,
                 'ai_monitored' => true,
                 'parking_url' => $parkingUrl,
@@ -50,6 +50,7 @@ class LiveCameraController extends Controller
                 'occupied' => $snap['occupied'] ?? null,
                 'available' => $snap['available'] ?? null,
                 'updated_at_label' => $snap['updated_at_label'] ?? null,
+                'ingest_active' => $ingestActive,
             ];
         }
 
@@ -72,6 +73,7 @@ class LiveCameraController extends Controller
                 'occupied' => null,
                 'available' => null,
                 'updated_at_label' => null,
+                'ingest_active' => false,
             ];
         }
 
@@ -79,7 +81,7 @@ class LiveCameraController extends Controller
         $areaId = $registry->resolveAreaId($primary);
         $area = ParkingArea::query()->find($areaId);
         $streamUrl = $health->streamBrowserUrl($primary);
-        $aiHealth = $health->status($isGuard, $primary);
+        $aiHealth = $health->statusFast($isGuard, $primary);
 
         $total = count($cameras);
         $online = collect($cameras)->where('online', true)->count();
@@ -90,7 +92,7 @@ class LiveCameraController extends Controller
             'ai' => $ai->latestSnapshot($primary),
             'aiCameras' => $ai->allSnapshots(),
             'aiHealth' => $aiHealth,
-            'aiCamerasHealth' => $health->statusAll($isGuard),
+            'aiCamerasHealth' => $health->statusAll($isGuard, false),
             'aiAreaId' => $areaId,
             'aiAreaName' => $area?->area_name ?? 'AI Test Lot',
             'cameras' => $cameras,
@@ -116,14 +118,14 @@ class LiveCameraController extends Controller
         $primary = $registry->primaryCameraId();
         $areaId = $registry->resolveAreaId($primary);
         $area = ParkingArea::query()->find($areaId);
-        $aiHealth = $health->status(true, $primary);
+        $aiHealth = $health->statusFast(true, $primary);
 
         return view('guard.ai-parking-monitor', [
             'streamUrl' => $health->streamBrowserUrl($primary),
             'ai' => $ai->latestSnapshot($primary),
             'aiHealth' => $aiHealth,
             'aiCameras' => $ai->allSnapshots(),
-            'aiCamerasHealth' => $health->statusAll(true),
+            'aiCamerasHealth' => $health->statusAll(true, false),
             'registryCameras' => $registry->cameras(),
             'aiAreaId' => $areaId,
             'aiAreaName' => $area?->area_name ?? 'AI Test Lot',
