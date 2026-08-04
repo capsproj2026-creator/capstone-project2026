@@ -12,10 +12,10 @@ import cv2
 import numpy as np
 
 OCR_ENABLED = os.getenv("AI_PARKING_OCR_ENABLED", "0") == "1"
-OCR_EVERY_SEC = float(os.getenv("AI_PARKING_OCR_EVERY_SEC", "6"))
-OCR_MIN_CONF = float(os.getenv("AI_PARKING_OCR_MIN_CONF", "0.45"))
+OCR_EVERY_SEC = float(os.getenv("AI_PARKING_OCR_EVERY_SEC", "3"))
+OCR_MIN_CONF = float(os.getenv("AI_PARKING_OCR_MIN_CONF", "0.35"))
 # Below this, treat a read as noise even if something was decoded.
-OCR_UNREADABLE_BELOW = float(os.getenv("AI_PARKING_OCR_UNREADABLE_BELOW", "0.28"))
+OCR_UNREADABLE_BELOW = float(os.getenv("AI_PARKING_OCR_UNREADABLE_BELOW", "0.22"))
 
 _PLATE_RE = re.compile(r"[A-Z0-9]{5,10}")
 # Common PH private plate shapes after strip: ABC1234 / AB1234

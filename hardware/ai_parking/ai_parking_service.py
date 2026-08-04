@@ -31,10 +31,12 @@ from ultralytics import YOLO
 from geometry import draw_zones, load_zones
 from camera_registry import CameraConfig, load_cameras
 from load_env import load_project_env
-from parking_rules import ParkingIntelligence
-from plate_ocr import OCR_EVERY_SEC, PlateOCR
 
+# Load .env before parking_rules / plate_ocr read tunables at import time.
 load_project_env()
+
+from parking_rules import ParkingIntelligence, SimpleIoUTracker
+from plate_ocr import OCR_EVERY_SEC, PlateOCR
 
 # Default; open_rtsp() may override per-camera under OPEN_LOCK.
 os.environ.setdefault("OPENCV_FFMPEG_CAPTURE_OPTIONS", "rtsp_transport;tcp")
@@ -48,17 +50,21 @@ AI_API_TOKEN = os.getenv("AI_PARKING_API_TOKEN", "capstone-ai-parking-dev-token-
 STREAM_HOST = os.getenv("AI_STREAM_HOST", "0.0.0.0")
 STREAM_PORT = int(os.getenv("AI_STREAM_PORT", "8090"))
 
-IMG_SIZE = int(os.getenv("AI_PARKING_IMG_SIZE", "640"))
-# Slightly higher conf cuts false positives; IoU NMS reduces duplicate boxes.
-CONF = float(os.getenv("AI_PARKING_CONF", "0.50"))
-IOU = float(os.getenv("AI_PARKING_IOU", "0.45"))
-MAX_DET = int(os.getenv("AI_PARKING_MAX_DET", "40"))
-# Ignore tiny / distant vehicle boxes (fraction of frame area) to cut false positives.
-MIN_BOX_AREA_FRAC = float(os.getenv("AI_PARKING_MIN_BOX_AREA", "0.004"))
+IMG_SIZE = int(os.getenv("AI_PARKING_IMG_SIZE", "960"))
+# Lower conf for distant lot cameras; raise via .env if too many false positives.
+CONF = float(os.getenv("AI_PARKING_CONF", "0.28"))
+IOU = float(os.getenv("AI_PARKING_IOU", "0.50"))
+MAX_DET = int(os.getenv("AI_PARKING_MAX_DET", "50"))
+# Tiny-box filter (fraction of infer frame). Keep low so distant cars remain.
+MIN_BOX_AREA_FRAC = float(os.getenv("AI_PARKING_MIN_BOX_AREA", "0.0005"))
+# Infer width independent of MJPEG preview (plates need more pixels).
+INFER_MAX_WIDTH = int(os.getenv("AI_PARKING_INFER_MAX_WIDTH", "1280"))
+# Shared YOLO + ByteTrack persist=True breaks multi-cam; default to predict + IoU IDs.
+USE_ULTRALYTICS_TRACK = os.getenv("AI_PARKING_USE_TRACKER", "0") == "1"
 POST_EVERY_SEC = float(os.getenv("AI_PARKING_POST_EVERY_SEC", "2.0"))
 USE_WEBCAM = os.getenv("AI_USE_WEBCAM", "0") == "1"
 TRACKER = os.getenv("AI_PARKING_TRACKER", "bytetrack.yaml")
-INFER_EVERY_SEC = float(os.getenv("AI_PARKING_INFER_EVERY_SEC", "0.7"))
+INFER_EVERY_SEC = float(os.getenv("AI_PARKING_INFER_EVERY_SEC", "0.6"))
 PREVIEW_MAX_WIDTH = int(os.getenv("AI_PARKING_PREVIEW_MAX_WIDTH", "960"))
 STREAM_TARGET_FPS = float(os.getenv("AI_PARKING_STREAM_FPS", "20"))
 STREAM_JPEG_QUALITY = int(os.getenv("AI_PARKING_STREAM_JPEG_QUALITY", "65"))
@@ -318,8 +324,20 @@ def _dedupe_vehicle_rows(rows: list[dict], iou_thresh: float = 0.65) -> list[dic
     return kept
 
 
-def parse_tracks(result, frame, ocr: PlateOCR, intelligence: ParkingIntelligence):
-    """Build detection list + vehicle dicts with track ids and optional plates."""
+def parse_tracks(
+    result,
+    frame,
+    ocr: PlateOCR,
+    intelligence: ParkingIntelligence,
+    tracker: SimpleIoUTracker | None = None,
+    ocr_frame=None,
+    box_to_ocr_scale: float = 1.0,
+):
+    """Build detection list + vehicle dicts with track ids and optional plates.
+
+    ocr_frame: full-resolution frame for plate OCR (defaults to `frame`).
+    box_to_ocr_scale: multiply infer-frame box coords to map onto ocr_frame.
+    """
     annotated_boxes = []
     detections = []
     vehicles = []
@@ -332,6 +350,8 @@ def parse_tracks(result, frame, ocr: PlateOCR, intelligence: ParkingIntelligence
     fh, fw = frame.shape[:2]
     frame_area = max(1, fh * fw)
     raw_vehicles: list[dict] = []
+    ocr_src = ocr_frame if ocr_frame is not None else frame
+    scale_ocr = float(box_to_ocr_scale) if box_to_ocr_scale else 1.0
 
     for box in boxes:
         x1, y1, x2, y2 = map(int, box.xyxy[0].tolist())
@@ -363,7 +383,14 @@ def parse_tracks(result, frame, ocr: PlateOCR, intelligence: ParkingIntelligence
             "cls_id": cls_id,
         })
 
-    for row in _dedupe_vehicle_rows(raw_vehicles):
+    raw_vehicles = _dedupe_vehicle_rows(raw_vehicles)
+    if tracker is not None:
+        # Prefer stable per-camera IoU IDs (multi-cam safe).
+        for row in raw_vehicles:
+            row["track_id"] = None
+        raw_vehicles = tracker.update(raw_vehicles, now)
+
+    for row in raw_vehicles:
         x1, y1, x2, y2 = row["xyxy"]
         conf = float(row["confidence"])
         name = row["class"]
@@ -373,6 +400,11 @@ def parse_tracks(result, frame, ocr: PlateOCR, intelligence: ParkingIntelligence
         plate_status = "pending"
         ocr_confidence = 0.0
 
+        ox1 = int(x1 * scale_ocr)
+        oy1 = int(y1 * scale_ocr)
+        ox2 = int(x2 * scale_ocr)
+        oy2 = int(y2 * scale_ocr)
+
         if track_id is not None:
             mem = intelligence.touch_track(track_id, now)
             if mem.plate_status == "ok" and mem.plate:
@@ -380,7 +412,7 @@ def parse_tracks(result, frame, ocr: PlateOCR, intelligence: ParkingIntelligence
                 plate_status = "ok"
                 ocr_confidence = mem.ocr_confidence
             elif ocr.enabled and (now - mem.last_ocr_at >= OCR_EVERY_SEC):
-                read = ocr.read_plate(frame, (x1, y1, x2, y2))
+                read = ocr.read_plate(ocr_src, (ox1, oy1, ox2, oy2))
                 mem.last_ocr_at = now
                 mem.apply_ocr_vote(read.plate, read.status, read.confidence)
                 plate = mem.plate
@@ -391,7 +423,7 @@ def parse_tracks(result, frame, ocr: PlateOCR, intelligence: ParkingIntelligence
                 plate_status = mem.plate_status
                 ocr_confidence = mem.ocr_confidence
         elif ocr.enabled:
-            read = ocr.read_plate(frame, (x1, y1, x2, y2))
+            read = ocr.read_plate(ocr_src, (ox1, oy1, ox2, oy2))
             if read.status == "ok" and read.plate:
                 plate = read.plate
                 plate_status = "ok"
@@ -486,18 +518,22 @@ def draw_scene_lite(frame, annotated_boxes, occupied_slots, person_count, vehicl
     annotated = frame  # in-place; caller passes a disposable resize copy
     for x1, y1, x2, y2, name, conf, track_id, plate in annotated_boxes:
         color = CLASS_COLORS.get(name, (0, 220, 0))
-        cv2.rectangle(annotated, (x1, y1), (x2, y2), color, 1)
+        cv2.rectangle(annotated, (x1, y1), (x2, y2), color, 2)
+        label = f"{name[0].upper()}{conf * 100:.0f}"
         if track_id is not None:
-            cv2.putText(
-                annotated,
-                f"#{track_id}",
-                (x1, max(y1 - 6, 16)),
-                cv2.FONT_HERSHEY_SIMPLEX,
-                0.45,
-                color,
-                1,
-                cv2.LINE_AA,
-            )
+            label = f"#{track_id} {label}"
+        if plate:
+            label = f"{label} [{plate}]"
+        cv2.putText(
+            annotated,
+            label,
+            (x1, max(y1 - 6, 16)),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.45,
+            color,
+            1,
+            cv2.LINE_AA,
+        )
     n_occ = len(occupied_slots) if occupied_slots else 0
     summary = f"P:{person_count} V:{vehicle_count} Occ:{n_occ}"
     h = annotated.shape[0]
@@ -772,12 +808,14 @@ class CameraWorker:
         self.model_lock = model_lock
         self.ocr = ocr
         self.intelligence = ParkingIntelligence()
+        self.tracker = SimpleIoUTracker()
         self.scene = SharedSceneState()
         self.state = StreamState()
         self.running = threading.Event()
         self.preview_reader = None
         self.infer_reader = None
         self._shared_reader = False
+        self._last_detect_log = 0.0
         zones_path = Path(config.zones_file)
         if not zones_path.is_file():
             zones_path = BASE_DIR / "zones.json"
@@ -980,27 +1018,40 @@ class CameraWorker:
                 time.sleep(0.05)
                 continue
 
-            # YOLO uses its own downscale; keep infer resolution independent of preview width
-            infer_max = max(self.preview_max_width, 960)
+            # Keep YOLO infer resolution high enough for vehicles + plates.
+            infer_max = max(INFER_MAX_WIDTH, 960)
             infer_frame, scale = resize_for_infer(frame, infer_max)
+            box_to_ocr_scale = (1.0 / scale) if scale and scale > 0 else 1.0
             try:
                 with self.model_lock:
-                    try:
-                        results = self.model.track(
-                            infer_frame,
-                            imgsz=IMG_SIZE,
-                            conf=CONF,
-                            iou=IOU,
-                            max_det=MAX_DET,
-                            classes=DETECT_CLASS_IDS,
-                            device=self.device,
-                            verbose=False,
-                            persist=True,
-                            tracker=TRACKER,
-                        )
-                    except Exception as e:
-                        print(f"[{self.config.camera_id}] track() failed ({e}); using predict()")
-                        results = self.model(
+                    if USE_ULTRALYTICS_TRACK:
+                        try:
+                            results = self.model.track(
+                                infer_frame,
+                                imgsz=IMG_SIZE,
+                                conf=CONF,
+                                iou=IOU,
+                                max_det=MAX_DET,
+                                classes=DETECT_CLASS_IDS,
+                                device=self.device,
+                                verbose=False,
+                                persist=True,
+                                tracker=TRACKER,
+                            )
+                        except Exception as e:
+                            print(f"[{self.config.camera_id}] track() failed ({e}); using predict()")
+                            results = self.model.predict(
+                                infer_frame,
+                                imgsz=IMG_SIZE,
+                                conf=CONF,
+                                iou=IOU,
+                                max_det=MAX_DET,
+                                classes=DETECT_CLASS_IDS,
+                                device=self.device,
+                                verbose=False,
+                            )
+                    else:
+                        results = self.model.predict(
                             infer_frame,
                             imgsz=IMG_SIZE,
                             conf=CONF,
@@ -1015,14 +1066,35 @@ class CameraWorker:
                 time.sleep(0.5)
                 continue
 
+            raw_boxes = 0
+            try:
+                if results and results[0].boxes is not None:
+                    raw_boxes = len(results[0].boxes)
+            except Exception:
+                raw_boxes = 0
+
             annotated_boxes, detections, vehicles, person_count, vehicle_count = parse_tracks(
-                results[0], infer_frame, self.ocr, self.intelligence
+                results[0],
+                infer_frame,
+                self.ocr,
+                self.intelligence,
+                tracker=None if USE_ULTRALYTICS_TRACK else self.tracker,
+                ocr_frame=frame,
+                box_to_ocr_scale=box_to_ocr_scale,
             )
             vehicles = scale_vehicles(vehicles, scale)
             annotated_boxes = scale_annotated_boxes(annotated_boxes, scale)
             slot_statuses, events, occupied_slots, use_poly = self.intelligence.analyze(
                 vehicles, self.zones_holder[0], frame.shape
             )
+
+            if now - self._last_detect_log >= 10.0:
+                plated = sum(1 for d in detections if d.get("plate"))
+                print(
+                    f"[{self.config.camera_id}] detect raw={raw_boxes} vehicles={vehicle_count} "
+                    f"plates={plated} conf>={CONF} infer={infer_frame.shape[1]}x{infer_frame.shape[0]} imgsz={IMG_SIZE}"
+                )
+                self._last_detect_log = now
 
             self.scene.update(
                 annotated_boxes=annotated_boxes,
@@ -1093,8 +1165,10 @@ def main():
     start_stream_server()
     print(f"Posting occupancy to {API_BASE}/api/ai-parking/occupancy")
     print(
-        f"Stream {STREAM_TARGET_FPS:.0f} fps @ {PREVIEW_MAX_WIDTH}px | "
-        f"inference every {INFER_EVERY_SEC}s | OCR={'on' if ocr.enabled else 'off'}"
+        f"Stream {STREAM_TARGET_FPS:.0f} fps @ preview {PREVIEW_MAX_WIDTH}px | "
+        f"infer ≤{INFER_MAX_WIDTH}px imgsz={IMG_SIZE} conf={CONF} | "
+        f"every {INFER_EVERY_SEC}s | OCR={'on' if ocr.enabled else 'off'} | "
+        f"tracker={'ultralytics' if USE_ULTRALYTICS_TRACK else 'iou'}"
     )
 
     try:

@@ -14,9 +14,68 @@ OVERTIME_MINUTES = float(os.getenv("AI_PARKING_OVERTIME_MINUTES", "30"))
 DEBOUNCE_MINUTES = float(os.getenv("AI_PARKING_VIOLATION_DEBOUNCE_MINUTES", "10"))
 IOU_THRESHOLD = float(os.getenv("AI_PARKING_ZONE_IOU", "0.12"))
 # Keep lost tracks briefly so ByteTrack ID flicker does not wipe plate memory / re-OCR.
-TRACK_HOLD_SEC = float(os.getenv("AI_PARKING_TRACK_HOLD_SEC", "2.5"))
+TRACK_HOLD_SEC = float(os.getenv("AI_PARKING_TRACK_HOLD_SEC", "3.0"))
 # Require this many matching OCR reads before locking a plate on a track.
-PLATE_VOTE_NEEDED = int(os.getenv("AI_PARKING_PLATE_VOTE_NEEDED", "2"))
+PLATE_VOTE_NEEDED = int(os.getenv("AI_PARKING_PLATE_VOTE_NEEDED", "1"))
+TRACK_MATCH_IOU = float(os.getenv("AI_PARKING_TRACK_MATCH_IOU", "0.25"))
+
+
+def _iou_xyxy(a, b) -> float:
+    ax1, ay1, ax2, ay2 = a
+    bx1, by1, bx2, by2 = b
+    ix1, iy1 = max(ax1, bx1), max(ay1, by1)
+    ix2, iy2 = min(ax2, bx2), min(ay2, by2)
+    iw, ih = max(0, ix2 - ix1), max(0, iy2 - iy1)
+    inter = iw * ih
+    if inter <= 0:
+        return 0.0
+    area_a = max(0, ax2 - ax1) * max(0, ay2 - ay1)
+    area_b = max(0, bx2 - bx1) * max(0, by2 - by1)
+    union = area_a + area_b - inter
+    return inter / union if union > 0 else 0.0
+
+
+class SimpleIoUTracker:
+    """
+    Per-camera IoU tracker. Avoids Ultralytics ByteTrack persist=True state
+    being shared across cameras on one YOLO model instance.
+    """
+
+    def __init__(self, iou_thresh: float = TRACK_MATCH_IOU, max_age_sec: float = TRACK_HOLD_SEC):
+        self.iou_thresh = iou_thresh
+        self.max_age_sec = max_age_sec
+        self._next_id = 1
+        self._boxes: dict[int, tuple] = {}
+        self._last_seen: dict[int, float] = {}
+
+    def update(self, detections: list[dict[str, Any]], now: float | None = None) -> list[dict[str, Any]]:
+        now = now if now is not None else time.time()
+        # Drop stale
+        stale = [tid for tid, ts in self._last_seen.items() if now - ts > self.max_age_sec]
+        for tid in stale:
+            self._boxes.pop(tid, None)
+            self._last_seen.pop(tid, None)
+
+        used: set[int] = set()
+        for det in detections:
+            xyxy = det["xyxy"]
+            best_id = None
+            best_iou = self.iou_thresh
+            for tid, prev in self._boxes.items():
+                if tid in used:
+                    continue
+                iou = _iou_xyxy(xyxy, prev)
+                if iou >= best_iou:
+                    best_iou = iou
+                    best_id = tid
+            if best_id is None:
+                best_id = self._next_id
+                self._next_id += 1
+            used.add(best_id)
+            self._boxes[best_id] = xyxy
+            self._last_seen[best_id] = now
+            det["track_id"] = best_id
+        return detections
 
 
 @dataclass
