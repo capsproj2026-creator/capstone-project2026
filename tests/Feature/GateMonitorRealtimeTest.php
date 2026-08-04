@@ -100,6 +100,6 @@ class GateMonitorRealtimeTest extends TestCase
         $this->assertStringContainsString(".private('gate.scans')", $html);
         $this->assertStringContainsString('whenEchoReady', $html);
         $this->assertStringNotContainsString("setInterval(() => fetchResults()", $html);
-        $this->assertStringNotContainsString('/access-logs/events', $html);
+        $this->assertStringNotContainsString('setInterval(fetchResults', $html);
     }
 }

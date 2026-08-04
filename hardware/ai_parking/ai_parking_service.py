@@ -369,8 +369,22 @@ def draw_scene(frame, annotated_boxes, zones_data, occupied_slots, active_events
 
     mode = "slots" if use_poly else "count-fallback"
     summary = f"People: {person_count} | Vehicles: {vehicle_count} | Mode: {mode}"
-    cv2.rectangle(annotated, (8, 8), (min(8 + 10 * len(summary) + 24, annotated.shape[1] - 8), 42), (0, 0, 0), -1)
-    cv2.putText(annotated, summary, (16, 34), cv2.FONT_HERSHEY_SIMPLEX, 0.65, (0, 255, 0), 2, cv2.LINE_AA)
+    # Bottom-left so we do not cover the camera OSD date/time (usually top of frame).
+    h, w = annotated.shape[:2]
+    bar_top = h - 40
+    bar_bottom = h - 8
+    bar_right = min(w - 8, 16 + int(len(summary) * 11))
+    cv2.rectangle(annotated, (8, bar_top), (bar_right, bar_bottom), (0, 0, 0), -1)
+    cv2.putText(
+        annotated,
+        summary,
+        (16, h - 16),
+        cv2.FONT_HERSHEY_SIMPLEX,
+        0.65,
+        (0, 255, 0),
+        2,
+        cv2.LINE_AA,
+    )
 
     y = 70
     for evt in active_events[:6]:
@@ -402,7 +416,17 @@ def draw_scene_lite(frame, annotated_boxes, occupied_slots, person_count, vehicl
             )
     n_occ = len(occupied_slots) if occupied_slots else 0
     summary = f"P:{person_count} V:{vehicle_count} Occ:{n_occ}"
-    cv2.putText(annotated, summary, (12, 28), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2, cv2.LINE_AA)
+    h = annotated.shape[0]
+    cv2.putText(
+        annotated,
+        summary,
+        (12, h - 12),
+        cv2.FONT_HERSHEY_SIMPLEX,
+        0.6,
+        (0, 255, 0),
+        2,
+        cv2.LINE_AA,
+    )
     return annotated
 
 

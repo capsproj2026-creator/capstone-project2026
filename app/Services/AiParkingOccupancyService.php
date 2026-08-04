@@ -153,7 +153,9 @@ class AiParkingOccupancyService
             $key = strtoupper((string) $slot->slot_number);
             $isOcc = $byNumber[$key] ?? false;
             if ($isOcc) {
-                $slot->update(['status' => 'Occupied']);
+                if (($slot->status ?? '') !== 'Occupied') {
+                    $slot->update(['status' => 'Occupied']);
+                }
                 $occupied++;
                 $details[] = [
                     'slot_number' => $slot->slot_number,
@@ -161,10 +163,12 @@ class AiParkingOccupancyService
                     'occupied' => true,
                 ];
             } else {
-                $slot->update([
-                    'status' => 'Available',
-                    'parked_user_id' => null,
-                ]);
+                if (($slot->status ?? '') !== 'Available' || $slot->parked_user_id !== null) {
+                    $slot->update([
+                        'status' => 'Available',
+                        'parked_user_id' => null,
+                    ]);
+                }
                 $available++;
                 $details[] = [
                     'slot_number' => $slot->slot_number,
@@ -206,7 +210,9 @@ class AiParkingOccupancyService
 
         foreach ($updatable as $index => $slot) {
             if ($index < $occupiedTarget) {
-                $slot->update(['status' => 'Occupied']);
+                if (($slot->status ?? '') !== 'Occupied') {
+                    $slot->update(['status' => 'Occupied']);
+                }
                 $occupied++;
                 $details[] = [
                     'slot_number' => $slot->slot_number,
@@ -214,10 +220,12 @@ class AiParkingOccupancyService
                     'occupied' => true,
                 ];
             } else {
-                $slot->update([
-                    'status' => 'Available',
-                    'parked_user_id' => null,
-                ]);
+                if (($slot->status ?? '') !== 'Available' || $slot->parked_user_id !== null) {
+                    $slot->update([
+                        'status' => 'Available',
+                        'parked_user_id' => null,
+                    ]);
+                }
                 $available++;
                 $details[] = [
                     'slot_number' => $slot->slot_number,
@@ -286,6 +294,18 @@ class AiParkingOccupancyService
      */
     private function enrichWithOwners(array $rows): array
     {
+        $hasPlate = false;
+        foreach ($rows as $row) {
+            if (is_array($row) && trim((string) ($row['plate'] ?? '')) !== '') {
+                $hasPlate = true;
+                break;
+            }
+        }
+
+        if ($hasPlate) {
+            PlateLookup::warmIndex();
+        }
+
         return array_map(function ($row) {
             if (! is_array($row)) {
                 return $row;
@@ -328,11 +348,10 @@ class AiParkingOccupancyService
             ->orderBy('area_id')
             ->orderBy('slot_number');
 
-        if ($zoneFilter && $zoneFilter > 0) {
-            $slotsQuery->where('area_id', $zoneFilter);
-        }
-
-        $slots = $slotsQuery->get();
+        $allSlots = $slotsQuery->get();
+        $slots = ($zoneFilter && $zoneFilter > 0)
+            ? $allSlots->where('area_id', $zoneFilter)->values()
+            : $allSlots;
 
         $stats = [
             'total' => $slots->count(),
@@ -344,8 +363,10 @@ class AiParkingOccupancyService
 
         $occupancyRate = $stats['total'] > 0 ? (int) round(($stats['occ'] / $stats['total']) * 100) : 0;
 
-        $zoneStats = $zones->map(function (ParkingArea $area) use ($monitoredIds) {
-            $zoneSlots = ParkingSlot::query()->where('area_id', $area->id)->orderBy('slot_number')->get(['id', 'slot_number', 'status']);
+        $slotsByArea = $allSlots->groupBy(fn (ParkingSlot $slot) => (int) $slot->area_id);
+
+        $zoneStats = $zones->map(function (ParkingArea $area) use ($monitoredIds, $slotsByArea) {
+            $zoneSlots = $slotsByArea->get((int) $area->id, collect());
 
             return [
                 'id' => $area->id,

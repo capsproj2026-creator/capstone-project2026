@@ -1,200 +1,118 @@
-# Smart Campus VMS (Laravel + MongoDB)
+# Smart Campus VMS
 
-Vehicle Management System for CSPC, built with **Laravel 12** and **MongoDB** as the primary database.
-
-Reference SQL schema (for documentation / legacy import): [`capstone.sql`](capstone.sql)  
-Original plain PHP app: [`legacy-php/`](legacy-php/)
+CSPC Vehicle Management System — **Laravel 12** + **MongoDB**, with ESP32 RFID gates and optional YOLOv9 AI parking.
 
 ## Requirements
 
-- PHP 8.2+ with **mongodb** extension enabled
-- Composer
-- MongoDB Server 6.0+ (local, Atlas, or Docker)
-- Apache/Nginx, or `php artisan serve`
+- PHP 8.2+ with the `mongodb` extension (`php -m` should list `mongodb`)
+- Composer, Node.js / npm
+- MongoDB (local or Atlas)
+- Windows: XAMPP PHP is fine if the MongoDB DLL is enabled in `php.ini`
 
-## 1. Enable PHP MongoDB extension (XAMPP)
-
-1. Download the matching `php_mongodb.dll` for your PHP version from [PECL](https://pecl.php.net/package/mongodb) or use MongoDB’s Windows install guide.
-2. Place the DLL in `C:\xampp\php\ext\`
-3. Edit `C:\xampp\php\php.ini` and add:
-   ```ini
-   extension=mongodb
-   ```
-4. Restart Apache and verify:
-   ```bash
-   php -m | findstr mongodb
-   ```
-
-## 2. Install dependencies
+## 1. First-time setup
 
 ```bash
 composer install
+npm install
+copy .env.example .env
+php artisan key:generate
 php artisan storage:link
+php artisan db:seed
+npm run build
 ```
 
-## 3. Configure MongoDB
+Edit **`.env`** and set at least:
 
-In **`.env`** (already set for local MongoDB):
+| Variable | Purpose |
+|----------|---------|
+| `MONGODB_URI` / `MONGODB_DATABASE` | Database |
+| `RFID_API_TOKEN` | ESP32 gate API |
+| `REVERB_*` / `VITE_REVERB_*` | Live Gate realtime |
+| `AI_PARKING_*` / `AI_CAMERA_*` | AI parking (optional) |
 
-```env
-DB_CONNECTION=mongodb
-MONGODB_URI=mongodb://127.0.0.1:27017
-MONGODB_DATABASE=capstone
-```
-
-For **MongoDB Atlas**, use your connection string:
-
-```env
-MONGODB_URI=mongodb+srv://user:pass@cluster.mongodb.net/?retryWrites=true&w=majority
-MONGODB_DATABASE=capstone
-```
-
-Connection settings live in **`config/database.php`** under the `mongodb` key.
-
-**Atlas network access (required)** — in [MongoDB Atlas](https://cloud.mongodb.com) → your cluster → **Network Access**, add your current IP or `0.0.0.0/0` for development. A blocked IP often shows as `TLS handshake failed` / `tlsv1 alert internal error`.
-
-**Atlas TLS on Windows (XAMPP)** — if connection still fails after whitelisting your IP:
-
-```env
-MONGODB_AUTH_DATABASE=admin
-MONGODB_TLS_ALLOW_INVALID=true
-```
-
-Use `MONGODB_TLS_ALLOW_INVALID` only for local development. Prefer updating PHP/OpenSSL and the `mongodb` PECL extension, or use a local MongoDB instance.
-
-Verify connectivity:
+Check MongoDB:
 
 ```bash
 php scripts/mongo_ping.php
 ```
 
-Remove unused legacy collections (e.g. duplicate `offense_sanctions`):
+## 2. Start the system (every demo / day)
 
-```bash
-php artisan capstone:prune-legacy-mongo
-php artisan capstone:prune-legacy-mongo --dry-run   # preview only
+**Easiest (Windows)** — one script opens Laravel + Reverb + Vite + **YOLOv9 AI parking**:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\start-system.ps1
 ```
 
-## 4. Seed the database
+Then open [http://127.0.0.1:8000](http://127.0.0.1:8000).
 
-This loads roles, departments, parking areas/slots, rules, violations metadata, and a default admin user:
+| Process | Command | Purpose |
+|---------|---------|---------|
+| Laravel | `php artisan serve --host=0.0.0.0 --port=8000` | Website + API (LAN for ESP32) |
+| Reverb | `php artisan reverb:start` | Live Gate & Access Records realtime |
+| Vite | `npm run dev` *(or `npm run build` once)* | Frontend / Echo |
+| YOLOv9 | `.\scripts\start-ai-parking.ps1` | AI cameras, occupancy, plate OCR |
 
-```bash
-php artisan db:seed
+**Useful flags**
+
+```powershell
+# Web stack only (no cameras)
+powershell -ExecutionPolicy Bypass -File .\scripts\start-system.ps1 -SkipAi
+
+# Skip Vite if you already ran npm run build
+powershell -ExecutionPolicy Bypass -File .\scripts\start-system.ps1 -SkipVite
+
+# YOLOv9 alone (if Laravel is already running)
+powershell -ExecutionPolicy Bypass -File .\scripts\start-ai-parking.ps1
 ```
 
-**Test logins (development)**
-
-| Field    | Value            |
-|----------|------------------|
-| Email    | `admin@my.cspc.edu.ph` |
-| Password | `admin123`       |
-
-Additional test users can be created quickly (without running the full seeder) by running:
+Or from Composer (Laravel + Reverb + Vite in one terminal — start AI separately if needed):
 
 ```bash
-php scripts/ensure_test_users.php
+composer run dev
+powershell -ExecutionPolicy Bypass -File .\scripts\start-ai-parking.ps1
 ```
 
-| Role    | Email              | Password       |
-|---------|---------------------|----------------|
-| Guard   | `guard@my.cspc.edu.ph`    | `password123`  |
+Plate → owner names need `AI_PARKING_OCR_ENABLED=1` in `.env`. Details: [`hardware/ai_parking/README.md`](hardware/ai_parking/README.md).
 
-## 5. Run the application
+### Test accounts
 
-```bash
-php artisan serve
-```
+| Role | Email | Password |
+|------|--------|----------|
+| Admin | `admin@my.cspc.edu.ph` | `admin123` |
+| Guard | `guard@my.cspc.edu.ph` | `password123` |
 
-Open [http://127.0.0.1:8000](http://127.0.0.1:8000)
+Quick recreate test users: `php scripts/ensure_test_users.php`
 
-For XAMPP Apache, point the document root to the `public/` folder.
+### Portals
 
-### Realtime RFID (Live Gate + Access Records)
+| Role | URL |
+|------|-----|
+| Admin | `/admin` |
+| Guard | `/guard` |
+| Student / Staff | `/user` |
 
-Live Gate and Access Records use **Laravel Reverb** + Echo (not HTTP polling). With `BROADCAST_CONNECTION=reverb` and `REVERB_*` / `VITE_REVERB_*` set in `.env`:
+## 3. Hardware tips
 
-```bash
-# Terminal 1 — app (0.0.0.0 so ESP32 on LAN can reach it)
-php artisan serve --host=0.0.0.0 --port=8000
+**RFID (ESP32)**  
+- Flash `hardware/esp32_rfid_gate/` (Entry) or `hardware/esp32_rfid_gate_exit/` (Exit).  
+- Set `API_BASE` to this PC’s Wi‑Fi IP, e.g. `http://192.168.1.104:8000` (not `localhost`).  
+- Match `RFID_API_TOKEN` with `.env`.  
+- Laravel must use `--host=0.0.0.0` so the board can connect.
 
-# Terminal 2 — WebSocket server (Live Gate / Access Records UI)
-php artisan reverb:start
+**AI parking**  
+- Details: [`hardware/ai_parking/README.md`](hardware/ai_parking/README.md)  
+- Owner names on the monitor need `AI_PARKING_OCR_ENABLED=1`.
 
-# Terminal 3 — Vite (dev) or build once for production assets
-npm run dev
-# or: npm run build
-```
+## 4. Optional extras
 
-Guard/Admin browsers subscribe to the private `gate.scans` channel after RFID (or manual) scans.
-
-## Roles & routes
-
-| Role    | URL prefix | Dashboard        |
-|---------|------------|------------------|
-| Admin   | `/admin`   | Registrations, users, RFID, parking, settings |
-| Guard   | `/guard`   | Violations, parking, gate tools |
-| Student | `/user`    | Notifications, parking info |
-| Staff   | `/user`    | Same as Student |
-
-Public: `/` (home), `/login`, `/register`
-
-## MongoDB collections
-
-Data is stored in collections matching the original MySQL tables, for example:
-
-- `users`, `user_roles`, `departments`, `vehicles`
-- `notifications`, `gate_logs`, `violations_log`
-- `parking_areas`, `parking_slots`, `parking_rules`
-- `general_informations`, `violation_types`, etc.
-
-Numeric `id` fields are auto-assigned via a `counters` collection (same behavior as auto-increment in SQL).
-
-## Converting `capstone.sql` to MongoDB
-
-MySQL cannot load a `.sql` file directly into MongoDB. Use this two-step flow:
-
-### Step 1 — Import the SQL file into MySQL (one time)
-
-Using **phpMyAdmin** (XAMPP):
-
-1. Create database `capstone` (if it does not exist).
-2. Select the `capstone` database → **Import** → choose `capstone.sql` → **Go**.
-
-Or from the command line:
+**Import old MySQL dump into MongoDB** (only if you still use `capstone.sql`):
 
 ```bash
-mysql -u root -e "CREATE DATABASE IF NOT EXISTS capstone;"
-mysql -u root capstone < capstone.sql
-```
-
-### Step 2 — Copy MySQL data into MongoDB
-
-Ensure MongoDB is running and `MONGODB_*` is set in `.env`. The MySQL source uses `MYSQL_IMPORT_*` (defaults match XAMPP).
-
-```bash
+# Load SQL into MySQL first, then:
 php artisan capstone:import-mysql --fresh
 ```
 
-| Option | Description |
-|--------|-------------|
-| `--fresh` | Drops MongoDB collections before import (recommended on first run) |
-| `--chunk=500` | Batch size for large tables like `parking_slots` |
+Otherwise `php artisan db:seed` is enough for a fresh demo database.
 
-This preserves numeric `id` values and relationships from your SQL dump.
-
-### Alternative: seed without MySQL
-
-If you only need reference data (no SQL dump rows), skip MySQL and run:
-
-```bash
-php artisan db:seed
-```
-
-That uses `CapstoneSeeder` with the same structure as `capstone.sql`, plus a default admin user.
-
-## Notes
-
-- `capstone.sql` is kept for reference and capstone documentation; it is **not** imported automatically.
-- File uploads: `storage/app/public/uploads/` → `public/storage` after `php artisan storage:link`.
-- Gate log `daily_log_id` reset logic (formerly a MySQL trigger) runs in `App\Observers\GateLogObserver`.
+**XAMPP Apache** instead of `artisan serve`: point the vhost document root to `public/`. Still run Reverb (and AI) in other terminals.

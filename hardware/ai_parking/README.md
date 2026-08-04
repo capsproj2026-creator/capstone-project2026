@@ -94,8 +94,11 @@ UI: `/admin/live-cameras`, `/guard/live-cameras`, `/guard/ai-parking`
 | `AI_PARKING_AREA_ID` | `19` | AI Test Lot |
 | `AI_PARKING_OVERTIME_MINUTES` | `30` | Slot dwell before overtime |
 | `AI_PARKING_VIOLATION_DEBOUNCE_MINUTES` | `10` | Python + Laravel debounce |
-| `AI_PARKING_OCR_ENABLED` | `1` | EasyOCR on/off |
+| `AI_PARKING_OCR_ENABLED` | `0` in code / set `1` in `.env` | EasyOCR on/off (enable for plate → owner names) |
 | `AI_PARKING_OCR_EVERY_SEC` | `8` | OCR interval per track |
+| `AI_PARKING_INFER_EVERY_SEC` | `0.8` | YOLO inference cadence (not every camera frame) |
+
+YOLO does **not** run on every frame — about every `AI_PARKING_INFER_EVERY_SEC` seconds. Plate OCR runs about every `AI_PARKING_OCR_EVERY_SEC` seconds per tracked vehicle.
 
 ## Event → violation mapping
 

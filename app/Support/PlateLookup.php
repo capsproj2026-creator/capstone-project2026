@@ -115,6 +115,11 @@ class PlateLookup
         });
     }
 
+    public static function warmIndex(): void
+    {
+        self::normalizedIndex();
+    }
+
     public static function forgetIndex(): void
     {
         Cache::forget('plate_lookup:normalized_index');

@@ -136,7 +136,6 @@ Route::prefix('guard')->middleware(['auth', 'verified', 'granted', 'no.cache', '
     Route::get('/ai-parking/stream/{camera?}', [LiveCameraController::class, 'stream'])->name('ai-parking.stream');
     Route::get('/monitor', [UserMonitorController::class, 'index'])->name('monitor');
     Route::get('/gate', [GateMonitorController::class, 'index'])->name('gate');
-    Route::get('/gate/events', [GateMonitorController::class, 'events'])->name('gate.events');
     Route::post('/gate/scan', [GateMonitorController::class, 'scan'])->middleware('throttle:30,1')->name('gate.scan');
     Route::get('/notifications', [GuardNotificationController::class, 'index'])->name('notifications');
     Route::post('/notifications/{action}', [GuardNotificationController::class, 'action'])->name('notifications.action');

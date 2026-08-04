@@ -108,6 +108,7 @@
     const allTones = Object.values(tones).flat();
 
     const refresh = async () => {
+        if (document.hidden) return;
         try {
             const response = await fetch(statusUrl, { headers: { Accept: 'application/json' }, cache: 'no-store', credentials: 'same-origin' });
             if (!response.ok) return;
@@ -133,7 +134,7 @@
     };
 
     refresh();
-    window.setInterval(refresh, 2500);
+    window.setInterval(refresh, 5000);
     document.addEventListener('visibilitychange', () => { if (!document.hidden) refresh(); });
 })();
 </script>

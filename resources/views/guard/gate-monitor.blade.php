@@ -368,8 +368,16 @@
         const handleScan = (scan) => {
             if (!scan?.id) return;
             knownLatestId = String(scan.id);
-            if (entries && scan.today_entries != null) entries.textContent = scan.today_entries;
-            if (exits && scan.today_exits != null) exits.textContent = scan.today_exits;
+            if (entries && scan.today_entries != null) {
+                entries.textContent = scan.today_entries;
+            } else if (entries && scan.granted && scan.action === 'Entry') {
+                entries.textContent = String(Number(entries.textContent || 0) + 1);
+            }
+            if (exits && scan.today_exits != null) {
+                exits.textContent = scan.today_exits;
+            } else if (exits && scan.granted && scan.action === 'Exit') {
+                exits.textContent = String(Number(exits.textContent || 0) + 1);
+            }
             showScanCard(scan);
             setConnectionState(true, scan.time || null);
         };

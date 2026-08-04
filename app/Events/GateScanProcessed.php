@@ -36,7 +36,7 @@ class GateScanProcessed implements ShouldBroadcastNow
                     return;
                 }
 
-                event(new self(GateScanPresenter::fromLog($log)));
+                event(new self(GateScanPresenter::fromLog($log, withStats: false)));
             } catch (\Throwable $e) {
                 report($e);
             }

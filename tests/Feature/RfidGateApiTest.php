@@ -128,9 +128,7 @@ class RfidGateApiTest extends TestCase
                 && $event->scan['result'] === RfidAccessService::STATUS_GRANTED
                 && $event->scan['name'] === 'RFID Test Owner'
                 && $event->scan['action'] === 'Entry'
-                && $event->scan['gate_id'] === 'GATE-IN-1'
-                && array_key_exists('today_entries', $event->scan)
-                && array_key_exists('today_exits', $event->scan);
+                && $event->scan['gate_id'] === 'GATE-IN-1';
         });
 
         $this->withTokenHeader()
@@ -159,13 +157,9 @@ class RfidGateApiTest extends TestCase
         $this->assertSame('Entry', $grantedLog->action);
     }
 
-    public function test_guard_live_monitor_feed_contains_rfid_decision(): void
+    public function test_rfid_scan_payload_matches_live_gate_presenter(): void
     {
-        $guard = User::query()->where('email', 'guard@my.cspc.edu.ph')->first();
-
-        if (! $guard) {
-            $this->markTestSkipped('Run php artisan db:seed — guard user not found.');
-        }
+        Event::fake([GateScanProcessed::class]);
 
         $this->withTokenHeader()
             ->postJson('/api/rfid/scan', [
@@ -175,16 +169,13 @@ class RfidGateApiTest extends TestCase
             ])
             ->assertOk();
 
-        $this->actingAs($guard)
-            ->getJson(route('guard.gate.events'))
-            ->assertOk()
-            ->assertJsonFragment([
-                'name' => 'RFID Test Owner',
-                'action' => 'Entry',
-                'result' => RfidAccessService::STATUS_GRANTED,
-                'gate_id' => 'GATE-IN-1',
-                'rfid_uid' => '••••DDEE',
-            ]);
+        Event::assertDispatched(GateScanProcessed::class, function (GateScanProcessed $event) {
+            return $event->scan['name'] === 'RFID Test Owner'
+                && $event->scan['action'] === 'Entry'
+                && $event->scan['result'] === RfidAccessService::STATUS_GRANTED
+                && $event->scan['gate_id'] === 'GATE-IN-1'
+                && $event->scan['rfid_uid'] === '••••DDEE';
+        });
     }
 
     public function test_exit_and_already_outside(): void

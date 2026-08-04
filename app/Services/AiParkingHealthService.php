@@ -68,7 +68,7 @@ class AiParkingHealthService
 
         $cacheKey = 'ai_parking:stream_reachable:'.md5($url);
 
-        return (bool) Cache::remember($cacheKey, now()->addSeconds(10), function () use ($url) {
+        return (bool) Cache::remember($cacheKey, now()->addSeconds(45), function () use ($url) {
             try {
                 $response = Http::timeout(3)
                     ->withOptions(['stream' => true, 'read_timeout' => 3])

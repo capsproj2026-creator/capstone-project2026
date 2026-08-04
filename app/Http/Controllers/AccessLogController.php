@@ -36,20 +36,6 @@ class AccessLogController extends Controller
             $resultFilter = 'all';
         }
 
-        $query = GateLog::query()
-            ->with(['user.role'])
-            ->orderByDesc('timestamp');
-
-        $this->applyFilters(
-            $query,
-            $search,
-            $typeFilter,
-            $direction,
-            $resultFilter,
-            $request->date('date_from'),
-            $request->date('date_to')
-        );
-
         $baseStats = GateLog::query();
         $this->applyFilters(
             $baseStats,
@@ -80,7 +66,11 @@ class AccessLogController extends Controller
             'access_denied' => (clone $baseStats)->where($deniedScope)->count(),
         ];
 
-        $logs = $query->paginate(30)->withQueryString();
+        $logs = (clone $baseStats)
+            ->with(['user.role'])
+            ->orderByDesc('timestamp')
+            ->paginate(30)
+            ->withQueryString();
 
         $recentDenied = GateLog::query()
             ->with(['user.role'])
@@ -105,8 +95,8 @@ class AccessLogController extends Controller
         ]);
     }
 
-    /**
-     * Lightweight poll endpoint so Access Logs stay in sync with Live Gate Monitor.
+        /**
+     * AJAX search/filter for Access Logs (not continuous polling).
      */
     public function events(Request $request): JsonResponse
     {
@@ -130,37 +120,6 @@ class AccessLogController extends Controller
             $resultFilter = 'all';
         }
 
-        $query = GateLog::query()
-            ->with(['user.role'])
-            ->orderByDesc('timestamp');
-
-        $this->applyFilters(
-            $query,
-            $search,
-            $typeFilter,
-            $direction,
-            $resultFilter,
-            $request->date('date_from'),
-            $request->date('date_to')
-        );
-
-        $newest = (clone $query)->first();
-
-        $deniedScope = function (Builder $q) {
-            $q->whereNotNull('result')
-                ->where('result', '!=', '')
-                ->whereNotIn('result', ['Access Granted', 'Granted']);
-        };
-
-        $recentDenied = GateLog::query()
-            ->with(['user.role'])
-            ->where($deniedScope)
-            ->orderByDesc('timestamp')
-            ->limit(5)
-            ->get()
-            ->map(fn (GateLog $log) => $this->serializeAccessLog($log))
-            ->values();
-
         $baseStats = GateLog::query();
         $this->applyFilters(
             $baseStats,
@@ -178,16 +137,44 @@ class AccessLogController extends Controller
                 ->orWhereIn('result', ['Access Granted', 'Granted']);
         };
 
+        $deniedScope = function (Builder $q) {
+            $q->whereNotNull('result')
+                ->where('result', '!=', '')
+                ->whereNotIn('result', ['Access Granted', 'Granted']);
+        };
+
+        $total = (clone $baseStats)->count();
+        $stats = [
+            'total' => $total,
+            'entries_granted' => (clone $baseStats)->where('action', 'Entry')->where($grantedScope)->count(),
+            'exits_granted' => (clone $baseStats)->where('action', 'Exit')->where($grantedScope)->count(),
+            'access_denied' => (clone $baseStats)->where($deniedScope)->count(),
+        ];
+
+        $logs = (clone $baseStats)
+            ->with(['user.role'])
+            ->orderByDesc('timestamp')
+            ->limit(30)
+            ->get()
+            ->map(fn (GateLog $log) => $this->serializeAccessLog($log))
+            ->values();
+
+        $newest = $logs->first();
+
+        $recentDenied = GateLog::query()
+            ->with(['user.role'])
+            ->where($deniedScope)
+            ->orderByDesc('timestamp')
+            ->limit(5)
+            ->get()
+            ->map(fn (GateLog $log) => $this->serializeAccessLog($log))
+            ->values();
+
         return response()->json([
-            'newest_id' => $newest ? (string) $newest->getKey() : null,
-            'total' => (clone $baseStats)->count(),
-            'stats' => [
-                'total' => (clone $baseStats)->count(),
-                'entries_granted' => (clone $baseStats)->where('action', 'Entry')->where($grantedScope)->count(),
-                'exits_granted' => (clone $baseStats)->where('action', 'Exit')->where($grantedScope)->count(),
-                'access_denied' => (clone $baseStats)->where($deniedScope)->count(),
-            ],
-            'logs' => $query->limit(30)->get()->map(fn (GateLog $log) => $this->serializeAccessLog($log))->values(),
+            'newest_id' => $newest['id'] ?? null,
+            'total' => $total,
+            'stats' => $stats,
+            'logs' => $logs,
             'recent_denied' => $recentDenied,
             'updated_at' => now()->format('h:i:s A'),
         ]);

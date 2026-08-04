@@ -5,8 +5,6 @@ namespace App\Http\Controllers\Guard;
 use App\Http\Controllers\Controller;
 use App\Models\GateLog;
 use App\Services\GateLogService;
-use App\Support\GateScanPresenter;
-use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
@@ -26,30 +24,6 @@ class GateMonitorController extends Controller
             'todayEntries' => app(GateLogService::class)->todayCount('Entry'),
             'todayExits' => app(GateLogService::class)->todayCount('Exit'),
             'filterAction' => $action,
-        ]);
-    }
-
-    public function events(Request $request, GateLogService $gateLogs): JsonResponse
-    {
-        $action = $this->actionFromRequest($request);
-
-        $latestLog = $this->filteredLogs($action, 1)->first();
-
-        $logs = $this->filteredLogs($action)
-            ->map(fn (GateLog $log): array => $this->serializeLog($log))
-            ->values();
-
-        return response()->json([
-            'logs' => $logs,
-            'latest' => $latestLog ? $this->serializeLog($latestLog) : null,
-            'newest_id' => $latestLog ? (string) $latestLog->getKey() : null,
-            'filters' => [
-                'action' => $action,
-            ],
-            'today_entries' => $gateLogs->todayCount('Entry'),
-            'today_exits' => $gateLogs->todayCount('Exit'),
-            'updated_at' => now()->format('h:i:s A'),
-            'server_time' => now()->format('g:i:s A'),
         ]);
     }
 
@@ -110,13 +84,5 @@ class GateMonitorController extends Controller
         }
 
         return $query->limit($limit)->get();
-    }
-
-    /**
-     * @return array<string, mixed>
-     */
-    private function serializeLog(GateLog $log): array
-    {
-        return GateScanPresenter::fromLog($log, withStats: false);
     }
 }
