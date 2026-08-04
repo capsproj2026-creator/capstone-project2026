@@ -96,15 +96,16 @@ UI: `/admin/live-cameras`, `/guard/live-cameras`, `/guard/ai-parking`
 | `AI_PARKING_VIOLATION_DEBOUNCE_MINUTES` | `10` | Python + Laravel debounce |
 | `AI_PARKING_OCR_ENABLED` | `0` in code / set `1` in `.env` | EasyOCR on/off (enable for plate → owner names) |
 | `AI_PARKING_CONF` | `0.28` | YOLO confidence (lower = more detections) |
-| `AI_PARKING_INFER_MAX_WIDTH` | `1280` | Max width fed to YOLO (plates need detail) |
-| `AI_PARKING_IMG_SIZE` | `960` | YOLO imgsz |
+| `AI_PARKING_INFER_MAX_WIDTH` | `960` | Max width fed to YOLO (live boxes) |
+| `AI_PARKING_IMG_SIZE` | `640` | YOLO imgsz (lower = smoother realtime on CPU) |
 | `AI_PARKING_MIN_BOX_AREA` | `0.0005` | Drop tiny boxes only |
 | `AI_PARKING_USE_TRACKER` | `0` | `0` = per-cam IoU IDs (multi-cam safe) |
-| `AI_PARKING_OCR_EVERY_SEC` | `3` | OCR interval per track |
+| `AI_PARKING_BOX_HOLD_SEC` | `0.45` | Hold boxes briefly to reduce flicker |
+| `AI_PARKING_OCR_EVERY_SEC` | `3` | OCR interval per track (async, non-blocking) |
 | `AI_PARKING_OCR_MIN_CONF` | `0.35` | Min OCR conf to accept a plate |
 | `AI_PARKING_PLATE_VOTE_NEEDED` | `1` | Matching OCR reads before locking plate |
 | `AI_PARKING_TRACK_HOLD_SEC` | `3.0` | Keep lost tracks briefly (less re-OCR flicker) |
-| `AI_PARKING_INFER_EVERY_SEC` | `0.6` | YOLO inference cadence (not every camera frame) |
+| `AI_PARKING_INFER_EVERY_SEC` | `0.30` | YOLO cadence target |
 
 YOLO does **not** run on every frame — about every `AI_PARKING_INFER_EVERY_SEC` seconds. Plate OCR runs about every `AI_PARKING_OCR_EVERY_SEC` seconds per tracked vehicle, and only until a plate is locked with enough votes.
 

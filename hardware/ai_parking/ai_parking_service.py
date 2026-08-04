@@ -36,7 +36,7 @@ from load_env import load_project_env
 load_project_env()
 
 from parking_rules import ParkingIntelligence, SimpleIoUTracker
-from plate_ocr import OCR_EVERY_SEC, PlateOCR
+from plate_ocr import OCR_EVERY_SEC, AsyncPlateQueue, PlateOCR
 
 # Default; open_rtsp() may override per-camera under OPEN_LOCK.
 os.environ.setdefault("OPENCV_FFMPEG_CAPTURE_OPTIONS", "rtsp_transport;tcp")
@@ -50,30 +50,34 @@ AI_API_TOKEN = os.getenv("AI_PARKING_API_TOKEN", "capstone-ai-parking-dev-token-
 STREAM_HOST = os.getenv("AI_STREAM_HOST", "0.0.0.0")
 STREAM_PORT = int(os.getenv("AI_STREAM_PORT", "8090"))
 
-IMG_SIZE = int(os.getenv("AI_PARKING_IMG_SIZE", "960"))
+IMG_SIZE = int(os.getenv("AI_PARKING_IMG_SIZE", "640"))
 # Lower conf for distant lot cameras; raise via .env if too many false positives.
 CONF = float(os.getenv("AI_PARKING_CONF", "0.28"))
 IOU = float(os.getenv("AI_PARKING_IOU", "0.50"))
-MAX_DET = int(os.getenv("AI_PARKING_MAX_DET", "50"))
+MAX_DET = int(os.getenv("AI_PARKING_MAX_DET", "30"))
 # Tiny-box filter (fraction of infer frame). Keep low so distant cars remain.
 MIN_BOX_AREA_FRAC = float(os.getenv("AI_PARKING_MIN_BOX_AREA", "0.0005"))
-# Infer width independent of MJPEG preview (plates need more pixels).
-INFER_MAX_WIDTH = int(os.getenv("AI_PARKING_INFER_MAX_WIDTH", "1280"))
+# Infer width for live boxes (OCR still uses full-res RTSP crops asynchronously).
+INFER_MAX_WIDTH = int(os.getenv("AI_PARKING_INFER_MAX_WIDTH", "960"))
 # Shared YOLO + ByteTrack persist=True breaks multi-cam; default to predict + IoU IDs.
 USE_ULTRALYTICS_TRACK = os.getenv("AI_PARKING_USE_TRACKER", "0") == "1"
-POST_EVERY_SEC = float(os.getenv("AI_PARKING_POST_EVERY_SEC", "2.0"))
+POST_EVERY_SEC = float(os.getenv("AI_PARKING_POST_EVERY_SEC", "1.5"))
 USE_WEBCAM = os.getenv("AI_USE_WEBCAM", "0") == "1"
 TRACKER = os.getenv("AI_PARKING_TRACKER", "bytetrack.yaml")
-INFER_EVERY_SEC = float(os.getenv("AI_PARKING_INFER_EVERY_SEC", "0.6"))
+# Target YOLO cadence; actual rate is also limited by CPU + model lock.
+INFER_EVERY_SEC = float(os.getenv("AI_PARKING_INFER_EVERY_SEC", "0.30"))
+# Keep last boxes briefly when a frame misses, so overlays don't flicker.
+BOX_HOLD_SEC = float(os.getenv("AI_PARKING_BOX_HOLD_SEC", "0.45"))
 PREVIEW_MAX_WIDTH = int(os.getenv("AI_PARKING_PREVIEW_MAX_WIDTH", "960"))
 STREAM_TARGET_FPS = float(os.getenv("AI_PARKING_STREAM_FPS", "20"))
 STREAM_JPEG_QUALITY = int(os.getenv("AI_PARKING_STREAM_JPEG_QUALITY", "65"))
 RECONNECT_EVERY_SEC = float(os.getenv("AI_CAMERA_RECONNECT_SEC", "5"))
 OPEN_LOCK = threading.Lock()
 
-DETECT_CLASS_IDS = [0, 2, 3, 5, 7]  # person, car, motorcycle, bus, truck
+DETECT_CLASS_IDS = [2, 3, 5, 7]  # vehicles only (faster); set AI_PARKING_DETECT_PERSONS=1 for people
 VEHICLE_CLASS_IDS = {2, 3, 5, 7}
-# Persons are drawn on the stream but excluded from occupancy / LPR payloads.
+if os.getenv("AI_PARKING_DETECT_PERSONS", "0") == "1":
+    DETECT_CLASS_IDS = [0, 2, 3, 5, 7]
 POST_PERSON_DETECTIONS = os.getenv("AI_PARKING_POST_PERSONS", "0") == "1"
 COCO_NAMES = {
     0: "person",
@@ -327,14 +331,16 @@ def _dedupe_vehicle_rows(rows: list[dict], iou_thresh: float = 0.65) -> list[dic
 def parse_tracks(
     result,
     frame,
-    ocr: PlateOCR,
     intelligence: ParkingIntelligence,
     tracker: SimpleIoUTracker | None = None,
     ocr_frame=None,
     box_to_ocr_scale: float = 1.0,
+    plate_queue: AsyncPlateQueue | None = None,
+    camera_id: str = "",
 ):
     """Build detection list + vehicle dicts with track ids and optional plates.
 
+    Plate OCR is queued asynchronously so this stays realtime.
     ocr_frame: full-resolution frame for plate OCR (defaults to `frame`).
     box_to_ocr_scale: multiply infer-frame box coords to map onto ocr_frame.
     """
@@ -385,7 +391,6 @@ def parse_tracks(
 
     raw_vehicles = _dedupe_vehicle_rows(raw_vehicles)
     if tracker is not None:
-        # Prefer stable per-camera IoU IDs (multi-cam safe).
         for row in raw_vehicles:
             row["track_id"] = None
         raw_vehicles = tracker.update(raw_vehicles, now)
@@ -407,30 +412,22 @@ def parse_tracks(
 
         if track_id is not None:
             mem = intelligence.touch_track(track_id, now)
-            if mem.plate_status == "ok" and mem.plate:
-                plate = mem.plate
-                plate_status = "ok"
-                ocr_confidence = mem.ocr_confidence
-            elif ocr.enabled and (now - mem.last_ocr_at >= OCR_EVERY_SEC):
-                read = ocr.read_plate(ocr_src, (ox1, oy1, ox2, oy2))
-                mem.last_ocr_at = now
-                mem.apply_ocr_vote(read.plate, read.status, read.confidence)
-                plate = mem.plate
-                plate_status = mem.plate_status
-                ocr_confidence = mem.ocr_confidence
-            else:
-                plate = mem.plate
-                plate_status = mem.plate_status
-                ocr_confidence = mem.ocr_confidence
-        elif ocr.enabled:
-            read = ocr.read_plate(ocr_src, (ox1, oy1, ox2, oy2))
-            if read.status == "ok" and read.plate:
-                plate = read.plate
-                plate_status = "ok"
-                ocr_confidence = read.confidence
-            elif read.status == "unreadable":
-                plate_status = "unreadable"
-                ocr_confidence = read.confidence
+            plate = mem.plate
+            plate_status = mem.plate_status
+            ocr_confidence = mem.ocr_confidence
+            if plate_queue is not None:
+                plate_queue.submit(
+                    camera_id,
+                    track_id,
+                    ocr_src,
+                    (ox1, oy1, ox2, oy2),
+                    intelligence,
+                    OCR_EVERY_SEC,
+                )
+            # Refresh after possible prior async result
+            plate = mem.plate
+            plate_status = mem.plate_status
+            ocr_confidence = mem.ocr_confidence
 
         det = {
             "class": name,
@@ -801,12 +798,19 @@ def blank_frame(label: str = "Camera offline"):
 class CameraWorker:
     """Independent preview + YOLO + occupancy pipeline for one RTSP camera."""
 
-    def __init__(self, config: CameraConfig, model, device, model_lock: threading.Lock, ocr: PlateOCR):
+    def __init__(
+        self,
+        config: CameraConfig,
+        model,
+        device,
+        model_lock: threading.Lock,
+        plate_queue: AsyncPlateQueue,
+    ):
         self.config = config
         self.model = model
         self.device = device
         self.model_lock = model_lock
-        self.ocr = ocr
+        self.plate_queue = plate_queue
         self.intelligence = ParkingIntelligence()
         self.tracker = SimpleIoUTracker()
         self.scene = SharedSceneState()
@@ -816,6 +820,11 @@ class CameraWorker:
         self.infer_reader = None
         self._shared_reader = False
         self._last_detect_log = 0.0
+        self._held_boxes = []
+        self._held_vehicles = []
+        self._held_detections = []
+        self._held_until = 0.0
+        self._held_counts = (0, 0)
         zones_path = Path(config.zones_file)
         if not zones_path.is_file():
             zones_path = BASE_DIR / "zones.json"
@@ -1005,21 +1014,26 @@ class CameraWorker:
                 pass
 
             now = time.time()
-            if now - last_infer < INFER_EVERY_SEC:
-                time.sleep(0.05)
+            wait = INFER_EVERY_SEC - (now - last_infer)
+            if wait > 0:
+                time.sleep(min(wait, 0.05))
                 continue
 
             if self.infer_reader is None:
+                time.sleep(0.1)
+                continue
+
+            if self.infer_reader is not None and not getattr(self.infer_reader, "online", True):
                 time.sleep(0.2)
                 continue
 
             ret, frame = self.infer_reader.read()
             if not ret:
-                time.sleep(0.05)
+                time.sleep(0.02)
                 continue
 
-            # Keep YOLO infer resolution high enough for vehicles + plates.
-            infer_max = max(INFER_MAX_WIDTH, 960)
+            # Faster live boxes; plate OCR still uses full-res crops asynchronously.
+            infer_max = max(INFER_MAX_WIDTH, 640)
             infer_frame, scale = resize_for_infer(frame, infer_max)
             box_to_ocr_scale = (1.0 / scale) if scale and scale > 0 else 1.0
             try:
@@ -1063,7 +1077,7 @@ class CameraWorker:
                         )
             except Exception as e:
                 print(f"[{self.config.camera_id}] inference error: {e}")
-                time.sleep(0.5)
+                time.sleep(0.25)
                 continue
 
             raw_boxes = 0
@@ -1076,14 +1090,29 @@ class CameraWorker:
             annotated_boxes, detections, vehicles, person_count, vehicle_count = parse_tracks(
                 results[0],
                 infer_frame,
-                self.ocr,
                 self.intelligence,
                 tracker=None if USE_ULTRALYTICS_TRACK else self.tracker,
                 ocr_frame=frame,
                 box_to_ocr_scale=box_to_ocr_scale,
+                plate_queue=self.plate_queue,
+                camera_id=self.config.camera_id,
             )
             vehicles = scale_vehicles(vehicles, scale)
             annotated_boxes = scale_annotated_boxes(annotated_boxes, scale)
+
+            # Hold last boxes briefly when YOLO misses a frame (smoother overlay).
+            if annotated_boxes:
+                self._held_boxes = list(annotated_boxes)
+                self._held_vehicles = list(vehicles)
+                self._held_detections = list(detections)
+                self._held_counts = (person_count, vehicle_count)
+                self._held_until = now + BOX_HOLD_SEC
+            elif now < self._held_until and self._held_boxes:
+                annotated_boxes = list(self._held_boxes)
+                vehicles = list(self._held_vehicles)
+                detections = list(self._held_detections)
+                person_count, vehicle_count = self._held_counts
+
             slot_statuses, events, occupied_slots, use_poly = self.intelligence.analyze(
                 vehicles, self.zones_holder[0], frame.shape
             )
@@ -1108,7 +1137,7 @@ class CameraWorker:
                 events=events,
                 source_shape=frame.shape,
             )
-            last_infer = now
+            last_infer = time.time()
 
             if now - last_post >= POST_EVERY_SEC:
                 post_events = list(events)
@@ -1154,11 +1183,12 @@ def main():
     print(f"Cameras: {len(cameras)}")
 
     ocr = PlateOCR()
+    plate_queue = AsyncPlateQueue(ocr)
     model_lock = threading.Lock()
     workers: list[CameraWorker] = []
 
     for cfg in cameras:
-        worker = CameraWorker(cfg, model, device, model_lock, ocr)
+        worker = CameraWorker(cfg, model, device, model_lock, plate_queue)
         worker.start()
         workers.append(worker)
 
@@ -1167,7 +1197,7 @@ def main():
     print(
         f"Stream {STREAM_TARGET_FPS:.0f} fps @ preview {PREVIEW_MAX_WIDTH}px | "
         f"infer ≤{INFER_MAX_WIDTH}px imgsz={IMG_SIZE} conf={CONF} | "
-        f"every {INFER_EVERY_SEC}s | OCR={'on' if ocr.enabled else 'off'} | "
+        f"every {INFER_EVERY_SEC}s | OCR={'async' if ocr.enabled else 'off'} | "
         f"tracker={'ultralytics' if USE_ULTRALYTICS_TRACK else 'iou'}"
     )
 
