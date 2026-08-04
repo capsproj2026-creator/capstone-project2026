@@ -14,7 +14,7 @@
             'online' => collect($cameras ?? [])->where('online', true)->count(),
             'offline' => collect($cameras ?? [])->where('online', false)->count(),
         ];
-        $aiCameras = is_array($aiCameras ?? null) ? $aiCameras : [];
+        $aiCameraSnaps = is_array($aiCameras ?? null) ? $aiCameras : [];
     @endphp
 
     {{-- Status summary (Figma) --}}
@@ -52,6 +52,9 @@
     <div class="grid grid-cols-1 gap-5 md:grid-cols-2 xl:grid-cols-3">
         @foreach ($cameras as $camera)
             @php($isOnline = ! empty($camera['online']))
+            @php($camKey = (string) ($camera['camera_id'] ?? ''))
+            @php($topDet = data_get($aiCameraSnaps, $camKey.'.detections.0'))
+            @php($plateLine = \App\Support\AiDetectionPresenter::plateLine(is_array($topDet) ? $topDet : null))
             <article class="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
                 <div class="relative aspect-video bg-[#1a1d23]" data-camera-tile="{{ $camera['id'] }}">
                     {{-- Timestamp --}}
@@ -122,26 +125,6 @@
                         @endif
                     </div>
                     @if (! empty($camera['ai_monitored']))
-                        @php
-                            $camKey = (string) ($camera['camera_id'] ?? '');
-                            $camSnap = ($aiCameras[$camKey] ?? null);
-                            $topDet = is_array($camSnap) ? (($camSnap['detections'] ?? [])[0] ?? null) : null;
-                            $plateLine = '—';
-                            if (is_array($topDet)) {
-                                if (($topDet['plate_status'] ?? '') === 'unreadable') {
-                                    $plateLine = 'Plate Unreadable';
-                                } elseif (! empty($topDet['registered']) && ! empty($topDet['owner_name'])) {
-                                    $plateLine = $topDet['owner_name'].' · '.($topDet['plate'] ?? '');
-                                    if (! empty($topDet['vehicle_details'])) {
-                                        $plateLine .= ' · '.$topDet['vehicle_details'];
-                                    }
-                                } elseif (! empty($topDet['plate'])) {
-                                    $plateLine = 'Unknown Vehicle · Plate Not Registered ('.$topDet['plate'].')';
-                                } else {
-                                    $plateLine = 'Waiting for plate…';
-                                }
-                            }
-                        @endphp
                         <p class="mt-2 text-xs text-gray-500" data-ai-stats data-camera-id="{{ $camKey }}">
                             Vehicles: <span class="js-live-vehicles font-semibold text-gray-800">{{ $camera['vehicle_count'] ?? '—' }}</span>
                             · Occupied: <span class="js-live-occupied font-semibold text-gray-800">{{ $camera['occupied'] ?? '—' }}</span>
