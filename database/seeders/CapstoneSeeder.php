@@ -167,23 +167,25 @@ class CapstoneSeeder extends Seeder
         $areas = [
             ['id' => 1, 'area_name' => 'Administration Building', 'capacity' => 9, 'prefix' => 'AD', 'designation_notes' => 'College Officials'],
             ['id' => 2, 'area_name' => 'Food Laboratory (Front)', 'capacity' => 20, 'prefix' => 'FO', 'designation_notes' => 'Employees Motorcycle'],
-            ['id' => 3, 'area_name' => 'Duran hall (Front)', 'capacity' => 10, 'prefix' => 'DU', 'designation_notes' => 'College Officials'],
-            ['id' => 4, 'area_name' => 'ACAD 1 Building(Front)', 'capacity' => 10, 'prefix' => 'AC', 'designation_notes' => 'College Officials'],
+            ['id' => 3, 'area_name' => 'Duran Hall (Front)', 'capacity' => 10, 'prefix' => 'DU', 'designation_notes' => 'College Officials'],
+            ['id' => 4, 'area_name' => 'ACAD 1 Building (Front)', 'capacity' => 10, 'prefix' => 'AC', 'designation_notes' => 'College Officials'],
             ['id' => 5, 'area_name' => 'Cultural Office (Front)', 'capacity' => 15, 'prefix' => 'CU', 'designation_notes' => 'Employees Motorcycle'],
             ['id' => 6, 'area_name' => 'College Gymnasium (Right Wing)', 'capacity' => 9, 'prefix' => 'GY', 'designation_notes' => 'Car'],
-            ['id' => 7, 'area_name' => 'College Gymnasium (Right Left)', 'capacity' => 30, 'prefix' => 'GL', 'designation_notes' => 'Employees Motorcycle'],
-            ['id' => 8, 'area_name' => 'College Auditorium (left/Right Wing)', 'capacity' => 12, 'prefix' => 'AU', 'designation_notes' => 'Car'],
+            ['id' => 7, 'area_name' => 'College Gymnasium (Left Wing)', 'capacity' => 30, 'prefix' => 'GL', 'designation_notes' => 'Employees Motorcycle'],
+            ['id' => 8, 'area_name' => 'College Auditorium (Left/Right Wing)', 'capacity' => 12, 'prefix' => 'AU', 'designation_notes' => 'Car'],
             ['id' => 9, 'area_name' => 'Villafuerte Hall Circle', 'capacity' => 70, 'prefix' => 'VI', 'designation_notes' => 'Motorcycle/Car Employee/Students'],
             ['id' => 10, 'area_name' => 'Talipapa', 'capacity' => 250, 'prefix' => 'TA', 'designation_notes' => 'Motorcycle/Car Employee/Students'],
             ['id' => 11, 'area_name' => 'Green Building', 'capacity' => 7, 'prefix' => 'GR', 'designation_notes' => 'Car'],
             ['id' => 12, 'area_name' => 'ACAD 5 Building Circle', 'capacity' => 14, 'prefix' => 'A5', 'designation_notes' => 'Car'],
-            ['id' => 13, 'area_name' => 'ACAD building 5 (Front)', 'capacity' => 6, 'prefix' => 'AF', 'designation_notes' => 'Car'],
+            ['id' => 13, 'area_name' => 'ACAD Building 5 (Front)', 'capacity' => 6, 'prefix' => 'AF', 'designation_notes' => 'Car'],
             ['id' => 14, 'area_name' => 'ACAD Building 5 (Right Wing)', 'capacity' => 20, 'prefix' => 'AR', 'designation_notes' => 'Employees Motorcycle'],
-            ['id' => 15, 'area_name' => 'ACAD Building 5 (Open space)', 'capacity' => 500, 'prefix' => 'AO', 'designation_notes' => 'Motorcycle/Car Employee/Students'],
+            ['id' => 15, 'area_name' => 'ACAD Building 5 (Open Space)', 'capacity' => 500, 'prefix' => 'AO', 'designation_notes' => 'Motorcycle/Car Employee/Students'],
             ['id' => 16, 'area_name' => 'ACAD Building 3 (CTDE)', 'capacity' => 12, 'prefix' => 'A3', 'designation_notes' => 'Car'],
             ['id' => 17, 'area_name' => 'ACAD Building 4 (CCS)', 'capacity' => 48, 'prefix' => 'A4', 'designation_notes' => '18 Car / 30 Employees Motorcycle'],
             ['id' => 18, 'area_name' => 'Supply Building (Right Wing)', 'capacity' => 25, 'prefix' => 'SU', 'designation_notes' => 'Employees Motorcycle'],
-            ['id' => 19, 'area_name' => 'AI Test Lot', 'capacity' => 20, 'prefix' => 'AI', 'designation_notes' => 'YOLOv9 camera test zone Student/Staff'],
+            ['id' => 19, 'area_name' => 'AI Test Lot', 'capacity' => 20, 'prefix' => 'AI', 'designation_notes' => 'YOLOv9 CAM-AI-1 (wired) Student/Staff'],
+            ['id' => 20, 'area_name' => 'AI Lot B', 'capacity' => 20, 'prefix' => 'AIB', 'designation_notes' => 'YOLOv9 CAM-AI-2 (Tapo) Student/Staff'],
+            ['id' => 21, 'area_name' => 'AI Lot C', 'capacity' => 20, 'prefix' => 'AIC', 'designation_notes' => 'YOLOv9 CAM-AI-3 (Tapo) Student/Staff'],
         ];
 
         $slotId = 1;
@@ -198,7 +200,7 @@ class CapstoneSeeder extends Seeder
             ParkingArea::query()->updateOrCreate(['id' => $area['id']], $area);
 
             for ($i = 1; $i <= $area['capacity']; $i++) {
-                $slotNumber = $prefix === 'AI'
+                $slotNumber = in_array($prefix, ['AI', 'AIB', 'AIC'], true)
                     ? $prefix.'-'.str_pad((string) $i, 2, '0', STR_PAD_LEFT)
                     : $prefix.'-'.$i;
 

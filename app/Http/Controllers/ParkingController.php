@@ -75,7 +75,7 @@ class ParkingController extends Controller
             'visible.*' => ['nullable', 'boolean'],
             'roles' => ['nullable', 'array'],
             'roles.*' => ['nullable', 'array'],
-            'roles.*.*' => ['in:Student,Staff'],
+            'roles.*.*' => ['in:Student,Staff,Visitor'],
         ]);
 
         $visible = $validated['visible'] ?? [];
@@ -102,5 +102,36 @@ class ParkingController extends Controller
         }
 
         return back()->with('success', 'Zone access settings saved.');
+    }
+
+    public function updateSlotStatus(Request $request): \Illuminate\Http\JsonResponse|RedirectResponse
+    {
+        $validated = $request->validate([
+            'slot_id' => ['required', 'integer'],
+            'status' => ['required', 'in:Available,Occupied,Reserved,Maintenance'],
+        ]);
+
+        $slot = ParkingSlot::query()->findOrFail((int) $validated['slot_id']);
+        $status = $validated['status'];
+
+        $payload = ['status' => $status];
+        if (in_array($status, ['Available', 'Maintenance', 'Reserved'], true)) {
+            $payload['parked_user_id'] = null;
+        }
+
+        $slot->update($payload);
+
+        if ($request->expectsJson()) {
+            return response()->json([
+                'ok' => true,
+                'slot' => [
+                    'id' => $slot->id,
+                    'slot_number' => $slot->slot_number,
+                    'status' => $slot->status,
+                ],
+            ]);
+        }
+
+        return back()->with('success', "Slot {$slot->slot_number} set to {$status}.");
     }
 }

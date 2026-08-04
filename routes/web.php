@@ -39,7 +39,8 @@ Route::middleware(['guest', 'no.cache'])->group(function () {
         ->name('register.check-email');
 });
 
-Route::post('/logout', [LoginController::class, 'logout'])->name('logout');
+// GET allows safe sign-out when the session/CSRF token is already stale (never show 419).
+Route::match(['get', 'post'], '/logout', [LoginController::class, 'logout'])->name('logout');
 
 Route::middleware(['auth', 'no.cache'])->group(function () {
     Route::get('/email/verify', [EmailVerificationController::class, 'notice'])->name('verification.notice');
@@ -84,6 +85,7 @@ Route::prefix('admin')->middleware(['auth', 'verified', 'granted', 'no.cache', '
     Route::get('/parking/status', [LiveCameraController::class, 'status'])->name('parking.status');
     Route::get('/parking/zone-access', [ParkingController::class, 'zoneAccess'])->name('parking.zone-access');
     Route::post('/parking/areas', [ParkingController::class, 'updateAreas'])->name('parking.areas.update');
+    Route::post('/parking/slots/status', [ParkingController::class, 'updateSlotStatus'])->name('parking.slots.update');
     Route::get('/settings', [SettingsController::class, 'index'])->name('settings');
     Route::post('/settings/general', [SettingsController::class, 'updateGeneral'])->name('settings.general');
     Route::post('/settings/general/add', [SettingsController::class, 'storeGeneralInfo'])->name('settings.general.store');
@@ -104,7 +106,7 @@ Route::prefix('admin')->middleware(['auth', 'verified', 'granted', 'no.cache', '
     Route::get('/access-logs', [AccessLogController::class, 'index'])->name('access-logs');
     Route::get('/access-logs/events', [AccessLogController::class, 'events'])->name('access-logs.events');
     Route::get('/live-cameras', [LiveCameraController::class, 'index'])->name('live-cameras');
-    Route::get('/ai-parking/stream', [LiveCameraController::class, 'stream'])->name('ai-parking.stream');
+    Route::get('/ai-parking/stream/{camera?}', [LiveCameraController::class, 'stream'])->name('ai-parking.stream');
     Route::get('/reports', [ReportController::class, 'index'])
         ->middleware('permission:view_reports')
         ->name('reports');
@@ -131,7 +133,7 @@ Route::prefix('guard')->middleware(['auth', 'verified', 'granted', 'no.cache', '
     Route::get('/access-logs/events', [AccessLogController::class, 'events'])->name('access-logs.events');
     Route::get('/live-cameras', [LiveCameraController::class, 'index'])->name('live-cameras');
     Route::get('/ai-parking', [LiveCameraController::class, 'aiMonitor'])->name('ai-parking');
-    Route::get('/ai-parking/stream', [LiveCameraController::class, 'stream'])->name('ai-parking.stream');
+    Route::get('/ai-parking/stream/{camera?}', [LiveCameraController::class, 'stream'])->name('ai-parking.stream');
     Route::get('/monitor', [UserMonitorController::class, 'index'])->name('monitor');
     Route::get('/gate', [GateMonitorController::class, 'index'])->name('gate');
     Route::get('/gate/events', [GateMonitorController::class, 'events'])->name('gate.events');

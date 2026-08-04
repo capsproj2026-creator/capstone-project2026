@@ -68,6 +68,8 @@ class User extends Authenticatable implements MustVerifyEmail
         'Gate_access',
         'rfid_uid',
         'job_title',
+        'id_document',
+        'declined_at',
         'email_verified_at',
         'email_verification_token',
         'email_verification_expires_at',
@@ -85,6 +87,7 @@ class User extends Authenticatable implements MustVerifyEmail
             'user_role_id' => 'integer',
             'vehicle_id' => 'integer',
             'created_at' => 'datetime',
+            'declined_at' => 'datetime',
             'email_verified_at' => 'datetime',
             'email_verification_expires_at' => 'datetime',
         ];

@@ -8,7 +8,9 @@ use App\Services\NavigationService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use App\Support\PasswordRules;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Validation\ValidationException;
 use Illuminate\Validation\Rule;
 use Illuminate\View\View;
 
@@ -87,11 +89,19 @@ class ProfileController extends Controller
         if ($request->has('change_password')) {
             $validated = $request->validate([
                 'current_password' => ['required'],
-                'new_password' => ['required', 'min:8', 'confirmed'],
+                'new_password' => array_merge(PasswordRules::requiredWithoutConfirmed(), ['confirmed']),
+            ], [
+                'new_password.confirmed' => 'Password confirmation does not match.',
             ]);
 
             if (! password_verify($validated['current_password'], $user->password)) {
                 return back()->with('error', 'Incorrect current password.');
+            }
+
+            if (password_verify($validated['new_password'], $user->password)) {
+                throw ValidationException::withMessages([
+                    'new_password' => 'New password must be different from your current password.',
+                ]);
             }
 
             $user->update(['password' => Hash::make($validated['new_password'])]);

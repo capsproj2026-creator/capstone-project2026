@@ -71,8 +71,8 @@
     @else
         <div style="padding:16px 18px;border-radius:12px;background:#f3f4f6;border:1px solid #d1d5db;">
             <p style="margin:0;font-size:14px;line-height:1.6;color:#374151;">
-                You may submit a new registration request after correcting the issues mentioned above,
-                or contact the campus security office for further clarification.
+                You may submit a new registration request after <strong>3 days</strong> from this decline.
+                Please correct any issues mentioned above, or contact the campus security office for clarification.
             </p>
         </div>
     @endif

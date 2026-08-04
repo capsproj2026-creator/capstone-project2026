@@ -26,7 +26,7 @@
         <button
             type="button"
             data-password-toggle="{{ $inputId }}"
-            class="absolute right-2 top-1/2 -translate-y-1/2 rounded-md p-1.5 text-gray-500 hover:bg-gray-100 hover:text-gray-700"
+            class="absolute right-2 top-1/2 -translate-y-1/2 cursor-pointer rounded-md p-1.5 text-gray-500 hover:bg-gray-100 hover:text-gray-700"
             aria-label="Show password"
         >
             <i data-lucide="eye" class="h-4 w-4"></i>

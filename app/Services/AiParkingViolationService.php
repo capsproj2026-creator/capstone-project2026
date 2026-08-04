@@ -6,6 +6,7 @@ use App\Mail\VehicleViolationMail;
 use App\Models\Notification;
 use App\Models\User;
 use App\Models\ViolationLog;
+use App\Support\PlateLookup;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Log;
@@ -56,7 +57,7 @@ class AiParkingViolationService
     {
         $type = (string) $event['type'];
         $violationType = self::TYPE_MAP[$type];
-        $plate = strtoupper(trim((string) ($event['plate'] ?? '')));
+        $plate = PlateLookup::normalize((string) ($event['plate'] ?? ''));
         $zoneId = (string) ($event['zone_id'] ?? '');
         $trackId = $event['track_id'] ?? null;
 
@@ -72,10 +73,7 @@ class AiParkingViolationService
             ];
         }
 
-        $user = User::query()
-            ->with('role')
-            ->whereIn('plate_number', array_unique([$plate, trim((string) ($event['plate'] ?? ''))]))
-            ->first();
+        $user = PlateLookup::findUser((string) ($event['plate'] ?? $plate));
 
         // Unauthorized: unknown plate → UI only (no user to cite)
         if ($type === 'unauthorized' && ! $user) {
@@ -195,7 +193,7 @@ class AiParkingViolationService
             if (! is_array($det)) {
                 continue;
             }
-            $plate = strtoupper(trim((string) ($det['plate'] ?? '')));
+            $plate = PlateLookup::normalize((string) ($det['plate'] ?? ''));
             if ($plate === '') {
                 continue;
             }
@@ -205,7 +203,7 @@ class AiParkingViolationService
                 continue;
             }
 
-            $user = User::query()->where('plate_number', $plate)->first();
+            $user = PlateLookup::findUser((string) ($det['plate'] ?? $plate));
             if (! $user) {
                 Cache::put($cacheKey, 1, now()->addMinutes(max(1, $debounceMinutes)));
                 $extra[] = [

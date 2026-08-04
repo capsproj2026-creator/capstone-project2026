@@ -14,7 +14,7 @@ def _strip_quotes(value: str) -> str:
 
 
 def load_project_env() -> Path | None:
-    """Read repo-root .env and map keys used by the AI parking service."""
+    """Read repo-root .env. Maps known keys; also imports all AI_CAMERA_* / AI_PARKING_* / AI_STREAM_*."""
     root = Path(__file__).resolve().parents[2]
     env_path = root / ".env"
     if not env_path.is_file():
@@ -39,17 +39,23 @@ def load_project_env() -> Path | None:
         "APP_URL": "AI_LARAVEL_API_BASE",
     }
 
+    prefixes = ("AI_CAMERA_", "AI_PARKING_", "AI_STREAM_", "AI_USE_", "AI_LARAVEL_")
+
     for line in env_path.read_text(encoding="utf-8", errors="replace").splitlines():
         line = line.strip()
         if not line or line.startswith("#") or "=" not in line:
             continue
         key, _, raw = line.partition("=")
         key = key.strip()
-        if key not in mapping:
+        value = _strip_quotes(raw)
+
+        if key in mapping:
+            target = mapping[key]
+            # Prefer .env over any stale parent-process values for AI keys.
+            os.environ[target] = value
             continue
-        target = mapping[key]
-        if os.getenv(target):
-            continue
-        os.environ[target] = _strip_quotes(raw)
+
+        if key.startswith(prefixes):
+            os.environ[key] = value
 
     return env_path

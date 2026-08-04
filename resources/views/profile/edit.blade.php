@@ -70,13 +70,13 @@
                     <i data-lucide="lock" class="h-4 w-4 text-blue-600"></i>
                     Change Password
                 </h3>
-                <p class="mb-5 text-sm text-gray-500">Use a strong password you don’t reuse elsewhere.</p>
+                <p class="mb-5 text-sm text-gray-500">{{ \App\Support\PasswordRules::hint() }}. Must differ from your current password.</p>
 
                 <form method="POST" action="{{ route('profile.update') }}" class="space-y-4">
                     @csrf
                     <input type="hidden" name="change_password" value="1">
                     <x-auth.password-input name="current_password" label="Current Password" autocomplete="current-password" />
-                    <x-auth.password-input name="new_password" label="New Password" autocomplete="new-password" placeholder="At least 6 characters" />
+                    <x-auth.password-input name="new_password" label="New Password" autocomplete="new-password" placeholder="{{ \App\Support\PasswordRules::hint() }}" />
                     <x-auth.password-input name="new_password_confirmation" id="new_password_confirmation" label="Confirm New Password" autocomplete="new-password" />
                     <button type="submit" class="w-full rounded-lg bg-gray-900 px-5 py-2.5 text-sm font-semibold text-white hover:bg-gray-800 sm:w-auto">
                         Update Password

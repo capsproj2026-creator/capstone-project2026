@@ -112,6 +112,13 @@
                                         Faculty / Staff
                                     </span>
                                 </label>
+                                <label class="cursor-pointer">
+                                    <input type="checkbox" name="roles[{{ $zone->id }}][]" value="Visitor"
+                                        @checked(in_array('Visitor', $allowedRoles, true)) class="peer sr-only">
+                                    <span class="inline-flex items-center gap-1.5 rounded-full border border-gray-200 bg-gray-50 px-3 py-1.5 text-sm font-medium text-gray-600 peer-checked:border-emerald-600 peer-checked:bg-emerald-600 peer-checked:text-white">
+                                        Visitors
+                                    </span>
+                                </label>
                             </div>
                             @error("zone_{$zone->id}")
                                 <p class="mt-2 text-xs font-medium text-red-600">{{ $message }}</p>

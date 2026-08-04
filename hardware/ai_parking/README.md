@@ -2,6 +2,28 @@
 
 Zone-level occupancy, slot polygons, violation rules, ByteTrack tracking, optional EasyOCR plates, Laravel ingest.
 
+## Multi-camera (CAM-AI-1 / 2 / 3)
+
+Configure each camera in `.env` (`AI_CAMERA_1_*` … `AI_CAMERA_3_*`).
+
+| Camera | Typical RTSP path | Parking area |
+|--------|-------------------|--------------|
+| CAM-AI-1 (wired Dahua) | `/cam/realmonitor?channel=1&subtype=0` | 19 AI Test Lot |
+| CAM-AI-2 (Tapo C310) | `/stream1` | 20 AI Lot B |
+| CAM-AI-3 (Tapo C310) | `/stream1` | 21 AI Lot C |
+
+Python starts one worker thread pair per camera (preview + YOLO). Shared model lock; RTSP reconnect is isolated. MJPEG paths:
+
+- `http://127.0.0.1:8090/stream.mjpg` (CAM-AI-1)
+- `http://127.0.0.1:8090/CAM-AI-2/stream.mjpg`
+- `http://127.0.0.1:8090/CAM-AI-3/stream.mjpg`
+
+Seed lots:
+
+```powershell
+php artisan db:seed --class=AiTestLotSeeder
+```
+
 ## Quick connect (Windows)
 
 ```powershell
@@ -84,3 +106,11 @@ UI: `/admin/live-cameras`, `/guard/live-cameras`, `/guard/ai-parking`
 | `unauthorized` | Unauthorized Parking |
 
 Citations require a **registered** plate (same as guard flow). Unknown plates show on the AI monitor only.
+
+Laravel matches OCR plates to `users.plate_number` (hyphens/spaces ignored) and attaches **owner name** on detections/events for the AI Parking Monitor. Enable OCR:
+
+```env
+AI_PARKING_OCR_ENABLED=1
+```
+
+Then restart the Python AI service (`scripts/start-ai-parking.ps1`). First run downloads EasyOCR models.

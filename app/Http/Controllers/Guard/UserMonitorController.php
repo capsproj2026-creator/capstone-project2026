@@ -4,8 +4,8 @@ namespace App\Http\Controllers\Guard;
 
 use App\Http\Controllers\Controller;
 use App\Models\User;
-use App\Support\SearchHelper;
 use App\Services\NavigationService;
+use App\Support\SearchHelper;
 use Illuminate\Http\Request;
 use Illuminate\View\View;
 
@@ -29,14 +29,27 @@ class UserMonitorController extends Controller
             });
         }
 
-        if (($access = $request->query('access')) && $access !== 'all') {
-            $allowedAccess = ['Granted', 'Denied', 'Pending', User::GATE_ACCESS_LEGACY];
-            if (in_array($access, $allowedAccess, true)) {
-                if ($access === 'Granted') {
-                    $query->whereIn('Gate_access', [User::GATE_ACCESS_GRANTED, User::GATE_ACCESS_LEGACY]);
-                } else {
-                    $query->where('Gate_access', $access);
-                }
+        $access = $request->query('access', 'all');
+        if ($access && $access !== 'all') {
+            if ($access === 'Granted') {
+                $query->whereIn('Gate_access', [User::GATE_ACCESS_GRANTED, User::GATE_ACCESS_LEGACY]);
+            } elseif ($access === 'Denied') {
+                $query->where(function ($q) {
+                    $q->where('Gate_access', User::GATE_ACCESS_DENIED)
+                        ->orWhere('status', User::STATUS_DENIED);
+                });
+            } elseif ($access === 'Pending') {
+                $query->where(function ($q) {
+                    $q->where('Gate_access', User::GATE_ACCESS_PENDING)
+                        ->orWhereNull('Gate_access')
+                        ->orWhere('Gate_access', '');
+                })->where(function ($q) {
+                    $q->whereNull('status')
+                        ->orWhere('status', '!=', User::STATUS_DENIED);
+                })->where(function ($q) {
+                    $q->whereNull('Gate_access')
+                        ->orWhere('Gate_access', '!=', User::GATE_ACCESS_DENIED);
+                });
             }
         }
 

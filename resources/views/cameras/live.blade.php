@@ -120,6 +120,13 @@
                             <span class="shrink-0 rounded bg-blue-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-blue-700">AI</span>
                         @endif
                     </div>
+                    @if (! empty($camera['ai_monitored']))
+                        <p class="mt-2 text-xs text-gray-500">
+                            Vehicles: <span class="font-semibold text-gray-800">{{ $camera['vehicle_count'] ?? '—' }}</span>
+                            · Occupied: <span class="font-semibold text-gray-800">{{ $camera['occupied'] ?? '—' }}</span>
+                            · Free: <span class="font-semibold text-gray-800">{{ $camera['available'] ?? '—' }}</span>
+                        </p>
+                    @endif
                     @if (! empty($camera['parking_url']))
                         <a href="{{ $camera['parking_url'] }}" class="mt-2 inline-block text-xs font-medium text-blue-600 hover:underline">
                             Open parking →

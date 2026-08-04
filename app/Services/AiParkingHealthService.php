@@ -8,8 +8,15 @@ use Illuminate\Support\Facades\Http;
 
 class AiParkingHealthService
 {
-    public function upstreamStreamUrl(): ?string
+    public function upstreamStreamUrl(?string $cameraId = null): ?string
     {
+        if ($cameraId) {
+            $camera = app(AiCameraRegistry::class)->find($cameraId);
+            if ($camera && ! empty($camera['stream_url'])) {
+                return (string) $camera['stream_url'];
+            }
+        }
+
         $url = trim((string) config('services.ai_parking.stream_url', ''));
 
         return $url !== '' ? $url : null;
@@ -20,27 +27,36 @@ class AiParkingHealthService
         return $isGuard ? 'guard.ai-parking.stream' : 'admin.ai-parking.stream';
     }
 
-    public function streamProxyUrl(bool $isGuard = true): ?string
+    public function streamProxyUrl(bool $isGuard = true, ?string $cameraId = null): ?string
     {
-        if ($this->upstreamStreamUrl() === null) {
+        if ($this->upstreamStreamUrl($cameraId) === null) {
             return null;
         }
 
-        return route($this->streamProxyRouteName($isGuard));
+        $params = $cameraId ? ['camera' => $cameraId] : [];
+
+        return route($this->streamProxyRouteName($isGuard), $params);
     }
 
     /**
      * URL for browser <img> MJPEG tags. Uses direct Python stream by default because
      * proxying through php artisan serve blocks other requests and freezes the feed.
      */
-    public function streamBrowserUrl(): ?string
+    public function streamBrowserUrl(?string $cameraId = null): ?string
     {
+        if ($cameraId) {
+            $camera = app(AiCameraRegistry::class)->find($cameraId);
+            if ($camera && ! empty($camera['stream_url'])) {
+                return (string) $camera['stream_url'];
+            }
+        }
+
         $browser = trim((string) config('services.ai_parking.stream_browser_url', ''));
         if ($browser !== '') {
             return $browser;
         }
 
-        return $this->upstreamStreamUrl();
+        return $this->upstreamStreamUrl($cameraId);
     }
 
     public function isStreamReachable(?string $url = null): bool
@@ -73,10 +89,10 @@ class AiParkingHealthService
         });
     }
 
-    public function isIngestActive(?int $maxAgeSeconds = null): bool
+    public function isIngestActive(?string $cameraId = null, ?int $maxAgeSeconds = null): bool
     {
         $maxAgeSeconds ??= (int) config('services.ai_parking.ingest_stale_seconds', 45);
-        $snapshot = app(AiParkingOccupancyService::class)->latestSnapshot();
+        $snapshot = app(AiParkingOccupancyService::class)->latestSnapshot($cameraId);
         if (! is_array($snapshot) || empty($snapshot['updated_at'])) {
             return false;
         }
@@ -91,34 +107,42 @@ class AiParkingHealthService
     }
 
     /**
-     * @return array{
-     *   configured: bool,
-     *   stream_reachable: bool,
-     *   ingest_active: bool,
-     *   connected: bool,
-     *   upstream_stream_url: string|null,
-     *   stream_proxy_url: string|null,
-     *   last_update: string|null,
-     *   last_update_label: string|null
-     * }
+     * @return array<string, mixed>
      */
-    public function status(bool $isGuard = true): array
+    public function status(bool $isGuard = true, ?string $cameraId = null): array
     {
-        $upstream = $this->upstreamStreamUrl();
-        $snapshot = app(AiParkingOccupancyService::class)->latestSnapshot();
+        $upstream = $this->upstreamStreamUrl($cameraId);
+        $snapshot = app(AiParkingOccupancyService::class)->latestSnapshot($cameraId);
         $streamReachable = $upstream !== null && $this->isStreamReachable($upstream);
-        $ingestActive = $this->isIngestActive();
+        $ingestActive = $this->isIngestActive($cameraId);
 
         return [
+            'camera_id' => $cameraId ?? app(AiCameraRegistry::class)->primaryCameraId(),
             'configured' => $upstream !== null,
             'stream_reachable' => $streamReachable,
             'ingest_active' => $ingestActive,
-            'connected' => $streamReachable && $ingestActive,
+            'connected' => $streamReachable || $ingestActive,
             'upstream_stream_url' => $upstream,
-            'stream_proxy_url' => $this->streamProxyUrl($isGuard),
-            'stream_browser_url' => $this->streamBrowserUrl(),
+            'stream_proxy_url' => $this->streamProxyUrl($isGuard, $cameraId),
+            'stream_browser_url' => $this->streamBrowserUrl($cameraId),
             'last_update' => is_array($snapshot) ? ($snapshot['updated_at'] ?? null) : null,
             'last_update_label' => is_array($snapshot) ? ($snapshot['updated_at_label'] ?? null) : null,
+            'vehicle_count' => is_array($snapshot) ? ($snapshot['vehicle_count'] ?? null) : null,
+            'occupied' => is_array($snapshot) ? ($snapshot['occupied'] ?? null) : null,
+            'available' => is_array($snapshot) ? ($snapshot['available'] ?? null) : null,
         ];
+    }
+
+    /**
+     * @return array<string, array<string, mixed>>
+     */
+    public function statusAll(bool $isGuard = true): array
+    {
+        $out = [];
+        foreach (app(AiCameraRegistry::class)->cameras() as $camera) {
+            $out[$camera['id']] = $this->status($isGuard, $camera['id']);
+        }
+
+        return $out;
     }
 }

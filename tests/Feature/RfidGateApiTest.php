@@ -2,10 +2,12 @@
 
 namespace Tests\Feature;
 
+use App\Events\GateScanProcessed;
 use App\Models\GateLog;
 use App\Models\User;
 use App\Services\RfidAccessService;
 use Illuminate\Support\Facades\Config;
+use Illuminate\Support\Facades\Event;
 use Tests\TestCase;
 
 class RfidGateApiTest extends TestCase
@@ -81,7 +83,9 @@ class RfidGateApiTest extends TestCase
 
     public function test_card_not_registered(): void
     {
-        $this->withTokenHeader()
+        Event::fake([GateScanProcessed::class]);
+
+        $response = $this->withTokenHeader()
             ->postJson('/api/rfid/scan', [
                 'uid' => 'DEADBEEF99',
                 'gate_id' => 'GATE-IN-1',
@@ -89,11 +93,24 @@ class RfidGateApiTest extends TestCase
             ])
             ->assertNotFound()
             ->assertJsonPath('status', RfidAccessService::STATUS_CARD_NOT_REGISTERED)
-            ->assertJsonPath('granted', false);
+            ->assertJsonPath('granted', false)
+            ->assertJsonStructure(['log_id']);
+
+        $this->assertNotEmpty($response->json('log_id'));
+
+        Event::assertDispatched(GateScanProcessed::class, function (GateScanProcessed $event) {
+            return $event->scan['granted'] === false
+                && $event->scan['result'] === RfidAccessService::STATUS_CARD_NOT_REGISTERED
+                && $event->scan['action'] === 'Entry'
+                && $event->scan['gate_id'] === 'GATE-IN-1'
+                && ! empty($event->scan['id']);
+        });
     }
 
     public function test_access_granted_on_entry_then_already_inside(): void
     {
+        Event::fake([GateScanProcessed::class]);
+
         $this->withTokenHeader()
             ->postJson('/api/rfid/scan', [
                 'uid' => self::UID,
@@ -103,7 +120,18 @@ class RfidGateApiTest extends TestCase
             ->assertOk()
             ->assertJsonPath('status', RfidAccessService::STATUS_GRANTED)
             ->assertJsonPath('granted', true)
-            ->assertJsonPath('action', 'Entry');
+            ->assertJsonPath('action', 'Entry')
+            ->assertJsonStructure(['log_id']);
+
+        Event::assertDispatched(GateScanProcessed::class, function (GateScanProcessed $event) {
+            return $event->scan['granted'] === true
+                && $event->scan['result'] === RfidAccessService::STATUS_GRANTED
+                && $event->scan['name'] === 'RFID Test Owner'
+                && $event->scan['action'] === 'Entry'
+                && $event->scan['gate_id'] === 'GATE-IN-1'
+                && array_key_exists('today_entries', $event->scan)
+                && array_key_exists('today_exits', $event->scan);
+        });
 
         $this->withTokenHeader()
             ->postJson('/api/rfid/scan', [
@@ -113,7 +141,13 @@ class RfidGateApiTest extends TestCase
             ])
             ->assertStatus(409)
             ->assertJsonPath('status', RfidAccessService::STATUS_ALREADY_INSIDE)
-            ->assertJsonPath('granted', false);
+            ->assertJsonPath('granted', false)
+            ->assertJsonStructure(['log_id']);
+
+        Event::assertDispatched(GateScanProcessed::class, function (GateScanProcessed $event) {
+            return $event->scan['granted'] === false
+                && $event->scan['result'] === RfidAccessService::STATUS_ALREADY_INSIDE;
+        });
 
         $grantedLog = GateLog::query()
             ->where('rfid_uid', self::UID)
@@ -185,6 +219,8 @@ class RfidGateApiTest extends TestCase
 
     public function test_access_denied_when_gate_not_granted(): void
     {
+        Event::fake([GateScanProcessed::class]);
+
         $this->owner->update(['Gate_access' => User::GATE_ACCESS_DENIED]);
 
         $this->withTokenHeader()
@@ -195,7 +231,35 @@ class RfidGateApiTest extends TestCase
             ])
             ->assertForbidden()
             ->assertJsonPath('status', RfidAccessService::STATUS_DENIED)
-            ->assertJsonPath('granted', false);
+            ->assertJsonPath('granted', false)
+            ->assertJsonStructure(['log_id']);
+
+        Event::assertDispatched(GateScanProcessed::class, function (GateScanProcessed $event) {
+            return $event->scan['granted'] === false
+                && $event->scan['result'] === RfidAccessService::STATUS_DENIED
+                && str_contains((string) ($event->scan['reason'] ?? ''), 'Gate');
+        });
+    }
+
+    public function test_gate_scan_processed_broadcasts_on_private_channel(): void
+    {
+        Event::fake([GateScanProcessed::class]);
+
+        $this->withTokenHeader()
+            ->postJson('/api/rfid/scan', [
+                'uid' => self::UID,
+                'gate_id' => 'GATE-IN-1',
+                'direction' => 'Entry',
+            ])
+            ->assertOk();
+
+        Event::assertDispatched(GateScanProcessed::class, function (GateScanProcessed $event) {
+            $channels = collect($event->broadcastOn())->map(fn ($c) => (string) $c)->all();
+
+            return $event->broadcastAs() === 'GateScanProcessed'
+                && in_array('private-gate.scans', $channels, true)
+                && isset($event->broadcastWith()['id'], $event->broadcastWith()['granted']);
+        });
     }
 
     public function test_access_denied_when_account_locked(): void

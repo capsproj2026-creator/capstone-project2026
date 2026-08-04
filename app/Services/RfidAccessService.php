@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Events\GateScanProcessed;
 use App\Models\GateLog;
 use App\Models\ParkingSlot;
 use App\Models\User;
@@ -29,7 +30,8 @@ class RfidAccessService
      *     action: string|null,
      *     gate_id: string,
      *     message: string,
-     *     user: array<string, mixed>|null
+     *     user: array<string, mixed>|null,
+     *     log_id: mixed
      * }
      */
     public function process(string $uid, string $gateId, string $direction): array
@@ -44,14 +46,14 @@ class RfidAccessService
             ->first();
 
         if (! $user) {
-            $this->logDeniedAttempt(null, $uid, $gateId, $direction, self::STATUS_CARD_NOT_REGISTERED, 'RFID card is not registered in the system.');
+            $log = $this->logDeniedAttempt(null, $uid, $gateId, $direction, self::STATUS_CARD_NOT_REGISTERED, 'RFID card is not registered in the system.');
 
-            return $this->response(self::STATUS_CARD_NOT_REGISTERED, 'card_not_registered', false, $direction, $gateId, 'RFID card is not registered in the system.', null);
+            return $this->response(self::STATUS_CARD_NOT_REGISTERED, 'card_not_registered', false, $direction, $gateId, 'RFID card is not registered in the system.', null, $log->id);
         }
 
         if (! $this->isAccountActive($user)) {
             $reason = $user->loginBlockedReason() ?? 'Account is not active.';
-            $this->logDeniedAttempt($user, $uid, $gateId, $direction, self::STATUS_DENIED, $reason);
+            $log = $this->logDeniedAttempt($user, $uid, $gateId, $direction, self::STATUS_DENIED, $reason);
 
             return $this->response(
                 self::STATUS_DENIED,
@@ -60,40 +62,41 @@ class RfidAccessService
                 $direction,
                 $gateId,
                 $reason,
-                $this->userPayload($user)
+                $this->userPayload($user),
+                $log->id
             );
         }
 
         if (! $user->isCampusVehicleOwner()) {
-            $this->logDeniedAttempt($user, $uid, $gateId, $direction, self::STATUS_DENIED, 'Only vehicle owners may use the RFID gate.');
+            $log = $this->logDeniedAttempt($user, $uid, $gateId, $direction, self::STATUS_DENIED, 'Only vehicle owners may use the RFID gate.');
 
-            return $this->response(self::STATUS_DENIED, 'access_denied', false, $direction, $gateId, 'Only vehicle owners may use the RFID gate.', $this->userPayload($user));
+            return $this->response(self::STATUS_DENIED, 'access_denied', false, $direction, $gateId, 'Only vehicle owners may use the RFID gate.', $this->userPayload($user), $log->id);
         }
 
         if (! $this->hasRegisteredVehicle($user)) {
-            $this->logDeniedAttempt($user, $uid, $gateId, $direction, self::STATUS_DENIED, 'No registered vehicle found for this account.');
+            $log = $this->logDeniedAttempt($user, $uid, $gateId, $direction, self::STATUS_DENIED, 'No registered vehicle found for this account.');
 
-            return $this->response(self::STATUS_DENIED, 'access_denied', false, $direction, $gateId, 'No registered vehicle found for this account.', $this->userPayload($user));
+            return $this->response(self::STATUS_DENIED, 'access_denied', false, $direction, $gateId, 'No registered vehicle found for this account.', $this->userPayload($user), $log->id);
         }
 
         if (! $user->hasGateAccess()) {
-            $this->logDeniedAttempt($user, $uid, $gateId, $direction, self::STATUS_DENIED, 'Gate / RFID access has not been granted.');
+            $log = $this->logDeniedAttempt($user, $uid, $gateId, $direction, self::STATUS_DENIED, 'Gate / RFID access has not been granted.');
 
-            return $this->response(self::STATUS_DENIED, 'access_denied', false, $direction, $gateId, 'Gate / RFID access has not been granted.', $this->userPayload($user));
+            return $this->response(self::STATUS_DENIED, 'access_denied', false, $direction, $gateId, 'Gate / RFID access has not been granted.', $this->userPayload($user), $log->id);
         }
 
         $lastAction = $this->lastActionFor($user);
 
         if ($direction === 'Entry' && $lastAction === 'Entry') {
-            $this->logDeniedAttempt($user, $uid, $gateId, $direction, self::STATUS_ALREADY_INSIDE, 'Vehicle is already inside campus.');
+            $log = $this->logDeniedAttempt($user, $uid, $gateId, $direction, self::STATUS_ALREADY_INSIDE, 'Vehicle is already inside campus.');
 
-            return $this->response(self::STATUS_ALREADY_INSIDE, 'already_inside', false, $direction, $gateId, 'Vehicle is already inside campus.', $this->userPayload($user));
+            return $this->response(self::STATUS_ALREADY_INSIDE, 'already_inside', false, $direction, $gateId, 'Vehicle is already inside campus.', $this->userPayload($user), $log->id);
         }
 
         if ($direction === 'Exit' && ($lastAction === null || $lastAction === 'Exit')) {
-            $this->logDeniedAttempt($user, $uid, $gateId, $direction, self::STATUS_ALREADY_OUTSIDE, 'Vehicle is already outside campus.');
+            $log = $this->logDeniedAttempt($user, $uid, $gateId, $direction, self::STATUS_ALREADY_OUTSIDE, 'Vehicle is already outside campus.');
 
-            return $this->response(self::STATUS_ALREADY_OUTSIDE, 'already_outside', false, $direction, $gateId, 'Vehicle is already outside campus.', $this->userPayload($user));
+            return $this->response(self::STATUS_ALREADY_OUTSIDE, 'already_outside', false, $direction, $gateId, 'Vehicle is already outside campus.', $this->userPayload($user), $log->id);
         }
 
         $log = GateLog::query()->create([
@@ -106,6 +109,7 @@ class RfidAccessService
         ]);
 
         $this->syncParkingOccupancy($user, $direction);
+        GateScanProcessed::dispatchFromLog($log);
 
         return $this->response(
             self::STATUS_GRANTED,
@@ -179,9 +183,9 @@ class RfidAccessService
         }
     }
 
-    private function logDeniedAttempt(?User $user, string $uid, string $gateId, string $direction, string $result, string $reason = ''): void
+    private function logDeniedAttempt(?User $user, string $uid, string $gateId, string $direction, string $result, string $reason = ''): GateLog
     {
-        GateLog::query()->create([
+        $log = GateLog::query()->create([
             'user_id' => $user?->id,
             'action' => $direction,
             'gate_id' => $gateId,
@@ -190,6 +194,10 @@ class RfidAccessService
             'reason' => $reason,
             'timestamp' => now(),
         ]);
+
+        GateScanProcessed::dispatchFromLog($log);
+
+        return $log;
     }
 
     /**

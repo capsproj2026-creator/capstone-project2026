@@ -92,7 +92,11 @@ class RegistrationController extends Controller
                 ->with('error', 'This registration is no longer pending.');
         }
 
-        $user->update(['status' => User::STATUS_DENIED]);
+        $user->update([
+            'status' => User::STATUS_DENIED,
+            'Gate_access' => User::GATE_ACCESS_DENIED,
+            'declined_at' => now(),
+        ]);
 
         $roleName = $user->role?->role_name ?? 'User';
 
@@ -107,7 +111,7 @@ class RegistrationController extends Controller
             'user_id' => $user->id,
             'sender_id' => auth()->id(),
             'title' => 'Account Declined',
-            'message' => "Your registration as {$roleName} has been declined. Please check your details and try again.",
+            'message' => "Your registration as {$roleName} has been declined. You may submit a new registration after 3 days.",
             'type' => 'System',
             'is_read' => false,
             'created_at' => now(),

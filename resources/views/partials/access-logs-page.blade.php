@@ -54,7 +54,7 @@
             type="search"
             name="q"
             value="{{ $search }}"
-            placeholder="Search by name, RFID, or gate..."
+            placeholder="Search by name, Student/Staff, RFID, or gate..."
             class="w-full rounded-lg border border-gray-200 bg-gray-50 py-2.5 pl-10 pr-3 text-sm text-gray-900 placeholder:text-gray-400 focus:border-blue-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20"
         >
     </div>
@@ -62,7 +62,6 @@
     <div class="grid grid-cols-1 gap-3 sm:grid-cols-3 lg:w-auto lg:min-w-[28rem]">
         <select
             name="type"
-            onchange="this.form.submit()"
             class="w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2.5 text-sm text-gray-800 focus:border-blue-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20"
         >
             <option value="all" @selected($typeFilter === 'all')>All Types</option>
@@ -73,7 +72,6 @@
 
         <select
             name="direction"
-            onchange="this.form.submit()"
             class="w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2.5 text-sm text-gray-800 focus:border-blue-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20"
         >
             <option value="all" @selected($directionFilter === 'all')>All Directions</option>
@@ -83,7 +81,6 @@
 
         <select
             name="result"
-            onchange="this.form.submit()"
             class="w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2.5 text-sm text-gray-800 focus:border-blue-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20"
         >
             <option value="all" @selected($resultFilter === 'all')>All Results</option>
@@ -96,13 +93,10 @@
         <button type="submit" class="rounded-lg bg-gray-900 px-4 py-2.5 text-sm font-semibold text-white hover:bg-black">
             Search
         </button>
-        @if ($search !== '' || $typeFilter !== 'all' || $directionFilter !== 'all' || $resultFilter !== 'all' || ($dateFrom ?? '') !== '' || ($dateTo ?? '') !== '')
-            <a href="{{ $clearRoute }}" class="rounded-lg border border-gray-200 bg-white px-4 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50">
-                Clear
-            </a>
-        @endif
+        <a href="{{ $clearRoute }}" class="rounded-lg border border-gray-200 bg-white px-4 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50">
+            Clear
+        </a>
     </div>
-
     @if (($dateFrom ?? '') !== '')
         <input type="hidden" name="date_from" value="{{ $dateFrom }}">
     @endif
@@ -242,8 +236,13 @@
         if (window.lucide) window.lucide.createIcons();
 
         const eventsUrl = @json($eventsRoute);
+        const clearRoute = @json($clearRoute);
         let lastId = @json(optional($logs->first())->getKey() ? (string) $logs->first()->getKey() : null);
         let busy = false;
+        let searchTimer = null;
+        let requestId = 0;
+        const form = document.querySelector('form[method="GET"]');
+        const searchInput = form?.querySelector('input[name="q"]');
 
         const esc = (value) => String(value ?? '')
             .replace(/&/g, '&amp;')
@@ -267,6 +266,16 @@
         const directionCell = (action) => action === 'Entry'
             ? `<span class="inline-flex items-center gap-1.5 font-medium text-blue-600"><i data-lucide="log-in" class="h-4 w-4"></i> Entry</span>`
             : `<span class="inline-flex items-center gap-1.5 font-medium text-purple-600"><i data-lucide="log-out" class="h-4 w-4"></i> ${esc(action || '—')}</span>`;
+
+        const currentParams = () => {
+            const params = new URLSearchParams(new FormData(form));
+            [...params.entries()].forEach(([key, value]) => {
+                if (String(value).trim() === '') {
+                    params.delete(key);
+                }
+            });
+            return params;
+        };
 
         const renderLogs = (logs) => {
             const tbody = document.querySelector('#access-records-body');
@@ -345,34 +354,175 @@
             }
         };
 
-        const poll = async () => {
-            if (document.hidden || busy) return;
+        const fetchResults = async ({ force = false } = {}) => {
+            if (!form) return;
+            if (busy && !force) return;
+
+            const params = currentParams();
+            const queryKey = params.toString();
+            const thisRequest = ++requestId;
             busy = true;
+
             try {
-                const params = new URLSearchParams(window.location.search);
-                const response = await fetch(`${eventsUrl}?${params.toString()}`, {
+                const response = await fetch(`${eventsUrl}?${queryKey}`, {
                     headers: { Accept: 'application/json' },
                     cache: 'no-store',
                 });
                 if (!response.ok) return;
-                const data = await response.json();
-                if (!data.newest_id || data.newest_id === lastId) return;
+                if (thisRequest !== requestId) return;
 
-                lastId = data.newest_id;
+                const data = await response.json();
+                lastId = data.newest_id || lastId;
                 updateStats(data.stats);
                 renderLogs(data.logs || []);
                 renderDenied(data.recent_denied || []);
+
+                const nextUrl = queryKey ? `${clearRoute}?${queryKey}` : clearRoute;
+                window.history.replaceState({}, '', nextUrl);
             } catch (e) {
-                // keep polling
+                // keep UI usable
             } finally {
-                busy = false;
+                if (thisRequest === requestId) {
+                    busy = false;
+                }
             }
         };
 
-        window.setInterval(poll, 2500);
-        document.addEventListener('visibilitychange', () => {
-            if (!document.hidden) poll();
-        });
+        const scheduleSearch = () => {
+            window.clearTimeout(searchTimer);
+            searchTimer = window.setTimeout(() => fetchResults({ force: true }), 250);
+        };
+
+        if (form) {
+            if (searchInput) {
+                searchInput.addEventListener('input', scheduleSearch);
+            }
+            form.querySelectorAll('select[name="type"], select[name="direction"], select[name="result"]').forEach((select) => {
+                select.removeAttribute('onchange');
+                select.addEventListener('change', () => fetchResults({ force: true }));
+            });
+            form.addEventListener('submit', (event) => {
+                event.preventDefault();
+                window.clearTimeout(searchTimer);
+                fetchResults({ force: true });
+            });
+        }
+
+        const onGateScan = (scan) => {
+            if (!scan?.id || String(scan.id) === String(lastId)) {
+                return;
+            }
+
+            const params = form ? currentParams() : new URLSearchParams();
+            const q = (params.get('q') || '').trim().toLowerCase();
+            const type = params.get('type') || 'all';
+            const direction = params.get('direction') || 'all';
+            const result = params.get('result') || 'all';
+
+            const matchesType = type === 'all' || String(scan.role || '') === type;
+            const matchesDirection = direction === 'all' || String(scan.action || '') === direction;
+            const matchesResult = result === 'all'
+                || (result === 'Granted' && !!scan.granted)
+                || (result === 'Denied' && !scan.granted);
+            const hay = [
+                scan.name,
+                scan.id_number,
+                scan.rfid_uid_full,
+                scan.rfid_uid,
+                scan.gate_label,
+                scan.gate_id,
+                scan.plate_number,
+            ].map((v) => String(v || '').toLowerCase()).join(' ');
+            const matchesQ = q === '' || hay.includes(q);
+
+            lastId = String(scan.id);
+
+            const bump = (id) => {
+                const el = document.getElementById(id);
+                if (!el) return;
+                el.textContent = (Number(String(el.textContent).replace(/,/g, '')) + 1).toLocaleString();
+            };
+
+            bump('stat-total');
+            const heading = document.getElementById('access-records-heading');
+            const totalEl = document.getElementById('stat-total');
+            if (heading && totalEl) {
+                heading.textContent = `Access Records (${totalEl.textContent})`;
+            }
+            if (scan.granted && scan.action === 'Entry') bump('stat-entries');
+            if (scan.granted && scan.action === 'Exit') bump('stat-exits');
+            if (!scan.granted) bump('stat-denied');
+
+            if (matchesType && matchesDirection && matchesResult && matchesQ) {
+                const tbody = document.querySelector('#access-records-body');
+                if (tbody) {
+                    if (tbody.querySelector('td[colspan]')) {
+                        tbody.innerHTML = '';
+                    }
+                    const gate = scan.gate_label || scan.gate_id || '—';
+                    tbody.insertAdjacentHTML('afterbegin', `
+                        <tr class="hover:bg-gray-50/80">
+                            <td class="whitespace-nowrap px-5 py-4 text-gray-700 sm:px-6">${esc(scan.timestamp)}</td>
+                            <td class="px-5 py-4 sm:px-6">
+                                <div class="min-w-0">
+                                    <p class="truncate font-semibold text-gray-900">${esc(scan.name)}</p>
+                                    <p class="text-xs text-gray-400">${esc(scan.id_number ?? '—')}</p>
+                                </div>
+                            </td>
+                            <td class="px-5 py-4 sm:px-6">${roleBadge(scan.role)}</td>
+                            <td class="whitespace-nowrap px-5 py-4 sm:px-6">${directionCell(scan.action)}</td>
+                            <td class="whitespace-nowrap px-5 py-4 text-gray-700 sm:px-6">${esc(gate)}</td>
+                            <td class="px-5 py-4 sm:px-6">${resultBadge(!!scan.granted)}</td>
+                        </tr>
+                    `);
+                    while (tbody.querySelectorAll('tr').length > 30) {
+                        tbody.removeChild(tbody.lastElementChild);
+                    }
+                    if (window.lucide) window.lucide.createIcons();
+                }
+            }
+
+            if (!scan.granted) {
+                const box = document.getElementById('recent-denied-list');
+                if (box) {
+                    if (box.querySelector('p.rounded-xl')) {
+                        box.innerHTML = '';
+                    }
+                    box.insertAdjacentHTML('afterbegin', `
+                        <div class="flex flex-col gap-3 rounded-xl border border-red-100 bg-white p-4 sm:flex-row sm:items-center sm:justify-between">
+                            <div class="min-w-0">
+                                <p class="font-semibold text-gray-900">${esc(scan.name)}</p>
+                                <p class="mt-0.5 text-sm text-red-600">${esc(scan.reason || 'Access denied')}</p>
+                                <p class="mt-2 text-xs text-gray-500">
+                                    ${esc(scan.timestamp)}
+                                    <span class="mx-1">•</span>
+                                    ${esc(scan.gate_label || scan.gate_id || '—')}
+                                </p>
+                            </div>
+                            <span class="inline-flex w-fit shrink-0 items-center gap-1 rounded-full bg-red-500 px-3 py-1 text-xs font-semibold text-white">
+                                <i data-lucide="x" class="h-3.5 w-3.5"></i>
+                                Denied
+                            </span>
+                        </div>
+                    `);
+                    while (box.children.length > 5) {
+                        box.removeChild(box.lastElementChild);
+                    }
+                    if (window.lucide) window.lucide.createIcons();
+                }
+            }
+        };
+
+        const subscribeAccessLogs = (echo) => {
+            if (!echo) return;
+            echo.private('gate.scans').listen('.GateScanProcessed', onGateScan);
+        };
+
+        if (typeof window.whenEchoReady === 'function') {
+            window.whenEchoReady(subscribeAccessLogs);
+        } else {
+            window.addEventListener('echo:ready', () => subscribeAccessLogs(window.Echo), { once: true });
+        }
     })();
 </script>
 @endpush

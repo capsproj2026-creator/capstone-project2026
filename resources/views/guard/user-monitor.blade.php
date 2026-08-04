@@ -40,12 +40,20 @@
                         <td class="px-6 py-4"><code>{{ $campusUser->plate_number ?? '—' }}</code></td>
                         <td class="px-6 py-4">{{ $campusUser->role?->role_name }}</td>
                         <td class="px-6 py-4">
-                            <span @class([
-                                'inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium',
-                                'bg-green-100 text-green-700' => ($campusUser->Gate_access ?? '') === 'Granted',
-                                'bg-amber-100 text-amber-700' => in_array($campusUser->Gate_access ?? '', ['', 'Pending'], true),
-                                'bg-red-100 text-red-700' => ($campusUser->Gate_access ?? '') === 'Denied',
-                            ])>{{ $campusUser->Gate_access ?: 'Pending' }}</span>
+                            @php
+                                $gateAccess = $campusUser->Gate_access ?: '';
+                                if ($campusUser->status === \App\Models\User::STATUS_DENIED || $gateAccess === 'Denied') {
+                                    $gateLabel = 'Denied';
+                                    $gateTone = 'bg-red-100 text-red-700';
+                                } elseif (in_array($gateAccess, ['Granted', 'Access'], true)) {
+                                    $gateLabel = 'Granted';
+                                    $gateTone = 'bg-green-100 text-green-700';
+                                } else {
+                                    $gateLabel = 'Pending';
+                                    $gateTone = 'bg-amber-100 text-amber-700';
+                                }
+                            @endphp
+                            <span class="inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium {{ $gateTone }}">{{ $gateLabel }}</span>
                         </td>
                         <td class="px-6 py-4">{{ $campusUser->strike_count ?? 0 }}/{{ \App\Models\User::MAX_STRIKES }}</td>
                         <td class="px-6 py-4">{{ $campusUser->status }}</td>

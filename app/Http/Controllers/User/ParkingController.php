@@ -5,6 +5,7 @@ namespace App\Http\Controllers\User;
 use App\Http\Controllers\Controller;
 use App\Models\ParkingArea;
 use App\Models\ParkingSlot;
+use App\Services\AiCameraRegistry;
 use App\Services\AiParkingOccupancyService;
 use App\Services\DashboardStatsService;
 use Illuminate\Http\JsonResponse;
@@ -22,16 +23,32 @@ class ParkingController extends Controller
         $zoneStats = ParkingArea::query()
             ->orderBy('id')
             ->get()
-            ->filter(fn (ParkingArea $area) => $area->isAccessibleByRole($roleName))
+            ->filter(fn (ParkingArea $area) => in_array($roleName, $area->getAllowedRoles(), true))
             ->map(function (ParkingArea $area) use ($ai) {
-                $slots = ParkingSlot::query()->where('area_id', $area->id)->get(['status']);
+                $hidden = ! $area->isVisibleToUsers();
+                $slots = ParkingSlot::query()
+                    ->where('area_id', $area->id)
+                    ->orderBy('slot_number')
+                    ->get(['id', 'slot_number', 'status'])
+                    ->map(function (ParkingSlot $slot) use ($hidden) {
+                        if ($hidden) {
+                            $slot->status = 'Maintenance';
+                        }
+
+                        return $slot;
+                    });
 
                 return [
                     'area' => $area,
+                    'hidden' => $hidden,
                     'total' => $slots->count(),
-                    'available' => $slots->where('status', 'Available')->count(),
-                    'occupied' => $slots->where('status', 'Occupied')->count(),
-                    'ai_monitored' => $area->id === $ai->monitoredAreaId(),
+                    'available' => $hidden ? 0 : $slots->where('status', 'Available')->count(),
+                    'occupied' => $hidden ? 0 : $slots->where('status', 'Occupied')->count(),
+                    'reserved' => $hidden ? 0 : $slots->where('status', 'Reserved')->count(),
+                    'maintenance' => $hidden ? $slots->count() : $slots->where('status', 'Maintenance')->count(),
+                    'ai_monitored' => in_array((int) $area->id, app(AiCameraRegistry::class)->monitoredAreaIds(), true)
+                        || $area->id === $ai->monitoredAreaId(),
+                    'slots' => $slots,
                 ];
             })
             ->values();
@@ -58,11 +75,34 @@ class ParkingController extends Controller
         $payload = $ai->statusPayload();
 
         $payload['zones'] = collect($payload['zones'])
-            ->filter(function (array $zone) use ($roleName) {
+            ->map(function (array $zone) use ($roleName) {
                 $area = ParkingArea::query()->find($zone['id']);
+                if (! $area || ! in_array($roleName, $area->getAllowedRoles(), true)) {
+                    return null;
+                }
 
-                return $area && $area->isAccessibleByRole($roleName);
+                if (! $area->isVisibleToUsers()) {
+                    $slots = collect($zone['slots'] ?? [])->map(function (array $slot) {
+                        $slot['status'] = 'Maintenance';
+
+                        return $slot;
+                    })->values()->all();
+
+                    return array_merge($zone, [
+                        'hidden' => true,
+                        'available' => 0,
+                        'occupied' => 0,
+                        'reserved' => 0,
+                        'maintenance' => count($slots),
+                        'slots' => $slots,
+                    ]);
+                }
+
+                $zone['hidden'] = false;
+
+                return $zone;
             })
+            ->filter()
             ->values()
             ->all();
 

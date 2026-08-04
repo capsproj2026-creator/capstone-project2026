@@ -19,6 +19,36 @@ class AiParkingOccupancyTest extends TestCase
 
         Config::set('services.ai_parking.api_token', self::TOKEN);
         Config::set('services.ai_parking.area_id', AiTestLotSeeder::AREA_ID);
+        Config::set('services.ai_parking.stream_base', 'http://127.0.0.1:8090');
+        Config::set('services.ai_parking.cameras', [
+            [
+                'id' => 'CAM-AI-1',
+                'name' => 'AI Test Lot',
+                'location' => 'Parking Lot A',
+                'area_id' => 19,
+                'stream_path' => '/stream.mjpg',
+                'stream_url' => 'http://127.0.0.1:8090/stream.mjpg',
+                'enabled' => true,
+            ],
+            [
+                'id' => 'CAM-AI-2',
+                'name' => 'AI Lot B',
+                'location' => 'Parking Lot B',
+                'area_id' => 20,
+                'stream_path' => '/CAM-AI-2/stream.mjpg',
+                'stream_url' => 'http://127.0.0.1:8090/CAM-AI-2/stream.mjpg',
+                'enabled' => true,
+            ],
+            [
+                'id' => 'CAM-AI-3',
+                'name' => 'AI Lot C',
+                'location' => 'Visitor Parking',
+                'area_id' => 21,
+                'stream_path' => '/CAM-AI-3/stream.mjpg',
+                'stream_url' => 'http://127.0.0.1:8090/CAM-AI-3/stream.mjpg',
+                'enabled' => true,
+            ],
+        ]);
 
         try {
             (new AiTestLotSeeder)->run();
@@ -66,7 +96,7 @@ class AiParkingOccupancyTest extends TestCase
 
     public function test_occupancy_ignores_client_area_id_override(): void
     {
-        $other = ParkingArea::query()->where('id', '!=', AiTestLotSeeder::AREA_ID)->first();
+        $other = ParkingArea::query()->where('id', '!=', AiTestLotSeeder::AREA_ID)->whereNotIn('id', [20, 21])->first();
         if (! $other) {
             $this->markTestSkipped('No secondary parking area to compare.');
         }
@@ -79,6 +109,7 @@ class AiParkingOccupancyTest extends TestCase
 
         $this->withHeaders(['X-AI-TOKEN' => self::TOKEN])
             ->postJson('/api/ai-parking/occupancy', [
+                'camera_id' => 'CAM-AI-1',
                 'area_id' => $other->id,
                 'vehicle_count' => 2,
             ])
@@ -91,6 +122,68 @@ class AiParkingOccupancyTest extends TestCase
         }
     }
 
+    public function test_multi_camera_occupancy_is_independent(): void
+    {
+        $this->withHeaders(['X-AI-TOKEN' => self::TOKEN])
+            ->postJson('/api/ai-parking/occupancy', [
+                'camera_id' => 'CAM-AI-1',
+                'vehicle_count' => 4,
+            ])
+            ->assertOk()
+            ->assertJsonPath('data.area_id', 19)
+            ->assertJsonPath('data.occupied', 4);
+
+        $this->withHeaders(['X-AI-TOKEN' => self::TOKEN])
+            ->postJson('/api/ai-parking/occupancy', [
+                'camera_id' => 'CAM-AI-2',
+                'vehicle_count' => 2,
+            ])
+            ->assertOk()
+            ->assertJsonPath('data.camera_id', 'CAM-AI-2')
+            ->assertJsonPath('data.area_id', 20)
+            ->assertJsonPath('data.occupied', 2);
+
+        $this->withHeaders(['X-AI-TOKEN' => self::TOKEN])
+            ->postJson('/api/ai-parking/occupancy', [
+                'camera_id' => 'CAM-AI-3',
+                'vehicle_count' => 1,
+            ])
+            ->assertOk()
+            ->assertJsonPath('data.area_id', 21)
+            ->assertJsonPath('data.occupied', 1);
+
+        $this->assertSame(4, ParkingSlot::query()->where('area_id', 19)->where('status', 'Occupied')->count());
+        $this->assertSame(2, ParkingSlot::query()->where('area_id', 20)->where('status', 'Occupied')->count());
+        $this->assertSame(1, ParkingSlot::query()->where('area_id', 21)->where('status', 'Occupied')->count());
+
+        $guard = User::query()->where('email', 'guard@my.cspc.edu.ph')->first();
+        if ($guard) {
+            $this->actingAs($guard)
+                ->getJson(route('guard.parking.status'))
+                ->assertOk()
+                ->assertJsonPath('ai_cameras.CAM-AI-1.occupied', 4)
+                ->assertJsonPath('ai_cameras.CAM-AI-2.occupied', 2)
+                ->assertJsonPath('ai_cameras.CAM-AI-3.occupied', 1);
+        }
+    }
+
+    public function test_live_cameras_lists_ai_cameras(): void
+    {
+        $admin = User::query()->where('email', 'admin@my.cspc.edu.ph')->first();
+        if (! $admin) {
+            $this->markTestSkipped('Admin user not seeded.');
+        }
+
+        $html = $this->actingAs($admin)
+            ->get(route('admin.live-cameras'))
+            ->assertOk()
+            ->getContent();
+
+        $this->assertStringContainsString('AI Test Lot', $html);
+        $this->assertStringContainsString('AI Lot B', $html);
+        $this->assertStringContainsString('AI Lot C', $html);
+    }
+
     public function test_guard_ai_parking_stream_requires_auth(): void
     {
         $this->get(route('guard.ai-parking.stream'))->assertRedirect();
@@ -100,9 +193,11 @@ class AiParkingOccupancyTest extends TestCase
             $this->markTestSkipped('Guard user not seeded.');
         }
 
-        $this->actingAs($guard)
-            ->get(route('guard.ai-parking.stream'))
-            ->assertStatus(503);
+        $response = $this->actingAs($guard)
+            ->get(route('guard.ai-parking.stream'));
+
+        // 503 when upstream AI stream is down; 200 when the Python service is live.
+        $this->assertContains($response->getStatusCode(), [200, 503]);
     }
 
     public function test_status_payload_includes_ai_health(): void
@@ -160,6 +255,62 @@ class AiParkingOccupancyTest extends TestCase
         $this->assertStringNotContainsString('Your Parking', $html);
         $this->assertStringNotContainsString('No slot assigned', $html);
         $this->assertStringNotContainsString('Contact administration if you need a parking assignment', $html);
+    }
+
+    public function test_occupancy_enriches_detection_with_registered_owner(): void
+    {
+        \App\Support\PlateLookup::forgetIndex();
+
+        $owner = null;
+        try {
+            $owner = User::query()->create([
+                'fullname' => 'Plate Owner Test',
+                'email' => 'plate.owner.'.uniqid().'@my.cspc.edu.ph',
+                'password' => bcrypt('password123'),
+                'user_role_id' => 3,
+                'department_code' => 'CCS',
+                'vehicle_id' => 1,
+                'id_number' => 'PLATE'.strtoupper(substr(uniqid(), -6)),
+                'plate_number' => 'ABC-1234',
+                'status' => User::STATUS_GRANTED,
+                'Gate_access' => User::GATE_ACCESS_GRANTED,
+                'strike_count' => 0,
+                'email_verified_at' => now(),
+                'created_at' => now(),
+            ]);
+        } catch (\Throwable $e) {
+            $this->markTestSkipped('Could not create test user: '.$e->getMessage());
+        }
+
+        try {
+            $response = $this->withHeaders(['X-AI-TOKEN' => self::TOKEN])
+                ->postJson('/api/ai-parking/occupancy', [
+                    'camera_id' => 'CAM-AI-1',
+                    'area_id' => AiTestLotSeeder::AREA_ID,
+                    'vehicle_count' => 1,
+                    'detections' => [
+                        [
+                            'class' => 'car',
+                            'confidence' => 0.91,
+                            'plate' => 'ABC1234',
+                            'track_id' => 42,
+                        ],
+                    ],
+                ])
+                ->assertOk()
+                ->assertJsonPath('status', 'ok');
+
+            $det = $response->json('data.detections.0');
+            $this->assertSame('ABC1234', $det['plate']);
+            $this->assertTrue($det['registered']);
+            $this->assertSame('Plate Owner Test', $det['owner_name']);
+            $this->assertEquals($owner->id, $det['user_id']);
+        } finally {
+            \App\Support\PlateLookup::forgetIndex();
+            if ($owner) {
+                $owner->delete();
+            }
+        }
     }
 
     public function test_ai_test_lot_area_exists(): void

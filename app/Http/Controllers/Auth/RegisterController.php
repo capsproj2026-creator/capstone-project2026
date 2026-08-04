@@ -7,9 +7,11 @@ use App\Models\Department;
 use App\Models\Notification;
 use App\Models\User;
 use App\Models\Vehicle;
-use App\Support\SafeUpload;
 use App\Services\NavigationService;
 use App\Services\SequenceService;
+use App\Support\PasswordRules;
+use App\Support\RegistrationCooldown;
+use App\Support\SafeUpload;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -83,8 +85,6 @@ class RegisterController extends Controller
                 });
             $vehicleTypes = Vehicle::query()->orderBy('id')->get();
         } catch (\Throwable $e) {
-            // If the database is unavailable/misconfigured, keep the route usable
-            // and show a friendly banner in the UI instead of a 500.
             report($e);
             $dbError = 'Database connection is not available. Registration form options may be empty until the database is configured.';
         }
@@ -93,6 +93,8 @@ class RegisterController extends Controller
             'dbError' => $dbError,
             'departments' => $departments,
             'vehicleTypes' => $vehicleTypes,
+            'passwordHint' => PasswordRules::hint(),
+            'hasCspcLogo' => is_file(public_path('images/cspc-logo.png')),
         ]);
     }
 
@@ -106,7 +108,7 @@ class RegisterController extends Controller
             report($e);
 
             return back()
-                ->withInput($request->except('password', '_token'))
+                ->withInput($request->except('password', 'password_confirmation', '_token'))
                 ->withErrors([
                     'email' => 'Unable to complete registration right now. Please check your connection and try again.',
                 ]);
@@ -115,13 +117,27 @@ class RegisterController extends Controller
 
     private function completeRegistration(Request $request): RedirectResponse
     {
+        $email = strtolower(trim((string) $request->input('email')));
+        $idNumber = trim((string) $request->input('id_number'));
+
+        RegistrationCooldown::purgeExpiredDeniedCollisions($email, $idNumber);
+
+        $blocking = RegistrationCooldown::findBlockingDeniedUser($email, $idNumber);
+        if ($blocking && RegistrationCooldown::isWithinCooldown($blocking)) {
+            throw ValidationException::withMessages([
+                'email' => RegistrationCooldown::remainingMessage($blocking),
+            ]);
+        }
+
         $vehicleIds = Vehicle::query()
             ->pluck('id')
             ->map(fn ($id) => (string) $id)
             ->all();
 
         $validated = $request->validate([
-            'fullname' => ['required', 'string', 'max:100'],
+            'first_name' => ['required', 'string', 'max:50'],
+            'last_name' => ['required', 'string', 'max:50'],
+            'middle_name' => ['nullable', 'string', 'max:50'],
             'email' => [
                 'required',
                 'email:rfc,dns',
@@ -129,15 +145,27 @@ class RegisterController extends Controller
                 Rule::unique(User::class, 'email'),
             ],
             'phone_number' => ['required', 'string', 'max:20'],
-            'password' => ['required', 'string', 'min:8', 'confirmed'],
+            'password' => PasswordRules::required(),
             'id_number' => ['required', 'string', 'max:50', 'regex:/^[A-Za-z0-9]+$/', Rule::unique(User::class, 'id_number')],
             'reg_category' => ['required', 'in:vehicle'],
             'profile_pic' => ['nullable', 'image', 'max:5120'],
+            'id_document' => ['required', 'file', 'mimes:jpg,jpeg,png,pdf', 'max:5120'],
         ], [
             'email.required' => 'Please enter your email address.',
             'email.email' => 'Please enter a valid email address with a working domain (format and DNS check).',
             'email.unique' => 'This email address is already registered.',
+            'password.confirmed' => 'Password confirmation does not match.',
+            'id_document.required' => 'Please upload a valid ID document.',
         ]);
+
+        if ($blocking && RegistrationCooldown::passwordMatchesDenied($blocking, $validated['password'])) {
+            throw ValidationException::withMessages([
+                'password' => 'Please choose a password different from your previous registration password.',
+            ]);
+        }
+
+        // Ensure expired denied collisions are gone even if unique rule raced.
+        RegistrationCooldown::purgeExpiredDeniedCollisions($email, $idNumber);
 
         $request->validate([
             'user_type' => ['required', 'in:Student,Staff'],
@@ -147,10 +175,18 @@ class RegisterController extends Controller
             'driver_license' => ['required', 'image', 'max:5120'],
             'or_cr_photo' => ['required', 'file', 'mimes:jpg,jpeg,png,pdf', 'max:5120'],
         ]);
+
         $userRoleId = $request->input('user_type') === 'Student' ? 3 : 4;
         $plateNumber = strtoupper(trim($request->input('plate_number')));
         $departmentCode = $request->input('department_code');
         $vehicleId = (int) $request->input('vehicle_id');
+
+        $fullname = self::composeFullName(
+            $validated['first_name'],
+            $validated['last_name'],
+            $validated['middle_name'] ?? null
+        );
+
         $licenseFilename = SafeUpload::store(
             $request->file('driver_license'),
             'uploads/documents/license',
@@ -163,11 +199,17 @@ class RegisterController extends Controller
             'ORCR',
             'local'
         );
+        $idDocFilename = SafeUpload::store(
+            $request->file('id_document'),
+            'uploads/documents/id',
+            'IDDOC',
+            'local'
+        );
 
         $profileFilename = $this->storeUpload($request, 'profile_pic', 'uploads/profile', 'default_avatar.png');
 
         $payload = [
-            'fullname' => $validated['fullname'],
+            'fullname' => $fullname,
             'email' => $validated['email'],
             'phone_number' => $validated['phone_number'],
             'password' => Hash::make($validated['password']),
@@ -177,17 +219,17 @@ class RegisterController extends Controller
             'id_number' => $validated['id_number'],
             'plate_number' => $plateNumber,
             'profile_pic' => $profileFilename,
+            'id_document' => $idDocFilename,
             'driver_license' => $licenseFilename,
             'or_cr_photo' => $orcrFilename,
             'status' => User::STATUS_PENDING,
             'strike_count' => 0,
             'Gate_access' => User::GATE_ACCESS_PENDING,
             'email_verified_at' => null,
+            'declined_at' => null,
             'created_at' => now(),
         ];
 
-        // MongoDB throws E11000 duplicate key if the sequential counter ever gets out of sync.
-        // We retry once by generating a fresh id.
         $user = null;
         $lastError = null;
         for ($attempt = 0; $attempt < 2; $attempt++) {
@@ -228,6 +270,18 @@ class RegisterController extends Controller
         return redirect()
             ->route('verification.notice')
             ->with('success', 'Registration successful! Please verify your email to continue.');
+    }
+
+    public static function composeFullName(string $first, string $last, ?string $middle = null): string
+    {
+        $parts = [trim($first)];
+        $middle = trim((string) $middle);
+        if ($middle !== '') {
+            $parts[] = $middle;
+        }
+        $parts[] = trim($last);
+
+        return preg_replace('/\s+/', ' ', implode(' ', $parts)) ?: trim($first.' '.$last);
     }
 
     private function storeUpload(Request $request, string $field, string $directory, string $default): string

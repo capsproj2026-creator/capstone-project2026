@@ -110,6 +110,24 @@ Open [http://127.0.0.1:8000](http://127.0.0.1:8000)
 
 For XAMPP Apache, point the document root to the `public/` folder.
 
+### Realtime RFID (Live Gate + Access Records)
+
+Live Gate and Access Records use **Laravel Reverb** + Echo (not HTTP polling). With `BROADCAST_CONNECTION=reverb` and `REVERB_*` / `VITE_REVERB_*` set in `.env`:
+
+```bash
+# Terminal 1 — app (0.0.0.0 so ESP32 on LAN can reach it)
+php artisan serve --host=0.0.0.0 --port=8000
+
+# Terminal 2 — WebSocket server (Live Gate / Access Records UI)
+php artisan reverb:start
+
+# Terminal 3 — Vite (dev) or build once for production assets
+npm run dev
+# or: npm run build
+```
+
+Guard/Admin browsers subscribe to the private `gate.scans` channel after RFID (or manual) scans.
+
 ## Roles & routes
 
 | Role    | URL prefix | Dashboard        |

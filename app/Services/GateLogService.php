@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Events\GateScanProcessed;
 use App\Models\GateLog;
 use App\Models\ParkingSlot;
 use App\Models\User;
@@ -68,6 +69,7 @@ class GateLogService
         ]);
 
         $this->syncParkingOccupancy($user, $action);
+        GateScanProcessed::dispatchFromLog($log);
 
         return ['log' => $log, 'action' => $action, 'user' => $user];
     }
@@ -92,16 +94,24 @@ class GateLogService
 
     public function todayCount(string $action): int
     {
-        $today = Carbon::today();
+        $start = Carbon::today()->startOfDay();
+        $end = Carbon::today()->endOfDay();
 
         return GateLog::query()
             ->where('action', $action)
             ->where(function ($query) {
                 $query->whereNull('result')
-                    ->orWhere('result', RfidAccessService::STATUS_GRANTED);
+                    ->orWhere('result', '')
+                    ->orWhere('result', RfidAccessService::STATUS_GRANTED)
+                    ->orWhere('result', 'Granted')
+                    ->orWhere('result', 'Access Granted');
             })
-            ->where('log_date', '>=', $today)
-            ->where('log_date', '<', $today->copy()->addDay())
+            ->where(function ($query) use ($start, $end) {
+                $query->whereBetween('timestamp', [$start, $end])
+                    ->orWhere(function ($q) use ($start, $end) {
+                        $q->where('log_date', '>=', $start)->where('log_date', '<=', $end);
+                    });
+            })
             ->count();
     }
 }

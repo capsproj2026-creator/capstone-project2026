@@ -2,8 +2,35 @@
  * Portal shell: mobile sidebar, profile dropdown, Lucide icons.
  * Matches capstone ui (1) Layout / GuardLayout / UserLayout behavior.
  */
+function initPasswordToggles(root = document) {
+    root.querySelectorAll('[data-password-toggle]').forEach((button) => {
+        if (button.dataset.toggleBound === '1') {
+            return;
+        }
+        button.dataset.toggleBound = '1';
+        button.addEventListener('click', (event) => {
+            event.preventDefault();
+            const inputId = button.getAttribute('data-password-toggle');
+            const input = document.getElementById(inputId);
+            if (!input) return;
+
+            const show = input.type === 'password';
+            input.type = show ? 'text' : 'password';
+            button.setAttribute('aria-label', show ? 'Hide password' : 'Show password');
+            button.innerHTML = `<i data-lucide="${show ? 'eye-off' : 'eye'}" class="h-4 w-4"></i>`;
+            if (window.lucide?.createIcons) {
+                window.lucide.createIcons();
+            }
+        });
+    });
+}
+
+window.initPasswordToggles = initPasswordToggles;
+
 function initPortalShell() {
     const root = document.getElementById('portal-root');
+    initPasswordToggles(document);
+
     if (!root) {
         return;
     }
@@ -56,7 +83,6 @@ function initPortalShell() {
 
     window.addEventListener('resize', () => {
         if (window.innerWidth >= 1024) {
-            // Desktop: sidebar is always visible via CSS; clear mobile drawer state.
             sidebar?.classList.remove('translate-x-0');
             sidebar?.classList.add('-translate-x-full');
             overlay?.classList.add('hidden');

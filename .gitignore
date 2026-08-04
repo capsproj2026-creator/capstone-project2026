@@ -22,6 +22,8 @@
 Homestead.json
 Homestead.yaml
 Thumbs.db
+**/__pycache__/
+*.pyc
 
 # YOLO / AI parking weights (large binary files)
 *.pt

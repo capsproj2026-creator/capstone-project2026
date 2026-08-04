@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\GateLog;
+use App\Models\User;
 use App\Support\SearchHelper;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
@@ -248,15 +249,34 @@ class AccessLogController extends Controller
 
         if ($search !== '') {
             $term = SearchHelper::escapeLike($search);
-            $query->where(function (Builder $q) use ($term) {
+            // Case-insensitive partial match against DB user name field(s)
+            $nameRegex = new \MongoDB\BSON\Regex(preg_quote($search, '/'), 'i');
+
+            // Resolve matching users first so name search is based on the users collection
+            $matchedUserIds = User::query()
+                ->where(function (Builder $userQuery) use ($term, $nameRegex) {
+                    $userQuery->where('fullname', 'regex', $nameRegex)
+                        ->orWhere('Name', 'regex', $nameRegex)
+                        ->orWhere('name', 'regex', $nameRegex)
+                        ->orWhere('plate_number', 'like', "%{$term}%")
+                        ->orWhere('id_number', 'like', "%{$term}%")
+                        ->orWhere('email', 'like', "%{$term}%")
+                        ->orWhere('rfid_uid', 'like', "%{$term}%");
+                })
+                ->pluck('id')
+                ->all();
+
+            $query->where(function (Builder $q) use ($term, $matchedUserIds) {
                 $q->where('rfid_uid', 'like', "%{$term}%")
-                    ->orWhere('gate_id', 'like', "%{$term}%")
-                    ->orWhereHas('user', function (Builder $userQuery) use ($term) {
-                        $userQuery->where('name', 'like', "%{$term}%")
-                            ->orWhere('plate_number', 'like', "%{$term}%")
-                            ->orWhere('id_number', 'like', "%{$term}%")
-                            ->orWhere('rfid_uid', 'like', "%{$term}%");
-                    });
+                    ->orWhere('gate_id', 'like', "%{$term}%");
+
+                if ($matchedUserIds !== []) {
+                    $q->orWhereIn('user_id', $matchedUserIds);
+                }
+
+                $q->orWhereHas('user.role', function (Builder $roleQuery) use ($term) {
+                    $roleQuery->where('role_name', 'like', "%{$term}%");
+                });
             });
         }
 

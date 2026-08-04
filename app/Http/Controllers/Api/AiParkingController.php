@@ -3,9 +3,11 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Services\AiCameraRegistry;
 use App\Services\AiParkingOccupancyService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 
 class AiParkingController extends Controller
 {
@@ -14,14 +16,8 @@ class AiParkingController extends Controller
      *
      * POST /api/ai-parking/occupancy
      * Header: X-AI-TOKEN
-     * Body: {
-     *   camera_id, area_id, vehicle_count,
-     *   detections?, slots?: [{slot_number, occupied}],
-     *   events?: [{type, zone_id, track_id, plate, ...}],
-     *   mode?
-     * }
      */
-    public function occupancy(Request $request, AiParkingOccupancyService $service): JsonResponse
+    public function occupancy(Request $request, AiParkingOccupancyService $service, AiCameraRegistry $registry): JsonResponse
     {
         $validated = $request->validate([
             'camera_id' => ['nullable', 'string', 'max:64'],
@@ -48,12 +44,14 @@ class AiParkingController extends Controller
             'events.*.vehicles_in_slot' => ['nullable', 'integer'],
         ]);
 
-        // Never trust client area_id for occupancy writes — pin to configured AI lot.
-        $areaId = $service->monitoredAreaId();
+        $cameraId = (string) ($validated['camera_id'] ?? $registry->primaryCameraId());
+        // Area is resolved from server camera registry — never trust client area_id alone.
+        $areaId = $registry->resolveAreaId($cameraId, isset($validated['area_id']) ? (int) $validated['area_id'] : null);
+
         $snapshot = $service->applyOccupancy(
             $areaId,
             (int) $validated['vehicle_count'],
-            (string) ($validated['camera_id'] ?? 'CAM-AI-1'),
+            $cameraId,
             $validated['detections'] ?? [],
             $validated['slots'] ?? null,
             $validated['events'] ?? [],
@@ -71,7 +69,7 @@ class AiParkingController extends Controller
      * Optional dedicated events endpoint (same auth). Does not rewrite slot occupancy.
      * POST /api/ai-parking/events
      */
-    public function events(Request $request, AiParkingOccupancyService $service): JsonResponse
+    public function events(Request $request, AiParkingOccupancyService $service, AiCameraRegistry $registry): JsonResponse
     {
         $validated = $request->validate([
             'camera_id' => ['nullable', 'string', 'max:64'],
@@ -86,11 +84,15 @@ class AiParkingController extends Controller
             'events.*.slots' => ['nullable', 'array'],
         ]);
 
-        $cameraId = (string) ($validated['camera_id'] ?? 'CAM-AI-1');
+        $cameraId = (string) ($validated['camera_id'] ?? $registry->primaryCameraId());
         $results = app(\App\Services\AiParkingViolationService::class)
             ->processEvents($validated['events'], $cameraId);
 
-        $latest = $service->latestSnapshot() ?? [];
+        $latest = $service->latestSnapshot($cameraId) ?? [
+            'camera_id' => $cameraId,
+            'area_id' => $registry->resolveAreaId($cameraId),
+            'events' => [],
+        ];
         $latest['events'] = array_values(array_slice(
             array_merge($latest['events'] ?? [], $validated['events']),
             -20
@@ -98,11 +100,12 @@ class AiParkingController extends Controller
         $latest['violation_results'] = $results;
         $latest['updated_at'] = now()->toIso8601String();
         $latest['updated_at_label'] = now()->format('h:i:s A');
-        \Illuminate\Support\Facades\Cache::put(
-            AiParkingOccupancyService::CACHE_KEY,
-            $latest,
-            now()->addMinutes(30)
-        );
+
+        $ttl = now()->addMinutes(30);
+        Cache::put($service->cacheKeyForCamera($cameraId), $latest, $ttl);
+        if (strcasecmp($cameraId, $registry->primaryCameraId()) === 0) {
+            Cache::put(AiParkingOccupancyService::CACHE_KEY, $latest, $ttl);
+        }
 
         return response()->json([
             'status' => 'ok',

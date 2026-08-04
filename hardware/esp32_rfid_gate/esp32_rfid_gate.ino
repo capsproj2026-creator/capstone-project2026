@@ -41,7 +41,8 @@ const char* WIFI_SSID     = "YOUR_WIFI_SSID";
 const char* WIFI_PASSWORD = "YOUR_WIFI_PASSWORD";
 
 // Must be THIS PC's Wi‑Fi IPv4 (ipconfig). Not localhost. No trailing slash.
-const char* API_BASE      = "http://10.187.165.54:8000";
+// Laravel must listen on all interfaces: php artisan serve --host=0.0.0.0 --port=8000
+const char* API_BASE      = "http://192.168.1.104:8000";
 const char* RFID_API_TOKEN = "capstone-rfid-dev-token-change-me";
 
 // Unique per reader: Entry gate vs Exit gate
@@ -58,6 +59,8 @@ const char* DIRECTION = "Entry";   // "Entry" or "Exit"
 
 const unsigned long GATE_OPEN_MS = 3000;
 const unsigned long COOLDOWN_MS  = 2500;
+const uint16_t HTTP_CONNECT_MS = 8000;
+const uint16_t HTTP_READ_MS    = 20000;
 
 MFRC522 mfrc522(SS_PIN, RST_PIN);
 unsigned long lastScanMs = 0;
@@ -135,7 +138,10 @@ String postScan(const String &uid) {
   }
 
   WiFiClient client;
+  client.setTimeout(HTTP_READ_MS / 1000);
+
   HTTPClient http;
+  http.setReuse(false);
   String url = String(API_BASE) + "/api/rfid/scan";
   Serial.print("POST ");
   Serial.println(url);
@@ -146,9 +152,10 @@ String postScan(const String &uid) {
   }
 
   http.addHeader("Content-Type", "application/json");
+  http.addHeader("Connection", "close");
   http.addHeader("X-RFID-TOKEN", RFID_API_TOKEN);
-  http.setConnectTimeout(5000);
-  http.setTimeout(8000);
+  http.setConnectTimeout(HTTP_CONNECT_MS);
+  http.setTimeout(HTTP_READ_MS);
 
   StaticJsonDocument<256> body;
   body["uid"] = uid;
@@ -166,7 +173,7 @@ String postScan(const String &uid) {
       code,
       HTTPClient::errorToString(code).c_str()
     );
-    Serial.println("Check that Laravel is running on 0.0.0.0:8000 and Windows Firewall allows port 8000.");
+    Serial.println("Check: php artisan serve --host=0.0.0.0 --port=8000  + Windows Firewall port 8000.");
     http.end();
     return "Access Denied";
   }
@@ -176,10 +183,16 @@ String postScan(const String &uid) {
 
   Serial.printf("HTTP %d: %s\n", code, response.c_str());
 
-  StaticJsonDocument<512> doc;
+  StaticJsonDocument<768> doc;
   DeserializationError err = deserializeJson(doc, response);
   if (err) {
+    Serial.println("JSON parse error");
     return "Access Denied";
+  }
+
+  // Prefer boolean granted — status string alone can mismatch on older payloads
+  if (doc.containsKey("granted")) {
+    return doc["granted"].as<bool>() ? String("Access Granted") : String("Access Denied");
   }
 
   const char* status = doc["status"] | "Access Denied";

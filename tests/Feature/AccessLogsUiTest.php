@@ -36,7 +36,7 @@ class AccessLogsUiTest extends TestCase
             ->assertSee('Entries Granted')
             ->assertSee('Exits Granted')
             ->assertSee('Access Denied')
-            ->assertSee('Search by name, RFID, or gate...')
+            ->assertSee('Search by name, Student/Staff, RFID, or gate...')
             ->assertSee('All Types')
             ->assertSee('All Directions')
             ->assertSee('All Results')
@@ -46,8 +46,11 @@ class AccessLogsUiTest extends TestCase
             ->assertSee('Direction')
             ->assertSee('Gate')
             ->assertSee('Result')
+            ->assertSee(".private('gate.scans')", false)
+            ->assertSee('.GateScanProcessed', false)
             ->assertDontSee('RFID Tag')
-            ->assertDontSee('>Reason</th>', false);
+            ->assertDontSee('>Reason</th>', false)
+            ->assertDontSee('setInterval(fetchResults', false);
     }
 
     public function test_admin_access_logs_filters_by_direction_and_result(): void
@@ -67,6 +70,27 @@ class AccessLogsUiTest extends TestCase
             ]))
             ->assertOk()
             ->assertSee('Recent Denied Access');
+    }
+
+    public function test_admin_access_logs_can_search_by_user_name(): void
+    {
+        $userWithLog = \App\Models\GateLog::query()
+            ->with('user')
+            ->whereNotNull('user_id')
+            ->orderByDesc('timestamp')
+            ->first();
+
+        $name = trim((string) ($userWithLog?->user?->displayName() ?? ''));
+        if ($name === '' || strcasecmp($name, 'Unknown') === 0) {
+            $this->markTestSkipped('No access log with a named user available.');
+        }
+
+        $needle = explode(' ', $name)[0];
+
+        $this->actingAs($this->admin)
+            ->get(route('admin.access-logs', ['q' => $needle]))
+            ->assertOk()
+            ->assertSee($name, false);
     }
 
     public function test_guard_access_logs_still_loads(): void

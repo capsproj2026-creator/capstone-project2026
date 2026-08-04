@@ -108,12 +108,10 @@
                 </select>
             </div>
             <div class="min-w-0">
-                <label class="mb-1.5 block text-sm font-semibold text-gray-800">Password</label>
-                <input type="password" name="password" required minlength="8" class="w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2.5 text-sm">
+                <x-auth.password-input name="password" label="Password" autocomplete="new-password" />
             </div>
             <div class="min-w-0">
-                <label class="mb-1.5 block text-sm font-semibold text-gray-800">Confirm Password</label>
-                <input type="password" name="password_confirmation" required minlength="8" class="w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2.5 text-sm">
+                <x-auth.password-input name="password_confirmation" id="create_admin_password_confirmation" label="Confirm Password" autocomplete="new-password" />
             </div>
             <div class="flex flex-col-reverse justify-end gap-2 sm:col-span-2 sm:flex-row">
                 <button type="button" data-close-modal="create-admin-modal" class="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">Cancel</button>
@@ -151,12 +149,10 @@
                 <input type="text" name="phone_number" required class="w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2.5 text-sm">
             </div>
             <div class="min-w-0">
-                <label class="mb-1.5 block text-sm font-semibold text-gray-800">Password</label>
-                <input type="password" name="password" required minlength="8" class="w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2.5 text-sm">
+                <x-auth.password-input name="password" label="Password" autocomplete="new-password" />
             </div>
             <div class="min-w-0">
-                <label class="mb-1.5 block text-sm font-semibold text-gray-800">Confirm Password</label>
-                <input type="password" name="password_confirmation" required minlength="8" class="w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2.5 text-sm">
+                <x-auth.password-input name="password_confirmation" id="create_guard_password_confirmation" label="Confirm Password" autocomplete="new-password" />
             </div>
             <div class="flex flex-col-reverse justify-end gap-2 sm:col-span-2 sm:flex-row">
                 <button type="button" data-close-modal="create-guard-modal" class="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">Cancel</button>

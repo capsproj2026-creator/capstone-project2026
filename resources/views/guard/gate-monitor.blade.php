@@ -89,7 +89,7 @@
                 <div class="mb-5 flex h-20 w-20 items-center justify-center rounded-2xl bg-gray-100 text-gray-300">
                     <i data-lucide="scan" class="h-10 w-10"></i>
                 </div>
-                <h2 class="text-2xl font-bold text-gray-900 sm:text-3xl">Waiting for RFID scan...</h2>
+                <h2 class="text-2xl font-bold text-gray-900 sm:text-3xl">Waiting for RFID...</h2>
                 <p class="mt-2 max-w-md text-sm text-gray-500 sm:text-base">System ready to scan RFID tags from the ESP32 / RC522 gate readers</p>
             </div>
 
@@ -218,9 +218,6 @@
 <script>
     (() => {
         const IDLE_MS = 5000;
-        const POLL_MS = 800;
-        const eventsBase = @json(route('guard.gate.events'));
-        const ssrLatestId = @json($latestLog ? (string) $latestLog->getKey() : '');
 
         const entries = document.getElementById('today-entries');
         const exits = document.getElementById('today-exits');
@@ -235,13 +232,8 @@
         const avatarInitials = document.getElementById('scan-avatar-initials');
         const stage = document.getElementById('gate-monitor-stage');
 
-        let requestId = 0;
-        let knownLatestId = ssrLatestId;
-        let pollArmed = false;
         let idleTimer = null;
-        let pollTimer = null;
-
-        const logId = (id) => (id === null || id === undefined ? '' : String(id));
+        let knownLatestId = '';
 
         const roleClasses = (role) => {
             const r = String(role || '').toLowerCase();
@@ -357,32 +349,6 @@
             if (window.lucide) window.lucide.createIcons();
         };
 
-        const handleLatest = (data) => {
-            const latest = data?.latest || null;
-            const newestId = logId(data?.newest_id ?? latest?.id);
-
-            if (!pollArmed) {
-                pollArmed = true;
-                if (newestId && newestId !== logId(knownLatestId)) {
-                    knownLatestId = newestId;
-                    showScanCard(latest);
-                    return;
-                }
-                knownLatestId = newestId;
-                showWaiting();
-                return;
-            }
-
-            if (!newestId) {
-                return;
-            }
-
-            if (newestId !== logId(knownLatestId)) {
-                knownLatestId = newestId;
-                showScanCard(latest);
-            }
-        };
-
         const setConnectionState = (online, updatedAt = null) => {
             if (indicator) {
                 indicator.className = `h-2.5 w-2.5 rounded-full ${online ? 'animate-pulse bg-emerald-500' : 'bg-red-500'}`;
@@ -393,46 +359,52 @@
             }
             if (lastUpdated) {
                 lastUpdated.textContent = online
-                    ? `Last updated ${updatedAt}`
-                    : 'Connection interrupted — retrying…';
+                    ? (updatedAt ? `Last scan ${updatedAt}` : 'Listening for RFID…')
+                    : 'Realtime disconnected — check Reverb';
+                lastUpdated.classList.remove('hidden');
             }
         };
 
-        const refresh = async () => {
-            if (document.hidden) return;
-            const myId = ++requestId;
-
-            try {
-                const response = await fetch(eventsBase, {
-                    headers: { Accept: 'application/json' },
-                    cache: 'no-store',
-                });
-                if (!response.ok) throw new Error(`HTTP ${response.status}`);
-
-                const data = await response.json();
-                if (myId !== requestId) return;
-
-                if (entries) entries.textContent = data.today_entries;
-                if (exits) exits.textContent = data.today_exits;
-                if (serverClock && data.server_time) serverClock.textContent = data.server_time;
-                handleLatest(data);
-                setConnectionState(true, data.updated_at);
-            } catch (error) {
-                if (myId === requestId) setConnectionState(false);
-            }
-        };
-
-        const startPolling = () => {
-            if (pollTimer) clearInterval(pollTimer);
-            pollTimer = window.setInterval(refresh, POLL_MS);
+        const handleScan = (scan) => {
+            if (!scan?.id) return;
+            knownLatestId = String(scan.id);
+            if (entries && scan.today_entries != null) entries.textContent = scan.today_entries;
+            if (exits && scan.today_exits != null) exits.textContent = scan.today_exits;
+            showScanCard(scan);
+            setConnectionState(true, scan.time || null);
         };
 
         showWaiting();
-        refresh();
-        startPolling();
-        document.addEventListener('visibilitychange', () => {
-            if (!document.hidden) refresh();
-        });
+        setConnectionState(false);
+
+        const subscribeGateScans = (echo) => {
+            if (!echo) {
+                if (liveStatus) liveStatus.textContent = 'Echo offline';
+                if (lastUpdated) {
+                    lastUpdated.textContent = 'Build assets with VITE_REVERB_* and run php artisan reverb:start';
+                    lastUpdated.classList.remove('hidden');
+                }
+                return;
+            }
+
+            echo.private('gate.scans')
+                .listen('.GateScanProcessed', (scan) => handleScan(scan))
+                .error(() => setConnectionState(false));
+
+            const connector = echo.connector?.pusher;
+            connector?.connection?.bind('connected', () => setConnectionState(true));
+            connector?.connection?.bind('disconnected', () => setConnectionState(false));
+            connector?.connection?.bind('unavailable', () => setConnectionState(false));
+            connector?.connection?.bind('failed', () => setConnectionState(false));
+            connector?.connection?.bind('error', () => setConnectionState(false));
+
+            if (connector?.connection?.state === 'connected') {
+                setConnectionState(true);
+            }
+        };
+
+        // Vite loads app.js as a deferred module; whenEchoReady waits for it.
+        window.whenEchoReady(subscribeGateScans);
 
         window.setInterval(() => {
             if (!serverClock || document.hidden) return;

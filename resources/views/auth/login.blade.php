@@ -2,16 +2,25 @@
 
 @section('title', 'Sign In - Smart Campus VMS')
 
+@section('use_campus_bg', '1')
+
 @section('card_width', 'max-w-md')
 
 @section('content')
-    <div class="w-full overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-lg">
-        <div class="bg-gradient-to-br from-blue-600 to-blue-800 px-6 py-8 text-center text-white">
-            <div class="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-xl bg-white/20">
-                <i data-lucide="parking-square" class="h-6 w-6"></i>
+    <div class="w-full overflow-hidden rounded-2xl border border-white/30 bg-white/95 shadow-2xl backdrop-blur-sm">
+        <div class="relative overflow-hidden bg-gradient-to-br from-blue-700 via-blue-800 to-slate-900 px-6 py-8 text-center text-white">
+            <div class="pointer-events-none absolute inset-0 opacity-25" style="background-image: radial-gradient(circle at 20% 20%, #fff 0, transparent 40%), radial-gradient(circle at 80% 0%, #93c5fd 0, transparent 35%), radial-gradient(circle at 50% 100%, #1e3a8a 0, transparent 45%);"></div>
+            <div class="relative">
+                <div class="mx-auto mb-4 flex h-16 w-16 items-center justify-center">
+                    @if (is_file(public_path('images/cspc-logo.png')))
+                        <img src="{{ asset('images/cspc-logo.png') }}" alt="CSPC" class="h-16 w-16 object-contain drop-shadow-lg">
+                    @else
+                        <i data-lucide="parking-square" class="h-6 w-6"></i>
+                    @endif
+                </div>
+                <h1 class="text-2xl font-bold">Welcome back</h1>
+                <p class="mt-1 text-sm text-blue-100">Sign in to your campus vehicle portal</p>
             </div>
-            <h1 class="text-2xl font-bold">Welcome back</h1>
-            <p class="mt-1 text-sm text-blue-100">Sign in to your campus vehicle portal</p>
         </div>
 
         <div class="w-full p-6 sm:p-8">

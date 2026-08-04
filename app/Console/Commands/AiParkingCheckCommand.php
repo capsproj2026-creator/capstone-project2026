@@ -3,20 +3,23 @@
 namespace App\Console\Commands;
 
 use App\Models\ParkingArea;
+use App\Services\AiCameraRegistry;
 use App\Services\AiParkingHealthService;
 use App\Services\AiParkingOccupancyService;
-use Database\Seeders\AiTestLotSeeder;
 use Illuminate\Console\Command;
 
 class AiParkingCheckCommand extends Command
 {
-    protected $signature = 'ai-parking:check {--probe-stream : HTTP probe the MJPEG upstream URL}';
+    protected $signature = 'ai-parking:check {--probe-stream : HTTP probe each MJPEG upstream URL}';
 
-    protected $description = 'Verify YOLOv9 AI parking CCTV connection (token, area, stream, ingest)';
+    protected $description = 'Verify YOLOv9 multi-camera AI parking CCTV connection';
 
-    public function handle(AiParkingHealthService $health, AiParkingOccupancyService $occupancy): int
-    {
-        $this->info('YOLOv9 AI Parking — connection check');
+    public function handle(
+        AiParkingHealthService $health,
+        AiParkingOccupancyService $occupancy,
+        AiCameraRegistry $registry
+    ): int {
+        $this->info('YOLOv9 AI Parking — multi-camera check');
         $this->newLine();
 
         $token = (string) config('services.ai_parking.api_token', '');
@@ -26,50 +29,50 @@ class AiParkingCheckCommand extends Command
             $this->line('API token: configured ('.strlen($token).' chars)');
         }
 
-        $areaId = $occupancy->monitoredAreaId();
-        $area = ParkingArea::query()->find($areaId);
-        if (! $area) {
-            $this->warn("Parking area {$areaId} not found — run: php artisan db:seed --class=AiTestLotSeeder");
-        } else {
-            $this->line("Monitored area: [{$area->id}] {$area->area_name}");
-        }
+        $okAny = false;
+        foreach ($registry->cameras() as $camera) {
+            $this->newLine();
+            $this->line("=== {$camera['id']} — {$camera['name']} ===");
+            $area = ParkingArea::query()->find($camera['area_id']);
+            if (! $area) {
+                $this->warn("Parking area {$camera['area_id']} missing — run: php artisan db:seed --class=AiTestLotSeeder");
+            } else {
+                $this->line("Area: [{$area->id}] {$area->area_name}");
+            }
 
-        $upstream = $health->upstreamStreamUrl();
-        if ($upstream === null) {
-            $this->error('AI_PARKING_STREAM_URL is not set');
-        } else {
-            $this->line("Upstream stream: {$upstream}");
-        }
+            $upstream = $camera['stream_url'] ?? null;
+            $this->line('Stream URL: '.($upstream ?: '(none)'));
 
-        if ($this->option('probe-stream') && $upstream !== null) {
-            $reachable = $health->isStreamReachable($upstream);
-            $this->line('Stream reachable: '.($reachable ? 'yes' : 'no'));
-        } else {
-            $this->comment('Tip: use --probe-stream to test the MJPEG URL');
-        }
+            if ($this->option('probe-stream') && $upstream) {
+                $reachable = $health->isStreamReachable($upstream);
+                $this->line('Stream reachable: '.($reachable ? 'yes' : 'no'));
+            }
 
-        $ingest = $health->isIngestActive();
-        $snapshot = $occupancy->latestSnapshot();
-        $this->line('Ingest active: '.($ingest ? 'yes' : 'no'));
-        if (is_array($snapshot) && ! empty($snapshot['updated_at_label'])) {
-            $this->line('Last AI update: '.$snapshot['updated_at_label']);
-        } else {
-            $this->comment('No occupancy data yet — start scripts/start-ai-parking.ps1');
+            $ingest = $health->isIngestActive($camera['id']);
+            $snap = $occupancy->latestSnapshot($camera['id']);
+            $this->line('Ingest active: '.($ingest ? 'yes' : 'no'));
+            if (is_array($snap) && ! empty($snap['updated_at_label'])) {
+                $this->line('Last update: '.$snap['updated_at_label'].' vehicles='.($snap['vehicle_count'] ?? 0));
+            }
+
+            if ($ingest || ($this->option('probe-stream') && $upstream && $health->isStreamReachable($upstream))) {
+                $okAny = true;
+            }
         }
 
         $this->newLine();
-        if ($token !== '' && $area && ($ingest || ($this->option('probe-stream') && $health->isStreamReachable($upstream)))) {
-            $this->info('AI parking appears connected.');
+        if ($token !== '' && $okAny) {
+            $this->info('At least one AI camera appears connected.');
             $this->line('Guard UI: /guard/live-cameras, /guard/ai-parking');
 
             return self::SUCCESS;
         }
 
         $this->warn('AI parking is not fully connected yet.');
-        $this->line('1. .\\scripts\\setup-yolov9.ps1');
-        $this->line('2. Set AI_PARKING_API_TOKEN and AI_CAMERA_IP in .env');
+        $this->line('1. Set AI_CAMERA_1/2/3_* in .env (IPs, RTSP paths, passwords)');
+        $this->line('2. php artisan db:seed --class=AiTestLotSeeder');
         $this->line('3. php artisan serve --host=0.0.0.0 --port=8000');
-        $this->line('4. .\\scripts\\start-ai-parking.ps1');
+        $this->line('4. powershell -ExecutionPolicy Bypass -File .\\scripts\\start-ai-parking.ps1');
 
         return self::FAILURE;
     }

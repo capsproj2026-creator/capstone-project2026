@@ -55,17 +55,39 @@ class PortalFlowQaTest extends TestCase
             ->assertSessionHas('error');
     }
 
-    public function test_logout_requires_post_with_csrf(): void
+    public function test_logout_clears_session_via_get_or_post(): void
     {
         $this->actingAs($this->admin)
             ->get(route('logout'))
-            ->assertMethodNotAllowed();
+            ->assertRedirect(route('login'))
+            ->assertSessionHas('success');
+
+        $this->assertGuest();
 
         $this->actingAs($this->admin)
             ->post(route('logout'))
             ->assertRedirect(route('login'))
             ->assertSessionHas('success');
 
+        $this->assertGuest();
+    }
+
+    public function test_logout_with_invalid_csrf_never_shows_419(): void
+    {
+        $this->actingAs($this->admin);
+
+        $request = \Illuminate\Http\Request::create('/logout', 'POST');
+        $request->setLaravelSession($this->app['session.store']);
+        $request->setUserResolver(fn () => $this->admin);
+
+        $response = $this->app->make(\Illuminate\Contracts\Debug\ExceptionHandler::class)
+            ->render($request, new \Illuminate\Session\TokenMismatchException('CSRF token mismatch.'));
+
+        $this->assertTrue($response->isRedirect(route('login')));
+        $this->assertSame(
+            'Session expired. Please sign in again.',
+            $this->app['session.store']->get('error')
+        );
         $this->assertGuest();
     }
 

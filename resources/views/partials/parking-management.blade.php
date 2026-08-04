@@ -48,13 +48,13 @@
         <p id="stat-occ" class="text-2xl font-bold text-red-800">{{ $stats->occ }}</p>
         <p class="mt-1 text-xs text-red-700">Currently in use</p>
     </div>
-    <div class="rounded-xl border border-amber-200 bg-amber-50 p-4">
+    <div class="rounded-xl border border-blue-200 bg-blue-50 p-4">
         <div class="flex items-center justify-between pb-2">
-            <p class="text-xs font-medium text-amber-700">Reserved</p>
-            <i data-lucide="bookmark" class="h-4 w-4 text-amber-600"></i>
+            <p class="text-xs font-medium text-blue-700">Reserved</p>
+            <i data-lucide="bookmark" class="h-4 w-4 text-blue-600"></i>
         </div>
-        <p id="stat-res" class="text-2xl font-bold text-amber-800">{{ $stats->res }}</p>
-        <p class="mt-1 text-xs text-amber-700">Held slots</p>
+        <p id="stat-res" class="text-2xl font-bold text-blue-800">{{ $stats->res }}</p>
+        <p class="mt-1 text-xs text-blue-700">Held slots</p>
     </div>
     <div class="rounded-xl border border-slate-200 bg-slate-50 p-4">
         <div class="flex items-center justify-between pb-2">
@@ -112,8 +112,8 @@
                 <span class="h-2 w-2 rounded-full bg-red-500"></span>
                 Occupied
             </span>
-            <span class="inline-flex items-center gap-1.5 rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-xs font-medium text-amber-700">
-                <span class="h-2 w-2 rounded-full bg-amber-500"></span>
+            <span class="inline-flex items-center gap-1.5 rounded-full border border-blue-200 bg-blue-50 px-3 py-1 text-xs font-medium text-blue-700">
+                <span class="h-2 w-2 rounded-full bg-blue-500"></span>
                 Reserved
             </span>
             <span class="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-medium text-slate-700">
@@ -128,7 +128,7 @@
     <div class="flex flex-col gap-1 border-b border-gray-200 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
             <h2 class="text-lg font-semibold text-gray-900">Slot Map</h2>
-            <p class="text-sm text-gray-500">Click a zone above to focus on one area. Occupied slots show who is parked when available.</p>
+            <p class="text-sm text-gray-500">Color only: green available, red occupied, blue reserved, gray maintenance.</p>
         </div>
         <span id="slot-count-badge" class="inline-flex w-fit items-center rounded-full bg-gray-100 px-3 py-1 text-xs font-medium text-gray-700">
             {{ $slots->count() }} slot{{ $slots->count() === 1 ? '' : 's' }}
@@ -157,74 +157,37 @@
             </p>
         </div>
     @else
-        @php
-            // Track the incremental numbers for each unique zone prefix (e.g., TA, FO, AD)
-            $zoneCounters = [];
-        @endphp
-
         <div id="slot-map-grid" class="grid grid-cols-2 gap-3 p-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-8">
             @foreach ($slots as $slot)
                 @php
-                    $prefix = str_contains($slot->slot_number, '-') ? explode('-', $slot->slot_number)[0] : 'SLOT';
-                    $zoneCounters[$prefix] = ($zoneCounters[$prefix] ?? 0) + 1;
-                    $incrementedSlotNumber = $prefix . '-' . $zoneCounters[$prefix];
-
+                    $slotLabel = $slot->slot_number ?: ('SLOT-'.$slot->id);
                     $status = $slot->status ?? 'Available';
                     $statusClass = match ($status) {
-                        'Available'   => 'border-green-200 bg-green-50 text-green-800',
-                        'Occupied'    => 'border-red-200 bg-red-50 text-red-800',
-                        'Reserved'    => 'border-amber-200 bg-amber-50 text-amber-800',
-                        'Maintenance' => 'border-slate-200 bg-slate-50 text-slate-700',
-                        default       => 'border-gray-200 bg-gray-50 text-gray-700',
-                    };
-                    $badgeClass = match ($status) {
-                        'Available'   => 'bg-green-100 text-green-700',
-                        'Occupied'    => 'bg-red-100 text-red-700',
-                        'Reserved'    => 'bg-amber-100 text-amber-700',
-                        'Maintenance' => 'bg-slate-100 text-slate-700',
-                        default       => 'bg-gray-100 text-gray-700',
+                        'Available'   => 'border-green-300 bg-green-500 text-white',
+                        'Occupied'    => 'border-red-300 bg-red-500 text-white',
+                        'Reserved'    => 'border-blue-300 bg-blue-500 text-white',
+                        'Maintenance' => 'border-slate-300 bg-slate-500 text-white',
+                        default       => 'border-gray-300 bg-gray-400 text-white',
                     };
                 @endphp
-                
+
                 <div
                     data-slot-id="{{ $slot->id }}"
+                    data-slot-number="{{ $slotLabel }}"
                     @class([
-                        'rounded-xl border p-3 transition-shadow hover:shadow-sm',
+                        'relative flex min-h-[4rem] items-center justify-center rounded-xl border-2 p-3 text-center shadow-sm transition',
                         $statusClass,
+                        $isAdminParking ? 'cursor-pointer hover:ring-2 hover:ring-offset-2 hover:ring-gray-400' : '',
                     ])
-                >
-                    <div class="mb-2 flex items-start justify-between gap-2">
-                        <p class="text-base font-bold leading-none">{{ $incrementedSlotNumber }}</p>
-                        <span data-slot-status @class(['rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide', $badgeClass])>
-                            {{ $status }}
-                        </span>
-                    </div>
-
-                    @if (isset($zoneFilter) && $zoneFilter === 'All')
-                        <p class="mb-2 truncate text-xs text-gray-600">
-                            {{ $slot->area?->area_name ?? $slot->description ?? 'Unknown zone' }}
-                            @if (isset($aiAreaId) && (int) $slot->area_id === (int) $aiAreaId)
-                                <span class="text-blue-600">· AI</span>
-                            @endif
-                        </p>
+                    @if ($isAdminParking)
+                        data-admin-slot
+                        data-current-status="{{ $status }}"
+                        title="{{ $status }} — click to change"
+                    @else
+                        title="{{ $status }}"
                     @endif
-
-                    <div data-slot-detail>
-                        @if ($status === 'Occupied' && $slot->parkedUser)
-                            <div class="rounded-lg bg-white/70 px-2 py-1.5 text-xs text-gray-700">
-                                <p class="truncate font-medium">{{ $slot->parkedUser->fullname }}</p>
-                                <p class="truncate text-[11px] text-gray-500">{{ $slot->parkedUser->id_number }}</p>
-                            </div>
-                        @elseif ($status === 'Occupied')
-                            <p class="text-xs text-gray-600">Occupant not recorded</p>
-                        @elseif ($status === 'Available')
-                            <p class="text-xs text-green-700">Open for parking</p>
-                        @elseif ($status === 'Reserved')
-                            <p class="text-xs text-amber-700">Temporarily held</p>
-                        @else
-                            <p class="text-xs text-slate-600">Under maintenance</p>
-                        @endif
-                    </div>
+                >
+                    <p class="text-base font-bold leading-none tracking-wide">{{ $slotLabel }}</p>
                 </div>
             @endforeach
         </div>
@@ -236,20 +199,24 @@
 <script>
     (() => {
         const statusUrl = @json($statusUrl);
+        const updateSlotUrl = @json($isAdminParking ? route('admin.parking.slots.update') : null);
+        const csrf = @json(csrf_token());
         const statusClasses = {
-            Available: ['border-green-200', 'bg-green-50', 'text-green-800'],
-            Occupied: ['border-red-200', 'bg-red-50', 'text-red-800'],
-            Reserved: ['border-amber-200', 'bg-amber-50', 'text-amber-800'],
-            Maintenance: ['border-slate-200', 'bg-slate-50', 'text-slate-700'],
-        };
-        const badgeClasses = {
-            Available: ['bg-green-100', 'text-green-700'],
-            Occupied: ['bg-red-100', 'text-red-700'],
-            Reserved: ['bg-amber-100', 'text-amber-700'],
-            Maintenance: ['bg-slate-100', 'text-slate-700'],
+            Available: ['border-green-300', 'bg-green-500', 'text-white'],
+            Occupied: ['border-red-300', 'bg-red-500', 'text-white'],
+            Reserved: ['border-blue-300', 'bg-blue-500', 'text-white'],
+            Maintenance: ['border-slate-300', 'bg-slate-500', 'text-white'],
         };
         const allCard = Object.values(statusClasses).flat();
-        const allBadge = Object.values(badgeClasses).flat();
+
+        const applySlotStatus = (card, status) => {
+            card.classList.remove(...allCard);
+            card.classList.add(...(statusClasses[status] || statusClasses.Available));
+            card.dataset.currentStatus = status;
+            card.title = card.hasAttribute('data-admin-slot')
+                ? `${status} — click to change`
+                : status;
+        };
 
         const refresh = async () => {
             if (document.hidden) return;
@@ -277,34 +244,37 @@
                 (data.slots || []).forEach((slot) => {
                     const card = document.querySelector(`[data-slot-id="${slot.id}"]`);
                     if (!card) return;
-                    const status = slot.status || 'Available';
-                    card.classList.remove(...allCard);
-                    card.classList.add(...(statusClasses[status] || statusClasses.Available));
-                    const badge = card.querySelector('[data-slot-status]');
-                    if (badge) {
-                        badge.classList.remove(...allBadge);
-                        badge.classList.add(...(badgeClasses[status] || badgeClasses.Available));
-                        badge.textContent = status;
-                    }
-                    const detail = card.querySelector('[data-slot-detail]');
-                    if (detail) {
-                        if (status === 'Occupied' && slot.parked_user) {
-                            detail.innerHTML = `<div class="rounded-lg bg-white/70 px-2 py-1.5 text-xs text-gray-700"><p class="truncate font-medium"></p><p class="truncate text-[11px] text-gray-500"></p></div>`;
-                            detail.querySelector('p').textContent = slot.parked_user;
-                            detail.querySelectorAll('p')[1].textContent = slot.parked_id_number || '';
-                        } else if (status === 'Occupied') {
-                            detail.innerHTML = '<p class="text-xs text-gray-600">Occupant not recorded</p>';
-                        } else if (status === 'Available') {
-                            detail.innerHTML = '<p class="text-xs text-green-700">Open for parking</p>';
-                        } else if (status === 'Reserved') {
-                            detail.innerHTML = '<p class="text-xs text-amber-700">Temporarily held</p>';
-                        } else {
-                            detail.innerHTML = '<p class="text-xs text-slate-600">Under maintenance</p>';
-                        }
-                    }
+                    applySlotStatus(card, slot.status || 'Available');
                 });
             } catch (e) {}
         };
+
+        if (updateSlotUrl) {
+            document.querySelectorAll('[data-admin-slot]').forEach((card) => {
+                card.addEventListener('click', async () => {
+                    const statuses = ['Available', 'Occupied', 'Reserved', 'Maintenance'];
+                    const current = card.dataset.currentStatus || 'Available';
+                    const next = prompt(`Set status for ${card.dataset.slotNumber || 'slot'}:\n${statuses.join(' | ')}`, current);
+                    if (!next || !statuses.includes(next)) return;
+                    try {
+                        const response = await fetch(updateSlotUrl, {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json',
+                                Accept: 'application/json',
+                                'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.content || csrf,
+                                'X-XSRF-TOKEN': decodeURIComponent((document.cookie.match(/(?:^|; )XSRF-TOKEN=([^;]*)/) || [])[1] || ''),
+                            },
+                            credentials: 'same-origin',
+                            body: JSON.stringify({ slot_id: Number(card.dataset.slotId), status: next }),
+                        });
+                        if (!response.ok) return;
+                        applySlotStatus(card, next);
+                        refresh();
+                    } catch (e) {}
+                });
+            });
+        }
 
         refresh();
         window.setInterval(refresh, 2500);

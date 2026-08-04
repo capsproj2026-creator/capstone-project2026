@@ -38,6 +38,16 @@ return [
             'report' => false,
         ],
 
+        // Alias used by violation evidence uploads (non-public).
+        'private' => [
+            'driver' => 'local',
+            'root' => storage_path('app/private'),
+            'visibility' => 'private',
+            'serve' => true,
+            'throw' => false,
+            'report' => false,
+        ],
+
         'public' => [
             'driver' => 'local',
             'root' => storage_path('app/public'),

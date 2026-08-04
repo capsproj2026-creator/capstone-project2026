@@ -3,7 +3,9 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="csrf-token" content="{{ csrf_token() }}">
     <title>@yield('title', 'Smart Campus VMS')</title>
+    @include('partials.favicon')
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -11,15 +13,43 @@
     @vite(['resources/css/app.css', 'resources/js/app.js'])
     @stack('styles')
 </head>
-<body class="min-h-screen bg-gray-50 font-sans antialiased">
-    <div class="flex min-h-screen flex-col items-center justify-center px-4 py-10">
-        <a href="{{ route('home') }}" class="mb-8 flex items-center gap-3 text-gray-900 no-underline">
-            <div class="flex h-10 w-10 items-center justify-center rounded-lg bg-blue-600">
-                <i data-lucide="parking-square" class="h-5 w-5 text-white"></i>
+@php
+    $hasCampusBg = is_file(public_path('images/cspc-campus-bg.png'));
+    $hasLogo = is_file(public_path('images/cspc-logo.png'));
+    $useCampusBg = $hasCampusBg && (bool) trim($__env->yieldContent('use_campus_bg'));
+@endphp
+<body @class([
+    'min-h-screen font-sans antialiased',
+    'relative' => $useCampusBg,
+]) @if (! $useCampusBg) style="background: linear-gradient(160deg, #eff6ff 0%, #f8fafc 42%, #e2e8f0 100%);" @endif>
+    @if ($useCampusBg)
+        <div class="fixed inset-0 -z-10 bg-cover bg-center bg-no-repeat" style="background-image: url('{{ asset('images/cspc-campus-bg.png') }}');"></div>
+        <div class="fixed inset-0 -z-10 bg-slate-950/55"></div>
+        <div class="fixed inset-0 -z-10 bg-gradient-to-br from-blue-950/40 via-transparent to-slate-900/50"></div>
+    @else
+        <div class="pointer-events-none fixed inset-0 opacity-40" style="background-image: radial-gradient(circle at 12% 18%, rgba(37,99,235,.18), transparent 28%), radial-gradient(circle at 88% 10%, rgba(29,78,216,.12), transparent 24%), radial-gradient(circle at 70% 85%, rgba(59,130,246,.10), transparent 30%);"></div>
+    @endif
+
+    <div class="relative flex min-h-screen flex-col items-center justify-center px-4 py-10">
+        <a href="{{ route('home') }}" @class([
+            'mb-8 flex cursor-pointer items-center gap-3 no-underline',
+            'text-white' => $useCampusBg,
+            'text-gray-900' => ! $useCampusBg,
+        ])>
+            <div @class([
+                'flex h-12 w-12 items-center justify-center overflow-hidden',
+                'rounded-full' => $hasLogo,
+                'rounded-xl bg-blue-600' => ! $hasLogo,
+            ])>
+                @if ($hasLogo)
+                    <img src="{{ asset('images/cspc-logo.png') }}" alt="CSPC" class="h-12 w-12 object-contain drop-shadow-md">
+                @else
+                    <i data-lucide="parking-square" class="h-5 w-5 text-white"></i>
+                @endif
             </div>
             <div>
                 <p class="text-sm font-semibold leading-tight">Smart Campus VMS</p>
-                <p class="text-xs text-gray-500">Vehicle Management System</p>
+                <p @class(['text-xs', 'text-blue-100/90' => $useCampusBg, 'text-gray-500' => ! $useCampusBg])>Camarines Sur Polytechnic Colleges</p>
             </div>
         </a>
 
@@ -27,7 +57,11 @@
             @yield('content')
         </div>
 
-        <p class="mt-8 text-center text-xs text-gray-400">&copy; {{ date('Y') }} Smart Campus Security Department</p>
+        <p @class([
+            'mt-8 text-center text-xs',
+            'text-blue-100/70' => $useCampusBg,
+            'text-gray-400' => ! $useCampusBg,
+        ])>&copy; {{ date('Y') }} Smart Campus Security Department</p>
     </div>
 
     <script>
@@ -35,24 +69,9 @@
             if (window.lucide?.createIcons) {
                 lucide.createIcons();
             }
-
-            document.querySelectorAll('[data-password-toggle]').forEach(function (button) {
-                button.addEventListener('click', function () {
-                    const inputId = button.getAttribute('data-password-toggle');
-                    const input = document.getElementById(inputId);
-                    if (!input) return;
-
-                    const show = input.type === 'password';
-                    input.type = show ? 'text' : 'password';
-                    button.setAttribute('aria-label', show ? 'Hide password' : 'Show password');
-
-                    const icon = button.querySelector('[data-lucide]');
-                    if (icon) {
-                        icon.setAttribute('data-lucide', show ? 'eye-off' : 'eye');
-                        lucide.createIcons();
-                    }
-                });
-            });
+            if (window.initPasswordToggles) {
+                window.initPasswordToggles();
+            }
         });
     </script>
     @stack('scripts')

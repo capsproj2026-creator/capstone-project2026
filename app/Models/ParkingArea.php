@@ -89,6 +89,10 @@ class ParkingArea extends MongoModel
             $roles[] = 'Staff';
         }
 
+        if (str_contains($normalized, 'visitor')) {
+            $roles[] = 'Visitor';
+        }
+
         if ($roles === [] && str_contains($normalized, 'car')) {
             $roles[] = 'Staff';
         }

@@ -26,7 +26,12 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="csrf-token" content="{{ csrf_token() }}">
+    <meta name="reverb-app-key" content="{{ config('broadcasting.connections.reverb.key') }}">
+    <meta name="reverb-host" content="{{ config('broadcasting.connections.reverb.options.host') }}">
+    <meta name="reverb-port" content="{{ config('broadcasting.connections.reverb.options.port') }}">
+    <meta name="reverb-scheme" content="{{ config('broadcasting.connections.reverb.options.scheme') }}">
     <title>@yield('title', $portalTitle)</title>
+    @include('partials.favicon')
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -50,9 +55,13 @@
                         <i data-lucide="x" id="portal-menu-icon-close" class="hidden h-5 w-5"></i>
                     </button>
                     <div class="flex items-center gap-2">
-                        <div class="{{ $brandBg }} flex h-7 w-7 items-center justify-center rounded-lg sm:h-8 sm:w-8">
-                            <i data-lucide="{{ $portalIcon }}" class="h-4 w-4 text-white sm:h-5 sm:w-5"></i>
-                        </div>
+                        @if (is_file(public_path('images/cspc-logo.png')))
+                            <img src="{{ asset('images/cspc-logo.png') }}" alt="CSPC" class="h-8 w-8 object-contain sm:h-9 sm:w-9">
+                        @else
+                            <div class="{{ $brandBg }} flex h-7 w-7 items-center justify-center rounded-lg sm:h-8 sm:w-8">
+                                <i data-lucide="{{ $portalIcon }}" class="h-4 w-4 text-white sm:h-5 sm:w-5"></i>
+                            </div>
+                        @endif
                         <div class="hidden sm:block">
                             <h1 class="text-sm font-semibold text-gray-900 sm:text-base">{{ $portalTitle }}</h1>
                             <p class="text-xs text-gray-500">{{ $portalSubtitle }}</p>
@@ -211,6 +220,32 @@
         <div id="portal-overlay" class="fixed inset-0 z-20 hidden bg-black/50" aria-hidden="true"></div>
     </div>
 
+    {{-- Inline scripts in @stack run before Vite modules; wait for Echo here. --}}
+    <script>
+        window.whenEchoReady = window.whenEchoReady || function whenEchoReady(callback, timeoutMs) {
+            timeoutMs = timeoutMs || 15000;
+            if (typeof callback !== 'function') return;
+            if (window.Echo) {
+                callback(window.Echo);
+                return;
+            }
+            let done = false;
+            const finish = (echo) => {
+                if (done) return;
+                done = true;
+                window.removeEventListener('echo:ready', onReady);
+                window.clearInterval(poll);
+                callback(echo || null);
+            };
+            const onReady = () => finish(window.Echo);
+            window.addEventListener('echo:ready', onReady);
+            const started = Date.now();
+            const poll = window.setInterval(() => {
+                if (window.Echo) finish(window.Echo);
+                else if (Date.now() - started >= timeoutMs) finish(null);
+            }, 50);
+        };
+    </script>
     @stack('scripts')
 </body>
 </html>
