@@ -82,6 +82,8 @@ Plate → owner names need `AI_PARKING_OCR_ENABLED=1` in `.env`. Details: [`hard
 | Admin | `admin@my.cspc.edu.ph` | `admin123` |
 | Guard | `guard@my.cspc.edu.ph` | `password123` |
 
+**Change these passwords on any shared or production database.** Demo seeds are for local QA only.
+
 Quick recreate test users: `php scripts/ensure_test_users.php`
 
 ### Portals
