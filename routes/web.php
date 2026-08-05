@@ -79,29 +79,57 @@ Route::prefix('admin')->middleware(['auth', 'verified', 'granted', 'no.cache', '
         ->middleware('permission:manage_admins')
         ->name('guards.store');
     Route::get('/rfid', [RfidController::class, 'index'])->name('rfid');
-    Route::post('/rfid/{id}/approve', [RfidController::class, 'approve'])->name('rfid.approve');
-    Route::post('/rfid', [RfidController::class, 'update'])->name('rfid.update');
+    Route::post('/rfid/{id}/approve', [RfidController::class, 'approve'])
+        ->middleware('permission:manage_users')
+        ->name('rfid.approve');
+    Route::post('/rfid', [RfidController::class, 'update'])
+        ->middleware('permission:manage_users')
+        ->name('rfid.update');
     Route::get('/parking', [ParkingController::class, 'index'])->name('parking');
     Route::get('/parking/status', [LiveCameraController::class, 'status'])->name('parking.status');
-    Route::get('/parking/zone-access', [ParkingController::class, 'zoneAccess'])->name('parking.zone-access');
-    Route::post('/parking/areas', [ParkingController::class, 'updateAreas'])->name('parking.areas.update');
-    Route::post('/parking/slots/status', [ParkingController::class, 'updateSlotStatus'])->name('parking.slots.update');
+    Route::get('/parking/zone-access', [ParkingController::class, 'zoneAccess'])
+        ->middleware('permission:manage_parking')
+        ->name('parking.zone-access');
+    Route::post('/parking/areas', [ParkingController::class, 'updateAreas'])
+        ->middleware('permission:manage_parking')
+        ->name('parking.areas.update');
+    Route::post('/parking/slots/status', [ParkingController::class, 'updateSlotStatus'])
+        ->middleware('permission:manage_parking')
+        ->name('parking.slots.update');
     Route::get('/settings', [SettingsController::class, 'index'])->name('settings');
-    Route::post('/settings/general', [SettingsController::class, 'updateGeneral'])->name('settings.general');
-    Route::post('/settings/general/add', [SettingsController::class, 'storeGeneralInfo'])->name('settings.general.store');
-    Route::post('/settings/system', [SettingsController::class, 'updateSystemInfo'])->name('settings.system');
-    Route::post('/settings/preferences', [SettingsController::class, 'updatePreferences'])->name('settings.preferences');
+    Route::post('/settings/general', [SettingsController::class, 'updateGeneral'])
+        ->middleware('permission:system_settings')
+        ->name('settings.general');
+    Route::post('/settings/general/add', [SettingsController::class, 'storeGeneralInfo'])
+        ->middleware('permission:system_settings')
+        ->name('settings.general.store');
+    Route::post('/settings/system', [SettingsController::class, 'updateSystemInfo'])
+        ->middleware('permission:system_settings')
+        ->name('settings.system');
+    Route::post('/settings/preferences', [SettingsController::class, 'updatePreferences'])
+        ->middleware('permission:system_settings')
+        ->name('settings.preferences');
     Route::post('/settings/admins', [SettingsController::class, 'storeAdmin'])
         ->middleware('permission:manage_admins')
         ->name('settings.admins.store');
     Route::delete('/settings/staff/{id}', [SettingsController::class, 'destroyStaffUser'])
         ->middleware('permission:manage_admins')
         ->name('settings.staff.destroy');
-    Route::post('/settings/parking', [SettingsController::class, 'updateParking'])->name('settings.parking');
-    Route::post('/settings/violations/add', [SettingsController::class, 'storeViolationType'])->name('settings.violations.store');
-    Route::put('/settings/violations/{id}', [SettingsController::class, 'updateViolationType'])->name('settings.violations.update');
-    Route::post('/settings/violations/{id}/toggle', [SettingsController::class, 'toggleViolationType'])->name('settings.violations.toggle');
-    Route::delete('/settings/violations/{id}', [SettingsController::class, 'destroyViolationType'])->name('settings.violations.destroy');
+    Route::post('/settings/parking', [SettingsController::class, 'updateParking'])
+        ->middleware('permission:system_settings')
+        ->name('settings.parking');
+    Route::post('/settings/violations/add', [SettingsController::class, 'storeViolationType'])
+        ->middleware('permission:system_settings')
+        ->name('settings.violations.store');
+    Route::put('/settings/violations/{id}', [SettingsController::class, 'updateViolationType'])
+        ->middleware('permission:system_settings')
+        ->name('settings.violations.update');
+    Route::post('/settings/violations/{id}/toggle', [SettingsController::class, 'toggleViolationType'])
+        ->middleware('permission:system_settings')
+        ->name('settings.violations.toggle');
+    Route::delete('/settings/violations/{id}', [SettingsController::class, 'destroyViolationType'])
+        ->middleware('permission:system_settings')
+        ->name('settings.violations.destroy');
     Route::get('/violations', [AdminViolationController::class, 'index'])->name('violations');
     Route::get('/violations/{id}/evidence', [AdminViolationController::class, 'evidence'])->name('violations.evidence');
     Route::get('/access-logs', [AccessLogController::class, 'index'])->name('access-logs');

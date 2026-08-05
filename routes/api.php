@@ -12,12 +12,15 @@ use Illuminate\Support\Facades\Route;
 |--------------------------------------------------------------------------
 */
 
-Route::middleware([VerifyRfidApiToken::class, 'throttle:60,1'])->group(function () {
+Route::middleware([VerifyRfidApiToken::class, 'throttle:30,1'])->group(function () {
     Route::post('/rfid/scan', [RfidGateController::class, 'scan'])->name('api.rfid.scan');
 });
 
-Route::middleware([VerifyAiParkingApiToken::class, 'throttle:60,1'])->group(function () {
+Route::middleware([VerifyAiParkingApiToken::class, 'throttle:30,1'])->group(function () {
     Route::post('/ai-parking/occupancy', [AiParkingController::class, 'occupancy'])->name('api.ai-parking.occupancy');
     Route::post('/ai-parking/events', [AiParkingController::class, 'events'])->name('api.ai-parking.events');
+});
+
+Route::middleware([VerifyAiParkingApiToken::class, 'throttle:20,1'])->group(function () {
     Route::post('/ai-parking/plate-lookup', [AiParkingController::class, 'plateLookup'])->name('api.ai-parking.plate-lookup');
 });

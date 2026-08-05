@@ -64,9 +64,11 @@ class AiParkingViolationService
         $zoneId = (string) ($event['zone_id'] ?? '');
         $trackId = $event['track_id'] ?? null;
         $cameraId = (string) ($event['camera_id'] ?? $cameraId);
-        $areaId = isset($event['area_id'])
-            ? (int) $event['area_id']
-            : app(AiCameraRegistry::class)->resolveAreaId($cameraId);
+        // Never trust client area_id alone — resolve from camera registry.
+        $areaId = app(AiCameraRegistry::class)->resolveAreaId(
+            $cameraId,
+            isset($event['area_id']) ? (int) $event['area_id'] : null
+        );
         $areaName = ParkingArea::query()->find($areaId)?->area_name;
         $vehicleDetails = $event['vehicle_details'] ?? null;
         $confidence = isset($event['confidence']) ? (float) $event['confidence'] : null;

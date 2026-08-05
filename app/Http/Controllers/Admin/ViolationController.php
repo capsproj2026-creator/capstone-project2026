@@ -98,11 +98,13 @@ class ViolationController extends Controller
             ->limit(12)
             ->get(['id', 'fullname', 'strike_count', 'status', 'plate_number', 'id_number']);
 
-        $typeCounts = ViolationLog::query()
-            ->get(['violation_type'])
-            ->groupBy(fn ($row) => $row->violation_type ?: 'Other')
-            ->map->count()
-            ->sortDesc();
+        $typeCounts = collect();
+        foreach ($violationTypes as $typeName) {
+            $typeCounts[$typeName] = ViolationLog::query()
+                ->where('violation_type', $typeName)
+                ->count();
+        }
+        $typeCounts = $typeCounts->filter(fn ($count) => $count > 0)->sortDesc();
 
         return view('admin.violations', [
             'logs' => $logs,
@@ -150,14 +152,7 @@ class ViolationController extends Controller
     public function evidence(string $id): \Symfony\Component\HttpFoundation\StreamedResponse|\Illuminate\Http\Response
     {
         $log = ViolationLog::query()->findOrFail($id);
-        $path = (string) ($log->evidence_photo ?? '');
-        if ($path === '' || ! \Illuminate\Support\Facades\Storage::disk('private')->exists($path)) {
-            abort(404);
-        }
 
-        return \Illuminate\Support\Facades\Storage::disk('private')->response($path, basename($path), [
-            'Content-Type' => 'image/jpeg',
-            'Cache-Control' => 'private, max-age=300',
-        ]);
+        return \App\Support\PrivateEvidence::response($log->evidence_photo ?? null);
     }
 }

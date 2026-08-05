@@ -62,11 +62,16 @@ class ProfileController extends Controller
             ];
 
             if ($request->hasFile('profile_pic')) {
+                $oldPic = (string) ($user->profile_pic ?? '');
                 $data['profile_pic'] = SafeUpload::store(
                     $request->file('profile_pic'),
                     'uploads/profile',
-                    'PROF'
+                    'PROF',
+                    'public'
                 );
+                if ($oldPic !== '' && ! in_array($oldPic, ['default_avatar.png', 'N/A'], true)) {
+                    \Illuminate\Support\Facades\Storage::disk('public')->delete('uploads/profile/'.$oldPic);
+                }
             }
 
             if ($emailChanged) {

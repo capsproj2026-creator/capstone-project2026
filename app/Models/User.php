@@ -242,8 +242,11 @@ class User extends Authenticatable implements MustVerifyEmail
 
     public function uploadedDocumentPath(string $field, string $directory): ?string
     {
-        $filename = (string) ($this->{$field} ?? '');
-        if ($filename === '' || in_array($filename, ['N/A', 'default_avatar.png'], true)) {
+        $filename = basename(str_replace('\\', '/', (string) ($this->{$field} ?? '')));
+        if ($filename === '' || in_array($filename, ['N/A', 'default_avatar.png', '.', '..'], true)) {
+            return null;
+        }
+        if (preg_match('/[\/\\\\]/', (string) ($this->{$field} ?? ''))) {
             return null;
         }
 

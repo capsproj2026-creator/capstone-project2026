@@ -24,11 +24,16 @@ class LiveCameraController extends Controller
         $layout = $isGuard ? 'layouts.guard' : 'layouts.portal';
 
         $cameras = [];
+        $areaIds = collect($registry->cameras())->pluck('area_id')->filter()->unique()->values()->all();
+        $areasById = $areaIds === []
+            ? collect()
+            : ParkingArea::query()->whereIn('id', $areaIds)->get()->keyBy('id');
+
         foreach ($registry->cameras() as $cam) {
             // Do not probe MJPEG here — that blocked Live Cameras for 60s+.
             $streamUrl = $health->streamBrowserUrl($cam['id']) ?? ($cam['stream_url'] ?? null);
             $snap = $ai->latestSnapshot($cam['id']);
-            $area = ParkingArea::query()->find($cam['area_id']);
+            $area = $areasById->get($cam['area_id']);
             $parkingUrl = $isGuard
                 ? route('guard.parking', ['zone_id' => $cam['area_id']])
                 : route('admin.parking', ['zone_id' => $cam['area_id']]);
