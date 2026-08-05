@@ -41,7 +41,23 @@
     @stack('styles')
 </head>
 <body class="min-h-screen bg-slate-50 font-sans antialiased text-slate-900">
-    <div id="portal-root" class="min-h-screen bg-slate-50">
+    <div id="portal-root" class="portal-shell min-h-screen bg-slate-50">
+        <script>
+            (function () {
+                var root = document.getElementById('portal-root');
+                if (!root) return;
+                var open = window.innerWidth >= 1024;
+                try {
+                    if (open) {
+                        var stored = localStorage.getItem('portal-sidebar-open');
+                        if (stored !== null) open = stored === '1';
+                    } else {
+                        open = false;
+                    }
+                } catch (e) {}
+                if (open) root.classList.add('portal-sidebar-open');
+            })();
+        </script>
         {{-- Navbar --}}
         <header class="portal-header sticky top-0 z-40 border-b border-slate-200/80 bg-white/95 shadow-sm backdrop-blur-md">
             <div class="flex h-full items-center justify-between gap-3 px-3 sm:px-5 lg:px-6">
@@ -49,13 +65,14 @@
                     <button
                         type="button"
                         id="portal-menu-btn"
-                        class="inline-flex h-10 w-10 items-center justify-center rounded-xl text-slate-600 transition-colors hover:bg-slate-100 hover:text-[var(--cspc-navy)] lg:hidden"
+                        class="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-slate-600 transition-colors hover:bg-slate-100 hover:text-[var(--cspc-navy)]"
                         aria-label="Toggle navigation"
                         aria-controls="portal-sidebar"
-                        aria-expanded="false"
+                        aria-expanded="true"
+                        title="Show or hide sidebar"
                     >
-                        <i data-lucide="menu" id="portal-menu-icon-open" class="h-5 w-5"></i>
-                        <i data-lucide="x" id="portal-menu-icon-close" class="hidden h-5 w-5"></i>
+                        <i data-lucide="panel-left-close" id="portal-menu-icon-open" class="h-5 w-5"></i>
+                        <i data-lucide="panel-left" id="portal-menu-icon-close" class="hidden h-5 w-5"></i>
                     </button>
 
                     <div class="flex min-w-0 items-center gap-3">
@@ -216,10 +233,10 @@
         </header>
 
         <div class="flex">
-            {{-- Sidebar: drawer on mobile, persistent on desktop --}}
+            {{-- Sidebar: toggleable on all breakpoints (drawer + overlay on mobile) --}}
             <aside
                 id="portal-sidebar"
-                class="portal-sidebar fixed z-30 flex w-[17.5rem] -translate-x-full flex-col overflow-y-auto border-r border-slate-200/80 bg-white shadow-[4px_0_24px_-12px_rgba(15,39,79,0.18)] transition-transform duration-300 ease-out lg:translate-x-0"
+                class="portal-sidebar fixed z-30 flex w-[17.5rem] flex-col overflow-y-auto border-r border-slate-200/80 bg-white shadow-[4px_0_24px_-12px_rgba(15,39,79,0.18)] transition-transform duration-300 ease-out"
             >
                 <nav class="flex min-h-full flex-1 flex-col p-3 sm:p-4" aria-label="Primary">
                     @yield('navigation')
@@ -227,7 +244,7 @@
             </aside>
 
             {{-- Main content --}}
-            <main class="min-w-0 flex-1 p-4 sm:p-6 lg:ml-[17.5rem] lg:p-8">
+            <main id="portal-main" class="portal-main min-w-0 flex-1 p-4 transition-[margin] duration-300 ease-out sm:p-6 lg:p-8">
                 @if (session('success'))
                     <div class="mb-4 rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800">
                         {{ session('success') }}

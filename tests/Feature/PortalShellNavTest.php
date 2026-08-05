@@ -41,6 +41,8 @@ class PortalShellNavTest extends TestCase
             ->getContent();
 
         $this->assertStringContainsString('id="portal-sidebar"', $html);
+        $this->assertStringContainsString('id="portal-menu-btn"', $html);
+        $this->assertStringContainsString('Show or hide sidebar', $html);
         $this->assertStringContainsString(route('admin.registrations'), $html);
         $this->assertStringContainsString(route('admin.violations'), $html);
         $this->assertStringContainsString(route('admin.settings'), $html);

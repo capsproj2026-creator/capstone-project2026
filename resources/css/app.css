@@ -53,5 +53,20 @@
     .portal-sidebar {
         top: var(--portal-header-h);
         height: calc(100vh - var(--portal-header-h));
+        transform: translateX(-100%);
+    }
+
+    .portal-shell.portal-sidebar-open .portal-sidebar {
+        transform: translateX(0);
+    }
+
+    .portal-shell.portal-sidebar-open .portal-main {
+        margin-left: 0;
+    }
+
+    @media (min-width: 1024px) {
+        .portal-shell.portal-sidebar-open .portal-main {
+            margin-left: 17.5rem;
+        }
     }
 }

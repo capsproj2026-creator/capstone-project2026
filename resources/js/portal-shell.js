@@ -1,6 +1,5 @@
 /**
- * Portal shell: mobile sidebar, profile dropdown, Lucide icons.
- * Matches capstone ui (1) Layout / GuardLayout / UserLayout behavior.
+ * Portal shell: collapsible sidebar (all breakpoints), profile dropdown, Lucide icons.
  */
 function initPasswordToggles(root = document) {
     root.querySelectorAll('[data-password-toggle]').forEach((button) => {
@@ -27,6 +26,12 @@ function initPasswordToggles(root = document) {
 
 window.initPasswordToggles = initPasswordToggles;
 
+const SIDEBAR_STORAGE_KEY = 'portal-sidebar-open';
+
+function isDesktopNav() {
+    return window.innerWidth >= 1024;
+}
+
 function initPortalShell() {
     const root = document.getElementById('portal-root');
     initPasswordToggles(document);
@@ -43,24 +48,50 @@ function initPortalShell() {
     const profileBtn = document.getElementById('portal-profile-btn');
     const profileMenu = document.getElementById('portal-profile-menu');
 
-    let sidebarOpen = false;
-
-    const setSidebarOpen = (open) => {
-        sidebarOpen = open;
-        sidebar?.classList.toggle('-translate-x-full', !open);
-        sidebar?.classList.toggle('translate-x-0', open);
-        overlay?.classList.toggle('hidden', !open);
-        menuIconOpen?.classList.toggle('hidden', open);
-        menuIconClose?.classList.toggle('hidden', !open);
-        menuBtn?.setAttribute('aria-expanded', open ? 'true' : 'false');
+    const readStoredOpen = () => {
+        try {
+            const raw = localStorage.getItem(SIDEBAR_STORAGE_KEY);
+            if (raw === null) {
+                return true;
+            }
+            return raw === '1';
+        } catch (e) {
+            return true;
+        }
     };
+
+    const writeStoredOpen = (open) => {
+        try {
+            localStorage.setItem(SIDEBAR_STORAGE_KEY, open ? '1' : '0');
+        } catch (e) {
+            // ignore quota / private mode
+        }
+    };
+
+    let sidebarOpen = isDesktopNav() ? readStoredOpen() : false;
+
+    const setSidebarOpen = (open, { persist = true } = {}) => {
+        sidebarOpen = open;
+        root.classList.toggle('portal-sidebar-open', open);
+        overlay?.classList.toggle('hidden', !open || isDesktopNav());
+        // Icon: "open" glyph = collapse control when sidebar is visible
+        menuIconOpen?.classList.toggle('hidden', !open);
+        menuIconClose?.classList.toggle('hidden', open);
+        menuBtn?.setAttribute('aria-expanded', open ? 'true' : 'false');
+        menuBtn?.setAttribute('aria-label', open ? 'Hide navigation' : 'Show navigation');
+        if (persist && isDesktopNav()) {
+            writeStoredOpen(open);
+        }
+    };
+
+    setSidebarOpen(sidebarOpen, { persist: false });
 
     menuBtn?.addEventListener('click', () => setSidebarOpen(!sidebarOpen));
     overlay?.addEventListener('click', () => setSidebarOpen(false));
 
     sidebar?.querySelectorAll('a').forEach((link) => {
         link.addEventListener('click', () => {
-            if (window.innerWidth < 1024) {
+            if (!isDesktopNav()) {
                 setSidebarOpen(false);
             }
         });
@@ -86,19 +117,14 @@ function initPortalShell() {
     });
 
     window.addEventListener('resize', () => {
-        if (window.innerWidth >= 1024) {
-            sidebar?.classList.remove('translate-x-0');
-            sidebar?.classList.add('-translate-x-full');
+        if (isDesktopNav()) {
+            setSidebarOpen(readStoredOpen(), { persist: false });
             overlay?.classList.add('hidden');
-            menuIconOpen?.classList.remove('hidden');
-            menuIconClose?.classList.add('hidden');
-            sidebarOpen = false;
             return;
         }
 
+        // Mobile: keep current open state but never leave overlay stuck when closed
         if (!sidebarOpen) {
-            sidebar?.classList.add('-translate-x-full');
-            sidebar?.classList.remove('translate-x-0');
             overlay?.classList.add('hidden');
         }
     });

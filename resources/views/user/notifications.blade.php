@@ -1,4 +1,4 @@
-@extends('layouts.portal')
+@extends('layouts.user')
 
 @section('title', 'Notifications')
 
