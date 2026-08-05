@@ -7,7 +7,7 @@
     $profilePhone = $profilePhoneRaw !== '' ? $profilePhoneRaw : ($authUser?->phone_number ?? null);
     $profileIdRaw = trim($__env->yieldContent('profile_id'));
     $profileId = $profileIdRaw !== '' ? $profileIdRaw : ($authUser?->id_number ?? null);
-    $profileAccent = trim($__env->yieldContent('profile_accent')) ?: 'bg-blue-500';
+    $profileAccent = trim($__env->yieldContent('profile_accent')) ?: 'bg-[var(--cspc-navy)]';
     $profileInitials = trim($__env->yieldContent('profile_initials')) ?: strtoupper(
         collect(explode(' ', $profileName))->filter()->map(fn ($w) => mb_substr($w, 0, 1))->take(2)->join('') ?: 'U'
     );
@@ -17,8 +17,9 @@
     $portalTitle = trim($__env->yieldContent('portal_title')) ?: 'Smart Campus VMS';
     $portalSubtitle = trim($__env->yieldContent('portal_subtitle')) ?: 'Vehicle Management System';
     $portalIcon = trim($__env->yieldContent('portal_icon')) ?: 'parking-square';
-    $brandBg = trim($__env->yieldContent('brand_bg')) ?: 'bg-blue-600';
-    $navActiveClass = trim($__env->yieldContent('nav_active_class')) ?: 'bg-blue-50 text-blue-700';
+    $brandBg = trim($__env->yieldContent('brand_bg')) ?: 'bg-[var(--cspc-navy)]';
+    $navActiveClass = trim($__env->yieldContent('nav_active_class')) ?: 'portal-nav-item--active bg-[var(--cspc-navy-soft)] text-[var(--cspc-navy)] shadow-sm';
+    $hasCspcLogo = is_file(public_path('images/cspc-logo.png'));
 @endphp
 <!DOCTYPE html>
 <html lang="{{ str_replace('_', '-', app()->getLocale()) }}">
@@ -39,55 +40,77 @@
     @vite(['resources/css/app.css', 'resources/js/app.js'])
     @stack('styles')
 </head>
-<body class="min-h-screen bg-gray-50 font-sans antialiased">
-    <div id="portal-root" class="min-h-screen bg-gray-50">
-        {{-- Header --}}
-        <header class="sticky top-0 z-40 border-b border-gray-200 bg-white">
-            <div class="flex items-center justify-between px-3 py-3 sm:px-4">
-                <div class="flex items-center gap-2 sm:gap-3">
+<body class="min-h-screen bg-slate-50 font-sans antialiased text-slate-900">
+    <div id="portal-root" class="min-h-screen bg-slate-50">
+        {{-- Navbar --}}
+        <header class="portal-header sticky top-0 z-40 border-b border-slate-200/80 bg-white/95 shadow-sm backdrop-blur-md">
+            <div class="flex h-full items-center justify-between gap-3 px-3 sm:px-5 lg:px-6">
+                <div class="flex min-w-0 items-center gap-2.5 sm:gap-3">
                     <button
                         type="button"
                         id="portal-menu-btn"
-                        class="rounded-lg p-2 hover:bg-gray-100 lg:hidden"
+                        class="inline-flex h-10 w-10 items-center justify-center rounded-xl text-slate-600 transition-colors hover:bg-slate-100 hover:text-[var(--cspc-navy)] lg:hidden"
                         aria-label="Toggle navigation"
+                        aria-controls="portal-sidebar"
+                        aria-expanded="false"
                     >
                         <i data-lucide="menu" id="portal-menu-icon-open" class="h-5 w-5"></i>
                         <i data-lucide="x" id="portal-menu-icon-close" class="hidden h-5 w-5"></i>
                     </button>
-                    <div class="flex items-center gap-2">
-                        @if (is_file(public_path('images/cspc-logo.png')))
-                            <img src="{{ asset('images/cspc-logo.png') }}" alt="CSPC" class="h-8 w-8 object-contain sm:h-9 sm:w-9">
+
+                    <div class="flex min-w-0 items-center gap-3">
+                        @if ($hasCspcLogo)
+                            <img
+                                src="{{ asset('images/cspc-logo.png') }}"
+                                alt="Camarines Sur Polytechnic Colleges"
+                                class="h-10 w-10 shrink-0 object-contain sm:h-11 sm:w-11"
+                            >
                         @else
-                            <div class="{{ $brandBg }} flex h-7 w-7 items-center justify-center rounded-lg sm:h-8 sm:w-8">
-                                <i data-lucide="{{ $portalIcon }}" class="h-4 w-4 text-white sm:h-5 sm:w-5"></i>
+                            <div class="{{ $brandBg }} flex h-10 w-10 shrink-0 items-center justify-center rounded-xl sm:h-11 sm:w-11">
+                                <i data-lucide="{{ $portalIcon }}" class="h-5 w-5 text-white"></i>
                             </div>
                         @endif
-                        <div class="hidden sm:block">
-                            <h1 class="text-sm font-semibold text-gray-900 sm:text-base">{{ $portalTitle }}</h1>
-                            <p class="text-xs text-gray-500">{{ $portalSubtitle }}</p>
+                        <div class="min-w-0">
+                            <div class="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                                <h1 class="truncate text-sm font-bold tracking-tight text-[var(--cspc-navy)] sm:text-[15px]">
+                                    {{ $portalTitle }}
+                                </h1>
+                                <span class="hidden rounded-full bg-[var(--cspc-gold-soft)] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-[var(--cspc-navy-deep)] sm:inline-block">
+                                    CSPC
+                                </span>
+                            </div>
+                            <p class="truncate text-xs text-slate-500">{{ $portalSubtitle }}</p>
                         </div>
                     </div>
                 </div>
 
-                <div class="flex items-center gap-2 sm:gap-3">
+                <div class="flex shrink-0 items-center gap-1.5 sm:gap-3">
                     <div
-                        class="hidden text-right sm:block"
+                        class="hidden items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-1.5 sm:flex"
                         data-ph-clock
                         data-timezone="{{ $appTimezone ?? 'Asia/Manila' }}"
                         title="Philippine Time ({{ $appTimezone ?? 'Asia/Manila' }})"
                     >
-                        <p class="text-sm font-semibold tabular-nums text-gray-900" data-ph-clock-time>—:—:—</p>
-                        <p class="text-[11px] text-gray-500" data-ph-clock-date>Asia/Manila</p>
+                        <i data-lucide="clock-3" class="h-3.5 w-3.5 text-[var(--cspc-navy)]"></i>
+                        <div class="text-right leading-tight">
+                            <p class="text-sm font-semibold tabular-nums text-slate-900" data-ph-clock-time>—:—:—</p>
+                            <p class="text-[10px] font-medium text-slate-500" data-ph-clock-date>Asia/Manila</p>
+                        </div>
                     </div>
 
                     @if ($notificationsUrl)
-                        <a href="{{ $notificationsUrl }}" class="relative rounded-lg p-2 hover:bg-gray-100" aria-label="Notifications" data-notification-bell>
-                            <i data-lucide="bell" class="h-4 w-4 text-gray-600 sm:h-5 sm:w-5"></i>
+                        <a
+                            href="{{ $notificationsUrl }}"
+                            class="relative inline-flex h-10 w-10 items-center justify-center rounded-xl text-slate-600 transition-colors hover:bg-slate-100 hover:text-[var(--cspc-navy)]"
+                            aria-label="Notifications"
+                            data-notification-bell
+                        >
+                            <i data-lucide="bell" class="h-5 w-5"></i>
                             <span
                                 id="notification-badge"
                                 data-notification-count="{{ $notificationCount }}"
                                 @class([
-                                    'absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full bg-red-500 p-0 text-[10px] font-medium text-white sm:h-5 sm:w-5 sm:text-xs',
+                                    'absolute right-1 top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-semibold text-white',
                                     'hidden' => $notificationCount < 1,
                                 ])
                             >
@@ -101,61 +124,72 @@
                         <button
                             type="button"
                             id="portal-profile-btn"
-                            class="flex items-center gap-2 rounded-lg p-1 transition-colors hover:bg-gray-100"
+                            class="flex items-center gap-2 rounded-xl border border-transparent p-1 pr-1.5 transition-colors hover:border-slate-200 hover:bg-slate-50 sm:pr-2.5"
+                            aria-haspopup="menu"
+                            aria-expanded="false"
                         >
                             <x-portal.avatar :user="$authUser" size="sm" :accent="$profileAccent" />
-                            <div class="hidden min-w-0 max-w-[140px] text-left md:block">
-                                <p class="truncate text-sm font-medium text-gray-900">{{ $profileName }}</p>
-                                <p class="truncate text-xs text-gray-500">{{ $profileRole }}</p>
+                            <div class="hidden min-w-0 max-w-[150px] text-left md:block">
+                                <p class="truncate text-sm font-semibold text-slate-900">{{ $profileName }}</p>
+                                <p class="truncate text-xs text-slate-500">{{ $profileRole }}</p>
                             </div>
+                            <i data-lucide="chevron-down" class="hidden h-4 w-4 text-slate-400 md:block"></i>
                         </button>
 
                         <div
                             id="portal-profile-menu"
-                            class="absolute right-0 z-50 mt-2 hidden w-72 rounded-lg border border-gray-200 bg-white shadow-xl"
+                            class="absolute right-0 z-50 mt-2 hidden w-80 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-xl shadow-slate-900/10"
+                            role="menu"
                         >
-                            <div class="border-b border-gray-200 p-4">
+                            <div class="border-b border-slate-100 bg-gradient-to-br from-[var(--cspc-navy)] to-[var(--cspc-navy-deep)] px-4 py-4 text-white">
                                 <div class="flex items-center gap-3">
                                     <x-portal.avatar :user="$authUser" size="lg" :accent="$profileAccent" />
-                                    <div>
-                                        <p class="font-semibold text-gray-900">{{ $profileName }}</p>
-                                        <p class="text-sm text-gray-500">{{ $profileRole }}</p>
+                                    <div class="min-w-0">
+                                        <p class="truncate font-semibold">{{ $profileName }}</p>
+                                        <p class="truncate text-sm text-blue-100">{{ $profileRole }}</p>
                                     </div>
                                 </div>
                             </div>
 
                             <div class="space-y-3 p-4">
                                 <div class="flex items-center gap-3 text-sm">
-                                    <i data-lucide="mail" class="h-4 w-4 text-gray-400"></i>
-                                    <div>
-                                        <p class="text-gray-500">Email</p>
-                                        <p class="text-gray-900">{{ $profileEmail }}</p>
+                                    <span class="flex h-8 w-8 items-center justify-center rounded-lg bg-slate-100 text-slate-500">
+                                        <i data-lucide="mail" class="h-4 w-4"></i>
+                                    </span>
+                                    <div class="min-w-0">
+                                        <p class="text-xs text-slate-500">Email</p>
+                                        <p class="truncate font-medium text-slate-900">{{ $profileEmail }}</p>
                                     </div>
                                 </div>
                                 @if ($profilePhone)
                                     <div class="flex items-center gap-3 text-sm">
-                                        <i data-lucide="phone" class="h-4 w-4 text-gray-400"></i>
-                                        <div>
-                                            <p class="text-gray-500">Phone</p>
-                                            <p class="text-gray-900">{{ $profilePhone }}</p>
+                                        <span class="flex h-8 w-8 items-center justify-center rounded-lg bg-slate-100 text-slate-500">
+                                            <i data-lucide="phone" class="h-4 w-4"></i>
+                                        </span>
+                                        <div class="min-w-0">
+                                            <p class="text-xs text-slate-500">Phone</p>
+                                            <p class="truncate font-medium text-slate-900">{{ $profilePhone }}</p>
                                         </div>
                                     </div>
                                 @endif
                                 @if ($profileId)
                                     <div class="flex items-center gap-3 text-sm">
-                                        <i data-lucide="hash" class="h-4 w-4 text-gray-400"></i>
-                                        <div>
-                                            <p class="text-gray-500">ID</p>
-                                            <p class="text-gray-900">{{ $profileId }}</p>
+                                        <span class="flex h-8 w-8 items-center justify-center rounded-lg bg-slate-100 text-slate-500">
+                                            <i data-lucide="hash" class="h-4 w-4"></i>
+                                        </span>
+                                        <div class="min-w-0">
+                                            <p class="text-xs text-slate-500">ID</p>
+                                            <p class="truncate font-medium text-slate-900">{{ $profileId }}</p>
                                         </div>
                                     </div>
                                 @endif
                             </div>
 
-                            <div class="border-t border-gray-200 p-2">
+                            <div class="space-y-1 border-t border-slate-100 p-2">
                                 <a
                                     href="{{ $profileSettingsUrl }}"
-                                    class="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm text-gray-700 transition-colors hover:bg-gray-100"
+                                    class="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50 hover:text-[var(--cspc-navy)]"
+                                    role="menuitem"
                                 >
                                     <i data-lucide="settings" class="h-4 w-4"></i>
                                     Account Settings
@@ -165,7 +199,8 @@
                                         @csrf
                                         <button
                                             type="submit"
-                                            class="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left text-sm text-red-600 transition-colors hover:bg-red-50"
+                                            class="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-medium text-red-600 transition-colors hover:bg-red-50"
+                                            role="menuitem"
                                         >
                                             <i data-lucide="log-out" class="h-4 w-4"></i>
                                             Logout
@@ -177,21 +212,22 @@
                     </div>
                 </div>
             </div>
+            <div class="pointer-events-none absolute inset-x-0 bottom-0 h-[3px] bg-gradient-to-r from-[var(--cspc-navy)] via-[var(--cspc-gold)] to-[var(--cspc-navy)]" aria-hidden="true"></div>
         </header>
 
         <div class="flex">
             {{-- Sidebar: drawer on mobile, persistent on desktop --}}
             <aside
                 id="portal-sidebar"
-                class="fixed top-[57px] z-30 h-[calc(100vh-57px)] w-64 -translate-x-full overflow-y-auto border-r border-gray-200 bg-white transition-transform duration-300 sm:top-[65px] sm:h-[calc(100vh-65px)] lg:translate-x-0"
+                class="portal-sidebar fixed z-30 flex w-[17.5rem] -translate-x-full flex-col overflow-y-auto border-r border-slate-200/80 bg-white shadow-[4px_0_24px_-12px_rgba(15,39,79,0.18)] transition-transform duration-300 ease-out lg:translate-x-0"
             >
-                <nav class="space-y-1 p-3 sm:p-4">
+                <nav class="flex min-h-full flex-1 flex-col p-3 sm:p-4" aria-label="Primary">
                     @yield('navigation')
                 </nav>
             </aside>
 
             {{-- Main content --}}
-            <main class="min-w-0 flex-1 p-4 sm:p-6 lg:ml-64 lg:p-8">
+            <main class="min-w-0 flex-1 p-4 sm:p-6 lg:ml-[17.5rem] lg:p-8">
                 @if (session('success'))
                     <div class="mb-4 rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800">
                         {{ session('success') }}
@@ -217,7 +253,7 @@
             </main>
         </div>
 
-        <div id="portal-overlay" class="fixed inset-0 z-20 hidden bg-black/50" aria-hidden="true"></div>
+        <div id="portal-overlay" class="fixed inset-0 z-20 hidden bg-[var(--cspc-navy-deep)]/45 backdrop-blur-[1px]" aria-hidden="true"></div>
     </div>
 
     {{-- Inline scripts in @stack run before Vite modules; wait for Echo here. --}}

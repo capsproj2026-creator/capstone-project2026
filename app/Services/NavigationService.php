@@ -119,11 +119,7 @@ class NavigationService
 
     public static function navActiveClassForRole(?string $roleName): string
     {
-        return match (strtolower($roleName ?? '')) {
-            'admin' => 'bg-blue-50 text-blue-700',
-            'guard' => 'bg-green-50 text-green-700',
-            'student', 'staff' => 'bg-purple-50 text-purple-700',
-            default => 'bg-gray-100 text-gray-900',
-        };
+        // Shared CSPC navy active state; role portals keep identity via profile accent.
+        return 'portal-nav-item--active bg-[var(--cspc-navy-soft)] text-[var(--cspc-navy)] shadow-sm';
     }
 }

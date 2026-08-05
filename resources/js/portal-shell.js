@@ -52,6 +52,7 @@ function initPortalShell() {
         overlay?.classList.toggle('hidden', !open);
         menuIconOpen?.classList.toggle('hidden', open);
         menuIconClose?.classList.toggle('hidden', !open);
+        menuBtn?.setAttribute('aria-expanded', open ? 'true' : 'false');
     };
 
     menuBtn?.addEventListener('click', () => setSidebarOpen(!sidebarOpen));
@@ -68,6 +69,8 @@ function initPortalShell() {
     profileBtn?.addEventListener('click', (e) => {
         e.stopPropagation();
         profileMenu?.classList.toggle('hidden');
+        const open = profileMenu && !profileMenu.classList.contains('hidden');
+        profileBtn.setAttribute('aria-expanded', open ? 'true' : 'false');
     });
 
     document.addEventListener('click', (e) => {
@@ -78,6 +81,7 @@ function initPortalShell() {
             !profileBtn?.contains(e.target)
         ) {
             profileMenu.classList.add('hidden');
+            profileBtn?.setAttribute('aria-expanded', 'false');
         }
     });
 

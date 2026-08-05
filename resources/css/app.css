@@ -11,6 +11,16 @@
 }
 
 @layer base {
+    :root {
+        /* CSPC brand — navy seal + gold accent (matches campus portal / login) */
+        --cspc-navy: #1e3a8a;
+        --cspc-navy-deep: #0f274f;
+        --cspc-navy-soft: rgba(30, 58, 138, 0.1);
+        --cspc-gold: #c9a227;
+        --cspc-gold-soft: rgba(201, 162, 39, 0.18);
+        --portal-header-h: 4rem;
+    }
+
     html {
         -webkit-font-smoothing: antialiased;
         -moz-osx-font-smoothing: grayscale;
@@ -32,5 +42,16 @@
     [aria-disabled='true'],
     .disabled\:cursor-not-allowed:disabled {
         cursor: not-allowed;
+    }
+}
+
+@layer components {
+    .portal-header {
+        height: var(--portal-header-h);
+    }
+
+    .portal-sidebar {
+        top: var(--portal-header-h);
+        height: calc(100vh - var(--portal-header-h));
     }
 }
