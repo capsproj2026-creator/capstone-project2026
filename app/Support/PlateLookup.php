@@ -53,7 +53,7 @@ class PlateLookup
         }
 
         $user = User::query()
-            ->with(['role', 'vehicleType'])
+            ->with(['role', 'vehicleType', 'department'])
             ->whereIn('plate_number', $candidates)
             ->first();
 
@@ -69,7 +69,7 @@ class PlateLookup
             return null;
         }
 
-        return User::query()->with(['role', 'vehicleType'])->where('id', $userId)->first();
+        return User::query()->with(['role', 'vehicleType', 'department'])->where('id', $userId)->first();
     }
 
     /**
@@ -77,10 +77,12 @@ class PlateLookup
      *     plate: string,
      *     user_id: int|string|null,
      *     owner_name: string|null,
+     *     owner_label: string|null,
      *     id_number: string|null,
      *     role: string|null,
      *     registered: bool,
      *     vehicle_details: string|null,
+     *     department: string|null,
      *     registration_status: string|null
      * }
      */
@@ -89,21 +91,38 @@ class PlateLookup
         $normalized = self::normalize($plate);
         $user = $normalized !== '' ? self::findUser($plate) : null;
 
-        $registrationStatus = null;
-        if ($user) {
-            $registrationStatus = $user->isGranted()
-                ? 'Registered'
-                : (string) ($user->status ?: 'Registered');
+        if ($user === null) {
+            return [
+                'plate' => $normalized !== '' ? $normalized : strtoupper(trim((string) $plate)),
+                'user_id' => null,
+                'owner_name' => null,
+                'owner_label' => $normalized !== '' ? 'Unknown Vehicle' : null,
+                'id_number' => null,
+                'role' => null,
+                'registered' => false,
+                'vehicle_details' => null,
+                'department' => null,
+                'registration_status' => $normalized !== '' ? 'Plate Not Registered' : null,
+            ];
         }
+
+        $department = $user->department?->departmentname
+            ?? (filled($user->department_code) ? (string) $user->department_code : null);
+
+        $registrationStatus = $user->isGranted()
+            ? 'Registered'
+            : (string) ($user->status ?: 'Registered');
 
         return [
             'plate' => $normalized !== '' ? $normalized : strtoupper(trim((string) $plate)),
-            'user_id' => $user?->id,
-            'owner_name' => $user?->displayName(),
-            'id_number' => $user?->id_number,
-            'role' => $user?->roleName(),
-            'registered' => $user !== null,
-            'vehicle_details' => $user?->vehicleType?->vehicle_name,
+            'user_id' => $user->id,
+            'owner_name' => $user->displayName(),
+            'owner_label' => $user->displayName(),
+            'id_number' => $user->id_number,
+            'role' => $user->roleName(),
+            'registered' => true,
+            'vehicle_details' => $user->vehicleType?->vehicle_name,
+            'department' => $department,
             'registration_status' => $registrationStatus,
         ];
     }

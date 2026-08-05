@@ -92,9 +92,14 @@
                             ? (str_starts_with((string) $row->guard_id, 'AI-') ? 'AI Camera' : 'Guard #'.$row->guard_id)
                             : '—'
                     );
-                    $location = 'Campus';
+                    $location = filled($row->area_name)
+                        ? (string) $row->area_name
+                        : (filled($row->camera_id) ? (string) $row->camera_id : 'Campus');
                     // Inline colors so bars always render (Tailwind may not include dynamic utility classes).
                     $barHex = $strikes >= 3 ? '#ef4444' : ($strikes === 2 ? '#f97316' : ($strikes === 1 ? '#fbbf24' : null));
+                    $evidenceUrl = filled($row->evidence_photo)
+                        ? route('admin.violations.evidence', ['id' => (string) $row->getKey()])
+                        : null;
                     $detail = [
                         'id' => (string) ($row->getKey() ?? ''),
                         'name' => $row->violator_name,
@@ -105,6 +110,9 @@
                         'reported_by' => $guardLabel,
                         'id_number' => $row->id_number,
                         'location' => $location,
+                        'camera' => $row->camera_id,
+                        'vehicle' => $row->vehicle_details,
+                        'evidence_url' => $evidenceUrl,
                         'datetime' => ph_datetime($row->created_at, 'n/j/Y, g:i:s A'),
                         'strikes' => $strikes,
                         'locked' => $locked,
@@ -128,6 +136,18 @@
                                     <i data-lucide="map-pin" class="h-3.5 w-3.5"></i>
                                     {{ $location }}
                                 </span>
+                                @if (filled($row->camera_id))
+                                    <span class="inline-flex items-center gap-1.5">
+                                        <i data-lucide="video" class="h-3.5 w-3.5"></i>
+                                        {{ $row->camera_id }}
+                                    </span>
+                                @endif
+                                @if (filled($row->vehicle_details))
+                                    <span class="inline-flex items-center gap-1.5">
+                                        <i data-lucide="truck" class="h-3.5 w-3.5"></i>
+                                        {{ $row->vehicle_details }}
+                                    </span>
+                                @endif
                                 <span class="inline-flex items-center gap-1.5">
                                     <i data-lucide="calendar" class="h-3.5 w-3.5"></i>
                                     {{ ph_datetime($row->created_at, 'n/j/Y, g:i:s A') }}
@@ -141,6 +161,11 @@
                                     <code class="text-gray-700">{{ $row->plate_number }}</code>
                                 </span>
                             </div>
+                            @if ($evidenceUrl)
+                                <a href="{{ $evidenceUrl }}" target="_blank" rel="noopener" class="mt-3 inline-block overflow-hidden rounded-lg border border-gray-200">
+                                    <img src="{{ $evidenceUrl }}" alt="Evidence" class="h-20 w-auto object-cover" loading="lazy">
+                                </a>
+                            @endif
                         </div>
                         <button
                             type="button"

@@ -4,12 +4,15 @@ namespace App\Services;
 
 use App\Mail\VehicleViolationMail;
 use App\Models\Notification;
+use App\Models\ParkingArea;
 use App\Models\User;
 use App\Models\ViolationLog;
 use App\Support\PlateLookup;
 use Illuminate\Support\Facades\Cache;
-use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 
 /**
  * Create parking violations from the YOLO AI service (same shape as guard flow).
@@ -60,6 +63,13 @@ class AiParkingViolationService
         $plate = PlateLookup::normalize((string) ($event['plate'] ?? ''));
         $zoneId = (string) ($event['zone_id'] ?? '');
         $trackId = $event['track_id'] ?? null;
+        $cameraId = (string) ($event['camera_id'] ?? $cameraId);
+        $areaId = isset($event['area_id'])
+            ? (int) $event['area_id']
+            : app(AiCameraRegistry::class)->resolveAreaId($cameraId);
+        $areaName = ParkingArea::query()->find($areaId)?->area_name;
+        $vehicleDetails = $event['vehicle_details'] ?? null;
+        $confidence = isset($event['confidence']) ? (float) $event['confidence'] : null;
 
         $description = $this->buildDescription($event, $cameraId);
 
@@ -74,6 +84,10 @@ class AiParkingViolationService
         }
 
         $user = PlateLookup::findUser((string) ($event['plate'] ?? $plate));
+        $identity = PlateLookup::identity((string) ($event['plate'] ?? $plate));
+        if ($vehicleDetails === null) {
+            $vehicleDetails = $identity['vehicle_details'];
+        }
 
         // Unauthorized: unknown plate → UI only (no user to cite)
         if ($type === 'unauthorized' && ! $user) {
@@ -128,9 +142,11 @@ class AiParkingViolationService
             }
         }
 
+        $evidencePath = $this->storeEvidenceJpeg($event['evidence_jpeg_base64'] ?? null);
+
         ViolationLog::query()->create([
             'user_id' => $user->id,
-            'violator_name' => $user->fullname,
+            'violator_name' => $user->displayName(),
             'id_number' => $user->id_number,
             'user_type' => in_array((int) $user->user_role_id, [3, 4], true)
                 ? ($user->roleName())
@@ -138,9 +154,16 @@ class AiParkingViolationService
             'plate_number' => $plate,
             'violation_type' => $violationType,
             'description' => $description,
+            'evidence_photo' => $evidencePath,
             'guard_id' => 'AI-'.$cameraId,
             'status' => 'Active',
             'created_at' => now(),
+            'camera_id' => $cameraId,
+            'area_id' => $areaId,
+            'area_name' => $areaName,
+            'vehicle_details' => $vehicleDetails,
+            'track_id' => is_numeric($trackId) ? (int) $trackId : null,
+            'confidence' => $confidence,
         ]);
 
         $newStrikes = app(ViolationEnforcementService::class)->syncStrikesFromLogs($user);
@@ -175,7 +198,44 @@ class AiParkingViolationService
             'plate' => $plate,
             'user_id' => $user->id,
             'strikes' => $newStrikes,
+            'evidence_photo' => $evidencePath,
+            'camera_id' => $cameraId,
+            'area_id' => $areaId,
         ];
+    }
+
+    private function storeEvidenceJpeg(mixed $base64): ?string
+    {
+        if (! is_string($base64) || trim($base64) === '') {
+            return null;
+        }
+
+        $raw = $base64;
+        if (str_contains($raw, ',')) {
+            $raw = substr($raw, strpos($raw, ',') + 1);
+        }
+
+        $binary = base64_decode($raw, true);
+        if ($binary === false || strlen($binary) < 32 || strlen($binary) > 600000) {
+            return null;
+        }
+
+        // Basic JPEG SOI check
+        if (substr($binary, 0, 2) !== "\xFF\xD8") {
+            return null;
+        }
+
+        $path = 'violation-evidence/ai-'.Str::uuid()->toString().'.jpg';
+
+        try {
+            Storage::disk('private')->put($path, $binary);
+
+            return $path;
+        } catch (\Throwable $e) {
+            Log::warning('AI parking evidence store failed: '.$e->getMessage());
+
+            return null;
+        }
     }
 
     /**
@@ -215,6 +275,7 @@ class AiParkingViolationService
                     'track_id' => $det['track_id'] ?? null,
                     'plate' => $plate,
                     'confidence' => $det['confidence'] ?? 0.5,
+                    'vehicle_details' => $det['vehicle_details'] ?? null,
                 ];
 
                 continue;
@@ -230,6 +291,7 @@ class AiParkingViolationService
                     'track_id' => $det['track_id'] ?? null,
                     'plate' => $plate,
                     'confidence' => $det['confidence'] ?? 0.5,
+                    'vehicle_details' => $det['vehicle_details'] ?? null,
                 ];
             }
         }

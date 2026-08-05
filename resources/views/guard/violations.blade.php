@@ -46,6 +46,8 @@
                         <th class="px-6 py-3 font-medium">Plate</th>
                         <th class="px-6 py-3 font-medium">Name</th>
                         <th class="px-6 py-3 font-medium">Type</th>
+                        <th class="px-6 py-3 font-medium">Camera / Area</th>
+                        <th class="px-6 py-3 font-medium">Evidence</th>
                         <th class="px-6 py-3 font-medium">Date</th>
                     </tr>
                 </thead>
@@ -53,12 +55,32 @@
                     @forelse ($logs as $row)
                         <tr class="hover:bg-gray-50/80">
                             <td class="px-6 py-4"><code class="rounded bg-gray-100 px-1.5 py-0.5 text-xs font-semibold">{{ $row->plate_number }}</code></td>
-                            <td class="px-6 py-4 font-medium text-gray-900">{{ $row->violator_name }}</td>
+                            <td class="px-6 py-4 font-medium text-gray-900">
+                                {{ $row->violator_name }}
+                                @if (filled($row->vehicle_details))
+                                    <p class="mt-0.5 text-xs font-normal text-gray-500">{{ $row->vehicle_details }}</p>
+                                @endif
+                            </td>
                             <td class="px-6 py-4"><span class="rounded-full bg-red-50 px-2.5 py-1 text-xs font-medium text-red-700">{{ $row->violation_type }}</span></td>
+                            <td class="px-6 py-4 text-xs text-gray-600">
+                                {{ $row->camera_id ?: '—' }}
+                                @if (filled($row->area_name))
+                                    <p class="mt-0.5">{{ $row->area_name }}</p>
+                                @endif
+                            </td>
+                            <td class="px-6 py-4">
+                                @if (filled($row->evidence_photo))
+                                    <a href="{{ route('guard.violations.evidence', ['id' => (string) $row->getKey()]) }}" target="_blank" rel="noopener" class="inline-block overflow-hidden rounded border border-gray-200">
+                                        <img src="{{ route('guard.violations.evidence', ['id' => (string) $row->getKey()]) }}" alt="Evidence" class="h-12 w-auto object-cover" loading="lazy">
+                                    </a>
+                                @else
+                                    <span class="text-xs text-gray-400">—</span>
+                                @endif
+                            </td>
                             <td class="px-6 py-4 text-gray-600">{{ ph_datetime($row->created_at) }}</td>
                         </tr>
                     @empty
-                        <tr><td colspan="4" class="px-6 py-14 text-center text-gray-500">No violations logged yet.</td></tr>
+                        <tr><td colspan="6" class="px-6 py-14 text-center text-gray-500">No violations logged yet.</td></tr>
                     @endforelse
                 </tbody>
             </table>

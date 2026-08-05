@@ -101,6 +101,9 @@
                         <li class="flex items-center justify-between gap-3 px-4 py-3">
                             <div class="min-w-0">
                                 <p class="font-medium text-gray-800">
+                                    @if (! empty($det['track_id']))
+                                        <span class="text-xs text-gray-400">#{{ $det['track_id'] }}</span>
+                                    @endif
                                     {{ $det['class'] ?? 'vehicle' }}
                                     @if (($det['plate_status'] ?? '') === 'unreadable')
                                         <span class="ml-1 text-xs text-slate-500">[Plate Unreadable]</span>
@@ -122,10 +125,16 @@
                                         @if (! empty($det['vehicle_details']))
                                             · {{ $det['vehicle_details'] }}
                                         @endif
+                                        @if (! empty($det['department']))
+                                            · {{ $det['department'] }}
+                                        @endif
                                     </p>
                                 @elseif (! empty($det['plate']))
                                     <p class="mt-0.5 text-xs text-amber-700">Unknown Vehicle</p>
                                     <p class="mt-0.5 text-[11px] text-amber-600">Plate Not Registered</p>
+                                @endif
+                                @if (! empty($det['violation_status']))
+                                    <p class="mt-0.5 text-[11px] font-medium text-red-600">Violation: {{ $det['violation_status'] }}</p>
                                 @endif
                             </div>
                             <span class="shrink-0 text-gray-500">{{ isset($det['confidence']) ? round($det['confidence'] * 100).'%' : '—' }}</span>
@@ -221,7 +230,13 @@
                             left.className = 'min-w-0';
                             const name = document.createElement('p');
                             name.className = 'font-medium text-gray-800';
-                            name.textContent = det.class || 'vehicle';
+                            if (det.track_id != null) {
+                                const tid = document.createElement('span');
+                                tid.className = 'text-xs text-gray-400';
+                                tid.textContent = `#${det.track_id} `;
+                                name.append(tid);
+                            }
+                            name.append(document.createTextNode(det.class || 'vehicle'));
                             if (det.plate_status === 'unreadable') {
                                 const plate = document.createElement('span');
                                 plate.className = 'ml-1 text-xs text-slate-500';
@@ -251,6 +266,7 @@
                                 meta.textContent = [
                                     det.registration_status || 'Registered',
                                     det.vehicle_details || null,
+                                    det.department || null,
                                 ].filter(Boolean).join(' · ');
                                 left.append(meta);
                             } else if (det.plate) {
@@ -262,6 +278,12 @@
                                 reg.className = 'mt-0.5 text-[11px] text-amber-600';
                                 reg.textContent = 'Plate Not Registered';
                                 left.append(reg);
+                            }
+                            if (det.violation_status) {
+                                const viol = document.createElement('p');
+                                viol.className = 'mt-0.5 text-[11px] font-medium text-red-600';
+                                viol.textContent = `Violation: ${det.violation_status}`;
+                                left.append(viol);
                             }
                             const conf = document.createElement('span');
                             conf.className = 'shrink-0 text-gray-500';

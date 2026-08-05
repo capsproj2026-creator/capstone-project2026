@@ -31,6 +31,14 @@ class AiParkingController extends Controller
             'detections.*.plate_status' => ['nullable', 'string', 'max:32'],
             'detections.*.ocr_confidence' => ['nullable', 'numeric', 'min:0', 'max:1'],
             'detections.*.track_id' => ['nullable', 'integer'],
+            'detections.*.xyxy' => ['nullable', 'array', 'size:4'],
+            'detections.*.xyxy.*' => ['numeric'],
+            'detections.*.owner_name' => ['nullable', 'string', 'max:128'],
+            'detections.*.owner_label' => ['nullable', 'string', 'max:128'],
+            'detections.*.vehicle_details' => ['nullable', 'string', 'max:64'],
+            'detections.*.department' => ['nullable', 'string', 'max:128'],
+            'detections.*.registration_status' => ['nullable', 'string', 'max:64'],
+            'detections.*.registered' => ['nullable', 'boolean'],
             'slots' => ['nullable', 'array', 'max:100'],
             'slots.*.slot_number' => ['required_with:slots', 'string', 'max:32'],
             'slots.*.occupied' => ['required_with:slots', 'boolean'],
@@ -46,6 +54,10 @@ class AiParkingController extends Controller
             'events.*.dwell_minutes' => ['nullable', 'numeric'],
             'events.*.slots' => ['nullable', 'array'],
             'events.*.vehicles_in_slot' => ['nullable', 'integer'],
+            'events.*.evidence_jpeg_base64' => ['nullable', 'string', 'max:800000'],
+            'events.*.camera_id' => ['nullable', 'string', 'max:64'],
+            'events.*.area_id' => ['nullable', 'integer'],
+            'events.*.vehicle_details' => ['nullable', 'string', 'max:64'],
         ]);
 
         $cameraId = (string) ($validated['camera_id'] ?? $registry->primaryCameraId());
@@ -86,6 +98,9 @@ class AiParkingController extends Controller
             'events.*.label' => ['nullable', 'string', 'max:128'],
             'events.*.dwell_minutes' => ['nullable', 'numeric'],
             'events.*.slots' => ['nullable', 'array'],
+            'events.*.evidence_jpeg_base64' => ['nullable', 'string', 'max:800000'],
+            'events.*.vehicle_details' => ['nullable', 'string', 'max:64'],
+            'events.*.area_id' => ['nullable', 'integer'],
         ]);
 
         $cameraId = (string) ($validated['camera_id'] ?? $registry->primaryCameraId());
@@ -118,6 +133,25 @@ class AiParkingController extends Controller
                 'violation_results' => $results,
                 'ai' => $latest,
             ],
+        ]);
+    }
+
+    /**
+     * Lightweight plate → owner lookup for the Python AI service (overlay cache).
+     * POST /api/ai-parking/plate-lookup
+     */
+    public function plateLookup(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'plate' => ['required', 'string', 'max:32'],
+        ]);
+
+        $identity = \App\Support\PlateLookup::identity($validated['plate']);
+        $identity['owner_role'] = $identity['role'] ?? null;
+
+        return response()->json([
+            'status' => 'ok',
+            'data' => $identity,
         ]);
     }
 }

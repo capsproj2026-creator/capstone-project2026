@@ -93,10 +93,80 @@ class TrackMemory:
     last_ocr_at: float = 0.0
     hit_streak: int = 0
     last_zones: list[str] = field(default_factory=list)
+    # Owner cache from Laravel plate-lookup (once per locked plate).
+    owner_name: str | None = None
+    owner_label: str | None = None
+    user_id: int | str | None = None
+    vehicle_details: str | None = None
+    department: str | None = None
+    owner_role: str | None = None
+    registration_status: str | None = None
+    registered: bool | None = None
+    lookup_done_at: float = 0.0
+    lookup_pending: bool = False
+    lookup_plate: str | None = None
+    violation_flag: bool = False
+    last_xyxy: tuple[int, int, int, int] | None = None
 
     def note_seen(self, now: float) -> None:
         self.last_seen = now
         self.hit_streak += 1
+
+    def clear_owner(self) -> None:
+        self.owner_name = None
+        self.owner_label = None
+        self.user_id = None
+        self.vehicle_details = None
+        self.department = None
+        self.owner_role = None
+        self.registration_status = None
+        self.registered = None
+        self.lookup_done_at = 0.0
+        self.lookup_pending = False
+        self.lookup_plate = None
+
+    def needs_owner_lookup(self) -> bool:
+        if self.plate_status != "ok" or not self.plate:
+            return False
+        if self.lookup_pending:
+            return False
+        if self.lookup_plate == self.plate and self.lookup_done_at > 0:
+            return False
+        return True
+
+    def apply_owner_lookup(self, data: dict | None) -> None:
+        self.lookup_pending = False
+        self.lookup_done_at = time.time()
+        self.lookup_plate = self.plate
+        if not data:
+            self.owner_label = "Unknown Vehicle"
+            self.registered = False
+            self.registration_status = "Plate Not Registered"
+            return
+        self.registered = bool(data.get("registered"))
+        self.owner_name = data.get("owner_name")
+        self.owner_label = data.get("owner_label") or (
+            self.owner_name if self.registered else "Unknown Vehicle"
+        )
+        self.user_id = data.get("user_id")
+        self.vehicle_details = data.get("vehicle_details")
+        self.department = data.get("department")
+        self.owner_role = data.get("owner_role") or data.get("role")
+        self.registration_status = data.get("registration_status")
+        if not self.registered:
+            self.owner_name = None
+            self.owner_label = "Unknown Vehicle"
+            if not self.registration_status:
+                self.registration_status = "Plate Not Registered"
+
+    def overlay_owner_line(self) -> str | None:
+        if self.plate_status == "unreadable":
+            return "Plate Unreadable"
+        if self.plate_status != "ok" or not self.plate:
+            return None
+        if self.lookup_done_at > 0 and self.lookup_plate == self.plate:
+            return self.owner_label or ("Unknown Vehicle" if not self.registered else None)
+        return None
 
     def apply_ocr_vote(self, plate: str | None, status: str, confidence: float) -> None:
         """Stabilize plate text across frames; avoid locking on a single bad read."""
@@ -105,6 +175,8 @@ class TrackMemory:
             self.plate_votes[plate] = self.plate_votes.get(plate, 0) + 1
             votes = self.plate_votes[plate]
             if votes >= PLATE_VOTE_NEEDED or (votes >= 1 and confidence >= 0.75):
+                if self.plate != plate:
+                    self.clear_owner()
                 self.plate = plate
                 self.plate_status = "ok"
                 self.unreadable_votes = 0
@@ -116,6 +188,7 @@ class TrackMemory:
             if self.plate_status != "ok" and self.unreadable_votes >= PLATE_VOTE_NEEDED:
                 self.plate = None
                 self.plate_status = "unreadable"
+                self.clear_owner()
 
 
 class ParkingIntelligence:

@@ -132,3 +132,40 @@ AI_PARKING_OCR_ENABLED=1
 ```
 
 Then restart the Python AI service (`scripts/start-ai-parking.ps1`). First run downloads EasyOCR models.
+
+## Owner overlay + plate lookup
+
+After OCR locks a plate on a track, Python calls `POST /api/ai-parking/plate-lookup` once and caches owner fields on `TrackMemory`. MJPEG overlays show:
+
+```
+#15 Car 91%
+ABC1234
+John Cruz
+```
+
+(or `Unknown Vehicle` / `Plate Unreadable`). Occupancy posts may include normalized `xyxy` and owner fields; Laravel still re-enriches for Monitor consistency.
+
+## Detection tunables (fewer FPs without killing recall)
+
+| Env | Default | Notes |
+|-----|---------|--------|
+| `AI_PARKING_CONF` | `0.28` | Raise toward `0.35` if ghost boxes |
+| `AI_PARKING_MIN_BOX_AREA` | `0.0005` | Tiny distant cars |
+| `AI_PARKING_BOX_HOLD_SEC` | `0.45` | Smooth flicker |
+| `AI_PARKING_LOOKUP_TIMEOUT_SEC` | `2.5` | Owner API; never blocks preview |
+| Occupancy POST timeout | `4s` | Async thread; preview continues |
+
+Multi-cam: shared YOLO lock; per-cam preview + OCR queue. One RTSP failure does not stall another camera’s MJPEG.
+
+## Violation evidence
+
+Rule events include a size-capped JPEG (`evidence_jpeg_base64`). Laravel stores it on `ViolationLog.evidence_photo` (private disk) with `camera_id`, `area_id`, `area_name`, `vehicle_details`, `track_id`, `confidence`. Admin/guard violation pages show camera/area/vehicle and evidence thumbnails.
+
+## Manual checklist
+
+- [ ] Multi-cam detect (boxes + track ids)
+- [ ] Overlay shows plate + owner after OCR lock
+- [ ] AI Parking Monitor: class, plate, owner, track_id, department, violation status
+- [ ] Live Cameras under-tile line updates without stalling video
+- [ ] Registered-plate citation creates Active log with evidence image
+

@@ -307,6 +307,56 @@ class AiParkingOccupancyTest extends TestCase
             $this->assertSame('Registered', $det['registration_status']);
             $this->assertSame('Plate Owner Test', $det['owner_label']);
             $this->assertEquals($owner->id, $det['user_id']);
+            $this->assertNotEmpty($det['department'] ?? $owner->department_code);
+        } finally {
+            \App\Support\PlateLookup::forgetIndex();
+            if ($owner) {
+                $owner->delete();
+            }
+        }
+    }
+
+    public function test_plate_lookup_endpoint_registered_and_unknown(): void
+    {
+        \App\Support\PlateLookup::forgetIndex();
+
+        $owner = null;
+        try {
+            $owner = User::query()->create([
+                'fullname' => 'Lookup Owner',
+                'email' => 'lookup.owner.'.uniqid().'@my.cspc.edu.ph',
+                'password' => bcrypt('password123'),
+                'user_role_id' => 3,
+                'department_code' => 'CCS',
+                'vehicle_id' => 1,
+                'id_number' => 'LOOK'.strtoupper(substr(uniqid(), -6)),
+                'plate_number' => 'XYZ-5678',
+                'status' => User::STATUS_GRANTED,
+                'Gate_access' => User::GATE_ACCESS_GRANTED,
+                'strike_count' => 0,
+                'email_verified_at' => now(),
+                'created_at' => now(),
+            ]);
+        } catch (\Throwable $e) {
+            $this->markTestSkipped('Could not create test user: '.$e->getMessage());
+        }
+
+        try {
+            $reg = $this->withHeaders(['X-AI-TOKEN' => self::TOKEN])
+                ->postJson('/api/ai-parking/plate-lookup', ['plate' => 'XYZ5678'])
+                ->assertOk()
+                ->assertJsonPath('data.registered', true)
+                ->assertJsonPath('data.owner_name', 'Lookup Owner')
+                ->assertJsonPath('data.owner_role', $owner->roleName());
+
+            $this->assertNotEmpty($reg->json('data.department'));
+
+            $this->withHeaders(['X-AI-TOKEN' => self::TOKEN])
+                ->postJson('/api/ai-parking/plate-lookup', ['plate' => 'NOPE0001'])
+                ->assertOk()
+                ->assertJsonPath('data.registered', false)
+                ->assertJsonPath('data.owner_label', 'Unknown Vehicle')
+                ->assertJsonPath('data.registration_status', 'Plate Not Registered');
         } finally {
             \App\Support\PlateLookup::forgetIndex();
             if ($owner) {
@@ -368,6 +418,108 @@ class AiParkingOccupancyTest extends TestCase
         $this->assertSame('Plate Unreadable', $det['plate_label']);
         $this->assertNull($det['plate']);
         $this->assertNull($det['owner_name']);
+    }
+
+    public function test_occupancy_accepts_xyxy_without_breaking_legacy_payload(): void
+    {
+        $this->withHeaders(['X-AI-TOKEN' => self::TOKEN])
+            ->postJson('/api/ai-parking/occupancy', [
+                'camera_id' => 'CAM-AI-1',
+                'vehicle_count' => 1,
+                'detections' => [
+                    [
+                        'class' => 'car',
+                        'confidence' => 0.9,
+                        'track_id' => 3,
+                        'xyxy' => [0.1, 0.2, 0.4, 0.5],
+                    ],
+                ],
+            ])
+            ->assertOk()
+            ->assertJsonPath('data.vehicle_count', 1);
+    }
+
+    public function test_violation_event_stores_camera_area_and_evidence(): void
+    {
+        \App\Support\PlateLookup::forgetIndex();
+        \Illuminate\Support\Facades\Mail::fake();
+        \Illuminate\Support\Facades\Storage::fake('private');
+
+        $owner = null;
+        try {
+            $owner = User::query()->create([
+                'fullname' => 'Cite Owner',
+                'email' => 'cite.owner.'.uniqid().'@my.cspc.edu.ph',
+                'password' => bcrypt('password123'),
+                'user_role_id' => 3,
+                'department_code' => 'CCS',
+                'vehicle_id' => 1,
+                'id_number' => 'CITE'.strtoupper(substr(uniqid(), -6)),
+                'plate_number' => 'CIT-1111',
+                'status' => User::STATUS_GRANTED,
+                'Gate_access' => User::GATE_ACCESS_GRANTED,
+                'strike_count' => 0,
+                'email_verified_at' => now(),
+                'created_at' => now(),
+            ]);
+        } catch (\Throwable $e) {
+            $this->markTestSkipped('Could not create test user: '.$e->getMessage());
+        }
+
+        // Minimal valid JPEG (1x1)
+        $jpeg = base64_encode(
+            hex2bin('ffd8ffe000104a46494600010100000100010000ffdb004300080606070605080707070909080a0c140d0c0b0b0c1912130f141d1a1f1e1d1a1c1c20242e2720222c231c1c2837292c30313434341f27393d38323c2e333432ffdb0043010909090c0b0c180d0d1832211c213232323232323232323232323232323232323232323232323232323232323232323232323232323232323232323232323232ffc00011080001000103011100021100031101ffc40014000100000000000000000000000000000000ffc40014100100000000000000000000000000000000ffda000c0301000210031000003f00bf80ffd9')
+        );
+
+        try {
+            $response = $this->withHeaders(['X-AI-TOKEN' => self::TOKEN])
+                ->postJson('/api/ai-parking/occupancy', [
+                    'camera_id' => 'CAM-AI-1',
+                    'vehicle_count' => 1,
+                    'detections' => [
+                        [
+                            'class' => 'car',
+                            'confidence' => 0.9,
+                            'plate' => 'CIT1111',
+                            'track_id' => 55,
+                        ],
+                    ],
+                    'events' => [
+                        [
+                            'type' => 'no_parking',
+                            'zone_id' => 'NP1',
+                            'track_id' => 55,
+                            'plate' => 'CIT1111',
+                            'confidence' => 0.9,
+                            'vehicle_details' => 'Automobiles',
+                            'evidence_jpeg_base64' => $jpeg,
+                        ],
+                    ],
+                ])
+                ->assertOk();
+
+            $det = $response->json('data.detections.0');
+            $this->assertSame('no_parking', $det['violation_status'] ?? null);
+
+            $log = \App\Models\ViolationLog::query()
+                ->where('plate_number', 'CIT1111')
+                ->orderByDesc('created_at')
+                ->first();
+
+            $this->assertNotNull($log);
+            $this->assertSame('CAM-AI-1', $log->camera_id);
+            $this->assertSame(AiTestLotSeeder::AREA_ID, (int) $log->area_id);
+            $this->assertSame('Automobiles', $log->vehicle_details);
+            $this->assertSame(55, (int) $log->track_id);
+            $this->assertNotEmpty($log->evidence_photo);
+            \Illuminate\Support\Facades\Storage::disk('private')->assertExists($log->evidence_photo);
+        } finally {
+            \App\Support\PlateLookup::forgetIndex();
+            if ($owner) {
+                \App\Models\ViolationLog::query()->where('user_id', $owner->id)->delete();
+                $owner->delete();
+            }
+        }
     }
 
     public function test_ai_test_lot_area_exists(): void

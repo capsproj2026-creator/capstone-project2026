@@ -63,6 +63,7 @@ class AiParkingOccupancyService
 
         $detections = $this->enrichWithOwners($detections);
         $events = $this->enrichWithOwners($events);
+        $detections = $this->attachViolationStatus($detections, $events);
 
         $snapshot = [
             'camera_id' => $cameraId,
@@ -337,6 +338,7 @@ class AiParkingOccupancyService
                 $row['user_id'] = null;
                 $row['registered'] = null;
                 $row['vehicle_details'] = null;
+                $row['department'] = null;
                 $row['registration_status'] = null;
 
                 return $row;
@@ -356,10 +358,12 @@ class AiParkingOccupancyService
             $row['plate_label'] = $row['plate'];
             $row['registered'] = $identity['registered'];
             $row['owner_name'] = $identity['owner_name'];
+            $row['owner_label'] = $identity['owner_label'];
             $row['owner_id_number'] = $identity['id_number'];
             $row['owner_role'] = $identity['role'];
             $row['user_id'] = $identity['user_id'];
             $row['vehicle_details'] = $identity['vehicle_details'];
+            $row['department'] = $identity['department'];
             $row['registration_status'] = $identity['registration_status'];
 
             if ($identity['registered']) {
@@ -373,6 +377,54 @@ class AiParkingOccupancyService
 
             return $row;
         }, $rows);
+    }
+
+    /**
+     * Flag detections that match a recent AI violation event (track_id or plate).
+     *
+     * @param  list<array<string, mixed>>  $detections
+     * @param  list<array<string, mixed>>  $events
+     * @return list<array<string, mixed>>
+     */
+    private function attachViolationStatus(array $detections, array $events): array
+    {
+        $byTrack = [];
+        $byPlate = [];
+        foreach ($events as $event) {
+            if (! is_array($event)) {
+                continue;
+            }
+            $type = (string) ($event['type'] ?? '');
+            if ($type === '') {
+                continue;
+            }
+            if (isset($event['track_id']) && is_numeric($event['track_id'])) {
+                $byTrack[(int) $event['track_id']] = $type;
+            }
+            $plate = PlateLookup::normalize((string) ($event['plate'] ?? ''));
+            if ($plate !== '') {
+                $byPlate[$plate] = $type;
+            }
+        }
+
+        if ($byTrack === [] && $byPlate === []) {
+            return $detections;
+        }
+
+        return array_map(function ($row) use ($byTrack, $byPlate) {
+            if (! is_array($row)) {
+                return $row;
+            }
+            $tid = isset($row['track_id']) && is_numeric($row['track_id']) ? (int) $row['track_id'] : null;
+            $plate = PlateLookup::normalize((string) ($row['plate'] ?? ''));
+            $type = ($tid !== null ? ($byTrack[$tid] ?? null) : null) ?? ($plate !== '' ? ($byPlate[$plate] ?? null) : null);
+            if ($type !== null) {
+                $row['violation_status'] = $type;
+                $row['violation_flag'] = true;
+            }
+
+            return $row;
+        }, $detections);
     }
 
     public function monitoredAreaId(): int

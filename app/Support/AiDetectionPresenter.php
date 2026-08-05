@@ -16,11 +16,14 @@ class AiDetectionPresenter
             return '—';
         }
 
-        if (($det['plate_status'] ?? '') === 'unreadable') {
-            return 'Plate Unreadable';
+        $bits = [];
+        if (isset($det['track_id']) && $det['track_id'] !== null && $det['track_id'] !== '') {
+            $bits[] = '#'.$det['track_id'];
         }
 
-        if (! empty($det['registered']) && ! empty($det['owner_name'])) {
+        if (($det['plate_status'] ?? '') === 'unreadable') {
+            $bits[] = 'Plate Unreadable';
+        } elseif (! empty($det['registered']) && ! empty($det['owner_name'])) {
             $parts = [
                 (string) $det['owner_name'],
                 (string) ($det['plate'] ?? ''),
@@ -28,14 +31,17 @@ class AiDetectionPresenter
             if (! empty($det['vehicle_details'])) {
                 $parts[] = (string) $det['vehicle_details'];
             }
-
-            return implode(' · ', array_values(array_filter($parts, fn ($p) => trim($p) !== '')));
+            $bits[] = implode(' · ', array_values(array_filter($parts, fn ($p) => trim($p) !== '')));
+        } elseif (! empty($det['plate'])) {
+            $bits[] = 'Unknown Vehicle · Plate Not Registered ('.$det['plate'].')';
+        } else {
+            $bits[] = 'Waiting for plate…';
         }
 
-        if (! empty($det['plate'])) {
-            return 'Unknown Vehicle · Plate Not Registered ('.$det['plate'].')';
+        if (! empty($det['violation_status']) || ! empty($det['violation_flag'])) {
+            $bits[] = '⚠ '.((string) ($det['violation_status'] ?? 'violation'));
         }
 
-        return 'Waiting for plate…';
+        return implode(' · ', $bits);
     }
 }

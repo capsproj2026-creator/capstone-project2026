@@ -146,4 +146,18 @@ class ViolationController extends Controller
             ->mapWithKeys(fn (User $user) => [(string) $user->id => $user->fullname])
             ->all();
     }
+
+    public function evidence(string $id): \Symfony\Component\HttpFoundation\StreamedResponse|\Illuminate\Http\Response
+    {
+        $log = ViolationLog::query()->findOrFail($id);
+        $path = (string) ($log->evidence_photo ?? '');
+        if ($path === '' || ! \Illuminate\Support\Facades\Storage::disk('private')->exists($path)) {
+            abort(404);
+        }
+
+        return \Illuminate\Support\Facades\Storage::disk('private')->response($path, basename($path), [
+            'Content-Type' => 'image/jpeg',
+            'Cache-Control' => 'private, max-age=300',
+        ]);
+    }
 }

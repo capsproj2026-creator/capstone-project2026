@@ -24,12 +24,21 @@ class ViolationLog extends MongoModel
         'guard_id',
         'status',
         'created_at',
+        'camera_id',
+        'area_id',
+        'area_name',
+        'vehicle_details',
+        'track_id',
+        'confidence',
     ];
 
     protected function casts(): array
     {
         return [
             'user_id' => 'integer',
+            'area_id' => 'integer',
+            'track_id' => 'integer',
+            'confidence' => 'float',
             'created_at' => 'datetime',
         ];
     }

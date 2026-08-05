@@ -232,13 +232,15 @@
         const statusUrl = @json($statusUrl ?? null);
         const formatDet = (det) => {
             if (!det) return '—';
-            if (det.plate_status === 'unreadable') return 'Plate Unreadable';
-            if (det.registered && det.owner_name) {
-                const parts = [det.owner_name, det.plate, det.vehicle_details].filter(Boolean);
-                return parts.join(' · ');
-            }
-            if (det.plate) return `Unknown Vehicle · Plate Not Registered (${det.plate})`;
-            return 'Waiting for plate…';
+            const bits = [];
+            if (det.track_id != null) bits.push(`#${det.track_id}`);
+            if (det.plate_status === 'unreadable') bits.push('Plate Unreadable');
+            else if (det.registered && det.owner_name) {
+                bits.push([det.owner_name, det.plate, det.vehicle_details].filter(Boolean).join(' · '));
+            } else if (det.plate) bits.push(`Unknown Vehicle · Plate Not Registered (${det.plate})`);
+            else bits.push('Waiting for plate…');
+            if (det.violation_status || det.violation_flag) bits.push(`⚠ ${det.violation_status || 'violation'}`);
+            return bits.join(' · ');
         };
         const refreshAi = async () => {
             if (!statusUrl || document.hidden) return;

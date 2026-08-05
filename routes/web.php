@@ -103,6 +103,7 @@ Route::prefix('admin')->middleware(['auth', 'verified', 'granted', 'no.cache', '
     Route::post('/settings/violations/{id}/toggle', [SettingsController::class, 'toggleViolationType'])->name('settings.violations.toggle');
     Route::delete('/settings/violations/{id}', [SettingsController::class, 'destroyViolationType'])->name('settings.violations.destroy');
     Route::get('/violations', [AdminViolationController::class, 'index'])->name('violations');
+    Route::get('/violations/{id}/evidence', [AdminViolationController::class, 'evidence'])->name('violations.evidence');
     Route::get('/access-logs', [AccessLogController::class, 'index'])->name('access-logs');
     Route::get('/access-logs/events', [AccessLogController::class, 'events'])->name('access-logs.events');
     Route::get('/live-cameras', [LiveCameraController::class, 'index'])->name('live-cameras');
@@ -124,6 +125,7 @@ Route::prefix('admin')->middleware(['auth', 'verified', 'granted', 'no.cache', '
 Route::prefix('guard')->middleware(['auth', 'verified', 'granted', 'no.cache', 'role:Guard'])->name('guard.')->group(function () {
     Route::get('/', [GuardDashboardController::class, 'index'])->name('dashboard');
     Route::get('/violations', [GuardViolationController::class, 'index'])->name('violations');
+    Route::get('/violations/{id}/evidence', [GuardViolationController::class, 'evidence'])->name('violations.evidence');
     Route::post('/violations', [GuardViolationController::class, 'store'])
         ->middleware(['throttle:10,1', 'permission:log_violations'])
         ->name('violations.store');

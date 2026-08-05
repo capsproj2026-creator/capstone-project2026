@@ -209,6 +209,10 @@ class AsyncPlateQueue:
                 mem = intelligence.tracks.get(track_id)
                 if mem is not None:
                     mem.apply_ocr_vote(read.plate, read.status, read.confidence)
+                    if mem.needs_owner_lookup():
+                        from plate_owner_lookup import lookup_plate_async
+
+                        lookup_plate_async(mem)
             except Exception as e:
                 print(f"Async OCR error: {e}")
             finally:

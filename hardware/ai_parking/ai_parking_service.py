@@ -370,7 +370,7 @@ def parse_tracks(
 
         if cls_id == 0:
             person_count += 1
-            annotated_boxes.append((x1, y1, x2, y2, name, conf, track_id, None))
+            annotated_boxes.append((x1, y1, x2, y2, name, conf, track_id, None, "pending", None))
             if POST_PERSON_DETECTIONS:
                 detections.append({"class": name, "confidence": round(conf, 3), "track_id": track_id})
             continue
@@ -415,6 +415,7 @@ def parse_tracks(
             plate = mem.plate
             plate_status = mem.plate_status
             ocr_confidence = mem.ocr_confidence
+            mem.last_xyxy = (x1, y1, x2, y2)
             if plate_queue is not None:
                 plate_queue.submit(
                     camera_id,
@@ -428,12 +429,39 @@ def parse_tracks(
             plate = mem.plate
             plate_status = mem.plate_status
             ocr_confidence = mem.ocr_confidence
+            if mem.needs_owner_lookup():
+                from plate_owner_lookup import lookup_plate_async
+
+                lookup_plate_async(mem)
+
+        owner_label = None
+        owner_name = None
+        vehicle_details = None
+        department = None
+        registration_status = None
+        registered = None
+        if track_id is not None:
+            mem = intelligence.tracks.get(int(track_id))
+            if mem is not None:
+                owner_label = mem.overlay_owner_line()
+                owner_name = mem.owner_name
+                vehicle_details = mem.vehicle_details
+                department = mem.department
+                registration_status = mem.registration_status
+                registered = mem.registered
+
+        # Normalized box for UIs (0–1).
+        nx1 = round(x1 / max(fw, 1), 4)
+        ny1 = round(y1 / max(fh, 1), 4)
+        nx2 = round(x2 / max(fw, 1), 4)
+        ny2 = round(y2 / max(fh, 1), 4)
 
         det = {
             "class": name,
             "confidence": round(conf, 3),
             "track_id": track_id,
             "plate_status": plate_status,
+            "xyxy": [nx1, ny1, nx2, ny2],
         }
         if plate:
             det["plate"] = plate
@@ -441,9 +469,21 @@ def parse_tracks(
             det["ocr_confidence"] = round(float(ocr_confidence), 3)
         if plate_status == "unreadable":
             det["plate"] = None
+        if owner_name:
+            det["owner_name"] = owner_name
+        if owner_label:
+            det["owner_label"] = owner_label
+        if vehicle_details:
+            det["vehicle_details"] = vehicle_details
+        if department:
+            det["department"] = department
+        if registration_status:
+            det["registration_status"] = registration_status
+        if registered is not None:
+            det["registered"] = registered
 
         detections.append(det)
-        annotated_boxes.append((x1, y1, x2, y2, name, conf, track_id, plate))
+        annotated_boxes.append((x1, y1, x2, y2, name, conf, track_id, plate, plate_status, owner_label))
         vehicles.append({
             "xyxy": (x1, y1, x2, y2),
             "track_id": track_id,
@@ -457,28 +497,52 @@ def parse_tracks(
     return annotated_boxes, detections, vehicles, person_count, vehicle_count
 
 
+def _draw_box_labels(annotated, x1, y1, x2, y2, name, conf, track_id, plate, plate_status, owner_label, lite=False):
+    color = CLASS_COLORS.get(name, (0, 220, 0))
+    cv2.rectangle(annotated, (x1, y1), (x2, y2), color, 2)
+    lines = []
+    class_label = name if not lite else (name[0].upper() if name else "?")
+    if lite:
+        head = f"{class_label}{conf * 100:.0f}"
+    else:
+        head = f"{name} {conf * 100:.0f}%"
+    if track_id is not None:
+        head = f"#{track_id} {head}"
+    lines.append(head)
+    if plate_status == "unreadable":
+        lines.append("Plate Unreadable")
+    elif plate:
+        lines.append(str(plate))
+        if owner_label:
+            lines.append(str(owner_label)[:28])
+    font = cv2.FONT_HERSHEY_SIMPLEX
+    scale = 0.42 if lite else 0.52
+    thick = 1 if lite else 2
+    ty = max(y1 - 8, 16 + 16 * (len(lines) - 1))
+    for i, line in enumerate(lines[:3] if lite else lines[:4]):
+        cv2.putText(
+            annotated,
+            line,
+            (x1, max(16, ty - (len(lines) - 1 - i) * (14 if lite else 16))),
+            font,
+            scale,
+            color,
+            thick,
+            cv2.LINE_AA,
+        )
+
+
 def draw_scene(frame, annotated_boxes, zones_data, occupied_slots, active_events, person_count, vehicle_count, use_poly):
     annotated = frame.copy()
     draw_zones(annotated, zones_data, occupied_slots)
 
-    for x1, y1, x2, y2, name, conf, track_id, plate in annotated_boxes:
-        color = CLASS_COLORS.get(name, (0, 220, 0))
-        label = f"{name} {conf * 100:.0f}%"
-        if track_id is not None:
-            label = f"#{track_id} {label}"
-        if plate:
-            label = f"{label} [{plate}]"
-        cv2.rectangle(annotated, (x1, y1), (x2, y2), color, 2)
-        cv2.putText(
-            annotated,
-            label,
-            (x1, max(y1 - 8, 20)),
-            cv2.FONT_HERSHEY_SIMPLEX,
-            0.55,
-            color,
-            2,
-            cv2.LINE_AA,
-        )
+    for box in annotated_boxes:
+        if len(box) >= 10:
+            x1, y1, x2, y2, name, conf, track_id, plate, plate_status, owner_label = box[:10]
+        else:
+            x1, y1, x2, y2, name, conf, track_id, plate = box[:8]
+            plate_status, owner_label = ("ok" if plate else "pending"), None
+        _draw_box_labels(annotated, x1, y1, x2, y2, name, conf, track_id, plate, plate_status, owner_label, lite=False)
 
     mode = "slots" if use_poly else "count-fallback"
     summary = f"People: {person_count} | Vehicles: {vehicle_count} | Mode: {mode}"
@@ -513,24 +577,13 @@ def draw_scene(frame, annotated_boxes, zones_data, occupied_slots, active_events
 def draw_scene_lite(frame, annotated_boxes, occupied_slots, person_count, vehicle_count):
     """Minimal overlay for low-latency live preview (skip zone polygons / event list)."""
     annotated = frame  # in-place; caller passes a disposable resize copy
-    for x1, y1, x2, y2, name, conf, track_id, plate in annotated_boxes:
-        color = CLASS_COLORS.get(name, (0, 220, 0))
-        cv2.rectangle(annotated, (x1, y1), (x2, y2), color, 2)
-        label = f"{name[0].upper()}{conf * 100:.0f}"
-        if track_id is not None:
-            label = f"#{track_id} {label}"
-        if plate:
-            label = f"{label} [{plate}]"
-        cv2.putText(
-            annotated,
-            label,
-            (x1, max(y1 - 6, 16)),
-            cv2.FONT_HERSHEY_SIMPLEX,
-            0.45,
-            color,
-            1,
-            cv2.LINE_AA,
-        )
+    for box in annotated_boxes:
+        if len(box) >= 10:
+            x1, y1, x2, y2, name, conf, track_id, plate, plate_status, owner_label = box[:10]
+        else:
+            x1, y1, x2, y2, name, conf, track_id, plate = box[:8]
+            plate_status, owner_label = ("ok" if plate else "pending"), None
+        _draw_box_labels(annotated, x1, y1, x2, y2, name, conf, track_id, plate, plate_status, owner_label, lite=True)
     n_occ = len(occupied_slots) if occupied_slots else 0
     summary = f"P:{person_count} V:{vehicle_count} Occ:{n_occ}"
     h = annotated.shape[0]
@@ -547,6 +600,42 @@ def draw_scene_lite(frame, annotated_boxes, occupied_slots, person_count, vehicl
     return annotated
 
 
+def encode_evidence_jpeg(frame, xyxy=None, max_side: int = 640, quality: int = 70) -> str | None:
+    """Crop (optional) and return base64 JPEG for violation evidence (size-capped)."""
+    import base64
+
+    if frame is None:
+        return None
+    try:
+        crop = frame
+        if xyxy is not None:
+            h, w = frame.shape[:2]
+            x1, y1, x2, y2 = [int(v) for v in xyxy]
+            pad = 12
+            x1 = max(0, x1 - pad)
+            y1 = max(0, y1 - pad)
+            x2 = min(w, x2 + pad)
+            y2 = min(h, y2 + pad)
+            if x2 > x1 and y2 > y1:
+                crop = frame[y1:y2, x1:x2]
+        ch, cw = crop.shape[:2]
+        scale = min(1.0, max_side / max(ch, cw, 1))
+        if scale < 1.0:
+            crop = cv2.resize(crop, (max(1, int(cw * scale)), max(1, int(ch * scale))), interpolation=cv2.INTER_AREA)
+        ok, buf = cv2.imencode(".jpg", crop, [int(cv2.IMWRITE_JPEG_QUALITY), quality])
+        if not ok:
+            return None
+        raw = buf.tobytes()
+        if len(raw) > 450000:
+            ok, buf = cv2.imencode(".jpg", crop, [int(cv2.IMWRITE_JPEG_QUALITY), 50])
+            if not ok:
+                return None
+            raw = buf.tobytes()
+        return base64.b64encode(raw).decode("ascii")
+    except Exception:
+        return None
+
+
 def post_json(path: str, payload: dict) -> bool:
     url = f"{API_BASE}{path}"
     body = json.dumps(payload).encode("utf-8")
@@ -561,7 +650,7 @@ def post_json(path: str, payload: dict) -> bool:
         method="POST",
     )
     try:
-        with urlrequest.urlopen(req, timeout=15) as resp:
+        with urlrequest.urlopen(req, timeout=4) as resp:
             print(f"Laravel HTTP {resp.status}: {path} cam={payload.get('camera_id')} vehicles={payload.get('vehicle_count')} slots={len(payload.get('slots') or [])} events={len(payload.get('events') or [])}")
             return True
     except HTTPError as e:
@@ -606,11 +695,10 @@ def scale_annotated_boxes(boxes, scale: float):
         return boxes
     inv = 1.0 / scale
     scaled = []
-    for x1, y1, x2, y2, name, conf, track_id, plate in boxes:
-        scaled.append((
-            int(x1 * inv), int(y1 * inv), int(x2 * inv), int(y2 * inv),
-            name, conf, track_id, plate,
-        ))
+    for box in boxes:
+        x1, y1, x2, y2 = box[0], box[1], box[2], box[3]
+        rest = box[4:]
+        scaled.append((int(x1 * inv), int(y1 * inv), int(x2 * inv), int(y2 * inv), *rest))
     return scaled
 
 
@@ -637,11 +725,10 @@ def scale_boxes_to_frame(boxes, src_shape, dst_shape):
     sx = dw / sw
     sy = dh / sh
     scaled = []
-    for x1, y1, x2, y2, name, conf, track_id, plate in boxes:
-        scaled.append((
-            int(x1 * sx), int(y1 * sy), int(x2 * sx), int(y2 * sy),
-            name, conf, track_id, plate,
-        ))
+    for box in boxes:
+        x1, y1, x2, y2 = box[0], box[1], box[2], box[3]
+        rest = box[4:]
+        scaled.append((int(x1 * sx), int(y1 * sy), int(x2 * sx), int(y2 * sy), *rest))
     return scaled
 
 
@@ -1143,6 +1230,7 @@ class CameraWorker:
                 post_events = list(events)
                 for evt in post_events:
                     tid = evt.get("track_id")
+                    xyxy = None
                     if tid is not None:
                         mem = self.intelligence.tracks.get(int(tid))
                         if mem:
@@ -1152,6 +1240,17 @@ class CameraWorker:
                                 evt["plate_status"] = mem.plate_status
                             if mem.ocr_confidence:
                                 evt["ocr_confidence"] = round(float(mem.ocr_confidence), 3)
+                            if mem.vehicle_details:
+                                evt["vehicle_details"] = mem.vehicle_details
+                            if mem.owner_name:
+                                evt["owner_name"] = mem.owner_name
+                            mem.violation_flag = True
+                            xyxy = mem.last_xyxy
+                    evt["camera_id"] = self.config.camera_id
+                    evt["area_id"] = self.config.area_id
+                    evidence = encode_evidence_jpeg(frame, xyxy)
+                    if evidence:
+                        evt["evidence_jpeg_base64"] = evidence
                 post_occupancy_async(
                     self.config.camera_id,
                     self.config.area_id,
