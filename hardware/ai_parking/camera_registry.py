@@ -30,6 +30,8 @@ class CameraConfig:
     jpeg_quality: int = 65
     flush_frames: int = 1
     lite_preview: bool = False
+    # 0 = use global AI_PARKING_INFER_MAX_WIDTH
+    infer_max_width: int = 0
 
     @property
     def slug(self) -> str:
@@ -101,6 +103,7 @@ def load_cameras(base_dir: Path | None = None) -> List[CameraConfig]:
             "zones": "zones.json",
             "rtsp_transport": "udp",
             "preview_max_width": "960",
+            "infer_max_width": "0",
             "stream_fps": "20",
             "jpeg_quality": "60",
             "flush_frames": "4",
@@ -120,9 +123,11 @@ def load_cameras(base_dir: Path | None = None) -> List[CameraConfig]:
             "stream_path": "/CAM-AI-2/stream.mjpg",
             "zones": "zones_CAM-AI-2.json",
             "rtsp_transport": "tcp",
-            "preview_max_width": "1280",
+            # Tapo C310 native max width (~2304×1296)
+            "preview_max_width": "2304",
+            "infer_max_width": "2304",
             "stream_fps": "15",
-            "jpeg_quality": "62",
+            "jpeg_quality": "75",
             "flush_frames": "1",
             "lite_preview": "0",
         },
@@ -140,9 +145,10 @@ def load_cameras(base_dir: Path | None = None) -> List[CameraConfig]:
             "stream_path": "/CAM-AI-3/stream.mjpg",
             "zones": "zones_CAM-AI-3.json",
             "rtsp_transport": "tcp",
-            "preview_max_width": "960",
-            "stream_fps": "20",
-            "jpeg_quality": "65",
+            "preview_max_width": "2304",
+            "infer_max_width": "2304",
+            "stream_fps": "15",
+            "jpeg_quality": "75",
             "flush_frames": "1",
             "lite_preview": "0",
         },
@@ -166,6 +172,7 @@ def load_cameras(base_dir: Path | None = None) -> List[CameraConfig]:
             "zones": f"zones_CAM-AI-{index}.json",
             "rtsp_transport": "tcp",
             "preview_max_width": "960",
+            "infer_max_width": "0",
             "stream_fps": "20",
             "jpeg_quality": "65",
             "flush_frames": "1",
@@ -235,6 +242,7 @@ def load_cameras(base_dir: Path | None = None) -> List[CameraConfig]:
             jpeg_quality=_int(f"{prefix}JPEG_QUALITY", int(base.get("jpeg_quality", "65"))),
             flush_frames=max(1, _int(f"{prefix}FLUSH_FRAMES", int(base.get("flush_frames", "1")))),
             lite_preview=_bool(f"{prefix}LITE_PREVIEW", base.get("lite_preview", "0") in ("1", "true", "yes")),
+            infer_max_width=_int(f"{prefix}INFER_MAX_WIDTH", int(base.get("infer_max_width", "0"))),
         )
 
         if not cfg.has_credentials:

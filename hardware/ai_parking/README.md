@@ -96,7 +96,7 @@ UI: `/admin/live-cameras`, `/guard/live-cameras`, `/guard/ai-parking`
 | `AI_PARKING_VIOLATION_DEBOUNCE_MINUTES` | `10` | Python + Laravel debounce |
 | `AI_PARKING_OCR_ENABLED` | `0` in code / set `1` in `.env` | EasyOCR on/off (enable for plate → owner names) |
 | `AI_PARKING_CONF` | `0.28` | YOLO confidence (lower = more detections) |
-| `AI_PARKING_INFER_MAX_WIDTH` | `960` | Max width fed to YOLO (live boxes) |
+| `AI_PARKING_INFER_MAX_WIDTH` | `960` | Default max width fed to YOLO (override per cam with `AI_CAMERA_N_INFER_MAX_WIDTH`) |
 | `AI_PARKING_IMG_SIZE` | `640` | YOLO imgsz (lower = smoother realtime on CPU) |
 | `AI_PARKING_MIN_BOX_AREA` | `0.0005` | Drop tiny boxes only |
 | `AI_PARKING_USE_TRACKER` | `0` | `0` = per-cam IoU IDs (multi-cam safe) |
@@ -156,6 +156,8 @@ John Cruz
 | Occupancy POST timeout | `4s` | Async thread; preview continues |
 
 Multi-cam: shared YOLO lock; per-cam preview + OCR queue. One RTSP failure does not stall another camera’s MJPEG.
+
+**Tapo C310 plates:** set `AI_CAMERA_2_PREVIEW_MAX_WIDTH=2304` and `AI_CAMERA_2_INFER_MAX_WIDTH=2304` (native ~3MP). Keep `/stream1`. Expect heavier CPU; Dahua can stay on lower preview/infer widths.
 
 ## Violation evidence
 

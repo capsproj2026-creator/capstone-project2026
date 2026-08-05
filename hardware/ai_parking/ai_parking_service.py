@@ -918,6 +918,7 @@ class CameraWorker:
         self.zones_holder = [load_zones(zones_path)]
         self.zones_path = zones_path
         self.preview_max_width = int(config.preview_max_width or PREVIEW_MAX_WIDTH)
+        self.infer_max_width = int(config.infer_max_width) if getattr(config, "infer_max_width", 0) else INFER_MAX_WIDTH
         self.stream_fps = float(config.stream_fps or STREAM_TARGET_FPS)
         self.jpeg_quality = int(config.jpeg_quality or STREAM_JPEG_QUALITY)
         self.lite_preview = bool(config.lite_preview)
@@ -996,7 +997,7 @@ class CameraWorker:
             f"rtsp={self.config.ip}{infer_path}{dual_note} "
             f"transport={self.config.rtsp_transport} "
             f"stream={self.config.stream_path} "
-            f"{self.stream_fps:.0f}fps@{self.preview_max_width}px q={self.jpeg_quality}"
+            f"{self.stream_fps:.0f}fps@{self.preview_max_width}px infer≤{self.infer_max_width}px q={self.jpeg_quality}"
             f"{' lite' if self.lite_preview else ''}"
         )
 
@@ -1120,7 +1121,8 @@ class CameraWorker:
                 continue
 
             # Faster live boxes; plate OCR still uses full-res crops asynchronously.
-            infer_max = max(INFER_MAX_WIDTH, 640)
+            # Tapo can set AI_CAMERA_N_INFER_MAX_WIDTH=2304 for sharper plate crops.
+            infer_max = max(int(self.infer_max_width or INFER_MAX_WIDTH), 640)
             infer_frame, scale = resize_for_infer(frame, infer_max)
             box_to_ocr_scale = (1.0 / scale) if scale and scale > 0 else 1.0
             try:
