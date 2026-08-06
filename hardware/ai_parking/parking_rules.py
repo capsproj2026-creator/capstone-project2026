@@ -91,6 +91,10 @@ class TrackMemory:
     plate_votes: dict[str, int] = field(default_factory=dict)
     unreadable_votes: int = 0
     last_ocr_at: float = 0.0
+    last_ocr_xyxy: tuple[int, int, int, int] | None = None
+    cls_id: int | None = None
+    sync_ocr_attempted: bool = False
+    last_sync_ocr_at: float = 0.0
     hit_streak: int = 0
     last_zones: list[str] = field(default_factory=list)
     # Owner cache from Laravel plate-lookup (once per locked plate).

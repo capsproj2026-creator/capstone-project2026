@@ -288,6 +288,59 @@ class AiParkingOccupancyService
     }
 
     /**
+     * Latest plate reads across all AI cameras (for guard monitors / demos).
+     *
+     * @return list<array<string, mixed>>
+     */
+    public function plateScansFromAllCameras(): array
+    {
+        $scans = [];
+        $seen = [];
+
+        foreach ($this->allSnapshots() as $cameraId => $snap) {
+            if (! is_array($snap)) {
+                continue;
+            }
+            foreach ($snap['detections'] ?? [] as $det) {
+                if (! is_array($det)) {
+                    continue;
+                }
+                $status = strtolower(trim((string) ($det['plate_status'] ?? '')));
+                if ($status === 'unreadable') {
+                    $key = $cameraId.':unreadable:'.($det['track_id'] ?? '');
+                    if (isset($seen[$key])) {
+                        continue;
+                    }
+                    $seen[$key] = true;
+                    $scans[] = array_merge($det, [
+                        'camera_id' => $cameraId,
+                        'plate' => null,
+                        'plate_status' => 'unreadable',
+                        'registration_status' => 'Plate Unreadable',
+                    ]);
+
+                    continue;
+                }
+
+                $plate = trim((string) ($det['plate'] ?? ''));
+                if ($plate === '') {
+                    continue;
+                }
+
+                $key = PlateLookup::normalize($plate).':'.$cameraId;
+                if (isset($seen[$key])) {
+                    continue;
+                }
+                $seen[$key] = true;
+
+                $scans[] = array_merge($det, ['camera_id' => $cameraId]);
+            }
+        }
+
+        return $scans;
+    }
+
+    /**
      * Attach plate status + registered owner identity to detections/events.
      *
      * Display contract:

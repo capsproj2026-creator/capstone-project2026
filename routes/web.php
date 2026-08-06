@@ -15,6 +15,7 @@ use App\Http\Controllers\Auth\LoginController;
 use App\Http\Controllers\Auth\RegisterController;
 use App\Http\Controllers\Guard\DashboardController as GuardDashboardController;
 use App\Http\Controllers\Guard\GateMonitorController;
+use App\Http\Controllers\Guard\PlateLookupController;
 use App\Http\Controllers\Guard\UserMonitorController;
 use App\Http\Controllers\Guard\NotificationController as GuardNotificationController;
 use App\Http\Controllers\Guard\ViolationController as GuardViolationController;
@@ -172,6 +173,11 @@ Route::prefix('guard')->middleware(['auth', 'verified', 'granted', 'no.cache', '
     Route::get('/live-cameras', [LiveCameraController::class, 'index'])->name('live-cameras');
     Route::get('/ai-parking', [LiveCameraController::class, 'aiMonitor'])->name('ai-parking');
     Route::get('/ai-parking/stream/{camera?}', [LiveCameraController::class, 'stream'])->name('ai-parking.stream');
+    Route::get('/plate-lookup', [PlateLookupController::class, 'index'])->name('plate-lookup');
+    Route::post('/plate-lookup', [PlateLookupController::class, 'index'])->name('plate-lookup.submit');
+    Route::post('/plate-lookup/search', [PlateLookupController::class, 'lookup'])
+        ->middleware('throttle:120,1')
+        ->name('plate-lookup.lookup');
     Route::get('/monitor', [UserMonitorController::class, 'index'])->name('monitor');
     Route::get('/visitors/register', [VisitorController::class, 'register'])->name('visitors.register');
     Route::post('/visitors', [VisitorController::class, 'store'])->name('visitors.store');

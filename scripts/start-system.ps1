@@ -30,30 +30,57 @@ if (-not (Test-Path (Join-Path $Root ".env"))) {
     Write-Error "Missing .env - copy .env.example and configure values first."
 }
 
-function Start-ProjectWindow([string]$Title, [string]$Command) {
-    $cmd = "Write-Host ('=== ' + '$Title' + ' ===') -ForegroundColor Cyan; $Command"
-    Start-Process powershell -WorkingDirectory $Root -ArgumentList @(
-        "-NoExit",
-        "-Command",
-        $cmd
-    ) | Out-Null
+function Initialize-DevPath {
+    $extra = @(
+        "$env:ProgramFiles\nodejs",
+        "${env:ProgramFiles(x86)}\nodejs",
+        "$env:LOCALAPPDATA\Programs\nodejs",
+        "$env:APPDATA\npm",
+        "$env:ProgramFiles\PHP",
+        "${env:ProgramFiles(x86)}\PHP"
+    )
+    foreach ($dir in $extra) {
+        if ((Test-Path -LiteralPath $dir) -and ($env:Path -notlike "*$dir*")) {
+            $env:Path = "$dir;$env:Path"
+        }
+    }
 }
+
+function Start-ProjectWindow([string]$Title, [string[]]$CommandArgs) {
+    Initialize-DevPath
+    $launcher = Join-Path $PSScriptRoot "launch-window.ps1"
+    $procArgs = @(
+        "-NoExit",
+        "-NoProfile",
+        "-ExecutionPolicy", "Bypass",
+        "-File", $launcher,
+        "-Title", $Title,
+        "-WorkingDirectory", $Root
+    ) + $CommandArgs
+    Start-Process powershell -WorkingDirectory $Root -ArgumentList $procArgs | Out-Null
+}
+
+Initialize-DevPath
 
 Write-Host "Starting Smart Campus VMS from $Root" -ForegroundColor Green
 
-Start-ProjectWindow "Laravel" "php artisan serve --host=0.0.0.0 --port=8000"
+Start-ProjectWindow "Laravel" @("php", "artisan", "serve", "--host=0.0.0.0", "--port=8000")
 Start-Sleep -Milliseconds 800
-Start-ProjectWindow "Reverb" "php artisan reverb:start"
+Start-ProjectWindow "Reverb" @("php", "artisan", "reverb:start")
 Start-Sleep -Milliseconds 400
 
 if (-not $SkipVite) {
-    Start-ProjectWindow "Vite" "npm run dev"
+    Start-ProjectWindow "Vite" @("npm", "run", "dev")
 }
 
 if ($startAi) {
     Start-Sleep -Milliseconds 400
     $aiScript = Join-Path $PSScriptRoot "start-ai-parking.ps1"
-    Start-ProjectWindow "YOLOv9 AI Parking" "powershell -ExecutionPolicy Bypass -File `"$aiScript`""
+    Start-ProjectWindow "YOLOv9 AI Parking" @(
+        "powershell",
+        "-ExecutionPolicy", "Bypass",
+        "-File", $aiScript
+    )
 }
 
 Write-Host ""

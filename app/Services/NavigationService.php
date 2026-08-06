@@ -49,6 +49,7 @@ class NavigationService
             ['label' => 'Access Logs', 'route' => 'guard.access-logs', 'icon' => 'file-text', 'access' => ['guard']],
             ['label' => 'Parking', 'route' => 'guard.parking', 'icon' => 'parking-square', 'access' => ['guard']],
             ['label' => 'AI Parking Monitor', 'route' => 'guard.ai-parking', 'icon' => 'scan', 'access' => ['guard']],
+            ['label' => 'Plate Lookup', 'route' => 'guard.plate-lookup', 'icon' => 'search', 'access' => ['guard']],
             ['label' => 'Live Cameras', 'route' => 'guard.live-cameras', 'icon' => 'camera', 'access' => ['guard']],
 
             ['label' => 'Notifications', 'route' => 'user.notifications', 'icon' => 'bell', 'access' => ['student', 'staff']],

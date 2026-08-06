@@ -57,6 +57,8 @@ IOU = float(os.getenv("AI_PARKING_IOU", "0.50"))
 MAX_DET = int(os.getenv("AI_PARKING_MAX_DET", "30"))
 # Tiny-box filter (fraction of infer frame). Keep low so distant cars remain.
 MIN_BOX_AREA_FRAC = float(os.getenv("AI_PARKING_MIN_BOX_AREA", "0.0005"))
+if os.getenv("AI_PARKING_LONG_RANGE", "0") == "1":
+    MIN_BOX_AREA_FRAC = float(os.getenv("AI_PARKING_LONG_RANGE_MIN_BOX_AREA", "0.00012"))
 # Infer width for live boxes (OCR still uses full-res RTSP crops asynchronously).
 INFER_MAX_WIDTH = int(os.getenv("AI_PARKING_INFER_MAX_WIDTH", "960"))
 # Shared YOLO + ByteTrack persist=True breaks multi-cam; default to predict + IoU IDs.
@@ -328,6 +330,72 @@ def _dedupe_vehicle_rows(rows: list[dict], iou_thresh: float = 0.65) -> list[dic
     return kept
 
 
+def _sync_detection_from_mem(det: dict, mem) -> None:
+    """Copy latest plate + owner fields from track memory into a detection dict."""
+    det["plate_status"] = mem.plate_status
+    if mem.plate_status == "ok" and mem.plate:
+        det["plate"] = mem.plate
+    else:
+        det.pop("plate", None)
+    if mem.ocr_confidence > 0:
+        det["ocr_confidence"] = round(float(mem.ocr_confidence), 3)
+    else:
+        det.pop("ocr_confidence", None)
+    owner_label = mem.overlay_owner_line()
+    if mem.owner_name:
+        det["owner_name"] = mem.owner_name
+    if owner_label:
+        det["owner_label"] = owner_label
+    if mem.vehicle_details:
+        det["vehicle_details"] = mem.vehicle_details
+    if mem.department:
+        det["department"] = mem.department
+    if mem.registration_status:
+        det["registration_status"] = mem.registration_status
+    if mem.registered is not None:
+        det["registered"] = mem.registered
+
+
+def refresh_plates_from_tracks(
+    detections: list[dict],
+    vehicles: list[dict],
+    annotated_boxes: list[tuple],
+    intelligence: ParkingIntelligence,
+) -> list[tuple]:
+    """Apply async/sync OCR results from track memory onto outgoing payloads."""
+    tracks = intelligence.tracks
+
+    for det in detections:
+        tid = det.get("track_id")
+        if tid is None:
+            continue
+        mem = tracks.get(int(tid))
+        if mem is not None:
+            _sync_detection_from_mem(det, mem)
+
+    for veh in vehicles:
+        tid = veh.get("track_id")
+        if tid is None:
+            continue
+        mem = tracks.get(int(tid))
+        if mem is None:
+            continue
+        veh["plate_status"] = mem.plate_status
+        veh["plate"] = mem.plate if mem.plate_status == "ok" else None
+
+    refreshed: list[tuple] = []
+    for box in annotated_boxes:
+        x1, y1, x2, y2, name, conf, track_id, plate, plate_status, owner_label = box
+        if track_id is not None:
+            mem = tracks.get(int(track_id))
+            if mem is not None:
+                plate_status = mem.plate_status
+                plate = mem.plate if plate_status == "ok" else None
+                owner_label = mem.overlay_owner_line() or owner_label
+        refreshed.append((x1, y1, x2, y2, name, conf, track_id, plate, plate_status, owner_label))
+    return refreshed
+
+
 def parse_tracks(
     result,
     frame,
@@ -416,6 +484,8 @@ def parse_tracks(
             plate_status = mem.plate_status
             ocr_confidence = mem.ocr_confidence
             mem.last_xyxy = (x1, y1, x2, y2)
+            mem.last_ocr_xyxy = (ox1, oy1, ox2, oy2)
+            mem.cls_id = row.get("cls_id")
             if plate_queue is not None:
                 plate_queue.submit(
                     camera_id,
@@ -1086,6 +1156,29 @@ class CameraWorker:
             elapsed = time.perf_counter() - started
             time.sleep(max(0.0, interval - elapsed))
 
+    def _try_sync_plate_ocr(self, frame, now: float) -> None:
+        """Run one blocking OCR read per stalled track so plates appear without waiting on the async queue."""
+        ocr = self.plate_queue.ocr if self.plate_queue else None
+        if not ocr or not ocr.enabled:
+            return
+        from plate_owner_lookup import lookup_plate_async
+
+        for tid, mem in list(self.intelligence.tracks.items()):
+            if mem.plate_status == "ok" and mem.plate:
+                continue
+            if (now - mem.first_seen) < 1.5:
+                continue
+            if not getattr(mem, "last_ocr_xyxy", None):
+                continue
+            last_sync = float(getattr(mem, "last_sync_ocr_at", 0.0) or 0.0)
+            if last_sync and (now - last_sync) < 4.0:
+                continue
+            mem.last_sync_ocr_at = now
+            read = ocr.read_plate(frame, mem.last_ocr_xyxy, cls_id=getattr(mem, "cls_id", None))
+            mem.apply_ocr_vote(read.plate, read.status, read.confidence)
+            if mem.needs_owner_lookup():
+                lookup_plate_async(mem)
+
     def _inference_loop(self):
         last_post = 0.0
         last_infer = 0.0
@@ -1203,6 +1296,11 @@ class CameraWorker:
                 detections = list(self._held_detections)
                 person_count, vehicle_count = self._held_counts
 
+            self._try_sync_plate_ocr(frame, now)
+            annotated_boxes = refresh_plates_from_tracks(
+                detections, vehicles, annotated_boxes, self.intelligence
+            )
+
             slot_statuses, events, occupied_slots, use_poly = self.intelligence.analyze(
                 vehicles, self.zones_holder[0], frame.shape
             )
@@ -1230,6 +1328,9 @@ class CameraWorker:
             last_infer = time.time()
 
             if now - last_post >= POST_EVERY_SEC:
+                refresh_plates_from_tracks(
+                    detections, vehicles, annotated_boxes, self.intelligence
+                )
                 post_events = list(events)
                 for evt in post_events:
                     tid = evt.get("track_id")
