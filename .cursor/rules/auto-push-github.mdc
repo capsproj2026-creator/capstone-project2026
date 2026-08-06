@@ -1,0 +1,34 @@
+---
+description: Commit and push code changes to GitHub after each task
+alwaysApply: true
+---
+
+# Auto commit and push to GitHub
+
+After completing any task that changes project files, commit and push to GitHub before ending the turn.
+
+## When to commit
+
+- Do this after every implementation, fix, or refactor that modifies tracked source files.
+- Skip if there are no file changes, or the user explicitly says not to commit/push.
+
+## Never commit
+
+- `.env`, credentials, API keys, or other secrets
+- `storage/` runtime files (sessions, cache, logs, compiled views)
+- `vendor/`, `node_modules/`, `public/hot`
+- Local debug artifacts (e.g. `hardware/ai_parking/debug_plates/`)
+
+## Workflow
+
+1. Run `git status`, `git diff`, and `git log -1 --oneline` to review changes.
+2. Stage only relevant files; never stage secrets or runtime junk.
+3. Write a concise commit message focused on **why** the change was made.
+4. Commit, then `git push origin main` (or the current branch with upstream).
+5. Confirm the push succeeded and share the commit hash with the user.
+
+## Git safety
+
+- Never update git config, force-push, or skip hooks unless the user explicitly asks.
+- Never amend a commit that was already pushed.
+- On Windows PowerShell, use `-m` flags for commit messages (heredocs are unreliable).
