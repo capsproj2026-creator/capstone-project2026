@@ -4,6 +4,7 @@ namespace App\Http\Controllers\User;
 
 use App\Http\Controllers\Controller;
 use App\Models\Notification;
+use App\Models\ViolationLog;
 use App\Support\SearchHelper;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
@@ -54,9 +55,26 @@ class NotificationController extends Controller
             });
         }
 
+        $notifications = $query->paginate(20)->withQueryString();
+
+        $violationIds = $notifications->getCollection()
+            ->pluck('violation_log_id')
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
+
+        $violationLogs = $violationIds === []
+            ? collect()
+            : ViolationLog::query()
+                ->whereIn('_id', $violationIds)
+                ->get()
+                ->keyBy(fn ($log) => (string) $log->getKey());
+
         return view('user.notifications', [
             'user' => $user->load('role'),
-            'notifications' => $query->paginate(20)->withQueryString(),
+            'notifications' => $notifications,
+            'violationLogs' => $violationLogs,
             'search' => $search ?? '',
             'typeFilter' => $type ?? 'all',
             'statusFilter' => $status ?? 'all',

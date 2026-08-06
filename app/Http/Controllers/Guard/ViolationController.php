@@ -56,9 +56,13 @@ class ViolationController extends Controller
         ];
 
         if ($requirePhoto) {
-            $rules['evidence_photo'] = ['required', 'image', 'max:5120'];
+            $rules['evidence_photo'] = ['nullable', 'image', 'max:5120'];
+            $rules['evidence_photos'] = ['required', 'array', 'min:1', 'max:5'];
+            $rules['evidence_photos.*'] = ['image', 'max:5120'];
         } else {
             $rules['evidence_photo'] = ['nullable', 'image', 'max:5120'];
+            $rules['evidence_photos'] = ['nullable', 'array', 'max:5'];
+            $rules['evidence_photos.*'] = ['image', 'max:5120'];
         }
 
         $validated = $request->validate($rules);
@@ -78,12 +82,23 @@ class ViolationController extends Controller
         $guardId = auth()->id();
         $title = "Violation Recorded: {$validated['violation_type']}";
 
-        $evidencePath = null;
-        if ($request->hasFile('evidence_photo')) {
-            $evidencePath = $request->file('evidence_photo')->store('violation-evidence', 'private');
+        $evidencePaths = [];
+        if ($request->hasFile('evidence_photos')) {
+            foreach ($request->file('evidence_photos') as $file) {
+                if ($file) {
+                    $evidencePaths[] = $file->store('violation-evidence', 'public');
+                }
+            }
+        }
+        if ($evidencePaths === [] && $request->hasFile('evidence_photo')) {
+            $evidencePaths[] = $request->file('evidence_photo')->store('violation-evidence', 'public');
         }
 
-        ViolationLog::query()->create([
+        if ($requirePhoto && $evidencePaths === []) {
+            return redirect()->route('guard.violations', ['error' => 'photo_required']);
+        }
+
+        $log = ViolationLog::query()->create([
             'user_id' => $user->id,
             'violator_name' => $user->fullname,
             'id_number' => $user->id_number,
@@ -93,7 +108,8 @@ class ViolationController extends Controller
             'plate_number' => $validated['plate_number'],
             'violation_type' => $validated['violation_type'],
             'description' => $validated['description'],
-            'evidence_photo' => $evidencePath,
+            'evidence_photo' => $evidencePaths[0] ?? null,
+            'evidence_photos' => $evidencePaths !== [] ? $evidencePaths : null,
             'guard_id' => (string) $guardId,
             'status' => 'Active',
             'created_at' => now(),
@@ -118,17 +134,13 @@ class ViolationController extends Controller
                 'title' => $title,
                 'message' => $message,
                 'type' => 'Violation',
+                'violation_log_id' => (string) $log->getKey(),
                 'is_read' => false,
                 'created_at' => now(),
             ]);
 
             try {
-                $this->logViolation(
-                    $user,
-                    $plate,
-                    $validated['violation_type'],
-                    $validated['description'] ?? null
-                );
+                $this->sendViolationMail($user, $log, $validated['violation_type'], $validated['description'] ?? null);
 
                 if ($autoLock && $newStrikes >= User::MAX_STRIKES) {
                     $user->notify(new AccountLockedNotification($newStrikes));
@@ -145,28 +157,32 @@ class ViolationController extends Controller
     }
 
     /**
-     * Sends the violation alert email to the vehicle owner.
-     *
-     * VehicleViolationMail exposes $plateNumber, $violationType, and $description to the Blade view.
-     * Laravel's Mail facade hands the message to the SMTP driver configured in .env (Brevo).
+     * Sends the violation alert email to the vehicle owner, including photo evidence when available.
      */
-    private function logViolation(
+    private function sendViolationMail(
         User $user,
-        string $plateNumber,
+        ViolationLog $log,
         string $violationType,
         ?string $description = null
     ): void {
+        $guardName = auth()->user()?->fullname;
+
         Mail::to($user->email)->send(new VehicleViolationMail(
-            plateNumber: $plateNumber,
+            plateNumber: (string) $log->plate_number,
             violationType: $violationType,
             description: filled($description) ? trim($description) : null,
+            occurredAt: $log->created_at,
+            location: filled($log->area_name) ? (string) $log->area_name : (filled($log->camera_id) ? (string) $log->camera_id : 'Campus'),
+            reportedBy: $guardName ?: 'Campus Security',
+            evidencePaths: $log->evidencePaths(),
+            remarks: filled($description) ? trim((string) $description) : null,
         ));
     }
 
-    public function evidence(string $id): \Symfony\Component\HttpFoundation\StreamedResponse|\Illuminate\Http\Response
+    public function evidence(string $id, int $index = 0): \Symfony\Component\HttpFoundation\StreamedResponse|\Illuminate\Http\Response
     {
-        $log = ViolationLog::query()->findOrFail($id);
+        $log = \App\Support\ViolationEvidence::findAuthorized($id);
 
-        return \App\Support\PrivateEvidence::response($log->evidence_photo ?? null);
+        return \App\Support\PrivateEvidence::response(\App\Support\ViolationEvidence::pathAt($log, $index));
     }
 }

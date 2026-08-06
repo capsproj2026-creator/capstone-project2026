@@ -15,6 +15,7 @@ class ParkingSlot extends MongoModel
         'slot_number',
         'status',
         'parked_user_id',
+        'parked_visitor_id',
     ];
 
     protected function casts(): array
@@ -22,6 +23,7 @@ class ParkingSlot extends MongoModel
         return [
             'area_id' => 'integer',
             'parked_user_id' => 'integer',
+            'parked_visitor_id' => 'integer',
         ];
     }
 
@@ -33,5 +35,10 @@ class ParkingSlot extends MongoModel
     public function parkedUser(): BelongsTo
     {
         return $this->belongsTo(User::class, 'parked_user_id');
+    }
+
+    public function parkedVisitor(): BelongsTo
+    {
+        return $this->belongsTo(Visitor::class, 'parked_visitor_id');
     }
 }

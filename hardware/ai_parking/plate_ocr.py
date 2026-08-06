@@ -18,14 +18,22 @@ if TYPE_CHECKING:
 
 OCR_ENABLED = os.getenv("AI_PARKING_OCR_ENABLED", "0") == "1"
 OCR_EVERY_SEC = float(os.getenv("AI_PARKING_OCR_EVERY_SEC", "3"))
-OCR_MIN_CONF = float(os.getenv("AI_PARKING_OCR_MIN_CONF", "0.35"))
+OCR_MIN_CONF = float(os.getenv("AI_PARKING_OCR_MIN_CONF", "0.30"))
 # Below this, treat a read as noise even if something was decoded.
 OCR_UNREADABLE_BELOW = float(os.getenv("AI_PARKING_OCR_UNREADABLE_BELOW", "0.22"))
 OCR_QUEUE_SIZE = int(os.getenv("AI_PARKING_OCR_QUEUE_SIZE", "2"))
+OCR_UPSCALE_MIN_WIDTH = int(os.getenv("AI_PARKING_OCR_UPSCALE_MIN_WIDTH", "400"))
+OCR_UPSCALE_FACTOR = float(os.getenv("AI_PARKING_OCR_UPSCALE_FACTOR", "3"))
 
-_PLATE_RE = re.compile(r"[A-Z0-9]{5,10}")
-# Common PH private plate shapes after strip: ABC1234 / AB1234
-_PH_PLATE_RE = re.compile(r"^[A-Z]{2,3}\d{3,4}$")
+# COCO class id for motorcycle (tighter rear-plate crop).
+MOTORCYCLE_CLS_ID = 3
+
+_PLATE_RE = re.compile(r"^[A-Z0-9]{5,12}$")
+# PH private car plates after strip: ABC1234 / AB1234
+_PH_CAR_RE = re.compile(r"^[A-Z]{2,3}\d{3,4}$")
+# PH LTO motorcycle plates after strip: 05010401328 (4 + 7 digits)
+_PH_MC_RE = re.compile(r"^\d{4}\d{7}$")
+_OCR_ALLOWLIST = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ-"
 
 
 @dataclass
@@ -36,6 +44,26 @@ class PlateRead:
     confidence: float = 0.0
     # ok | unreadable | empty
     status: str = "empty"
+
+
+def _parse_plate_candidate(text: str) -> tuple[Optional[str], bool]:
+    """Return (normalized_plate, is_known_ph_format)."""
+    raw = str(text).upper().strip()
+    compact = re.sub(r"\s+", "", raw)
+    mc_hyphen = re.match(r"^(\d{4})-(\d{7})$", compact)
+    if mc_hyphen:
+        return mc_hyphen.group(1) + mc_hyphen.group(2), True
+
+    cleaned = re.sub(r"[^A-Z0-9]", "", raw)
+    if len(cleaned) < 4 or len(cleaned) > 12:
+        return None, False
+    if _PH_MC_RE.fullmatch(cleaned):
+        return cleaned, True
+    if _PH_CAR_RE.fullmatch(cleaned):
+        return cleaned, True
+    if _PLATE_RE.fullmatch(cleaned):
+        return cleaned, False
+    return None, False
 
 
 class PlateOCR:
@@ -61,31 +89,141 @@ class PlateOCR:
             self.enabled = False
 
     @staticmethod
-    def crop_plate_region(frame, xyxy: tuple[int, int, int, int]):
-        """Return lower-vehicle crop suitable for OCR, or None if too small."""
+    def crop_plate_region(
+        frame,
+        xyxy: tuple[int, int, int, int],
+        cls_id: int | None = None,
+    ):
+        """Return vehicle crop suitable for OCR, or None if too small."""
         h, w = frame.shape[:2]
         x1, y1, x2, y2 = xyxy
         box_h = max(1, y2 - y1)
-        y1p = y1 + int(box_h * 0.55)
-        x1 = max(0, x1)
+        box_w = max(1, x2 - x1)
+
+        if cls_id == MOTORCYCLE_CLS_ID:
+            # Motorcycle plates sit mid-rear; bottom crop often catches tire/mudguard only.
+            y1p = y1 + int(box_h * 0.30)
+            y2p = y1 + int(box_h * 0.68)
+        else:
+            y1p = y1 + int(box_h * 0.55)
+            y2p = y2
+
+        x_pad = int(box_w * 0.04)
+        x1 = max(0, x1 + x_pad)
         y1p = max(0, y1p)
-        x2 = min(w, x2)
-        y2 = min(h, y2)
-        if x2 - x1 < 24 or y2 - y1p < 12:
+        x2 = min(w, x2 - x_pad)
+        y2p = min(h, y2p)
+
+        if x2 - x1 < 24 or y2p - y1p < 12:
             return None
-        crop = frame[y1p:y2, x1:x2]
+        crop = frame[y1p:y2p, x1:x2]
         if crop is None or crop.size == 0:
             return None
         return crop.copy()
 
-    def read_plate(self, frame, xyxy: tuple[int, int, int, int]) -> PlateRead:
-        """Attempt plate OCR on the lower portion of a vehicle box."""
+    @staticmethod
+    def _upscale_crop(crop):
+        ch, cw = crop.shape[:2]
+        target = max(OCR_UPSCALE_MIN_WIDTH, int(cw * OCR_UPSCALE_FACTOR))
+        if cw >= target:
+            return crop
+        scale = target / max(cw, 1)
+        return cv2.resize(crop, None, fx=scale, fy=scale, interpolation=cv2.INTER_CUBIC)
+
+    @staticmethod
+    def _ocr_variants(crop, quick: bool = False):
+        crop = PlateOCR._upscale_crop(crop)
+        gray = cv2.cvtColor(crop, cv2.COLOR_BGR2GRAY)
+        gray = cv2.bilateralFilter(gray, 5, 50, 50)
+        clahe_img = gray
+        try:
+            clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+            clahe_img = clahe.apply(gray)
+        except Exception:
+            pass
+        variants = [("color", crop), ("gray", gray)]
+        if not quick:
+            otsu_img = clahe_img
+            try:
+                _, otsu_img = cv2.threshold(clahe_img, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+            except Exception:
+                pass
+            variants.extend([("clahe", clahe_img), ("otsu", otsu_img)])
+        return variants
+
+    @staticmethod
+    def _score_candidate(parsed: str, known_format: bool, conf_f: float) -> float:
+        score = conf_f
+        if _PH_MC_RE.fullmatch(parsed):
+            score += 0.40
+        elif _PH_CAR_RE.fullmatch(parsed):
+            score += 0.15
+        elif known_format:
+            score += 0.08
+        elif parsed.isdigit() and len(parsed) < 11:
+            score *= 0.82
+        return score
+
+    def _scan_variants(self, crop, quick: bool = False) -> tuple[Optional[str], float, float]:
+        best: Optional[str] = None
+        best_score = 0.0
+        best_any_score = 0.0
+        for _label, img in self._ocr_variants(crop, quick=quick):
+            try:
+                results = self._readtext(img)
+            except Exception as e:
+                print(f"OCR read error: {e}")
+                continue
+            if not results:
+                continue
+            for _bbox, text, conf in results:
+                conf_f = float(conf)
+                best_any_score = max(best_any_score, conf_f)
+                parsed, known_format = _parse_plate_candidate(text)
+                if parsed is None:
+                    continue
+                score = self._score_candidate(parsed, known_format, conf_f)
+                if conf_f < OCR_MIN_CONF and not known_format:
+                    continue
+                if score > best_score:
+                    best_score = score
+                    best = parsed
+        return best, best_score, best_any_score
+
+    def _readtext(self, img):
+        with self._lock:
+            return self._reader.readtext(img, allowlist=_OCR_ALLOWLIST)
+
+    def read_plate(
+        self,
+        frame,
+        xyxy: tuple[int, int, int, int],
+        cls_id: int | None = None,
+    ) -> PlateRead:
+        """Attempt plate OCR on the rear portion of a vehicle box."""
         if not self.enabled:
             return PlateRead(status="empty")
-        crop = self.crop_plate_region(frame, xyxy)
+        crop = self.crop_plate_region(frame, xyxy, cls_id=cls_id)
         if crop is None:
             return PlateRead(status="empty")
         return self.read_crop(crop)
+
+    @staticmethod
+    def _sub_crops(crop):
+        """Try full frame plus tighter bands where plates usually appear."""
+        ch, cw = crop.shape[:2]
+        out = [crop]
+        if ch >= 24:
+            top = crop[0 : max(12, int(ch * 0.52)), :]
+            if top.size > 0 and top.shape[0] >= 12:
+                out.insert(0, top)
+        if ch >= 48:
+            mid_y1 = max(0, int(ch * 0.18))
+            mid_y2 = min(ch, int(ch * 0.62))
+            mid = crop[mid_y1:mid_y2, :]
+            if mid.size > 0 and mid.shape[0] >= 12:
+                out.append(mid)
+        return out
 
     def read_crop(self, crop) -> PlateRead:
         if not self.enabled:
@@ -96,48 +234,32 @@ class PlateOCR:
         if crop is None or getattr(crop, "size", 0) == 0:
             return PlateRead(status="empty")
 
-        ch, cw = crop.shape[:2]
-        if cw < 180:
-            scale = 180 / max(cw, 1)
-            crop = cv2.resize(crop, None, fx=scale, fy=scale, interpolation=cv2.INTER_CUBIC)
-
-        gray = cv2.cvtColor(crop, cv2.COLOR_BGR2GRAY)
-        gray = cv2.bilateralFilter(gray, 5, 50, 50)
-        try:
-            clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
-            gray = clahe.apply(gray)
-        except Exception:
-            pass
-
-        try:
-            with self._lock:
-                results = self._reader.readtext(gray)
-        except Exception as e:
-            print(f"OCR read error: {e}")
-            return PlateRead(status="unreadable", confidence=0.0)
-
-        if not results:
-            return PlateRead(status="unreadable", confidence=0.0)
-
         best: Optional[str] = None
         best_score = 0.0
         best_any_score = 0.0
-        for _bbox, text, conf in results:
-            conf_f = float(conf)
-            best_any_score = max(best_any_score, conf_f)
-            cleaned = re.sub(r"[^A-Za-z0-9]", "", str(text)).upper()
-            if len(cleaned) < 4 or len(cleaned) > 10:
-                continue
-            if not (_PH_PLATE_RE.fullmatch(cleaned) or _PLATE_RE.fullmatch(cleaned) or (4 <= len(cleaned) <= 9)):
-                continue
-            score = conf_f
-            if _PH_PLATE_RE.fullmatch(cleaned):
-                score += 0.05
-            if conf_f < OCR_MIN_CONF and not _PH_PLATE_RE.fullmatch(cleaned):
-                continue
-            if score > best_score:
-                best_score = score
-                best = cleaned
+
+        try:
+            subs = self._sub_crops(crop)
+            quick_crop = subs[0]
+            best, best_score, best_any_score = self._scan_variants(quick_crop, quick=True)
+            if best and best_score >= OCR_MIN_CONF and (
+                _PH_MC_RE.fullmatch(best) or _PH_CAR_RE.fullmatch(best)
+            ):
+                return PlateRead(
+                    plate=best,
+                    confidence=round(min(best_score, 1.0), 3),
+                    status="ok",
+                )
+
+            for sub in subs:
+                b, s, any_s = self._scan_variants(sub, quick=False)
+                best_any_score = max(best_any_score, any_s)
+                if s > best_score:
+                    best_score = s
+                    best = b
+        except Exception as e:
+            print(f"OCR pipeline error: {e}")
+            return PlateRead(status="unreadable", confidence=0.0)
 
         if best and best_score >= OCR_MIN_CONF:
             return PlateRead(plate=best, confidence=round(min(best_score, 1.0), 3), status="ok")
@@ -170,6 +292,7 @@ class AsyncPlateQueue:
         xyxy: tuple[int, int, int, int],
         intelligence: "ParkingIntelligence",
         every_sec: float = OCR_EVERY_SEC,
+        cls_id: int | None = None,
     ) -> None:
         if not self.ocr.enabled or track_id is None:
             return
@@ -186,7 +309,7 @@ class AsyncPlateQueue:
                 return
             self._inflight.add(key)
 
-        crop = PlateOCR.crop_plate_region(frame, xyxy)
+        crop = PlateOCR.crop_plate_region(frame, xyxy, cls_id=cls_id)
         if crop is None:
             with self._lock:
                 self._inflight.discard(key)

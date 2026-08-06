@@ -98,8 +98,9 @@
                     // Inline colors so bars always render (Tailwind may not include dynamic utility classes).
                     $barHex = $strikes >= 3 ? '#ef4444' : ($strikes === 2 ? '#f97316' : ($strikes === 1 ? '#fbbf24' : null));
                     $evidenceUrl = filled($row->evidence_photo)
-                        ? route('admin.violations.evidence', ['id' => (string) $row->getKey()])
+                        ? route('admin.violations.evidence', ['id' => (string) $row->getKey(), 'index' => 0])
                         : null;
+                    $evidenceUrls = \App\Support\ViolationEvidence::urlsFor($row, 'admin.violations.evidence');
                     $detail = [
                         'id' => (string) ($row->getKey() ?? ''),
                         'name' => $row->violator_name,
@@ -113,6 +114,8 @@
                         'camera' => $row->camera_id,
                         'vehicle' => $row->vehicle_details,
                         'evidence_url' => $evidenceUrl,
+                        'evidence_urls' => $evidenceUrls,
+                        'has_evidence' => count($evidenceUrls) > 0,
                         'datetime' => ph_datetime($row->created_at, 'n/j/Y, g:i:s A'),
                         'strikes' => $strikes,
                         'locked' => $locked,
@@ -161,11 +164,7 @@
                                     <code class="text-gray-700">{{ $row->plate_number }}</code>
                                 </span>
                             </div>
-                            @if ($evidenceUrl)
-                                <a href="{{ $evidenceUrl }}" target="_blank" rel="noopener" class="mt-3 inline-block overflow-hidden rounded-lg border border-gray-200">
-                                    <img src="{{ $evidenceUrl }}" alt="Evidence" class="h-20 w-auto object-cover" loading="lazy">
-                                </a>
-                            @endif
+                            <x-violation.evidence-panel :log="$row" route-name="admin.violations.evidence" class="mt-3" />
                         </div>
                         <button
                             type="button"
@@ -318,6 +317,10 @@
                     <dt class="text-gray-500">Description</dt>
                     <dd id="vd-description" class="mt-2 rounded-lg bg-gray-50 px-3 py-2 text-gray-800"></dd>
                 </div>
+                <div class="py-3">
+                    <dt class="mb-2 text-gray-500">Photo Evidence</dt>
+                    <dd id="vd-evidence" class="min-h-[2rem]"></dd>
+                </div>
             </dl>
             <div class="flex justify-end border-t border-gray-200 px-5 py-4">
                 <button type="button" id="violation-detail-close-btn" class="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-800 hover:bg-gray-50">
@@ -346,6 +349,25 @@
             set('vd-plate', data.plate);
             set('vd-strikes', `${data.strikes ?? 0}/3${data.locked ? ' (Suspended)' : ''}`);
             set('vd-description', data.description);
+
+            const evidenceEl = document.getElementById('vd-evidence');
+            if (evidenceEl) {
+                const urls = Array.isArray(data.evidence_urls) ? data.evidence_urls : [];
+                if (urls.length) {
+                    evidenceEl.innerHTML = `
+                        <button type="button"
+                            class="inline-flex items-center gap-2 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-sm font-semibold text-blue-700 hover:bg-blue-100"
+                            data-violation-evidence-open
+                            data-evidence-urls='${JSON.stringify(urls)}'
+                            data-evidence-title="Evidence · ${data.type || 'Violation'}">
+                            <i data-lucide="image" class="h-4 w-4"></i>
+                            View Evidence${urls.length > 1 ? ` (${urls.length})` : ''}
+                        </button>`;
+                } else {
+                    evidenceEl.innerHTML = '<p class="text-sm italic text-gray-400">No Evidence Available.</p>';
+                }
+            }
+
             modal?.classList.remove('hidden');
             modal?.classList.add('flex');
             if (window.lucide) window.lucide.createIcons();

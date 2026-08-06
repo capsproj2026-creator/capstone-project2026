@@ -280,7 +280,7 @@ class AdminOverhaulTest extends TestCase
                 ->post(route('admin.rfid.approve', ['id' => $user->id]), [
                     'rfid_uid' => 'UID: '.implode(' ', str_split(strtolower($uid), 2)),
                 ])
-                ->assertRedirect(route('admin.rfid', ['tab' => User::GATE_ACCESS_GRANTED]))
+                ->assertRedirect(route('admin.rfid', ['tab' => 'assigned']))
                 ->assertSessionHas('success');
 
             $user->refresh();
@@ -290,20 +290,20 @@ class AdminOverhaulTest extends TestCase
 
             $this->actingAs($this->admin)
                 ->get(route('admin.rfid', [
-                    'tab' => User::GATE_ACCESS_GRANTED,
+                    'tab' => 'assigned',
                     'search' => $user->id_number,
                 ]))
                 ->assertOk()
-                ->assertSee($user->fullname)
-                ->assertSee($uid);
+                ->assertSee($user->name)
+                ->assertSee($uid)
+                ->assertSee('data-has-rfid="1"', false);
 
+            // Client-side filters keep all rows in the DOM.
             $this->actingAs($this->admin)
-                ->get(route('admin.rfid', [
-                    'tab' => User::GATE_ACCESS_PENDING,
-                    'search' => $user->id_number,
-                ]))
+                ->get(route('admin.rfid', ['tab' => 'pending']))
                 ->assertOk()
-                ->assertDontSee($user->fullname);
+                ->assertSee($user->name)
+                ->assertSee('data-has-rfid="1"', false);
 
             $scan = app(RfidAccessService::class)->process($uid, 'GATE-IN-TEST', 'Entry');
             $this->assertSame(RfidAccessService::STATUS_GRANTED, $scan['status']);

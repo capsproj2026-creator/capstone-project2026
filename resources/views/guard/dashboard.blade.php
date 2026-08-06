@@ -4,7 +4,7 @@
 
 @section('content')
     @include('partials.shell.page-header', [
-        'title' => 'Guard Dashboard',
+        'title' => 'Dashboard',
         'subtitle' => 'Monitor and control vehicle access',
     ])
 
@@ -40,6 +40,38 @@
             </div>
             <div class="text-3xl font-semibold text-gray-900">{{ $availableSlots }}</div>
             <p class="mt-1 text-sm text-gray-500">Out of {{ $totalSlots }} total</p>
+        </div>
+    </div>
+
+    <div class="mb-8 grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-4">
+        <div class="rounded-xl border border-teal-100 bg-white p-6">
+            <div class="mb-2 flex items-center justify-between">
+                <span class="text-gray-600">Active Visitors</span>
+                <i data-lucide="user-round-check" class="h-5 w-5 text-teal-600"></i>
+            </div>
+            <div class="text-3xl font-semibold text-teal-700">{{ number_format($activeVisitors ?? 0) }}</div>
+        </div>
+        <div class="rounded-xl border border-amber-100 bg-white p-6">
+            <div class="mb-2 flex items-center justify-between">
+                <span class="text-gray-600">Waiting Visitors</span>
+                <i data-lucide="clock" class="h-5 w-5 text-amber-600"></i>
+            </div>
+            <div class="text-3xl font-semibold text-amber-700">{{ number_format($waitingVisitors ?? 0) }}</div>
+        </div>
+        <div class="rounded-xl border border-blue-100 bg-white p-6">
+            <div class="mb-2 flex items-center justify-between">
+                <span class="text-gray-600">RFID Returns</span>
+                <i data-lucide="hash" class="h-5 w-5 text-blue-600"></i>
+            </div>
+            <div class="text-3xl font-semibold text-blue-700">{{ number_format($rfidReturnsPending ?? 0) }}</div>
+            <p class="mt-1 text-sm text-gray-500">Cards still assigned</p>
+        </div>
+        <div class="rounded-xl border border-rose-100 bg-white p-6">
+            <div class="mb-2 flex items-center justify-between">
+                <span class="text-gray-600">Expired Visitors</span>
+                <i data-lucide="ban" class="h-5 w-5 text-rose-600"></i>
+            </div>
+            <div class="text-3xl font-semibold text-rose-700">{{ number_format($expiredVisitors ?? 0) }}</div>
         </div>
     </div>
 
@@ -90,8 +122,13 @@
                             <i data-lucide="car" class="@class(['h-5 w-5', 'text-green-600' => $log->action === 'Entry', 'text-blue-600' => $log->action === 'Exit'])"></i>
                         </div>
                         <div>
-                            <p class="font-medium text-gray-900">{{ $log->user?->plate_number ?? '—' }}</p>
-                            <p class="text-sm text-gray-500">{{ $log->user?->fullname ?? 'Unknown' }}</p>
+                            <p class="font-medium text-gray-900">{{ $log->visitor?->plate_number ?? $log->user?->plate_number ?? '—' }}</p>
+                            <p class="text-sm text-gray-500">
+                                {{ $log->visitor?->displayName() ?? $log->user?->fullname ?? 'Unknown' }}
+                                @if ($log->visitor)
+                                    <span class="ml-1 rounded bg-teal-50 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-teal-700">Visitor</span>
+                                @endif
+                            </p>
                         </div>
                     </div>
                     <div class="text-right">
@@ -108,4 +145,29 @@
             @endforelse
         </div>
     </div>
+
+    @if (($recentViolationLogs ?? collect())->isNotEmpty())
+        <div class="mt-8 rounded-xl border border-gray-200 bg-white">
+            <div class="flex items-center justify-between border-b border-gray-200 p-6">
+                <h3 class="font-semibold text-gray-900">Recent Violations</h3>
+                <a href="{{ route('guard.violations') }}" class="text-sm font-medium text-orange-600 hover:underline">View all</a>
+            </div>
+            <div class="divide-y divide-gray-200">
+                @foreach ($recentViolationLogs as $violation)
+                    <div class="flex flex-wrap items-start justify-between gap-4 p-4">
+                        <div class="min-w-0">
+                            <p class="font-medium text-gray-900">{{ $violation->violator_name }}</p>
+                            <p class="text-sm text-red-600">{{ $violation->violation_type }}</p>
+                            <p class="mt-1 text-xs text-gray-500">{{ ph_datetime($violation->created_at) }}</p>
+                        </div>
+                        <x-violation.evidence-panel
+                            :log="$violation"
+                            route-name="guard.violations.evidence"
+                            compact
+                        />
+                    </div>
+                @endforeach
+            </div>
+        </div>
+    @endif
 @endsection

@@ -41,7 +41,12 @@ class PortalShellNavTest extends TestCase
             ->getContent();
 
         $this->assertStringContainsString('id="portal-sidebar"', $html);
+        $this->assertStringContainsString('id="portal-sidebar-nav"', $html);
         $this->assertStringContainsString('id="portal-menu-btn"', $html);
+        $this->assertStringNotContainsString('id="portal-sidebar-edge-toggle"', $html);
+        $this->assertStringContainsString('id="portal-overlay"', $html);
+        $this->assertStringContainsString('id="portal-main"', $html);
+        $this->assertStringContainsString('portal-sidebar-closed', $html);
         $this->assertStringContainsString('Show or hide sidebar', $html);
         $this->assertStringContainsString(route('admin.registrations'), $html);
         $this->assertStringContainsString(route('admin.violations'), $html);
@@ -61,8 +66,9 @@ class PortalShellNavTest extends TestCase
         $html = $this->actingAs($guard)
             ->get(route('guard.dashboard'))
             ->assertOk()
-            ->assertSee('Guard Portal')
-            ->assertSee('Guard portal')
+            ->assertSee('Smart Campus VMS')
+            ->assertSee('Access Control and Monitoring')
+            ->assertDontSee('id="portal-sidebar-edge-toggle"', false)
             ->getContent();
 
         foreach (NavigationService::routesForRole('Guard') as $item) {
@@ -91,7 +97,9 @@ class PortalShellNavTest extends TestCase
         $html = $this->actingAs($user)
             ->get(route('user.dashboard'))
             ->assertOk()
-            ->assertSee('User Portal')
+            ->assertSee('Smart Campus VMS')
+            ->assertSee('Vehicle and Parking Management')
+            ->assertDontSee('id="portal-sidebar-edge-toggle"', false)
             ->getContent();
 
         $roleKey = strtolower($user->roleName());

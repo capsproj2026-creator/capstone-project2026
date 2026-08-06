@@ -30,6 +30,8 @@ class NavigationService
             ['label' => 'Registrations', 'route' => 'admin.registrations', 'icon' => 'user-plus', 'access' => ['admin']],
             ['label' => 'RFID Assignment', 'route' => 'admin.rfid', 'icon' => 'hash', 'access' => ['admin']],
             ['label' => 'User Management', 'route' => 'admin.users', 'icon' => 'users', 'access' => ['admin']],
+            ['label' => 'Registered Visitors', 'route' => 'admin.visitors.active', 'icon' => 'user-round-check', 'access' => ['admin']],
+            ['label' => 'Visitor History', 'route' => 'admin.visitors.history', 'icon' => 'history', 'access' => ['admin']],
             ['label' => 'Violations', 'route' => 'admin.violations', 'icon' => 'triangle-alert', 'access' => ['admin']],
             ['label' => 'Access Logs', 'route' => 'admin.access-logs', 'icon' => 'file-text', 'access' => ['admin']],
             ['label' => 'Parking', 'route' => 'admin.parking', 'icon' => 'parking-square', 'access' => ['admin']],
@@ -39,6 +41,9 @@ class NavigationService
 
             ['label' => 'Live Gate Monitor', 'route' => 'guard.gate', 'icon' => 'activity', 'access' => ['guard']],
             ['label' => 'User Monitor', 'route' => 'guard.monitor', 'icon' => 'users', 'access' => ['guard']],
+            ['label' => 'Register Visitor', 'route' => 'guard.visitors.register', 'icon' => 'clipboard-plus', 'access' => ['guard']],
+            ['label' => 'Active Visitors', 'route' => 'guard.visitors.active', 'icon' => 'user-round-check', 'access' => ['guard']],
+            ['label' => 'Visitor History', 'route' => 'guard.visitors.history', 'icon' => 'history', 'access' => ['guard']],
             ['label' => 'Violations', 'route' => 'guard.violations', 'icon' => 'triangle-alert', 'access' => ['guard']],
             ['label' => 'Updates', 'route' => 'guard.notifications', 'icon' => 'bell', 'access' => ['guard']],
             ['label' => 'Access Logs', 'route' => 'guard.access-logs', 'icon' => 'file-text', 'access' => ['guard']],
@@ -47,6 +52,7 @@ class NavigationService
             ['label' => 'Live Cameras', 'route' => 'guard.live-cameras', 'icon' => 'camera', 'access' => ['guard']],
 
             ['label' => 'Notifications', 'route' => 'user.notifications', 'icon' => 'bell', 'access' => ['student', 'staff']],
+            ['label' => 'My Violations', 'route' => 'user.violations', 'icon' => 'triangle-alert', 'access' => ['student', 'staff']],
             ['label' => 'Entry/Exit History', 'route' => 'user.entry-exit', 'icon' => 'history', 'access' => ['student', 'staff']],
             ['label' => 'Parking', 'route' => 'user.parking', 'icon' => 'parking-square', 'access' => ['student', 'staff']],
         ];

@@ -424,6 +424,7 @@ def parse_tracks(
                     (ox1, oy1, ox2, oy2),
                     intelligence,
                     OCR_EVERY_SEC,
+                    cls_id=row.get("cls_id"),
                 )
             # Refresh after possible prior async result
             plate = mem.plate

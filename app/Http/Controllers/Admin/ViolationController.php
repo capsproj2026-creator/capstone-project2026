@@ -149,10 +149,10 @@ class ViolationController extends Controller
             ->all();
     }
 
-    public function evidence(string $id): \Symfony\Component\HttpFoundation\StreamedResponse|\Illuminate\Http\Response
+    public function evidence(string $id, int $index = 0): \Symfony\Component\HttpFoundation\StreamedResponse|\Illuminate\Http\Response
     {
-        $log = ViolationLog::query()->findOrFail($id);
+        $log = \App\Support\ViolationEvidence::findAuthorized($id);
 
-        return \App\Support\PrivateEvidence::response($log->evidence_photo ?? null);
+        return \App\Support\PrivateEvidence::response(\App\Support\ViolationEvidence::pathAt($log, $index));
     }
 }

@@ -25,6 +25,12 @@
             <span>Plate number not found in registered vehicles.</span>
         </div>
     @endif
+    @if ($error === 'photo_required')
+        <div class="mb-4 flex gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
+            <i data-lucide="alert-circle" class="mt-0.5 h-4 w-4 shrink-0"></i>
+            <span>Photo evidence is required for violation reports.</span>
+        </div>
+    @endif
 
     <div class="mb-6 flex flex-wrap items-center justify-between gap-3">
         <p class="text-sm text-gray-500">{{ $logs->total() }} citation{{ $logs->total() === 1 ? '' : 's' }} on record</p>
@@ -69,13 +75,7 @@
                                 @endif
                             </td>
                             <td class="px-6 py-4">
-                                @if (filled($row->evidence_photo))
-                                    <a href="{{ route('guard.violations.evidence', ['id' => (string) $row->getKey()]) }}" target="_blank" rel="noopener" class="inline-block overflow-hidden rounded border border-gray-200">
-                                        <img src="{{ route('guard.violations.evidence', ['id' => (string) $row->getKey()]) }}" alt="Evidence" class="h-12 w-auto object-cover" loading="lazy">
-                                    </a>
-                                @else
-                                    <span class="text-xs text-gray-400">—</span>
-                                @endif
+                                <x-violation.evidence-panel :log="$row" route-name="guard.violations.evidence" compact />
                             </td>
                             <td class="px-6 py-4 text-gray-600">{{ ph_datetime($row->created_at) }}</td>
                         </tr>
@@ -159,16 +159,17 @@
                     </label>
                     <input
                         type="file"
-                        name="evidence_photo"
+                        name="evidence_photos[]"
                         accept="image/*"
+                        multiple
                         @if (! empty($requirePhotoEvidence)) required @endif
                         class="w-full cursor-pointer rounded-lg border border-gray-300 px-3 py-2 text-sm"
                     >
                     <p class="mt-1 text-xs text-gray-500">
                         @if (! empty($requirePhotoEvidence))
-                            Required by system settings.
+                            At least one photo is required (up to 5 images).
                         @else
-                            Optional unless enabled in System Settings.
+                            Optional — upload up to 5 images unless required in System Settings.
                         @endif
                     </p>
                 </div>

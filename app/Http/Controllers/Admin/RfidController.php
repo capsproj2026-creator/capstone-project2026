@@ -6,7 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\User;
 use App\Services\NavigationService;
 use App\Services\RfidAccessService;
-use App\Support\SearchHelper;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
@@ -14,88 +14,108 @@ use Illuminate\View\View;
 
 class RfidController extends Controller
 {
-    public function index(Request $request): View
+    public const TAB_ALL = 'all';
+
+    public const TAB_PENDING = 'pending';
+
+    public const TAB_ASSIGNED = 'assigned';
+
+    public const TAB_LOCKED = 'locked';
+
+    public const TAB_DENIED = 'denied';
+
+    /**
+     * @return list<string>
+     */
+    private function allowedTabs(): array
     {
-        $tab = $request->query('tab', 'all');
-        $allowedTabs = [
-            'all',
+        return [
+            self::TAB_ALL,
+            self::TAB_PENDING,
+            self::TAB_ASSIGNED,
+            self::TAB_LOCKED,
+            self::TAB_DENIED,
             User::GATE_ACCESS_PENDING,
             User::GATE_ACCESS_GRANTED,
             User::GATE_ACCESS_DENIED,
             User::GATE_ACCESS_LEGACY,
         ];
+    }
 
-        if (! in_array($tab, $allowedTabs, true)) {
-            $tab = 'all';
-        }
+    private function normalizeTab(string $tab): string
+    {
+        return match ($tab) {
+            self::TAB_ALL, 'All', 'all' => self::TAB_ALL,
+            self::TAB_PENDING, User::GATE_ACCESS_PENDING => self::TAB_PENDING,
+            self::TAB_ASSIGNED, User::GATE_ACCESS_GRANTED, User::GATE_ACCESS_LEGACY => self::TAB_ASSIGNED,
+            self::TAB_LOCKED, User::STATUS_LOCKED, 'Suspended' => self::TAB_LOCKED,
+            self::TAB_DENIED, User::GATE_ACCESS_DENIED, User::STATUS_DENIED => self::TAB_DENIED,
+            default => self::TAB_ALL,
+        };
+    }
 
-        $search = trim((string) $request->query('search', ''));
-        $query = User::query()
-            ->with(['department', 'role', 'vehicleType'])
-            ->whereIn('user_role_id', [
-                NavigationService::ROLE_STUDENT,
-                NavigationService::ROLE_STAFF,
-            ]);
-
-        if ($tab === User::GATE_ACCESS_PENDING) {
-            $query->where(function ($q) {
-                $q->whereNull('Gate_access')
-                    ->orWhere('Gate_access', '')
-                    ->orWhere('Gate_access', User::GATE_ACCESS_PENDING);
-            });
-        } elseif ($tab === User::GATE_ACCESS_GRANTED) {
-            $query->whereIn('Gate_access', [User::GATE_ACCESS_GRANTED, User::GATE_ACCESS_LEGACY]);
-        } elseif ($tab === User::GATE_ACCESS_DENIED) {
-            $query->where('Gate_access', User::GATE_ACCESS_DENIED);
-        } elseif ($tab === User::GATE_ACCESS_LEGACY) {
-            $query->where('Gate_access', User::GATE_ACCESS_LEGACY);
-        }
-        // tab === 'all' → no Gate_access filter
-
-        if ($search !== '') {
-            $term = SearchHelper::escapeLike($search);
-            $query->where(function ($q) use ($term) {
-                $q->where('fullname', 'like', "%{$term}%")
-                    ->orWhere('name', 'like', "%{$term}%")
-                    ->orWhere('email', 'like', "%{$term}%")
-                    ->orWhere('id_number', 'like', "%{$term}%")
-                    ->orWhere('plate_number', 'like', "%{$term}%")
-                    ->orWhere('phone_number', 'like', "%{$term}%")
-                    ->orWhere('rfid_uid', 'like', "%{$term}%");
-            });
-        }
-
-        $eligible = User::query()->whereIn('user_role_id', [
+    private function eligibleQuery(): Builder
+    {
+        return User::query()->whereIn('user_role_id', [
             NavigationService::ROLE_STUDENT,
             NavigationService::ROLE_STAFF,
         ]);
+    }
 
-        $tabCounts = [
-            User::GATE_ACCESS_PENDING => (clone $eligible)
-                ->where(function ($q) {
-                    $q->whereNull('Gate_access')
-                        ->orWhere('Gate_access', '')
-                        ->orWhere('Gate_access', User::GATE_ACCESS_PENDING);
-                })
-                ->count(),
-            User::GATE_ACCESS_GRANTED => (clone $eligible)
-                ->whereIn('Gate_access', [User::GATE_ACCESS_GRANTED, User::GATE_ACCESS_LEGACY])
-                ->count(),
-            User::GATE_ACCESS_DENIED => (clone $eligible)
-                ->where('Gate_access', User::GATE_ACCESS_DENIED)
-                ->count(),
+    /**
+     * Card filter semantics (also used for statistics):
+     * - pending = no RFID UID
+     * - assigned = has RFID UID
+     * - locked = locked / suspended account
+     * - denied = denied registration or denied gate access
+     */
+    private function applyCardFilter(Builder $query, string $tab): Builder
+    {
+        return match ($tab) {
+            self::TAB_PENDING => $query->where(function ($q) {
+                $q->whereNull('rfid_uid')->orWhere('rfid_uid', '');
+            }),
+            self::TAB_ASSIGNED => $query
+                ->whereNotNull('rfid_uid')
+                ->where('rfid_uid', '!=', ''),
+            self::TAB_LOCKED => $query->where(function ($q) {
+                $q->where('status', User::STATUS_LOCKED)
+                    ->orWhere('status', 'Suspended')
+                    ->orWhere('strike_count', '>=', User::MAX_STRIKES);
+            }),
+            self::TAB_DENIED => $query->where(function ($q) {
+                $q->where('Gate_access', User::GATE_ACCESS_DENIED)
+                    ->orWhere('status', User::STATUS_DENIED);
+            }),
+            default => $query,
+        };
+    }
+
+    public function index(Request $request): View
+    {
+        $filter = $this->normalizeTab((string) $request->query('tab', self::TAB_ALL));
+        $search = trim((string) $request->query('search', ''));
+
+        // Load full eligible list so stats cards can filter instantly in the browser.
+        $users = $this->eligibleQuery()
+            ->with(['department', 'role', 'vehicleType'])
+            ->orderByDesc('id')
+            ->get();
+
+        $eligible = $this->eligibleQuery();
+        $stats = [
+            'total' => (clone $eligible)->count(),
+            'pending' => $this->applyCardFilter(clone $eligible, self::TAB_PENDING)->count(),
+            'assigned' => $this->applyCardFilter(clone $eligible, self::TAB_ASSIGNED)->count(),
+            'locked' => $this->applyCardFilter(clone $eligible, self::TAB_LOCKED)->count(),
+            'denied' => $this->applyCardFilter(clone $eligible, self::TAB_DENIED)->count(),
         ];
 
         return view('admin.rfid-assignment', [
-            'currentTab' => $tab,
-            'users' => $query->orderByDesc('id')->paginate(12)->withQueryString(),
+            'currentFilter' => $filter,
+            'users' => $users,
             'search' => $search,
-            'tabCounts' => $tabCounts,
-            'stats' => [
-                'total' => (clone $eligible)->count(),
-                'pending' => $tabCounts[User::GATE_ACCESS_PENDING],
-                'assigned' => $tabCounts[User::GATE_ACCESS_GRANTED],
-            ],
+            'stats' => $stats,
         ]);
     }
 
@@ -112,26 +132,26 @@ class RfidController extends Controller
 
         if (strlen($uid) < 4) {
             return redirect()
-                ->route('admin.rfid', ['tab' => User::GATE_ACCESS_PENDING])
+                ->route('admin.rfid', ['tab' => self::TAB_PENDING])
                 ->withInput()
                 ->with('error', 'Enter a valid RFID UID containing at least four hexadecimal characters.');
         }
 
         if (! in_array((int) $user->user_role_id, [NavigationService::ROLE_STUDENT, NavigationService::ROLE_STAFF], true)) {
             return redirect()
-                ->route('admin.rfid', ['tab' => User::GATE_ACCESS_PENDING])
+                ->route('admin.rfid', ['tab' => self::TAB_PENDING])
                 ->with('error', 'RFID assignment only applies to student and staff accounts.');
         }
 
         if ($user->isLocked()) {
             return redirect()
-                ->route('admin.rfid', ['tab' => User::GATE_ACCESS_PENDING])
+                ->route('admin.rfid', ['tab' => self::TAB_LOCKED])
                 ->with('error', 'Cannot approve RFID access because this account is locked.');
         }
 
         if ($user->status === User::STATUS_DENIED) {
             return redirect()
-                ->route('admin.rfid', ['tab' => User::GATE_ACCESS_PENDING])
+                ->route('admin.rfid', ['tab' => self::TAB_DENIED])
                 ->with('error', 'Cannot approve RFID for a denied registration. Re-approve the registration first.');
         }
 
@@ -142,13 +162,11 @@ class RfidController extends Controller
 
         if ($taken) {
             return redirect()
-                ->route('admin.rfid', ['tab' => User::GATE_ACCESS_PENDING])
+                ->route('admin.rfid', ['tab' => self::TAB_PENDING])
                 ->withInput()
                 ->with('error', 'That RFID UID is already assigned to another user.');
         }
 
-        // Gate access only; portal status stays Pending until registration approve,
-        // or remains Granted if already approved. Never revive Denied/Locked.
         $updates = [
             'rfid_uid' => $uid,
             'Gate_access' => User::GATE_ACCESS_GRANTED,
@@ -165,34 +183,26 @@ class RfidController extends Controller
             || $savedUser->rfid_uid !== $uid
             || ! $savedUser->hasGateAccess()) {
             return redirect()
-                ->route('admin.rfid', ['tab' => User::GATE_ACCESS_PENDING])
+                ->route('admin.rfid', ['tab' => self::TAB_PENDING])
                 ->with('error', 'RFID approval could not be saved. Please try again.');
         }
 
         return redirect()
-            ->route('admin.rfid', ['tab' => User::GATE_ACCESS_GRANTED])
+            ->route('admin.rfid', ['tab' => self::TAB_ASSIGNED])
             ->with('success', "RFID {$uid} approved and linked to {$savedUser->displayName()}.");
     }
 
     public function update(Request $request, RfidAccessService $rfid): RedirectResponse
     {
-        $allowedTabs = [
-            'all',
-            User::GATE_ACCESS_PENDING,
-            User::GATE_ACCESS_GRANTED,
-            User::GATE_ACCESS_DENIED,
-            User::GATE_ACCESS_LEGACY,
-        ];
-
         $validated = $request->validate([
             'user_id' => ['required', 'integer', Rule::exists(User::class, 'id')],
             'action' => ['required', 'in:grant,deny,assign_uid'],
             'rfid_uid' => ['nullable', 'string', 'max:64'],
-            'tab' => ['nullable', 'string', Rule::in($allowedTabs)],
+            'tab' => ['nullable', 'string', Rule::in($this->allowedTabs())],
         ]);
 
         $user = User::query()->findOrFail($validated['user_id']);
-        $tab = $validated['tab'] ?? 'all';
+        $tab = $this->normalizeTab((string) ($validated['tab'] ?? self::TAB_ALL));
 
         if (! in_array((int) $user->user_role_id, [NavigationService::ROLE_STUDENT, NavigationService::ROLE_STAFF], true)) {
             return redirect()
@@ -253,7 +263,7 @@ class RfidController extends Controller
             $user->update($updates);
 
             return redirect()
-                ->route('admin.rfid', ['tab' => User::GATE_ACCESS_GRANTED])
+                ->route('admin.rfid', ['tab' => self::TAB_ASSIGNED])
                 ->with('success', "RFID {$uid} approved and linked to {$user->displayName()}.");
         }
 

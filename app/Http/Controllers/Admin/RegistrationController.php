@@ -16,23 +16,33 @@ class RegistrationController extends Controller
 {
     public function index(Request $request): View
     {
-        $status = $request->query('status', User::STATUS_PENDING);
-        $allowedStatuses = [User::STATUS_PENDING, User::STATUS_GRANTED, User::STATUS_DENIED];
+        $status = $request->query('status', 'All');
+        $registrationStatuses = [User::STATUS_PENDING, User::STATUS_GRANTED, User::STATUS_DENIED];
+        $allowedFilters = array_merge(['All'], $registrationStatuses);
 
-        if (! in_array($status, $allowedStatuses, true)) {
-            $status = User::STATUS_PENDING;
+        if (! in_array($status, $allowedFilters, true)) {
+            $status = 'All';
+        }
+
+        $pendingCount = User::query()->where('status', User::STATUS_PENDING)->count();
+        $approvedCount = User::query()->where('status', User::STATUS_GRANTED)->count();
+        $declinedCount = User::query()->where('status', User::STATUS_DENIED)->count();
+
+        $requestsQuery = User::query()->with('role')->orderByDesc('id');
+
+        if ($status === 'All') {
+            $requestsQuery->whereIn('status', $registrationStatuses);
+        } else {
+            $requestsQuery->where('status', $status);
         }
 
         return view('admin.registrations', [
             'statusFilter' => $status,
-            'pendingCount' => User::query()->where('status', User::STATUS_PENDING)->count(),
-            'approvedCount' => User::query()->where('status', User::STATUS_GRANTED)->count(),
-            'declinedCount' => User::query()->where('status', User::STATUS_DENIED)->count(),
-            'requests' => User::query()
-                ->with('role')
-                ->where('status', $status)
-                ->orderByDesc('id')
-                ->get(),
+            'allCount' => $pendingCount + $approvedCount + $declinedCount,
+            'pendingCount' => $pendingCount,
+            'approvedCount' => $approvedCount,
+            'declinedCount' => $declinedCount,
+            'requests' => $requestsQuery->get(),
         ]);
     }
 
@@ -42,7 +52,7 @@ class RegistrationController extends Controller
 
         if ($user->status !== User::STATUS_PENDING) {
             return redirect()
-                ->route('admin.registrations', ['status' => User::STATUS_PENDING])
+                ->route('admin.registrations', ['status' => 'All'])
                 ->with('error', 'This registration is no longer pending.');
         }
 
@@ -74,7 +84,7 @@ class RegistrationController extends Controller
         ]);
 
         return redirect()
-            ->route('admin.registrations', ['status' => User::STATUS_PENDING])
+            ->route('admin.registrations', ['status' => 'All'])
             ->with('success', 'User approved.');
     }
 
@@ -88,7 +98,7 @@ class RegistrationController extends Controller
 
         if ($user->status !== User::STATUS_PENDING) {
             return redirect()
-                ->route('admin.registrations', ['status' => User::STATUS_PENDING])
+                ->route('admin.registrations', ['status' => 'All'])
                 ->with('error', 'This registration is no longer pending.');
         }
 
@@ -118,7 +128,7 @@ class RegistrationController extends Controller
         ]);
 
         return redirect()
-            ->route('admin.registrations', ['status' => User::STATUS_PENDING])
+            ->route('admin.registrations', ['status' => 'All'])
             ->with('success', 'User declined.');
     }
 

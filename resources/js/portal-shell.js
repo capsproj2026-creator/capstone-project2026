@@ -1,5 +1,5 @@
 /**
- * Portal shell: collapsible sidebar (all breakpoints), profile dropdown, Lucide icons.
+ * Portal shell: collapsible sidebar, profile dropdown, auto-collapse on menus, Lucide icons.
  */
 function initPasswordToggles(root = document) {
     root.querySelectorAll('[data-password-toggle]').forEach((button) => {
@@ -27,6 +27,7 @@ function initPasswordToggles(root = document) {
 window.initPasswordToggles = initPasswordToggles;
 
 const SIDEBAR_STORAGE_KEY = 'portal-sidebar-open';
+const SIDEBAR_SCROLL_KEY = 'portal-sidebar-scroll';
 
 function isDesktopNav() {
     return window.innerWidth >= 1024;
@@ -47,6 +48,7 @@ function initPortalShell() {
     const menuIconClose = document.getElementById('portal-menu-icon-close');
     const profileBtn = document.getElementById('portal-profile-btn');
     const profileMenu = document.getElementById('portal-profile-menu');
+    const main = document.getElementById('portal-main');
 
     const readStoredOpen = () => {
         try {
@@ -68,40 +70,105 @@ function initPortalShell() {
         }
     };
 
-    let sidebarOpen = isDesktopNav() ? readStoredOpen() : false;
-
-    const setSidebarOpen = (open, { persist = true } = {}) => {
-        sidebarOpen = open;
-        root.classList.toggle('portal-sidebar-open', open);
-        overlay?.classList.toggle('hidden', !open || isDesktopNav());
-        // Icon: "open" glyph = collapse control when sidebar is visible
-        menuIconOpen?.classList.toggle('hidden', !open);
-        menuIconClose?.classList.toggle('hidden', open);
-        menuBtn?.setAttribute('aria-expanded', open ? 'true' : 'false');
-        menuBtn?.setAttribute('aria-label', open ? 'Hide navigation' : 'Show navigation');
-        if (persist && isDesktopNav()) {
-            writeStoredOpen(open);
+    const saveSidebarScroll = () => {
+        if (!sidebar) return;
+        try {
+            sessionStorage.setItem(SIDEBAR_SCROLL_KEY, String(sidebar.scrollTop));
+        } catch (e) {
+            // ignore
         }
     };
 
-    setSidebarOpen(sidebarOpen, { persist: false });
-
-    menuBtn?.addEventListener('click', () => setSidebarOpen(!sidebarOpen));
-    overlay?.addEventListener('click', () => setSidebarOpen(false));
-
-    sidebar?.querySelectorAll('a').forEach((link) => {
-        link.addEventListener('click', () => {
-            if (!isDesktopNav()) {
-                setSidebarOpen(false);
+    const restoreSidebarScroll = () => {
+        if (!sidebar) return;
+        try {
+            const y = parseInt(sessionStorage.getItem(SIDEBAR_SCROLL_KEY) || '0', 10);
+            if (Number.isFinite(y) && y > 0) {
+                sidebar.scrollTop = y;
             }
+        } catch (e) {
+            // ignore
+        }
+    };
+
+    let sidebarOpen = isDesktopNav() ? readStoredOpen() : false;
+
+    const syncToggleIcons = (open) => {
+        menuIconOpen?.classList.toggle('hidden', !open);
+        menuIconClose?.classList.toggle('hidden', open);
+        menuBtn?.setAttribute('aria-expanded', open ? 'true' : 'false');
+        menuBtn?.setAttribute('aria-label', open ? 'Hide navigation sidebar' : 'Show navigation sidebar');
+    };
+
+    const setSidebarOpen = (open, { persist = true, restoreScroll = false } = {}) => {
+        if (open === sidebarOpen && !restoreScroll) {
+            return;
+        }
+
+        if (!open && sidebarOpen) {
+            saveSidebarScroll();
+        }
+
+        sidebarOpen = open;
+        root.classList.toggle('portal-sidebar-open', open);
+        root.classList.toggle('portal-sidebar-closed', !open);
+
+        if (!isDesktopNav()) {
+            root.classList.toggle('portal-sidebar-mobile-open', open);
+            overlay?.classList.toggle('portal-overlay-active', open);
+        } else {
+            overlay?.classList.remove('portal-overlay-active');
+        }
+
+        syncToggleIcons(open);
+
+        if (persist && isDesktopNav()) {
+            writeStoredOpen(open);
+        }
+
+        if (open && restoreScroll) {
+            requestAnimationFrame(() => restoreSidebarScroll());
+        }
+    };
+
+    const collapseSidebar = ({ persist = true } = {}) => {
+        if (sidebarOpen) {
+            setSidebarOpen(false, { persist });
+        }
+    };
+
+    /** Maximize content when a dropdown / menu / modal opens. */
+    const collapseSidebarForMenu = () => {
+        collapseSidebar({ persist: isDesktopNav() });
+    };
+
+    setSidebarOpen(sidebarOpen, { persist: false, restoreScroll: sidebarOpen });
+
+    menuBtn?.addEventListener('click', () => {
+        const next = !sidebarOpen;
+        setSidebarOpen(next, { persist: true, restoreScroll: next });
+    });
+
+    overlay?.addEventListener('click', () => setSidebarOpen(false, { persist: !isDesktopNav() }));
+
+    sidebar?.querySelectorAll('a[href]').forEach((link) => {
+        link.addEventListener('click', () => {
+            if (link.getAttribute('aria-current') === 'page') {
+                return;
+            }
+            setSidebarOpen(false, { persist: isDesktopNav() });
         });
     });
 
     profileBtn?.addEventListener('click', (e) => {
         e.stopPropagation();
+        const willOpen = profileMenu?.classList.contains('hidden');
         profileMenu?.classList.toggle('hidden');
         const open = profileMenu && !profileMenu.classList.contains('hidden');
         profileBtn.setAttribute('aria-expanded', open ? 'true' : 'false');
+        if (willOpen && open) {
+            collapseSidebarForMenu();
+        }
     });
 
     document.addEventListener('click', (e) => {
@@ -116,16 +183,47 @@ function initPortalShell() {
         }
     });
 
+    // In-page dropdowns / modals / details — collapse sidebar for more space.
+    main?.addEventListener(
+        'toggle',
+        (e) => {
+            if (e.target instanceof HTMLDetailsElement && e.target.open) {
+                collapseSidebarForMenu();
+            }
+        },
+        true
+    );
+
+    document.addEventListener('click', (e) => {
+        const trigger = e.target.closest(
+            '[data-portal-collapse-sidebar], [data-violation-detail], #report-type-trigger, [aria-haspopup="listbox"]'
+        );
+        if (trigger) {
+            collapseSidebarForMenu();
+        }
+    });
+
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && sidebarOpen && !isDesktopNav()) {
+            setSidebarOpen(false, { persist: false });
+        }
+    });
+
+    window.addEventListener(
+        'portal:collapse-sidebar',
+        () => collapseSidebarForMenu()
+    );
+
     window.addEventListener('resize', () => {
         if (isDesktopNav()) {
-            setSidebarOpen(readStoredOpen(), { persist: false });
-            overlay?.classList.add('hidden');
+            overlay?.classList.remove('portal-overlay-active');
+            root.classList.remove('portal-sidebar-mobile-open');
+            setSidebarOpen(readStoredOpen(), { persist: false, restoreScroll: true });
             return;
         }
 
-        // Mobile: keep current open state but never leave overlay stuck when closed
         if (!sidebarOpen) {
-            overlay?.classList.add('hidden');
+            overlay?.classList.remove('portal-overlay-active');
         }
     });
 

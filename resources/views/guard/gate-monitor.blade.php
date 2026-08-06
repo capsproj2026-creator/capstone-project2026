@@ -108,6 +108,7 @@
                         </div>
                         <h3 id="scan-name" class="mt-4 text-2xl font-bold text-gray-900 sm:text-3xl">—</h3>
                         <span id="scan-role" class="mt-2 inline-flex rounded-full bg-gray-100 px-3 py-1 text-sm font-medium text-gray-600">—</span>
+                        <p id="scan-purpose" class="mt-2 hidden text-sm text-gray-500"></p>
                     </div>
 
                     <div class="space-y-3 px-5 pb-5 sm:px-6">
@@ -239,6 +240,7 @@
             const r = String(role || '').toLowerCase();
             if (r === 'student') return 'bg-blue-50 text-blue-700';
             if (r === 'staff') return 'bg-violet-50 text-violet-700';
+            if (r === 'visitor') return 'bg-teal-50 text-teal-700';
             return 'bg-gray-100 text-gray-600';
         };
 
@@ -300,6 +302,17 @@
             setText('scan-direction', latest.action || '—');
             setText('scan-time', latest.time || '—');
             setText('scan-status-label', latest.status_label || latest.result);
+
+            const purposeEl = document.getElementById('scan-purpose');
+            if (purposeEl) {
+                if (latest.is_visitor && latest.purpose) {
+                    purposeEl.textContent = latest.purpose;
+                    purposeEl.classList.remove('hidden');
+                } else {
+                    purposeEl.textContent = '';
+                    purposeEl.classList.add('hidden');
+                }
+            }
 
             const roleEl = document.getElementById('scan-role');
             if (roleEl) {

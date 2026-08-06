@@ -1,6 +1,6 @@
 @extends('layouts.app')
 
-@section('portal_title', 'Guard Portal')
+@section('portal_title', 'Smart Campus VMS')
 @section('portal_subtitle', 'Access Control and Monitoring')
 @section('portal_icon', 'shield')
 @section('brand_bg', 'bg-[var(--cspc-navy)]')

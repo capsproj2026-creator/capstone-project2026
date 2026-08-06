@@ -22,4 +22,13 @@ class PlateLookupTest extends TestCase
         $this->assertContains('ABC-1234', $candidates);
         $this->assertContains('ABC 1234', $candidates);
     }
+
+    public function test_candidates_include_lto_motorcycle_formats(): void
+    {
+        $candidates = PlateLookup::candidates('0501-0401328');
+
+        $this->assertContains('05010401328', $candidates);
+        $this->assertContains('0501-0401328', $candidates);
+        $this->assertContains('0501 0401328', $candidates);
+    }
 }

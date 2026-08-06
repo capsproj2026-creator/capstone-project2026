@@ -146,7 +146,7 @@ class AiParkingViolationService
 
         $evidencePath = $this->storeEvidenceJpeg($event['evidence_jpeg_base64'] ?? null);
 
-        ViolationLog::query()->create([
+        $log = ViolationLog::query()->create([
             'user_id' => $user->id,
             'violator_name' => $user->displayName(),
             'id_number' => $user->id_number,
@@ -157,6 +157,7 @@ class AiParkingViolationService
             'violation_type' => $violationType,
             'description' => $description,
             'evidence_photo' => $evidencePath,
+            'evidence_photos' => $evidencePath ? [$evidencePath] : null,
             'guard_id' => 'AI-'.$cameraId,
             'status' => 'Active',
             'created_at' => now(),
@@ -179,6 +180,7 @@ class AiParkingViolationService
             'title' => "AI Violation: {$violationType}",
             'message' => $message,
             'type' => 'Violation',
+            'violation_log_id' => (string) $log->getKey(),
             'is_read' => false,
             'created_at' => now(),
         ]);
@@ -188,6 +190,11 @@ class AiParkingViolationService
                 plateNumber: $plate,
                 violationType: $violationType,
                 description: $description,
+                occurredAt: $log->created_at,
+                location: $areaName ?: ($cameraId ?: 'Campus'),
+                reportedBy: 'AI Parking Camera ('.$cameraId.')',
+                evidencePaths: $evidencePath ? [$evidencePath] : [],
+                remarks: $description,
             ));
         } catch (\Throwable $e) {
             Log::warning('AI parking violation email failed: '.$e->getMessage());
@@ -201,6 +208,7 @@ class AiParkingViolationService
             'user_id' => $user->id,
             'strikes' => $newStrikes,
             'evidence_photo' => $evidencePath,
+            'evidence_photos' => $evidencePath ? [$evidencePath] : null,
             'camera_id' => $cameraId,
             'area_id' => $areaId,
         ];
@@ -230,7 +238,7 @@ class AiParkingViolationService
         $path = 'violation-evidence/ai-'.Str::uuid()->toString().'.jpg';
 
         try {
-            Storage::disk('private')->put($path, $binary);
+            Storage::disk('public')->put($path, $binary);
 
             return $path;
         } catch (\Throwable $e) {

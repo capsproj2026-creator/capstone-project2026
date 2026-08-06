@@ -24,12 +24,19 @@ class AiDetectionPresenter
         if (($det['plate_status'] ?? '') === 'unreadable') {
             $bits[] = 'Plate Unreadable';
         } elseif (! empty($det['registered']) && ! empty($det['owner_name'])) {
-            $parts = [
-                (string) $det['owner_name'],
-                (string) ($det['plate'] ?? ''),
-            ];
-            if (! empty($det['vehicle_details'])) {
+            $parts = [];
+            if (! empty($det['is_visitor']) || strcasecmp((string) ($det['role'] ?? ''), 'Visitor') === 0) {
+                $parts[] = 'Visitor';
+            }
+            $parts[] = (string) $det['owner_name'];
+            $parts[] = (string) ($det['plate'] ?? '');
+            if (! empty($det['purpose'])) {
+                $parts[] = (string) $det['purpose'];
+            } elseif (! empty($det['vehicle_details'])) {
                 $parts[] = (string) $det['vehicle_details'];
+            }
+            if (! empty($det['registration_status']) && (! empty($det['is_visitor']) || strcasecmp((string) ($det['role'] ?? ''), 'Visitor') === 0)) {
+                $parts[] = (string) $det['registration_status'];
             }
             $bits[] = implode(' · ', array_values(array_filter($parts, fn ($p) => trim($p) !== '')));
         } elseif (! empty($det['plate'])) {

@@ -28,9 +28,14 @@ class TestMailCommand extends Command
         try {
             if ($type === 'violation') {
                 Mail::to($email)->send(new VehicleViolationMail(
-                    'ABC-1234',
-                    'No Parking Zone',
-                    'Vehicle parked outside the designated stall near Gate 1.'
+                    plateNumber: 'ABC-1234',
+                    violationType: 'No Parking Zone',
+                    description: 'Vehicle parked outside the designated stall near Gate 1.',
+                    occurredAt: now(),
+                    location: 'Gate 1 Parking',
+                    reportedBy: 'Campus Security (Test)',
+                    evidencePaths: [],
+                    remarks: 'Vehicle parked outside the designated stall near Gate 1.',
                 ));
                 $this->info('Sent VehicleViolationMail to '.$email);
             } else {

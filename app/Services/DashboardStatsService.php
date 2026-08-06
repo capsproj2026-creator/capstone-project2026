@@ -6,6 +6,8 @@ use App\Models\GateLog;
 use App\Models\ParkingArea;
 use App\Models\ParkingSlot;
 use App\Models\User;
+use App\Models\Visitor;
+use App\Models\VisitorRfidCard;
 use App\Models\ViolationLog;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
@@ -85,6 +87,11 @@ class DashboardStatsService
                 ->orderByDesc('created_at')
                 ->limit(5)
                 ->get(),
+            'recentViolationLogs' => ViolationLog::query()
+                ->orderByDesc('created_at')
+                ->limit(5)
+                ->get(),
+            ...$this->safeVisitorDashboardStats(),
         ];
     }
 
@@ -139,6 +146,8 @@ class DashboardStatsService
         $today = Carbon::today();
         $slots = ParkingSlot::query()->get(['status']);
 
+        $visitorStats = $this->safeVisitorDashboardStats();
+
         return [
             'pending' => User::query()->where('status', User::STATUS_PENDING)->count(),
             'totalUsers' => User::query()
@@ -164,11 +173,64 @@ class DashboardStatsService
                 ->limit(5)
                 ->get(),
             'recentGateActivity' => GateLog::query()
-                ->with('user')
+                ->with(['user', 'visitor'])
                 ->orderByDesc('timestamp')
                 ->limit(5)
                 ->get(),
+            'activeVisitors' => $visitorStats['activeVisitors'],
+            'waitingVisitors' => $visitorStats['waitingVisitors'],
+            'rfidReturnsPending' => $visitorStats['rfidReturnsPending'],
+            'expiredVisitors' => $visitorStats['expiredVisitors'],
         ];
+    }
+
+    /**
+     * Visitor collections may be empty or momentarily unreachable (Atlas timeouts).
+     *
+     * @return array{activeVisitors: int, waitingVisitors: int, rfidReturnsPending: int, expiredVisitors: int, visitorsToday: int, completedVisits: int}
+     */
+    private function safeVisitorDashboardStats(): array
+    {
+        $defaults = [
+            'activeVisitors' => 0,
+            'waitingVisitors' => 0,
+            'rfidReturnsPending' => 0,
+            'expiredVisitors' => 0,
+            'visitorsToday' => 0,
+            'completedVisits' => 0,
+        ];
+
+        try {
+            return [
+                'activeVisitors' => Visitor::query()
+                    ->whereIn('status', Visitor::ACTIVE_STATUSES)
+                    ->count(),
+                'waitingVisitors' => Visitor::query()
+                    ->where('status', Visitor::STATUS_WAITING)
+                    ->count(),
+                'rfidReturnsPending' => VisitorRfidCard::query()
+                    ->whereIn('status', [
+                        VisitorRfidCard::STATUS_ASSIGNED,
+                        VisitorRfidCard::STATUS_ACTIVE,
+                        VisitorRfidCard::STATUS_EXPIRED,
+                    ])
+                    ->whereNotNull('visitor_id')
+                    ->count(),
+                'expiredVisitors' => Visitor::query()
+                    ->where('status', Visitor::STATUS_EXPIRED)
+                    ->count(),
+                'visitorsToday' => Visitor::query()
+                    ->where('created_at', '>=', Carbon::today())
+                    ->count(),
+                'completedVisits' => Visitor::query()
+                    ->where('status', Visitor::STATUS_COMPLETED)
+                    ->count(),
+            ];
+        } catch (\Throwable $e) {
+            report($e);
+
+            return $defaults;
+        }
     }
 
     public function userStats(User $user): array
@@ -182,6 +244,11 @@ class DashboardStatsService
             'recentGateLogs' => GateLog::query()
                 ->where('user_id', $user->id)
                 ->orderByDesc('timestamp')
+                ->limit(5)
+                ->get(),
+            'recentViolations' => ViolationLog::query()
+                ->where('user_id', $user->id)
+                ->orderByDesc('created_at')
                 ->limit(5)
                 ->get(),
         ];

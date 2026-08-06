@@ -102,7 +102,9 @@ UI: `/admin/live-cameras`, `/guard/live-cameras`, `/guard/ai-parking`
 | `AI_PARKING_USE_TRACKER` | `0` | `0` = per-cam IoU IDs (multi-cam safe) |
 | `AI_PARKING_BOX_HOLD_SEC` | `0.45` | Hold boxes briefly to reduce flicker |
 | `AI_PARKING_OCR_EVERY_SEC` | `3` | OCR interval per track (async, non-blocking) |
-| `AI_PARKING_OCR_MIN_CONF` | `0.35` | Min OCR conf to accept a plate |
+| `AI_PARKING_OCR_MIN_CONF` | `0.30` | Min OCR conf to accept a plate |
+| `AI_PARKING_OCR_UPSCALE_FACTOR` | `3` | Upscale small plate crops before OCR |
+| `AI_PARKING_OCR_UPSCALE_MIN_WIDTH` | `400` | Minimum crop width after upscale |
 | `AI_PARKING_PLATE_VOTE_NEEDED` | `1` | Matching OCR reads before locking plate |
 | `AI_PARKING_TRACK_HOLD_SEC` | `3.0` | Keep lost tracks briefly (less re-OCR flicker) |
 | `AI_PARKING_INFER_EVERY_SEC` | `0.30` | YOLO cadence target |

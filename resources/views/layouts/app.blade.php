@@ -56,6 +56,7 @@
                     }
                 } catch (e) {}
                 if (open) root.classList.add('portal-sidebar-open');
+                else root.classList.add('portal-sidebar-closed');
             })();
         </script>
         {{-- Navbar --}}
@@ -236,15 +237,16 @@
             {{-- Sidebar: toggleable on all breakpoints (drawer + overlay on mobile) --}}
             <aside
                 id="portal-sidebar"
-                class="portal-sidebar fixed z-30 flex w-[17.5rem] flex-col overflow-y-auto border-r border-slate-200/80 bg-white shadow-[4px_0_24px_-12px_rgba(15,39,79,0.18)] transition-transform duration-300 ease-out"
+                class="portal-sidebar fixed z-30 flex flex-col overflow-y-auto overscroll-contain border-r border-slate-200/80 bg-white shadow-[4px_0_24px_-12px_rgba(15,39,79,0.18)]"
+                aria-label="Primary navigation"
             >
-                <nav class="flex min-h-full flex-1 flex-col p-3 sm:p-4" aria-label="Primary">
+                <nav id="portal-sidebar-nav" class="flex min-h-full flex-1 flex-col p-3 sm:p-4" aria-label="Primary">
                     @yield('navigation')
                 </nav>
             </aside>
 
             {{-- Main content --}}
-            <main id="portal-main" class="portal-main min-w-0 flex-1 p-4 transition-[margin] duration-300 ease-out sm:p-6 lg:p-8">
+            <main id="portal-main" class="portal-main min-w-0 flex-1 p-4 sm:p-6 lg:p-8">
                 @if (session('success'))
                     <div class="mb-4 rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800">
                         {{ session('success') }}
@@ -270,8 +272,14 @@
             </main>
         </div>
 
-        <div id="portal-overlay" class="fixed inset-0 z-20 hidden bg-[var(--cspc-navy-deep)]/45 backdrop-blur-[1px]" aria-hidden="true"></div>
+        <div
+            id="portal-overlay"
+            class="portal-overlay fixed inset-x-0 bottom-0 z-20 bg-[var(--cspc-navy-deep)]/45 backdrop-blur-[1px] lg:hidden"
+            aria-hidden="true"
+        ></div>
     </div>
+
+    @include('partials.violation.evidence-modal')
 
     {{-- Inline scripts in @stack run before Vite modules; wait for Echo here. --}}
     <script>

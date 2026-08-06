@@ -83,6 +83,37 @@
         </div>
     </div>
 
+    <div class="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <div class="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+            <div class="mb-3 flex items-start justify-between">
+                <p class="text-sm font-medium text-gray-500">Visitors Today</p>
+                <i data-lucide="clipboard-plus" class="h-5 w-5 text-gray-400"></i>
+            </div>
+            <p class="text-3xl font-bold tracking-tight text-gray-900">{{ number_format($visitorsToday ?? 0) }}</p>
+        </div>
+        <div class="rounded-xl border border-teal-100 bg-white p-5 shadow-sm">
+            <div class="mb-3 flex items-start justify-between">
+                <p class="text-sm font-medium text-gray-500">Active Visitors</p>
+                <i data-lucide="user-round-check" class="h-5 w-5 text-teal-500"></i>
+            </div>
+            <p class="text-3xl font-bold tracking-tight text-teal-700">{{ number_format($activeVisitors ?? 0) }}</p>
+        </div>
+        <div class="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+            <div class="mb-3 flex items-start justify-between">
+                <p class="text-sm font-medium text-gray-500">Completed Visits</p>
+                <i data-lucide="history" class="h-5 w-5 text-gray-400"></i>
+            </div>
+            <p class="text-3xl font-bold tracking-tight text-gray-900">{{ number_format($completedVisits ?? 0) }}</p>
+        </div>
+        <div class="rounded-xl border border-rose-100 bg-white p-5 shadow-sm">
+            <div class="mb-3 flex items-start justify-between">
+                <p class="text-sm font-medium text-gray-500">Expired Visitors</p>
+                <i data-lucide="clock" class="h-5 w-5 text-rose-500"></i>
+            </div>
+            <p class="text-3xl font-bold tracking-tight text-rose-700">{{ number_format($expiredVisitors ?? 0) }}</p>
+        </div>
+    </div>
+
     {{-- Charts: matched card height --}}
     <div class="mb-6 grid grid-cols-1 gap-4 lg:grid-cols-2 lg:items-stretch">
         <div class="flex h-[380px] flex-col rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
@@ -136,6 +167,12 @@
                             <p class="mt-1.5 text-xs text-gray-400">
                                 {{ $metaParts !== [] ? implode(' • ', $metaParts) : 'Campus' }}
                             </p>
+                            <x-violation.evidence-panel
+                                :log="$violation"
+                                route-name="admin.violations.evidence"
+                                compact
+                                class="mt-2"
+                            />
                         </div>
                         <span @class([
                             'inline-flex shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold',

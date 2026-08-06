@@ -21,10 +21,12 @@ use App\Http\Controllers\Guard\ViolationController as GuardViolationController;
 use App\Http\Controllers\LiveCameraController;
 use App\Http\Controllers\ParkingController;
 use App\Http\Controllers\ProfileController;
+use App\Http\Controllers\VisitorController;
 use App\Http\Controllers\User\DashboardController as UserDashboardController;
 use App\Http\Controllers\User\EntryExitController;
 use App\Http\Controllers\User\NotificationController;
 use App\Http\Controllers\User\ParkingController as UserParkingController;
+use App\Http\Controllers\User\ViolationController as UserViolationController;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/', fn () => view('home'))->name('home')->middleware('no.cache');
@@ -85,6 +87,8 @@ Route::prefix('admin')->middleware(['auth', 'verified', 'granted', 'no.cache', '
     Route::post('/rfid', [RfidController::class, 'update'])
         ->middleware('permission:manage_users')
         ->name('rfid.update');
+    Route::get('/visitors/active', [VisitorController::class, 'active'])->name('visitors.active');
+    Route::get('/visitors/history', [VisitorController::class, 'history'])->name('visitors.history');
     Route::get('/parking', [ParkingController::class, 'index'])->name('parking');
     Route::get('/parking/status', [LiveCameraController::class, 'status'])->name('parking.status');
     Route::get('/parking/zone-access', [ParkingController::class, 'zoneAccess'])
@@ -131,7 +135,9 @@ Route::prefix('admin')->middleware(['auth', 'verified', 'granted', 'no.cache', '
         ->middleware('permission:system_settings')
         ->name('settings.violations.destroy');
     Route::get('/violations', [AdminViolationController::class, 'index'])->name('violations');
-    Route::get('/violations/{id}/evidence', [AdminViolationController::class, 'evidence'])->name('violations.evidence');
+    Route::get('/violations/{id}/evidence/{index?}', [AdminViolationController::class, 'evidence'])
+        ->whereNumber('index')
+        ->name('violations.evidence');
     Route::get('/access-logs', [AccessLogController::class, 'index'])->name('access-logs');
     Route::get('/access-logs/events', [AccessLogController::class, 'events'])->name('access-logs.events');
     Route::get('/live-cameras', [LiveCameraController::class, 'index'])->name('live-cameras');
@@ -153,7 +159,9 @@ Route::prefix('admin')->middleware(['auth', 'verified', 'granted', 'no.cache', '
 Route::prefix('guard')->middleware(['auth', 'verified', 'granted', 'no.cache', 'role:Guard'])->name('guard.')->group(function () {
     Route::get('/', [GuardDashboardController::class, 'index'])->name('dashboard');
     Route::get('/violations', [GuardViolationController::class, 'index'])->name('violations');
-    Route::get('/violations/{id}/evidence', [GuardViolationController::class, 'evidence'])->name('violations.evidence');
+    Route::get('/violations/{id}/evidence/{index?}', [GuardViolationController::class, 'evidence'])
+        ->whereNumber('index')
+        ->name('violations.evidence');
     Route::post('/violations', [GuardViolationController::class, 'store'])
         ->middleware(['throttle:10,1', 'permission:log_violations'])
         ->name('violations.store');
@@ -165,6 +173,13 @@ Route::prefix('guard')->middleware(['auth', 'verified', 'granted', 'no.cache', '
     Route::get('/ai-parking', [LiveCameraController::class, 'aiMonitor'])->name('ai-parking');
     Route::get('/ai-parking/stream/{camera?}', [LiveCameraController::class, 'stream'])->name('ai-parking.stream');
     Route::get('/monitor', [UserMonitorController::class, 'index'])->name('monitor');
+    Route::get('/visitors/register', [VisitorController::class, 'register'])->name('visitors.register');
+    Route::post('/visitors', [VisitorController::class, 'store'])->name('visitors.store');
+    Route::get('/visitors/active', [VisitorController::class, 'active'])->name('visitors.active');
+    Route::get('/visitors/history', [VisitorController::class, 'history'])->name('visitors.history');
+    Route::patch('/visitors/{id}', [VisitorController::class, 'update'])->name('visitors.update');
+    Route::post('/visitors/{id}/assign-rfid', [VisitorController::class, 'assignRfid'])->name('visitors.assign-rfid');
+    Route::post('/visitors/{id}/return-rfid', [VisitorController::class, 'returnRfid'])->name('visitors.return-rfid');
     Route::get('/gate', [GateMonitorController::class, 'index'])->name('gate');
     Route::post('/gate/scan', [GateMonitorController::class, 'scan'])->middleware('throttle:30,1')->name('gate.scan');
     Route::get('/notifications', [GuardNotificationController::class, 'index'])->name('notifications');
@@ -178,4 +193,8 @@ Route::prefix('user')->middleware(['auth', 'verified', 'granted', 'no.cache', 'r
     Route::get('/entry-exit', [EntryExitController::class, 'index'])->name('entry-exit');
     Route::get('/parking', [UserParkingController::class, 'index'])->name('parking');
     Route::get('/parking/status', [UserParkingController::class, 'status'])->name('parking.status');
+    Route::get('/violations', [UserViolationController::class, 'index'])->name('violations');
+    Route::get('/violations/{id}/evidence/{index?}', [UserViolationController::class, 'evidence'])
+        ->whereNumber('index')
+        ->name('violations.evidence');
 });

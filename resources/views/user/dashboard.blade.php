@@ -97,6 +97,33 @@
         </div>
     @endif
 
+    @if (($recentViolations ?? collect())->isNotEmpty())
+        <div class="mb-6 rounded-xl border border-gray-200 bg-white">
+            <div class="border-b border-gray-200 px-6 py-4 flex items-center justify-between">
+                <h3 class="font-semibold text-gray-900">Recent Violations</h3>
+                <a href="{{ route('user.violations') }}" class="text-sm text-purple-600 hover:underline">View all</a>
+            </div>
+            <div class="divide-y divide-gray-100">
+                @foreach ($recentViolations as $violation)
+                    <div class="px-6 py-4">
+                        <div class="flex flex-wrap items-start justify-between gap-3">
+                            <div class="min-w-0">
+                                <p class="font-semibold text-gray-900">{{ $violation->violation_type }}</p>
+                                <p class="mt-1 text-sm text-gray-600">{{ $violation->description ?: 'No description provided.' }}</p>
+                                <p class="mt-1 text-xs text-gray-400">{{ ph_datetime($violation->created_at) }}</p>
+                            </div>
+                            <x-violation.evidence-panel
+                                :log="$violation"
+                                route-name="user.violations.evidence"
+                                compact
+                            />
+                        </div>
+                    </div>
+                @endforeach
+            </div>
+        </div>
+    @endif
+
     <div class="rounded-xl border border-purple-200 bg-purple-50 p-6">
         <h4 class="mb-2 font-semibold text-purple-900">Important Notice</h4>
         <p class="text-sm text-purple-700">

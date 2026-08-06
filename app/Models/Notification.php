@@ -19,6 +19,7 @@ class Notification extends MongoModel
         'title',
         'message',
         'type',
+        'violation_log_id',
         'is_read',
         'created_at',
     ];

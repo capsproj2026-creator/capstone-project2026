@@ -15,6 +15,7 @@ class GateLog extends MongoModel
     protected $fillable = [
         'daily_log_id',
         'user_id',
+        'visitor_id',
         'action',
         'gate_id',
         'rfid_uid',
@@ -29,6 +30,7 @@ class GateLog extends MongoModel
         return [
             'daily_log_id' => 'integer',
             'user_id' => 'integer',
+            'visitor_id' => 'integer',
             'log_date' => 'date',
             'timestamp' => 'datetime',
         ];
@@ -37,6 +39,11 @@ class GateLog extends MongoModel
     public function user(): BelongsTo
     {
         return $this->belongsTo(User::class);
+    }
+
+    public function visitor(): BelongsTo
+    {
+        return $this->belongsTo(Visitor::class, 'visitor_id');
     }
 
     public function accessGranted(): bool
@@ -67,7 +74,7 @@ class GateLog extends MongoModel
         $uid = trim((string) ($this->rfid_uid ?? ''));
 
         if ($uid === '') {
-            $uid = trim((string) ($this->user?->rfid_uid ?? ''));
+            $uid = trim((string) ($this->user?->rfid_uid ?? $this->visitor?->rfid_uid ?? ''));
         }
 
         return $uid !== '' ? $uid : '—';

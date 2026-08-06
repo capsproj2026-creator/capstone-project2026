@@ -3,6 +3,7 @@
 namespace App\Support;
 
 use App\Models\User;
+use App\Models\Visitor;
 use Illuminate\Support\Facades\Cache;
 
 /**
@@ -42,6 +43,12 @@ class PlateLookup
             $out[] = $m[1].' '.$m[2];
         }
 
+        // LTO motorcycle plates: 0501-0401328 / 05010401328
+        if (preg_match('/^(\d{4})(\d{7})$/', $normalized, $m)) {
+            $out[] = $m[1].'-'.$m[2];
+            $out[] = $m[1].' '.$m[2];
+        }
+
         return array_values(array_unique($out));
     }
 
@@ -72,18 +79,49 @@ class PlateLookup
         return User::query()->with(['role', 'vehicleType', 'department'])->where('id', $userId)->first();
     }
 
+    public static function findVisitor(?string $plate): ?Visitor
+    {
+        $normalized = self::normalize($plate);
+        if ($normalized === '') {
+            return null;
+        }
+
+        $candidates = self::candidates($plate);
+
+        $visitor = Visitor::query()
+            ->with('vehicleType')
+            ->whereIn('status', Visitor::ACTIVE_STATUSES)
+            ->whereIn('plate_number', $candidates)
+            ->orderByDesc('id')
+            ->first();
+
+        if ($visitor) {
+            return $visitor;
+        }
+
+        return Visitor::query()
+            ->with('vehicleType')
+            ->whereIn('status', Visitor::ACTIVE_STATUSES)
+            ->orderByDesc('id')
+            ->get()
+            ->first(fn (Visitor $v) => self::normalize((string) $v->plate_number) === $normalized);
+    }
+
     /**
      * @return array{
      *     plate: string,
      *     user_id: int|string|null,
+     *     visitor_id: int|string|null,
      *     owner_name: string|null,
      *     owner_label: string|null,
      *     id_number: string|null,
      *     role: string|null,
+     *     purpose: string|null,
      *     registered: bool,
      *     vehicle_details: string|null,
      *     department: string|null,
-     *     registration_status: string|null
+     *     registration_status: string|null,
+     *     is_visitor: bool
      * }
      */
     public static function identity(?string $plate): array
@@ -91,39 +129,67 @@ class PlateLookup
         $normalized = self::normalize($plate);
         $user = $normalized !== '' ? self::findUser($plate) : null;
 
-        if ($user === null) {
+        if ($user !== null) {
+            $department = $user->department?->departmentname
+                ?? (filled($user->department_code) ? (string) $user->department_code : null);
+
+            $registrationStatus = $user->isGranted()
+                ? 'Registered'
+                : (string) ($user->status ?: 'Registered');
+
             return [
                 'plate' => $normalized !== '' ? $normalized : strtoupper(trim((string) $plate)),
-                'user_id' => null,
-                'owner_name' => null,
-                'owner_label' => $normalized !== '' ? 'Unknown Vehicle' : null,
-                'id_number' => null,
-                'role' => null,
-                'registered' => false,
-                'vehicle_details' => null,
-                'department' => null,
-                'registration_status' => $normalized !== '' ? 'Plate Not Registered' : null,
+                'user_id' => $user->id,
+                'visitor_id' => null,
+                'owner_name' => $user->displayName(),
+                'owner_label' => $user->displayName(),
+                'id_number' => $user->id_number,
+                'role' => $user->roleName(),
+                'purpose' => null,
+                'registered' => true,
+                'vehicle_details' => $user->vehicleType?->vehicle_name,
+                'department' => $department,
+                'registration_status' => $registrationStatus,
+                'is_visitor' => false,
             ];
         }
 
-        $department = $user->department?->departmentname
-            ?? (filled($user->department_code) ? (string) $user->department_code : null);
+        $visitor = $normalized !== '' ? self::findVisitor($plate) : null;
 
-        $registrationStatus = $user->isGranted()
-            ? 'Registered'
-            : (string) ($user->status ?: 'Registered');
+        if ($visitor !== null) {
+            $statusLabel = $visitor->status === Visitor::STATUS_INSIDE ? 'Inside Campus' : (string) $visitor->status;
+
+            return [
+                'plate' => $normalized !== '' ? $normalized : strtoupper(trim((string) $plate)),
+                'user_id' => null,
+                'visitor_id' => $visitor->id,
+                'owner_name' => $visitor->displayName(),
+                'owner_label' => $visitor->displayName(),
+                'id_number' => null,
+                'role' => 'Visitor',
+                'purpose' => $visitor->purpose,
+                'registered' => true,
+                'vehicle_details' => $visitor->vehicleType?->vehicle_name,
+                'department' => $visitor->office_to_visit,
+                'registration_status' => $statusLabel,
+                'is_visitor' => true,
+            ];
+        }
 
         return [
             'plate' => $normalized !== '' ? $normalized : strtoupper(trim((string) $plate)),
-            'user_id' => $user->id,
-            'owner_name' => $user->displayName(),
-            'owner_label' => $user->displayName(),
-            'id_number' => $user->id_number,
-            'role' => $user->roleName(),
-            'registered' => true,
-            'vehicle_details' => $user->vehicleType?->vehicle_name,
-            'department' => $department,
-            'registration_status' => $registrationStatus,
+            'user_id' => null,
+            'visitor_id' => null,
+            'owner_name' => null,
+            'owner_label' => $normalized !== '' ? 'Unknown Vehicle' : null,
+            'id_number' => null,
+            'role' => null,
+            'purpose' => null,
+            'registered' => false,
+            'vehicle_details' => null,
+            'department' => null,
+            'registration_status' => $normalized !== '' ? 'Plate Not Registered' : null,
+            'is_visitor' => false,
         ];
     }
 

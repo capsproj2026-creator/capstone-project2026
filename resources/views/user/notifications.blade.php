@@ -54,6 +54,22 @@
                         <span class="inline-flex rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-600">{{ $notif->type }}</span>
                         <h3 class="mt-1 font-semibold text-gray-900">{{ $notif->title }}</h3>
                         <p class="mt-2 text-sm text-gray-600">{{ $notif->message }}</p>
+                        @if ($notif->type === 'Violation')
+                            @php
+                                $linkedLog = filled($notif->violation_log_id)
+                                    ? ($violationLogs[(string) $notif->violation_log_id] ?? null)
+                                    : null;
+                            @endphp
+                            @if ($linkedLog)
+                                <x-violation.evidence-panel
+                                    :log="$linkedLog"
+                                    route-name="user.violations.evidence"
+                                    class="mt-3"
+                                />
+                            @else
+                                <p class="mt-3 text-xs italic text-gray-400">No Evidence Available.</p>
+                            @endif
+                        @endif
                     </div>
                     <div class="flex flex-col items-end gap-2">
                         <time class="text-xs text-gray-500">{{ $notif->created_at?->diffForHumans() }}</time>

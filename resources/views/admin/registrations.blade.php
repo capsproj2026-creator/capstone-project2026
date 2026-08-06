@@ -9,7 +9,7 @@
     ])
 
     @if (session('success'))
-        <div class="mb-4 flex gap-2 rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800">
+        <div class="mb-4 flex gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
             <i data-lucide="circle-check" class="h-4 w-4 shrink-0"></i>
             {{ session('success') }}
         </div>
@@ -21,55 +21,213 @@
         </div>
     @endif
 
-    <div class="mb-6 grid grid-cols-1 gap-3 sm:grid-cols-3">
-        <a href="{{ route('admin.registrations', ['status' => 'Pending']) }}"
-           @class(['rounded-xl border p-5 transition-colors', 'border-blue-500 bg-blue-50' => $statusFilter === 'Pending', 'border-gray-200 bg-white hover:bg-gray-50' => $statusFilter !== 'Pending'])>
-            <p class="text-sm text-gray-500">Pending</p>
-            <p class="mt-1 text-2xl font-bold text-gray-900">{{ $pendingCount }}</p>
-        </a>
-        <a href="{{ route('admin.registrations', ['status' => 'Granted']) }}"
-           @class(['rounded-xl border p-5 transition-colors', 'border-blue-500 bg-blue-50' => $statusFilter === 'Granted', 'border-gray-200 bg-white hover:bg-gray-50' => $statusFilter !== 'Granted'])>
-            <p class="text-sm text-gray-500">Approved</p>
-            <p class="mt-1 text-2xl font-bold text-green-700">{{ $approvedCount }}</p>
-        </a>
-        <a href="{{ route('admin.registrations', ['status' => 'Denied']) }}"
-           @class(['rounded-xl border p-5 transition-colors', 'border-blue-500 bg-blue-50' => $statusFilter === 'Denied', 'border-gray-200 bg-white hover:bg-gray-50' => $statusFilter !== 'Denied'])>
-            <p class="text-sm text-gray-500">Declined</p>
-            <p class="mt-1 text-2xl font-bold text-red-600">{{ $declinedCount }}</p>
-        </a>
+    @php
+        $statusCards = [
+            'All' => [
+                'label' => 'All Users',
+                'count' => $allCount,
+                'icon' => 'users',
+                'text' => 'text-gray-900',
+                'iconBg' => 'bg-blue-50 text-blue-600',
+                'active' => 'border-blue-300 ring-2 ring-blue-100 bg-blue-50/40',
+            ],
+            'Pending' => [
+                'label' => 'Pending',
+                'count' => $pendingCount,
+                'icon' => 'clock',
+                'text' => 'text-amber-600',
+                'iconBg' => 'bg-amber-50 text-amber-600',
+                'active' => 'border-amber-300 ring-2 ring-amber-100 bg-amber-50/40',
+            ],
+            'Granted' => [
+                'label' => 'Approved',
+                'count' => $approvedCount,
+                'icon' => 'check-circle',
+                'text' => 'text-emerald-600',
+                'iconBg' => 'bg-emerald-50 text-emerald-600',
+                'active' => 'border-emerald-300 ring-2 ring-emerald-100 bg-emerald-50/40',
+            ],
+            'Denied' => [
+                'label' => 'Declined',
+                'count' => $declinedCount,
+                'icon' => 'x-circle',
+                'text' => 'text-rose-600',
+                'iconBg' => 'bg-rose-50 text-rose-600',
+                'active' => 'border-rose-300 ring-2 ring-rose-100 bg-rose-50/40',
+            ],
+        ];
+    @endphp
+
+    <div class="mb-6 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        @foreach ($statusCards as $statusKey => $card)
+            <a href="{{ route('admin.registrations', ['status' => $statusKey]) }}"
+               @class([
+                   'flex items-center justify-between rounded-xl border bg-white p-5 shadow-sm transition hover:border-gray-300',
+                   $card['active'] => $statusFilter === $statusKey,
+                   'border-gray-200' => $statusFilter !== $statusKey,
+               ])>
+                <div>
+                    <p class="text-sm text-gray-500">{{ $card['label'] }}</p>
+                    <p class="mt-1 text-2xl font-bold tracking-tight {{ $card['text'] }}">{{ $card['count'] }}</p>
+                </div>
+                <div class="flex h-11 w-11 items-center justify-center rounded-xl {{ $card['iconBg'] }}">
+                    <i data-lucide="{{ $card['icon'] }}" class="h-5 w-5"></i>
+                </div>
+            </a>
+        @endforeach
     </div>
 
-    <div class="space-y-3">
-        @forelse ($requests as $row)
-            <div class="flex flex-col gap-4 rounded-xl border border-gray-200 bg-white p-5 sm:flex-row sm:items-center sm:justify-between">
-                <div>
-                    <h4 class="font-semibold text-gray-900">{{ $row->fullname }}</h4>
-                    <p class="text-sm text-gray-500">{{ $row->role?->role_name }} · ID: {{ $row->id_number }}</p>
-                    <p class="text-xs text-gray-400">{{ $row->email }}</p>
-                </div>
-                <div class="flex flex-wrap items-center gap-2">
-                    @if ($row->status === 'Pending')
-                        <form method="POST" action="{{ route('admin.registrations.approve', $row->id) }}" onsubmit="return confirm('Approve this registration?')">
-                            @csrf
-                            <button type="submit" class="rounded-lg bg-green-600 px-4 py-2 text-sm font-semibold text-white hover:bg-green-700">Approve</button>
-                        </form>
-                        <form method="POST" action="{{ route('admin.registrations.decline', $row->id) }}" class="flex flex-wrap items-center gap-2" onsubmit="return confirm('Decline this registration?')">
-                            @csrf
-                            <input type="text" name="remarks" placeholder="Decline reason (optional)" maxlength="500"
-                                class="min-w-[160px] rounded-lg border border-gray-300 px-3 py-2 text-xs">
-                            <button type="submit" class="rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700">Decline</button>
-                        </form>
-                    @endif
-                    <a href="{{ route('admin.users.show', ['id' => $row->id, 'from' => 'registrations']) }}"
-                       class="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">
-                        View Profile
-                    </a>
-                </div>
+    <div class="mb-5">
+        <div class="relative">
+            <i data-lucide="search" class="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400"></i>
+            <input
+                id="reg-search"
+                type="search"
+                placeholder="Search by name, email, ID, or plate..."
+                class="w-full rounded-xl border border-gray-200 bg-white py-3 pl-11 pr-4 text-sm text-gray-900 shadow-sm placeholder:text-gray-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+            >
+        </div>
+    </div>
+
+    <div class="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
+        <div class="border-b border-gray-100 px-5 py-4 sm:px-6">
+            <h2 class="text-base font-semibold text-gray-900">
+                {{ $statusFilter === 'All' ? 'All registrations' : (($statusCards[$statusFilter]['label'] ?? $statusFilter).' registrations') }}
+            </h2>
+            <p class="mt-0.5 text-sm text-gray-500">Review applicant details and take action</p>
+        </div>
+
+        <div class="overflow-x-auto">
+            <table class="w-full min-w-[56rem] table-fixed border-collapse text-left text-sm">
+                <colgroup>
+                    <col class="w-[14rem]">
+                    <col class="w-[7rem]">
+                    <col class="w-[9rem]">
+                    <col class="w-[16rem]">
+                    <col class="w-[8rem]">
+                    <col class="w-[7rem]">
+                    <col class="w-[12rem]">
+                </colgroup>
+                <thead>
+                    <tr class="border-b border-gray-100 bg-gray-50 text-[11px] font-semibold uppercase tracking-wide text-gray-500">
+                        <th scope="col" class="px-4 py-3 sm:px-5">Name</th>
+                        <th scope="col" class="px-3 py-3">Role</th>
+                        <th scope="col" class="px-3 py-3">ID</th>
+                        <th scope="col" class="px-3 py-3">Email</th>
+                        <th scope="col" class="px-3 py-3">Registered</th>
+                        <th scope="col" class="px-3 py-3">Status</th>
+                        <th scope="col" class="px-4 py-3 text-right sm:px-5">Actions</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-100">
+                    @forelse ($requests as $row)
+                        @php
+                            $roleLabel = $row->role?->role_name ?: $row->roleName();
+                            $isStudent = strcasecmp((string) $roleLabel, 'Student') === 0;
+                            $isStaff = strcasecmp((string) $roleLabel, 'Staff') === 0;
+                            $email = $row->email ?: '—';
+                            $idNumber = $row->id_number ?: '—';
+                            $plate = $row->plate_number ?: '';
+                            $registeredAt = $row->created_at ? $row->created_at->format('M j, Y') : '—';
+                            $searchBlob = strtolower(trim(implode(' ', [
+                                $row->fullname,
+                                $email,
+                                $idNumber,
+                                $plate,
+                                $roleLabel,
+                            ])));
+                        @endphp
+                        <tr class="reg-row align-middle hover:bg-gray-50/60" data-search="{{ e($searchBlob) }}">
+                            <td class="px-4 py-3 sm:px-5">
+                                <div class="flex min-w-0 items-center gap-3">
+                                    <x-portal.avatar :user="$row" size="sm" class="shrink-0 !ring-0" />
+                                    <span class="truncate font-semibold text-gray-900" title="{{ $row->fullname }}">{{ $row->fullname }}</span>
+                                </div>
+                            </td>
+                            <td class="px-3 py-3">
+                                <span @class([
+                                    'inline-flex rounded-md px-2 py-0.5 text-xs font-medium',
+                                    'bg-blue-50 text-blue-700' => $isStudent,
+                                    'bg-violet-50 text-violet-700' => $isStaff,
+                                    'bg-gray-100 text-gray-600' => ! $isStudent && ! $isStaff,
+                                ])>{{ $roleLabel }}</span>
+                            </td>
+                            <td class="px-3 py-3">
+                                <p class="truncate font-medium text-gray-800" title="{{ $idNumber }}">{{ $idNumber }}</p>
+                            </td>
+                            <td class="min-w-0 px-3 py-3">
+                                <p class="truncate text-gray-600" title="{{ $email }}">{{ $email }}</p>
+                            </td>
+                            <td class="px-3 py-3 text-gray-600">{{ $registeredAt }}</td>
+                            <td class="px-3 py-3">
+                                @if ($row->status === 'Pending')
+                                    <span class="inline-flex rounded-full bg-amber-50 px-2.5 py-0.5 text-xs font-semibold text-amber-700">Pending</span>
+                                @elseif ($row->status === 'Granted')
+                                    <span class="inline-flex rounded-full bg-emerald-50 px-2.5 py-0.5 text-xs font-semibold text-emerald-700">Approved</span>
+                                @else
+                                    <span class="inline-flex rounded-full bg-rose-50 px-2.5 py-0.5 text-xs font-semibold text-rose-700">Declined</span>
+                                @endif
+                            </td>
+                            <td class="px-4 py-3 sm:px-5">
+                                <div class="flex flex-col items-stretch gap-2 sm:items-end">
+                                    <div class="flex flex-wrap justify-end gap-2">
+                                        <a href="{{ route('admin.users.show', ['id' => $row->id, 'from' => 'registrations']) }}"
+                                           class="inline-flex items-center justify-center rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-50">
+                                            View profile
+                                        </a>
+                                        @if ($row->status === 'Pending')
+                                            <form method="POST" action="{{ route('admin.registrations.approve', $row->id) }}" onsubmit="return confirm('Approve this registration?')">
+                                                @csrf
+                                                <button type="submit" class="inline-flex items-center justify-center rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700">Approve</button>
+                                            </form>
+                                        @endif
+                                    </div>
+                                    @if ($row->status === 'Pending')
+                                        <form method="POST" action="{{ route('admin.registrations.decline', $row->id) }}" class="flex w-full max-w-xs flex-wrap items-center justify-end gap-2" onsubmit="return confirm('Decline this registration?')">
+                                            @csrf
+                                            <input type="text" name="remarks" placeholder="Decline reason (optional)" maxlength="500"
+                                                class="min-w-[8rem] flex-1 rounded-lg border border-gray-300 px-2.5 py-1.5 text-xs">
+                                            <button type="submit" class="inline-flex items-center justify-center rounded-lg bg-rose-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-rose-700">Decline</button>
+                                        </form>
+                                    @endif
+                                </div>
+                            </td>
+                        </tr>
+                    @empty
+                        <tr>
+                            <td colspan="7" class="px-6 py-12 text-center text-sm text-gray-500">
+                                No {{ strtolower($statusCards[$statusFilter]['label'] ?? $statusFilter) }} registrations found.
+                            </td>
+                        </tr>
+                    @endforelse
+                </tbody>
+            </table>
+
+            <div id="reg-empty-search" class="hidden px-6 py-12 text-center text-sm text-gray-500">
+                No registrations match your search.
             </div>
-        @empty
-            <div class="rounded-xl border border-dashed border-gray-300 bg-gray-50 px-6 py-12 text-center text-sm text-gray-500">
-                No {{ strtolower($statusFilter) }} registrations found.
-            </div>
-        @endforelse
+        </div>
     </div>
 @endsection
+
+@push('scripts')
+<script>
+    document.addEventListener('DOMContentLoaded', () => {
+        const searchInput = document.getElementById('reg-search');
+        const rows = Array.from(document.querySelectorAll('.reg-row'));
+        const emptySearch = document.getElementById('reg-empty-search');
+
+        const applySearch = () => {
+            const q = (searchInput?.value || '').trim().toLowerCase();
+            let visible = 0;
+            rows.forEach((row) => {
+                const show = !q || (row.dataset.search || '').includes(q);
+                row.classList.toggle('hidden', !show);
+                if (show) visible += 1;
+            });
+            emptySearch?.classList.toggle('hidden', visible > 0 || rows.length === 0);
+        };
+        searchInput?.addEventListener('input', applySearch);
+    });
+</script>
+@endpush

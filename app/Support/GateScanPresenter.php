@@ -12,11 +12,16 @@ class GateScanPresenter
      */
     public static function fromLog(GateLog $log, bool $withStats = true): array
     {
-        $log->loadMissing(['user.role']);
+        $log->loadMissing(['user.role', 'visitor']);
 
         $uid = trim((string) ($log->rfid_uid ?? ''));
         $user = $log->user;
-        $name = $user?->displayName() ?? 'Unknown card';
+        $visitor = $log->visitor;
+        $isVisitor = (bool) $visitor && ! $user;
+
+        $name = $isVisitor
+            ? $visitor->displayName()
+            : ($user?->displayName() ?? 'Unknown card');
         $granted = $log->accessGranted();
         $strikes = (int) ($user?->strike_count ?? 0);
 
@@ -29,7 +34,9 @@ class GateScanPresenter
         );
 
         $statusLabel = $granted
-            ? ($strikes > 0 ? "{$strikes} Strike".($strikes === 1 ? '' : 's') : 'No Violations')
+            ? ($isVisitor
+                ? 'Visitor'
+                : ($strikes > 0 ? "{$strikes} Strike".($strikes === 1 ? '' : 's') : 'No Violations'))
             : ($log->result ?: 'Access Denied');
 
         $payload = [
@@ -39,10 +46,12 @@ class GateScanPresenter
             'initials' => $initials,
             'profile_picture_url' => $user
                 ? $user->profilePictureUrl()
-                : 'https://ui-avatars.com/api/?name='.urlencode($name).'&background=64748b&color=fff&size=256',
-            'role' => $user?->roleName() ?? 'Unknown',
+                : 'https://ui-avatars.com/api/?name='.urlencode($name).'&background='.($isVisitor ? '0d9488' : '64748b').'&color=fff&size=256',
+            'role' => $isVisitor ? 'Visitor' : ($user?->roleName() ?? 'Unknown'),
+            'is_visitor' => $isVisitor,
+            'purpose' => $isVisitor ? ($visitor->purpose ?? null) : null,
             'id_number' => $user?->id_number,
-            'plate_number' => $user?->plate_number,
+            'plate_number' => $isVisitor ? $visitor->plate_number : $user?->plate_number,
             'action' => $log->action,
             'result' => $log->result ?? 'Access Granted',
             'granted' => $granted,

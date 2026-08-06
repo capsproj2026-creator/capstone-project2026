@@ -21,6 +21,7 @@ class ViolationLog extends MongoModel
         'violation_type',
         'description',
         'evidence_photo',
+        'evidence_photos',
         'guard_id',
         'status',
         'created_at',
@@ -40,7 +41,21 @@ class ViolationLog extends MongoModel
             'track_id' => 'integer',
             'confidence' => 'float',
             'created_at' => 'datetime',
+            'evidence_photos' => 'array',
         ];
+    }
+
+    /**
+     * @return list<string>
+     */
+    public function evidencePaths(): array
+    {
+        return \App\Support\ViolationEvidence::pathsFor($this);
+    }
+
+    public function hasEvidence(): bool
+    {
+        return \App\Support\ViolationEvidence::hasEvidence($this);
     }
 
     public function user(): BelongsTo
