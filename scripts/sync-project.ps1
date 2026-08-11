@@ -78,7 +78,8 @@ function Sync-GitRepo {
             Invoke-Git @("remote", "add", "origin", $repoUrl) -AllowFailure | Out-Null
             if ($LASTEXITCODE -ne 0) { Invoke-Git @("remote", "set-url", "origin", $repoUrl) | Out-Null }
             Invoke-Git @("fetch", "origin", $branch) | Out-Null
-            Invoke-Git @("checkout", "-B", $branch, "origin/$branch") | Out-Null
+            # Zip downloads have untracked files that block checkout — force align to remote.
+            Invoke-Git @("checkout", "-f", "-B", $branch, "origin/$branch") | Out-Null
             $pulled = $true
         }
         else {
