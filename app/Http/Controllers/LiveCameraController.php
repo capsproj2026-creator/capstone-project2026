@@ -59,28 +59,7 @@ class LiveCameraController extends Controller
             ];
         }
 
-        // Keep a few offline campus placeholders so the grid still feels like a VMS.
-        foreach ([
-            ['id' => 'cam-main-entry', 'name' => 'Main Gate - Entry', 'location' => 'Main Gate'],
-            ['id' => 'cam-main-exit', 'name' => 'Main Gate - Exit', 'location' => 'Main Gate'],
-            ['id' => 'cam-side-gate', 'name' => 'Side Gate', 'location' => 'Side Gate'],
-        ] as $placeholder) {
-            $cameras[] = [
-                'id' => $placeholder['id'],
-                'camera_id' => null,
-                'name' => $placeholder['name'],
-                'location' => $placeholder['location'],
-                'stream_url' => null,
-                'online' => false,
-                'ai_monitored' => false,
-                'parking_url' => null,
-                'vehicle_count' => null,
-                'occupied' => null,
-                'available' => null,
-                'updated_at_label' => null,
-                'ingest_active' => false,
-            ];
-        }
+        // Only show configured AI CCTV feeds on Live Cameras (no fake offline placeholders).
 
         $primary = $registry->primaryCameraId();
         $areaId = $registry->resolveAreaId($primary);

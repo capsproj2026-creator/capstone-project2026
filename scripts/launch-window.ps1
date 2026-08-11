@@ -20,10 +20,19 @@ $extraPaths = @(
     "$env:ProgramFiles\PHP",
     "${env:ProgramFiles(x86)}\PHP"
 )
+$wingetPhp = Get-ChildItem -Path "$env:LOCALAPPDATA\Microsoft\WinGet\Packages" -Filter "PHP.*" -Directory -ErrorAction SilentlyContinue |
+    ForEach-Object { $_.FullName }
+$extraPaths += $wingetPhp
 foreach ($dir in $extraPaths) {
-    if ((Test-Path -LiteralPath $dir) -and ($env:Path -notlike "*$dir*")) {
+    if ($dir -and (Test-Path -LiteralPath $dir) -and ($env:Path -notlike "*$dir*")) {
         $env:Path = "$dir;$env:Path"
     }
+}
+
+# Resolve php to full path when -NoProfile windows miss it on PATH.
+$phpCmd = Get-Command php -ErrorAction SilentlyContinue
+if ($phpCmd) {
+    $env:Path = "$(Split-Path -Parent $phpCmd.Source);$env:Path"
 }
 
 Set-Location -LiteralPath $WorkingDirectory
@@ -43,6 +52,14 @@ if ($CommandArgs.Count -gt 1) {
 # Prefer .cmd shims on Windows so npm/php work without execution-policy issues.
 if ($exe -eq "npm" -and (Test-Path -LiteralPath "$env:ProgramFiles\nodejs\npm.cmd")) {
     $exe = "$env:ProgramFiles\nodejs\npm.cmd"
+}
+if ($exe -eq "php") {
+    $php = Get-Command php -ErrorAction SilentlyContinue
+    if ($php) { $exe = $php.Source }
+    else {
+        Write-Host "php not found on PATH. Install PHP 8.2+ or add it to PATH." -ForegroundColor Red
+        exit 1
+    }
 }
 
 Write-Host ("> " + ($CommandArgs -join " ")) -ForegroundColor DarkGray
