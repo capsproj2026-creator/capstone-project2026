@@ -38,6 +38,22 @@ if ($phpCmd) {
 Set-Location -LiteralPath $WorkingDirectory
 Write-Host ("=== $Title ===") -ForegroundColor Cyan
 
+# php artisan serve is single-threaded on Windows — load workers from .env (Linux/macOS only).
+$envFile = Join-Path $WorkingDirectory ".env"
+if ((Test-Path $envFile) -and ($CommandArgs -join " ") -match "artisan\s+serve") {
+    if ($IsWindows -or $env:OS -match "Windows") {
+        Write-Host "Note: php artisan serve is single-threaded on Windows — keep AI POST interval >= 5s." -ForegroundColor DarkYellow
+    } else {
+        foreach ($line in Get-Content $envFile) {
+            if ($line -match '^\s*PHP_CLI_SERVER_WORKERS\s*=\s*(\d+)') {
+                $env:PHP_CLI_SERVER_WORKERS = $Matches[1]
+                Write-Host "PHP_CLI_SERVER_WORKERS=$($Matches[1])" -ForegroundColor DarkGray
+                break
+            }
+        }
+    }
+}
+
 if (-not $CommandArgs -or $CommandArgs.Count -eq 0) {
     Write-Error "No command provided."
     exit 1

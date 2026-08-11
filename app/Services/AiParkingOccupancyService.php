@@ -38,7 +38,36 @@ class AiParkingOccupancyService
     ): array {
         $area = ParkingArea::query()->findOrFail($areaId);
 
+        // Windows php artisan serve handles one request at a time — skip heavy Mongo writes when unchanged.
+        $cacheKey = $this->cacheKeyForCamera($cameraId);
+        $previous = Cache::get($cacheKey);
         $usedSlots = is_array($slots) && count($slots) > 0;
+        if (
+            is_array($previous)
+            && ! $usedSlots
+            && $events === []
+            && ($previous['reported_vehicle_count'] ?? null) === $vehicleCount
+            && ($previous['area_id'] ?? null) === $areaId
+        ) {
+            $detections = $this->enrichWithOwners($detections);
+            $detections = $this->attachViolationStatus($detections, $previous['events'] ?? []);
+
+            $snapshot = array_merge($previous, [
+                'detections' => $detections,
+                'updated_at' => now()->toIso8601String(),
+                'updated_at_label' => now()->format('h:i:s A'),
+            ]);
+
+            $ttl = now()->addMinutes(30);
+            Cache::put($cacheKey, $snapshot, $ttl);
+            $primaryId = app(AiCameraRegistry::class)->primaryCameraId();
+            if (strcasecmp($cameraId, $primaryId) === 0) {
+                Cache::put(self::CACHE_KEY, $snapshot, $ttl);
+            }
+
+            return $snapshot;
+        }
+
         if ($usedSlots) {
             $stats = $this->applySlotStatuses($areaId, $slots);
             $mode = 'slots';
