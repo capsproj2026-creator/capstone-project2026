@@ -1,5 +1,6 @@
 <?php
 
+use App\Support\MongoDsn;
 use Illuminate\Support\Str;
 use Pdo\Mysql;
 
@@ -34,17 +35,7 @@ return [
 
         'mongodb' => [
             'driver' => 'mongodb',
-            'dsn' => (static function (): string {
-                $dsn = env('MONGODB_URI', 'mongodb://127.0.0.1:27017');
-
-                if (! filter_var(env('MONGODB_TLS_ALLOW_INVALID', false), FILTER_VALIDATE_BOOLEAN)) {
-                    return $dsn;
-                }
-
-                $tlsParams = 'tlsAllowInvalidCertificates=true&tlsAllowInvalidHostnames=true';
-
-                return str_contains($dsn, '?') ? "{$dsn}&{$tlsParams}" : "{$dsn}?{$tlsParams}";
-            })(),
+            'dsn' => ($mongoDsn = MongoDsn::withTlsParams(MongoDsn::resolve())),
             'database' => env('MONGODB_DATABASE', 'capstone'),
             'options' => array_filter(array_merge([
                 'authSource' => env('MONGODB_AUTH_DATABASE'),
@@ -53,7 +44,8 @@ return [
                 'socketTimeoutMS' => (int) env('MONGODB_SOCKET_TIMEOUT_MS', 30000),
                 'maxPoolSize' => (int) env('MONGODB_MAX_POOL_SIZE', 10),
                 'retryReads' => filter_var(env('MONGODB_RETRY_READS', true), FILTER_VALIDATE_BOOLEAN),
-            ], filter_var(env('MONGODB_TLS_ALLOW_INVALID', false), FILTER_VALIDATE_BOOLEAN)
+            ], str_starts_with($mongoDsn, 'mongodb+srv://')
+                && filter_var(env('MONGODB_TLS_ALLOW_INVALID', false), FILTER_VALIDATE_BOOLEAN)
                 ? ['tlsAllowInvalidCertificates' => true]
                 : []), static fn ($value) => $value !== null && $value !== '' && $value !== false),
         ],

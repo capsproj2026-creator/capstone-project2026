@@ -1,6 +1,26 @@
-# AI Parking (YOLOv9c)
+# AI Parking (YOLOv9 pretrained)
 
-Zone-level occupancy, slot polygons, violation rules, ByteTrack tracking, optional EasyOCR plates, Laravel ingest.
+Zone-level occupancy, slot polygons, violation rules, tracking, optional EasyOCR plates, Laravel ingest.
+
+Uses **Ultralytics pretrained YOLOv9** (COCO) — detects cars, motorcycles, buses, trucks.
+
+## Pretrained model setup
+
+```powershell
+# From repo root — downloads yolov9c.pt into hardware/ai_parking/models/
+.\scripts\setup-yolov9.ps1
+
+# Long-range lot (more accurate, slower on CPU)
+.\scripts\setup-yolov9.ps1 -Model yolov9m
+```
+
+Set in `.env`:
+
+```env
+AI_PARKING_YOLO_MODEL=yolov9c
+```
+
+See [`models/README.md`](models/README.md) for all variants.
 
 ## Multi-camera (CAM-AI-1 / 2 / 3)
 

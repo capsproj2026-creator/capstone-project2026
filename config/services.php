@@ -64,6 +64,8 @@ return [
                 'area_id' => (int) env('AI_CAMERA_1_AREA_ID', env('AI_PARKING_AREA_ID', 19)),
                 'stream_path' => env('AI_CAMERA_1_STREAM_PATH', '/stream.mjpg'),
                 'stream_url' => env('AI_CAMERA_1_STREAM_URL', env('AI_PARKING_STREAM_BROWSER_URL', env('AI_PARKING_STREAM_URL'))),
+                'ai_stream_path' => env('AI_CAMERA_1_AI_STREAM_PATH'),
+                'ai_stream_url' => env('AI_CAMERA_1_AI_STREAM_URL'),
                 'enabled' => filter_var(env('AI_CAMERA_1_ENABLED', true), FILTER_VALIDATE_BOOLEAN),
             ],
             [
@@ -71,8 +73,10 @@ return [
                 'name' => env('AI_CAMERA_2_NAME', 'AI Lot B'),
                 'location' => env('AI_CAMERA_2_LOCATION', 'Parking Lot B'),
                 'area_id' => (int) env('AI_CAMERA_2_AREA_ID', 20),
-                'stream_path' => env('AI_CAMERA_2_STREAM_PATH', '/CAM-AI-2/stream.mjpg'),
+                'stream_path' => env('AI_CAMERA_2_STREAM_PATH'),
                 'stream_url' => env('AI_CAMERA_2_STREAM_URL'),
+                'ai_stream_path' => env('AI_CAMERA_2_AI_STREAM_PATH'),
+                'ai_stream_url' => env('AI_CAMERA_2_AI_STREAM_URL'),
                 'enabled' => filter_var(env('AI_CAMERA_2_ENABLED', true), FILTER_VALIDATE_BOOLEAN)
                     && filled(env('AI_CAMERA_2_IP')),
             ],
@@ -81,8 +85,10 @@ return [
                 'name' => env('AI_CAMERA_3_NAME', 'AI Lot C'),
                 'location' => env('AI_CAMERA_3_LOCATION', 'Visitor Parking'),
                 'area_id' => (int) env('AI_CAMERA_3_AREA_ID', 21),
-                'stream_path' => env('AI_CAMERA_3_STREAM_PATH', '/CAM-AI-3/stream.mjpg'),
+                'stream_path' => env('AI_CAMERA_3_STREAM_PATH'),
                 'stream_url' => env('AI_CAMERA_3_STREAM_URL'),
+                'ai_stream_path' => env('AI_CAMERA_3_AI_STREAM_PATH'),
+                'ai_stream_url' => env('AI_CAMERA_3_AI_STREAM_URL'),
                 // Keep template in .env; only activate when ENABLED=true and IP is set.
                 'enabled' => filter_var(env('AI_CAMERA_3_ENABLED', false), FILTER_VALIDATE_BOOLEAN)
                     && filled(env('AI_CAMERA_3_IP')),

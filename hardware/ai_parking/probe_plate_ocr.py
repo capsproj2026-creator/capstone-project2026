@@ -29,8 +29,9 @@ os.environ.setdefault("AI_PARKING_OCR_ENABLED", "1")
 from camera_registry import load_cameras  # noqa: E402
 from plate_ocr import PlateOCR  # noqa: E402
 from ultralytics import YOLO  # noqa: E402
+from yolo_models import ensure_model, resolve_model_path  # noqa: E402
 
-MODEL = BASE / "models" / "yolov9c.pt"
+MODEL = resolve_model_path()
 OUT_DIR = BASE / "debug_plates"
 OUT_DIR.mkdir(exist_ok=True)
 
@@ -74,6 +75,7 @@ def main() -> int:
     cv2.imwrite(str(snap), frame)
     print(f"Saved frame: {snap}")
 
+    ensure_model()
     print(f"Loading YOLO {MODEL}...")
     model = YOLO(str(MODEL))
     results = model.predict(frame, conf=0.28, imgsz=640, verbose=False)

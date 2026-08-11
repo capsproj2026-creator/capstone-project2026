@@ -32,6 +32,8 @@ class CameraConfig:
     lite_preview: bool = False
     # 0 = use global AI_PARKING_INFER_MAX_WIDTH
     infer_max_width: int = 0
+    # 0 = use global AI_PARKING_AI_STREAM_MAX_WIDTH (AI overlay MJPEG cap)
+    ai_stream_max_width: int = 0
 
     @property
     def slug(self) -> str:
@@ -243,6 +245,7 @@ def load_cameras(base_dir: Path | None = None) -> List[CameraConfig]:
             flush_frames=max(1, _int(f"{prefix}FLUSH_FRAMES", int(base.get("flush_frames", "1")))),
             lite_preview=_bool(f"{prefix}LITE_PREVIEW", base.get("lite_preview", "0") in ("1", "true", "yes")),
             infer_max_width=_int(f"{prefix}INFER_MAX_WIDTH", int(base.get("infer_max_width", "0"))),
+            ai_stream_max_width=_int(f"{prefix}AI_STREAM_MAX_WIDTH", int(base.get("ai_stream_max_width", "0"))),
         )
 
         if not cfg.has_credentials:

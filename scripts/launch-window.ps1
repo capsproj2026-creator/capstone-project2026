@@ -29,7 +29,6 @@ foreach ($dir in $extraPaths) {
     }
 }
 
-# Resolve php to full path when -NoProfile windows miss it on PATH.
 $phpCmd = Get-Command php -ErrorAction SilentlyContinue
 if ($phpCmd) {
     $env:Path = "$(Split-Path -Parent $phpCmd.Source);$env:Path"
@@ -38,11 +37,12 @@ if ($phpCmd) {
 Set-Location -LiteralPath $WorkingDirectory
 Write-Host ("=== $Title ===") -ForegroundColor Cyan
 
-# php artisan serve is single-threaded on Windows — load workers from .env (Linux/macOS only).
 $envFile = Join-Path $WorkingDirectory ".env"
-if ((Test-Path $envFile) -and ($CommandArgs -join " ") -match "artisan\s+serve") {
-    if ($IsWindows -or $env:OS -match "Windows") {
-        Write-Host "Note: php artisan serve is single-threaded on Windows — keep AI POST interval >= 5s." -ForegroundColor DarkYellow
+$cmdLine = $CommandArgs -join " "
+if ((Test-Path $envFile) -and ($cmdLine -match "artisan serve")) {
+    $isWindows = ($null -ne $IsWindows -and $IsWindows) -or ($env:OS -match "Windows")
+    if ($isWindows) {
+        Write-Host "Note: php artisan serve is single-threaded on Windows. Keep AI POST interval >= 5s." -ForegroundColor DarkYellow
     } else {
         foreach ($line in Get-Content $envFile) {
             if ($line -match '^\s*PHP_CLI_SERVER_WORKERS\s*=\s*(\d+)') {
@@ -65,7 +65,6 @@ if ($CommandArgs.Count -gt 1) {
     $params = $CommandArgs[1..($CommandArgs.Count - 1)]
 }
 
-# Prefer .cmd shims on Windows so npm/php work without execution-policy issues.
 if ($exe -eq "npm" -and (Test-Path -LiteralPath "$env:ProgramFiles\nodejs\npm.cmd")) {
     $exe = "$env:ProgramFiles\nodejs\npm.cmd"
 }
@@ -81,5 +80,5 @@ if ($exe -eq "php") {
 Write-Host ("> " + ($CommandArgs -join " ")) -ForegroundColor DarkGray
 & $exe @params
 if ($null -ne $LASTEXITCODE -and $LASTEXITCODE -ne 0) {
-    Write-Host ("Command exited with code $LASTEXITCODE") -ForegroundColor Red
+    Write-Host ("Command exited with code " + $LASTEXITCODE) -ForegroundColor Red
 }

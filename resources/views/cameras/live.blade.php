@@ -5,7 +5,7 @@
 @section('content')
     @include('partials.shell.page-header', [
         'title' => 'Live Camera Feeds',
-        'subtitle' => 'Monitor campus security cameras in real-time',
+        'subtitle' => 'Clean live CCTV feeds — no AI overlay',
     ])
 
     @php
@@ -14,7 +14,6 @@
             'online' => collect($cameras ?? [])->where('online', true)->count(),
             'offline' => collect($cameras ?? [])->where('online', false)->count(),
         ];
-        $aiCameraSnaps = is_array($aiCameras ?? null) ? $aiCameras : [];
     @endphp
 
     {{-- Status summary (Figma) --}}
@@ -52,9 +51,6 @@
     <div class="grid grid-cols-1 gap-5 md:grid-cols-2 xl:grid-cols-3">
         @foreach ($cameras as $camera)
             @php($isOnline = ! empty($camera['online']))
-            @php($camKey = (string) ($camera['camera_id'] ?? ''))
-            @php($topDet = data_get($aiCameraSnaps, $camKey.'.detections.0'))
-            @php($plateLine = \App\Support\AiDetectionPresenter::plateLine(is_array($topDet) ? $topDet : null))
             <article class="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
                 <div class="relative aspect-video bg-[#1a1d23]" data-camera-tile="{{ $camera['id'] }}">
                     {{-- Timestamp --}}
@@ -120,21 +116,13 @@
                                 <span class="truncate">{{ $camera['location'] ?? $camera['subtitle'] ?? 'Campus' }}</span>
                             </p>
                         </div>
-                        @if (! empty($camera['ai_monitored']))
-                            <span class="shrink-0 rounded bg-blue-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-blue-700">AI</span>
+                        @if ($isOnline)
+                            <span class="shrink-0 rounded bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-emerald-700">Live</span>
                         @endif
                     </div>
-                    @if (! empty($camera['ai_monitored']))
-                        <p class="mt-2 text-xs text-gray-500" data-ai-stats data-camera-id="{{ $camKey }}">
-                            Vehicles: <span class="js-live-vehicles font-semibold text-gray-800">{{ $camera['vehicle_count'] ?? '—' }}</span>
-                            · Occupied: <span class="js-live-occupied font-semibold text-gray-800">{{ $camera['occupied'] ?? '—' }}</span>
-                            · Free: <span class="js-live-available font-semibold text-gray-800">{{ $camera['available'] ?? '—' }}</span>
-                        </p>
-                        <p class="js-live-plate mt-1 truncate text-xs text-gray-600" data-camera-id="{{ $camKey }}">{{ $plateLine }}</p>
-                    @endif
                     @if (! empty($camera['parking_url']))
                         <a href="{{ $camera['parking_url'] }}" class="mt-2 inline-block text-xs font-medium text-blue-600 hover:underline">
-                            Open parking →
+                            Open parking map →
                         </a>
                     @endif
                 </div>
@@ -216,7 +204,6 @@
 
         if (window.lucide) window.lucide.createIcons();
 
-        // Reload MJPEG if the browser stalls on a single frame
         document.querySelectorAll('[data-stream-img]').forEach((img) => {
             const base = img.getAttribute('src');
             if (!base) return;
@@ -227,50 +214,6 @@
             };
             window.setInterval(reload, 60000);
         });
-
-        // Keep AI occupancy + plate/owner lines in sync with parking status API
-        const statusUrl = @json($statusUrl ?? null);
-        const formatDet = (det) => {
-            if (!det) return '—';
-            const bits = [];
-            if (det.track_id != null) bits.push(`#${det.track_id}`);
-            if (det.plate_status === 'unreadable') bits.push('Plate Unreadable');
-            else if (det.registered && det.owner_name) {
-                bits.push([det.owner_name, det.plate, det.vehicle_details].filter(Boolean).join(' · '));
-            } else if (det.plate) bits.push(`Unknown Vehicle · Plate Not Registered (${det.plate})`);
-            else bits.push('Waiting for plate…');
-            if (det.violation_status || det.violation_flag) bits.push(`⚠ ${det.violation_status || 'violation'}`);
-            return bits.join(' · ');
-        };
-        const refreshAi = async () => {
-            if (!statusUrl || document.hidden) return;
-            try {
-                const response = await fetch(statusUrl, { headers: { Accept: 'application/json' }, cache: 'no-store', credentials: 'same-origin' });
-                if (!response.ok) return;
-                const data = await response.json();
-                const cams = data.ai_cameras || {};
-                Object.entries(cams).forEach(([id, snap]) => {
-                    const stats = document.querySelector(`[data-ai-stats][data-camera-id="${id}"]`);
-                    if (stats) {
-                        const v = stats.querySelector('.js-live-vehicles');
-                        const o = stats.querySelector('.js-live-occupied');
-                        const a = stats.querySelector('.js-live-available');
-                        if (v) v.textContent = snap.vehicle_count ?? '—';
-                        if (o) o.textContent = snap.occupied ?? '—';
-                        if (a) a.textContent = snap.available ?? '—';
-                    }
-                    const plateLine = document.querySelector(`.js-live-plate[data-camera-id="${id}"]`);
-                    if (plateLine) {
-                        plateLine.textContent = formatDet((snap.detections || [])[0] || null);
-                    }
-                });
-            } catch (e) {}
-        };
-        if (statusUrl) {
-            refreshAi();
-            window.setInterval(refreshAi, 5000);
-            document.addEventListener('visibilitychange', () => { if (!document.hidden) refreshAi(); });
-        }
     })();
 </script>
 @endpush

@@ -147,6 +147,22 @@
                     <li class="rounded-lg border border-gray-100 bg-gray-50 px-3 py-2">
                         <p class="font-medium text-gray-800">
                             {{ $det['class'] ?? 'vehicle' }}
+                            @php
+                                $motionLabel = $det['motion_label'] ?? match ($det['motion_state'] ?? '') {
+                                    'moving' => 'Moving',
+                                    'parked' => 'Parked',
+                                    'idle' => 'Settling',
+                                    default => null,
+                                };
+                            @endphp
+                            @if ($motionLabel)
+                                <span @class([
+                                    'ml-1 rounded px-1.5 py-0.5 text-[10px] font-bold uppercase',
+                                    'bg-orange-100 text-orange-700' => ($det['motion_state'] ?? '') === 'moving',
+                                    'bg-sky-100 text-sky-700' => ($det['motion_state'] ?? '') === 'parked',
+                                    'bg-gray-100 text-gray-600' => ($det['motion_state'] ?? '') === 'idle',
+                                ])>{{ $motionLabel }}</span>
+                            @endif
                             @if (($det['plate_status'] ?? '') === 'unreadable')
                                 <span class="text-slate-500">· Plate Unreadable</span>
                             @elseif (! empty($det['plate']))

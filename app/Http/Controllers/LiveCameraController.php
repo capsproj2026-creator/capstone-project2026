@@ -31,7 +31,8 @@ class LiveCameraController extends Controller
 
         foreach ($registry->cameras() as $cam) {
             // Do not probe MJPEG here — that blocked Live Cameras for 60s+.
-            $streamUrl = $health->streamBrowserUrl($cam['id']) ?? ($cam['stream_url'] ?? null);
+            // Clean MJPEG for Live Cameras (no YOLO overlay).
+            $streamUrl = $health->streamBrowserUrl($cam['id'], false) ?? ($cam['stream_url'] ?? null);
             $snap = $ai->latestSnapshot($cam['id']);
             $area = $areasById->get($cam['area_id']);
             $parkingUrl = $isGuard
@@ -47,9 +48,8 @@ class LiveCameraController extends Controller
                 'name' => $area?->area_name ?? $cam['name'],
                 'location' => $cam['location'],
                 'stream_url' => $streamUrl,
-                // Configured URL is enough for the <img>; browser reports offline on error.
                 'online' => $hasStream,
-                'ai_monitored' => true,
+                'ai_monitored' => false,
                 'parking_url' => $parkingUrl,
                 'vehicle_count' => $snap['vehicle_count'] ?? null,
                 'occupied' => $snap['occupied'] ?? null,
@@ -105,7 +105,7 @@ class LiveCameraController extends Controller
         $aiHealth = $health->statusFast(true, $primary);
 
         return view('guard.ai-parking-monitor', [
-            'streamUrl' => $health->streamBrowserUrl($primary),
+            'streamUrl' => $health->streamBrowserUrl($primary, true),
             'ai' => $ai->latestSnapshot($primary),
             'aiHealth' => $aiHealth,
             'aiCameras' => $ai->allSnapshots(),
@@ -120,7 +120,8 @@ class LiveCameraController extends Controller
 
     public function stream(AiParkingHealthService $health, ?string $camera = null): StreamedResponse|Response
     {
-        $upstream = $health->upstreamStreamUrl($camera);
+        $withAi = request()->boolean('ai', true);
+        $upstream = $health->upstreamStreamUrl($camera, $withAi);
         if ($upstream === null) {
             abort(503, 'AI parking stream is not configured.');
         }

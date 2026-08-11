@@ -13,6 +13,9 @@ class AiParkingOccupancyService
     /** @deprecated Use cacheKeyForCamera() — kept for primary-camera backward compatibility */
     public const CACHE_KEY = 'ai_parking:last';
 
+    /** COCO vehicle classes only — no persons or other objects. */
+    private const VEHICLE_TYPES = ['car', 'motorcycle', 'bus', 'truck'];
+
     public function cacheKeyForCamera(string $cameraId): string
     {
         return 'ai_parking:last:'.strtoupper(trim($cameraId));
@@ -38,6 +41,11 @@ class AiParkingOccupancyService
     ): array {
         $area = ParkingArea::query()->findOrFail($areaId);
 
+        $detections = $this->filterVehicleDetections($detections);
+        if ($detections === []) {
+            $vehicleCount = 0;
+        }
+
         // Windows php artisan serve handles one request at a time — skip heavy Mongo writes when unchanged.
         $cacheKey = $this->cacheKeyForCamera($cameraId);
         $previous = Cache::get($cacheKey);
@@ -57,6 +65,7 @@ class AiParkingOccupancyService
                 'updated_at' => now()->toIso8601String(),
                 'updated_at_label' => now()->format('h:i:s A'),
             ]);
+            $snapshot = array_merge($snapshot, $this->summarizeMotion($detections));
 
             $ttl = now()->addMinutes(30);
             Cache::put($cacheKey, $snapshot, $ttl);
@@ -112,6 +121,7 @@ class AiParkingOccupancyService
             'updated_at' => now()->toIso8601String(),
             'updated_at_label' => now()->format('h:i:s A'),
         ];
+        $snapshot = array_merge($snapshot, $this->summarizeMotion($detections));
 
         $ttl = now()->addMinutes(30);
         Cache::put($this->cacheKeyForCamera($cameraId), $snapshot, $ttl);
@@ -459,6 +469,53 @@ class AiParkingOccupancyService
 
             return $row;
         }, $rows);
+    }
+
+    /**
+     * Count parked vs moving vehicles from AI detections.
+     *
+     * @param  list<array<string, mixed>>  $detections
+     * @return array{parked_count: int, moving_count: int, settling_count: int}
+     */
+    private function summarizeMotion(array $detections): array
+    {
+        $parked = 0;
+        $moving = 0;
+        $settling = 0;
+
+        foreach ($detections as $det) {
+            if (! is_array($det)) {
+                continue;
+            }
+            $state = strtolower(trim((string) ($det['motion_state'] ?? '')));
+            match ($state) {
+                'parked' => $parked++,
+                'moving' => $moving++,
+                'idle' => $settling++,
+                default => null,
+            };
+        }
+
+        return [
+            'parked_count' => $parked,
+            'moving_count' => $moving,
+            'settling_count' => $settling,
+        ];
+    }
+
+    /**
+     * Keep only COCO vehicle detections (car, motorcycle, bus, truck).
+     *
+     * @param  list<array<string, mixed>>  $detections
+     * @return list<array<string, mixed>>
+     */
+    private function filterVehicleDetections(array $detections): array
+    {
+        return array_values(array_filter($detections, function (array $det): bool {
+            $class = strtolower(trim((string) ($det['class'] ?? $det['vehicle_type'] ?? '')));
+
+            return in_array($class, self::VEHICLE_TYPES, true);
+        }));
     }
 
     /**

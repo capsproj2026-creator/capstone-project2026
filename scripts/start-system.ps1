@@ -90,9 +90,18 @@ $appKeyLine = $envLines | Where-Object { $_ -match '^\s*APP_KEY=' } | Select-Obj
 if (-not $appKeyLine -or $appKeyLine -match '^\s*APP_KEY=\s*$') {
     $preflight += "APP_KEY (run: php artisan key:generate)"
 }
-$mongoLine = $envLines | Where-Object { $_ -match '^\s*MONGODB_URI=' } | Select-Object -First 1
-if (-not $mongoLine -or $mongoLine -match 'USERNAME:PASSWORD@') {
-    $preflight += "MONGODB_URI (set local mongodb://127.0.0.1:27017 or a real Atlas URI)"
+$mongoMode = ($envLines | Where-Object { $_ -match '^\s*MONGODB_MODE=' } | Select-Object -First 1) -replace '^\s*MONGODB_MODE=\s*',''
+$mongoMode = $mongoMode.Trim().Trim('"').Trim("'").ToLower()
+$atlasUser = ($envLines | Where-Object { $_ -match '^\s*MONGODB_ATLAS_USER=' } | Select-Object -First 1) -replace '^\s*MONGODB_ATLAS_USER=\s*',''
+$atlasHost = ($envLines | Where-Object { $_ -match '^\s*MONGODB_ATLAS_HOST=' } | Select-Object -First 1) -replace '^\s*MONGODB_ATLAS_HOST=\s*',''
+$mongoLine = $envLines | Where-Object { $_ -match '^\s*MONGODB_URI=' -and $_ -notmatch '^\s*#' } | Select-Object -First 1
+$hasAtlasParts = ($atlasUser -and $atlasHost)
+$hasDirectUri = ($mongoLine -and $mongoLine -notmatch 'USERNAME:PASSWORD@' -and $mongoLine -match '=\s*\S')
+$hasLocalUri = ($mongoLine -and $mongoLine -match '127\.0\.0\.1:27017')
+if ($mongoMode -eq 'atlas' -and -not $hasAtlasParts -and -not $hasDirectUri) {
+    $preflight += "MongoDB Atlas (run: .\scripts\setup-atlas-mongo.ps1 or fill MONGODB_ATLAS_* in .env)"
+} elseif ($mongoMode -ne 'atlas' -and -not $hasDirectUri -and -not $hasLocalUri) {
+    $preflight += "MONGODB_URI (set mongodb://127.0.0.1:27017 or run .\scripts\setup-atlas-mongo.ps1)"
 }
 if ($preflight.Count -gt 0) {
     Write-Host "Cannot start - fix these first:" -ForegroundColor Red
@@ -108,6 +117,22 @@ if ($preflight.Count -gt 0) {
     Write-Host "  npm run build"
     exit 1
 }
+
+Set-Location $Root
+Write-Host "Checking MongoDB (capstone database)..." -ForegroundColor Cyan
+php artisan config:clear | Out-Null
+php scripts/mongo_ping.php 2>&1 | Out-Null
+if ($LASTEXITCODE -ne 0) {
+    Write-Host ""
+    Write-Host "MongoDB is not reachable." -ForegroundColor Red
+    Write-Host "  Local: start the MongoDB Windows service, then in .env set:" -ForegroundColor Yellow
+    Write-Host "    MONGODB_MODE=local" -ForegroundColor Yellow
+    Write-Host "    MONGODB_URI=mongodb://127.0.0.1:27017" -ForegroundColor Yellow
+    Write-Host "  Cloud: powershell -ExecutionPolicy Bypass -File .\scripts\setup-atlas-mongo.ps1" -ForegroundColor Yellow
+    Write-Host "  Test:  php scripts/mongo_ping.php" -ForegroundColor Yellow
+    exit 1
+}
+Write-Host "  MongoDB: connected" -ForegroundColor Green
 
 Write-Host "Starting Smart Campus VMS from $Root" -ForegroundColor Green
 
@@ -141,15 +166,18 @@ if ($WithGitSync) {
 }
 
 Write-Host ""
-Write-Host "Opened:" -ForegroundColor Green
-Write-Host "  1) php artisan serve --host=0.0.0.0 --port=8000"
-Write-Host "  2) php artisan reverb:start"
-if (-not $SkipVite) { Write-Host "  3) npm run dev" }
-if ($startAi) { Write-Host "  4) YOLOv9 AI parking (scripts\start-ai-parking.ps1)" }
-if ($WithGitSync) { Write-Host "  5) GitHub auto-sync (pull + push)" }
+Write-Host "========================================" -ForegroundColor Green
+Write-Host " Smart Campus VMS is starting" -ForegroundColor Green
+Write-Host "========================================" -ForegroundColor Green
 Write-Host ""
-Write-Host "App:  http://127.0.0.1:8000" -ForegroundColor Yellow
-Write-Host "Tips: -SkipAi to skip cameras | -SkipVite if you already ran npm run build | -WithGitSync for auto pull/push" -ForegroundColor DarkGray
-if ($WithAi -and $SkipAi) {
-    Write-Host "Note: -SkipAi overrides -WithAi." -ForegroundColor DarkYellow
-}
+Write-Host "  Website:  http://127.0.0.1:8000" -ForegroundColor Yellow
+Write-Host "  Database: MongoDB (capstone)" -ForegroundColor Yellow
+if ($startAi) { Write-Host "  AI feed:  http://127.0.0.1:8090/stream.mjpg" -ForegroundColor Yellow }
+Write-Host ""
+Write-Host "  Admin:  admin@my.cspc.edu.ph / admin123" -ForegroundColor Cyan
+Write-Host "  Guard:  guard@my.cspc.edu.ph / password123" -ForegroundColor Cyan
+Write-Host ""
+Write-Host "Keep the PowerShell windows open while using the site." -ForegroundColor DarkGray
+Write-Host "One command next time:  .\start.ps1" -ForegroundColor DarkGray
+Write-Host "  -SkipAi   skip AI cameras" -ForegroundColor DarkGray
+Write-Host "  -SkipVite skip npm dev (use if npm run build already done)" -ForegroundColor DarkGray

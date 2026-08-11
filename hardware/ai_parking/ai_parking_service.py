@@ -37,12 +37,13 @@ load_project_env()
 
 from parking_rules import ParkingIntelligence, SimpleIoUTracker
 from plate_ocr import OCR_EVERY_SEC, AsyncPlateQueue, PlateOCR
+from yolo_models import ensure_model, resolve_model_name, resolve_model_path
 
 # Default; open_rtsp() may override per-camera under OPEN_LOCK.
 os.environ.setdefault("OPENCV_FFMPEG_CAPTURE_OPTIONS", "rtsp_transport;tcp")
 
 BASE_DIR = Path(__file__).resolve().parent
-MODEL_PATH = BASE_DIR / "models" / "yolov9c.pt"
+MODEL_PATH = resolve_model_path()
 
 API_BASE = os.getenv("AI_LARAVEL_API_BASE", "http://127.0.0.1:8000").rstrip("/")
 AI_API_TOKEN = os.getenv("AI_PARKING_API_TOKEN", "capstone-ai-parking-dev-token-change-me")
@@ -54,7 +55,7 @@ IMG_SIZE = int(os.getenv("AI_PARKING_IMG_SIZE", "640"))
 # Lower conf for distant lot cameras; raise via .env if too many false positives.
 CONF = float(os.getenv("AI_PARKING_CONF", "0.28"))
 IOU = float(os.getenv("AI_PARKING_IOU", "0.50"))
-MAX_DET = int(os.getenv("AI_PARKING_MAX_DET", "30"))
+MAX_DET = int(os.getenv("AI_PARKING_MAX_DET", "50"))
 # Tiny-box filter (fraction of infer frame). Keep low so distant cars remain.
 MIN_BOX_AREA_FRAC = float(os.getenv("AI_PARKING_MIN_BOX_AREA", "0.0005"))
 if os.getenv("AI_PARKING_LONG_RANGE", "0") == "1":
@@ -71,16 +72,42 @@ INFER_EVERY_SEC = float(os.getenv("AI_PARKING_INFER_EVERY_SEC", "0.30"))
 # Keep last boxes briefly when a frame misses, so overlays don't flicker.
 BOX_HOLD_SEC = float(os.getenv("AI_PARKING_BOX_HOLD_SEC", "0.45"))
 PREVIEW_MAX_WIDTH = int(os.getenv("AI_PARKING_PREVIEW_MAX_WIDTH", "960"))
+# Max width for AI overlay MJPEG (browser). Raise for distant plate viewing (e.g. 2560).
+AI_STREAM_MAX_WIDTH = int(os.getenv("AI_PARKING_AI_STREAM_MAX_WIDTH", "1920"))
 STREAM_TARGET_FPS = float(os.getenv("AI_PARKING_STREAM_FPS", "20"))
 STREAM_JPEG_QUALITY = int(os.getenv("AI_PARKING_STREAM_JPEG_QUALITY", "65"))
 RECONNECT_EVERY_SEC = float(os.getenv("AI_CAMERA_RECONNECT_SEC", "5"))
 OPEN_LOCK = threading.Lock()
 
-DETECT_CLASS_IDS = [2, 3, 5, 7]  # vehicles only (faster); set AI_PARKING_DETECT_PERSONS=1 for people
-VEHICLE_CLASS_IDS = {2, 3, 5, 7}
-if os.getenv("AI_PARKING_DETECT_PERSONS", "0") == "1":
+MOTORCYCLE_CLS_ID = 3
+# Per-class detect toggles (all on by default — cars + motorcycles + buses + trucks)
+_detect_cars = os.getenv("AI_PARKING_DETECT_CARS", "1") == "1"
+_detect_motorcycles = os.getenv("AI_PARKING_DETECT_MOTORCYCLES", "1") == "1"
+_detect_buses = os.getenv("AI_PARKING_DETECT_BUSES", "1") == "1"
+_detect_trucks = os.getenv("AI_PARKING_DETECT_TRUCKS", "1") == "1"
+DETECT_CLASS_IDS = []
+if _detect_cars:
+    DETECT_CLASS_IDS.append(2)
+if _detect_motorcycles:
+    DETECT_CLASS_IDS.append(3)
+if _detect_buses:
+    DETECT_CLASS_IDS.append(5)
+if _detect_trucks:
+    DETECT_CLASS_IDS.append(7)
+if not DETECT_CLASS_IDS:
+    DETECT_CLASS_IDS = [2, 3, 5, 7]
+VEHICLE_CLASS_IDS = set(DETECT_CLASS_IDS)
+# Motorcycles are smaller in frame — use a lower area threshold so distant bikes are kept.
+MOTORCYCLE_MIN_BOX_FRAC = float(os.getenv("AI_PARKING_MOTORCYCLE_MIN_BOX_AREA", "0.00008"))
+if os.getenv("AI_PARKING_LONG_RANGE", "0") == "1":
+    MOTORCYCLE_MIN_BOX_FRAC = float(os.getenv("AI_PARKING_MOTORCYCLE_MIN_BOX_AREA", "0.00006"))
+# Vehicles only — never detect/draw/post persons or other COCO objects.
+VEHICLES_ONLY = os.getenv("AI_PARKING_VEHICLES_ONLY", "1") == "1"
+if not VEHICLES_ONLY and os.getenv("AI_PARKING_DETECT_PERSONS", "0") == "1":
     DETECT_CLASS_IDS = [0, 2, 3, 5, 7]
-POST_PERSON_DETECTIONS = os.getenv("AI_PARKING_POST_PERSONS", "0") == "1"
+    VEHICLE_CLASS_IDS = set(DETECT_CLASS_IDS)
+POST_PERSON_DETECTIONS = (not VEHICLES_ONLY) and os.getenv("AI_PARKING_POST_PERSONS", "0") == "1"
+OCR_PARKED_ONLY = os.getenv("AI_PARKING_OCR_PARKED_ONLY", "1") == "1"
 COCO_NAMES = {
     0: "person",
     2: "car",
@@ -88,6 +115,7 @@ COCO_NAMES = {
     5: "bus",
     7: "truck",
 }
+ALLOWED_VEHICLE_NAMES = frozenset(COCO_NAMES.get(i, "") for i in VEHICLE_CLASS_IDS if i in COCO_NAMES)
 CLASS_COLORS = {
     "person": (255, 160, 0),
     "car": (0, 220, 0),
@@ -206,24 +234,31 @@ class LatestFrameReader:
 class StreamState:
     def __init__(self):
         self.lock = threading.Lock()
-        self.jpeg = None
+        self.jpeg_raw = None
+        self.jpeg_ai = None
         self.vehicle_count = 0
         self.detections = []
 
-    def set_frame(self, jpeg_bytes, vehicle_count, detections):
+    def set_frame(self, raw_jpeg, ai_jpeg, vehicle_count, detections):
         with self.lock:
-            self.jpeg = jpeg_bytes
+            if raw_jpeg is not None:
+                self.jpeg_raw = raw_jpeg
+            if ai_jpeg is not None:
+                self.jpeg_ai = ai_jpeg
             self.vehicle_count = vehicle_count
             self.detections = detections
 
-    def get_jpeg(self):
+    def get_jpeg(self, ai: bool = False):
         with self.lock:
-            return self.jpeg
+            if ai:
+                return self.jpeg_ai or self.jpeg_raw
+            return self.jpeg_raw or self.jpeg_ai
 
 
 # camera_id -> StreamState (multi-camera MJPEG)
 STREAM_STATES: dict[str, StreamState] = {}
-STREAM_PATH_INDEX: dict[str, str] = {}  # path -> camera_id
+# path -> (camera_id, ai_overlay)
+STREAM_PATH_INDEX: dict[str, tuple[str, bool]] = {}
 
 
 def open_rtsp(
@@ -355,10 +390,7 @@ def _sync_detection_from_mem(det: dict, mem) -> None:
     if mem.registered is not None:
         det["registered"] = mem.registered
     if mem.motion_state:
-        det["motion_state"] = mem.motion_state
-        label = _motion_label(mem.motion_state)
-        if label:
-            det["motion_label"] = label
+        _attach_motion(det, mem.motion_state)
 
 
 def refresh_plates_from_tracks(
@@ -443,16 +475,20 @@ def parse_tracks(
             track_id = int(box.id[0])
 
         if cls_id == 0:
-            person_count += 1
-            annotated_boxes.append((x1, y1, x2, y2, name, conf, track_id, None, "pending", None))
-            if POST_PERSON_DETECTIONS:
-                detections.append({"class": name, "confidence": round(conf, 3), "track_id": track_id})
+            if not VEHICLES_ONLY:
+                person_count += 1
+                annotated_boxes.append((x1, y1, x2, y2, name, conf, track_id, None, "pending", None))
+                if POST_PERSON_DETECTIONS:
+                    detections.append({"class": name, "confidence": round(conf, 3), "track_id": track_id})
             continue
         if cls_id not in VEHICLE_CLASS_IDS:
             continue
+        if VEHICLES_ONLY and name not in ALLOWED_VEHICLE_NAMES:
+            continue
 
         box_area = max(0, x2 - x1) * max(0, y2 - y1)
-        if box_area / frame_area < MIN_BOX_AREA_FRAC:
+        min_frac = MOTORCYCLE_MIN_BOX_FRAC if cls_id == MOTORCYCLE_CLS_ID else MIN_BOX_AREA_FRAC
+        if box_area / frame_area < min_frac:
             continue
 
         raw_vehicles.append({
@@ -494,15 +530,17 @@ def parse_tracks(
             mem.last_ocr_xyxy = (ox1, oy1, ox2, oy2)
             mem.cls_id = row.get("cls_id")
             if plate_queue is not None:
-                plate_queue.submit(
-                    camera_id,
-                    track_id,
-                    ocr_src,
-                    (ox1, oy1, ox2, oy2),
-                    intelligence,
-                    OCR_EVERY_SEC,
-                    cls_id=row.get("cls_id"),
-                )
+                ocr_ok = not OCR_PARKED_ONLY or motion_state in (None, "parked", "idle")
+                if ocr_ok:
+                    plate_queue.submit(
+                        camera_id,
+                        track_id,
+                        ocr_src,
+                        (ox1, oy1, ox2, oy2),
+                        intelligence,
+                        OCR_EVERY_SEC,
+                        cls_id=row.get("cls_id"),
+                    )
             # Refresh after possible prior async result
             plate = mem.plate
             plate_status = mem.plate_status
@@ -539,6 +577,7 @@ def parse_tracks(
 
         det = {
             "class": name,
+            "vehicle_type": name,
             "confidence": round(conf, 3),
             "track_id": track_id,
             "plate_status": plate_status,
@@ -562,11 +601,7 @@ def parse_tracks(
             det["registration_status"] = registration_status
         if registered is not None:
             det["registered"] = registered
-        if motion_state:
-            det["motion_state"] = motion_state
-            label = _motion_label(motion_state)
-            if label:
-                det["motion_label"] = label
+        _attach_motion(det, motion_state)
 
         detections.append(det)
         annotated_boxes.append((x1, y1, x2, y2, name, conf, track_id, plate, plate_status, owner_label, motion_state))
@@ -580,6 +615,9 @@ def parse_tracks(
         })
 
     vehicle_count = len(vehicles)
+    if VEHICLES_ONLY and vehicle_count == 0:
+        detections = []
+        annotated_boxes = [b for b in annotated_boxes if len(b) > 4 and b[4] in ALLOWED_VEHICLE_NAMES]
     return annotated_boxes, detections, vehicles, person_count, vehicle_count
 
 
@@ -660,7 +698,18 @@ def _motion_label(state: str | None) -> str | None:
         return "Moving"
     if state == "parked":
         return "Parked"
+    if state == "idle":
+        return "Settling"
     return None
+
+
+def _attach_motion(det: dict, motion_state: str | None) -> None:
+    if not motion_state:
+        return
+    det["motion_state"] = motion_state
+    label = _motion_label(motion_state)
+    if label:
+        det["motion_label"] = label
 
 
 def draw_scene(frame, annotated_boxes, zones_data, occupied_slots, active_events, person_count, vehicle_count, use_poly):
@@ -672,7 +721,7 @@ def draw_scene(frame, annotated_boxes, zones_data, occupied_slots, active_events
         _draw_box_labels(annotated, x1, y1, x2, y2, name, conf, track_id, plate, plate_status, owner_label, lite=False, motion_state=motion_state)
 
     mode = "slots" if use_poly else "count-fallback"
-    summary = f"People: {person_count} | Vehicles: {vehicle_count} | Mode: {mode}"
+    summary = f"Vehicles: {vehicle_count} | Mode: {mode}" if VEHICLES_ONLY else f"People: {person_count} | Vehicles: {vehicle_count} | Mode: {mode}"
     # Bottom-left so we do not cover the camera OSD date/time (usually top of frame).
     h, w = annotated.shape[:2]
     bar_top = h - 40
@@ -708,7 +757,7 @@ def draw_scene_lite(frame, annotated_boxes, occupied_slots, person_count, vehicl
         x1, y1, x2, y2, name, conf, track_id, plate, plate_status, owner_label, motion_state = _unpack_box(box)
         _draw_box_labels(annotated, x1, y1, x2, y2, name, conf, track_id, plate, plate_status, owner_label, lite=True, motion_state=motion_state)
     n_occ = len(occupied_slots) if occupied_slots else 0
-    summary = f"P:{person_count} V:{vehicle_count} Occ:{n_occ}"
+    summary = f"V:{vehicle_count} Occ:{n_occ}" if VEHICLES_ONLY else f"P:{person_count} V:{vehicle_count} Occ:{n_occ}"
     h = annotated.shape[0]
     cv2.putText(
         annotated,
@@ -908,20 +957,23 @@ class MjpegHandler(BaseHTTPRequestHandler):
     def log_message(self, format, *args):
         return
 
-    def _resolve_camera_id(self) -> str | None:
+    def _resolve_stream(self) -> tuple[str | None, bool]:
         path = self.path.split("?", 1)[0]
         if path in STREAM_PATH_INDEX:
             return STREAM_PATH_INDEX[path]
-        if path in ("/stream.mjpg", "/"):
-            # Legacy alias → first registered camera
-            return next(iter(STREAM_STATES.keys()), None)
-        # /CAM-AI-2/stream.mjpg style
+        if path == "/stream.mjpg":
+            cam = next(iter(STREAM_STATES.keys()), None)
+            return (cam, False) if cam else (None, False)
         parts = [p for p in path.split("/") if p]
+        if len(parts) >= 3 and parts[-1] == "stream.mjpg" and parts[-2] == "ai":
+            cam = parts[0]
+            if cam in STREAM_STATES:
+                return (cam, True)
         if len(parts) >= 2 and parts[-1] == "stream.mjpg":
             cam = parts[0]
             if cam in STREAM_STATES:
-                return cam
-        return None
+                return (cam, False)
+        return (None, False)
 
     def do_GET(self):
         path = self.path.split("?", 1)[0]
@@ -929,11 +981,13 @@ class MjpegHandler(BaseHTTPRequestHandler):
             self.send_response(200)
             self.send_header("Content-Type", "text/html")
             self.end_headers()
-            links = "".join(
-                f'<li><a href="{p}">{cid}</a></li>' for p, cid in STREAM_PATH_INDEX.items()
-            )
+            links = []
+            for p, (cid, ai) in sorted(STREAM_PATH_INDEX.items()):
+                label = f"{cid} ({'AI' if ai else 'live'})"
+                links.append(f'<li><a href="{p}">{label}</a></li>')
+            link_html = "".join(links)
             self.wfile.write(
-                f"<html><body><h3>AI Parking Streams</h3><ul>{links}</ul></body></html>".encode("utf-8")
+                f"<html><body><h3>AI Parking Streams</h3><ul>{link_html}</ul></body></html>".encode("utf-8")
             )
             return
 
@@ -945,7 +999,7 @@ class MjpegHandler(BaseHTTPRequestHandler):
             self.wfile.write(body)
             return
 
-        camera_id = self._resolve_camera_id()
+        camera_id, ai_overlay = self._resolve_stream()
         if camera_id is None or camera_id not in STREAM_STATES:
             self.send_error(404)
             return
@@ -961,7 +1015,7 @@ class MjpegHandler(BaseHTTPRequestHandler):
         last_sent = None
         try:
             while True:
-                jpeg = state.get_jpeg()
+                jpeg = state.get_jpeg(ai=ai_overlay)
                 if jpeg is None:
                     time.sleep(0.01)
                     continue
@@ -983,8 +1037,9 @@ def start_stream_server():
     thread = threading.Thread(target=server.serve_forever, daemon=True, name="mjpeg-http")
     thread.start()
     print(f"MJPEG base: http://{STREAM_HOST}:{STREAM_PORT}/")
-    for path, cam in STREAM_PATH_INDEX.items():
-        print(f"  {cam}: http://127.0.0.1:{STREAM_PORT}{path}")
+    for path, (cam, ai) in sorted(STREAM_PATH_INDEX.items()):
+        kind = "AI" if ai else "live"
+        print(f"  {cam} ({kind}): http://127.0.0.1:{STREAM_PORT}{path}")
     return server
 
 
@@ -1042,16 +1097,28 @@ class CameraWorker:
         self.zones_path = zones_path
         self.preview_max_width = int(config.preview_max_width or PREVIEW_MAX_WIDTH)
         self.infer_max_width = int(config.infer_max_width) if getattr(config, "infer_max_width", 0) else INFER_MAX_WIDTH
+        cam_ai_cap = int(getattr(config, "ai_stream_max_width", 0) or 0)
+        self.ai_stream_max_width = cam_ai_cap if cam_ai_cap > 0 else AI_STREAM_MAX_WIDTH
         self.stream_fps = float(config.stream_fps or STREAM_TARGET_FPS)
         self.jpeg_quality = int(config.jpeg_quality or STREAM_JPEG_QUALITY)
         self.lite_preview = bool(config.lite_preview)
 
     def start(self):
         STREAM_STATES[self.config.camera_id] = self.state
-        STREAM_PATH_INDEX[self.config.stream_path] = self.config.camera_id
-        alt = f"/{self.config.camera_id}/stream.mjpg"
-        if alt not in STREAM_PATH_INDEX:
-            STREAM_PATH_INDEX[alt] = self.config.camera_id
+        raw_path = self.config.stream_path or f"/{self.config.camera_id}/stream.mjpg"
+        ai_path = f"/{self.config.camera_id}/ai/stream.mjpg"
+        STREAM_PATH_INDEX[raw_path] = (self.config.camera_id, False)
+        STREAM_PATH_INDEX[f"/{self.config.camera_id}/stream.mjpg"] = (self.config.camera_id, False)
+        STREAM_PATH_INDEX[ai_path] = (self.config.camera_id, True)
+        if raw_path.endswith("/stream.mjpg") and raw_path != ai_path:
+            legacy_ai = raw_path[: -len("stream.mjpg")] + "ai/stream.mjpg"
+            if legacy_ai != ai_path:
+                STREAM_PATH_INDEX[legacy_ai] = (self.config.camera_id, True)
+        if str(self.config.camera_id).upper() == "CAM-AI-1" or raw_path == "/stream.mjpg":
+            STREAM_PATH_INDEX["/stream.mjpg"] = (self.config.camera_id, False)
+            legacy_primary_ai = "/CAM-AI-1/ai/stream.mjpg"
+            if legacy_primary_ai != ai_path:
+                STREAM_PATH_INDEX[legacy_primary_ai] = (self.config.camera_id, True)
 
         self.running.set()
 
@@ -1120,7 +1187,8 @@ class CameraWorker:
             f"rtsp={self.config.ip}{infer_path}{dual_note} "
             f"transport={self.config.rtsp_transport} "
             f"stream={self.config.stream_path} "
-            f"{self.stream_fps:.0f}fps@{self.preview_max_width}px infer≤{self.infer_max_width}px q={self.jpeg_quality}"
+            f"{self.stream_fps:.0f}fps@{self.preview_max_width}px infer≤{self.infer_max_width}px "
+            f"ai≤{self.ai_stream_max_width}px q={self.jpeg_quality}"
             f"{' lite' if self.lite_preview else ''}"
         )
 
@@ -1166,16 +1234,18 @@ class CameraWorker:
                 time.sleep(0.001)
                 continue
 
-            display, _ = resize_for_infer(frame, self.preview_max_width)
-            if display is frame and self.lite_preview:
-                display = frame.copy()
+            display_raw, _ = resize_for_infer(frame, self.preview_max_width)
+            ai_cap = max(640, int(self.ai_stream_max_width or AI_STREAM_MAX_WIDTH))
+            ai_width = max(self.preview_max_width, min(self.infer_max_width, ai_cap))
+            display_ai, _ = resize_for_infer(frame, ai_width)
+            if display_ai is frame:
+                display_ai = frame.copy()
             state = self.scene.snapshot()
-            # Boxes are in infer-stream coordinates (may differ from preview substream)
             box_src = state.get("source_shape") or src_shape
-            boxes = scale_boxes_to_frame(state["annotated_boxes"], box_src, display.shape)
+            boxes = scale_boxes_to_frame(state["annotated_boxes"], box_src, display_ai.shape)
             if self.lite_preview:
                 annotated = draw_scene_lite(
-                    display,
+                    display_ai,
                     boxes,
                     state["occupied_slots"],
                     state["person_count"],
@@ -1183,7 +1253,7 @@ class CameraWorker:
                 )
             else:
                 annotated = draw_scene(
-                    display,
+                    display_ai,
                     boxes,
                     zones_data,
                     state["occupied_slots"],
@@ -1202,9 +1272,16 @@ class CameraWorker:
                 2,
                 cv2.LINE_AA,
             )
-            ok, jpeg = cv2.imencode(".jpg", annotated, encode_params)
-            if ok:
-                self.state.set_frame(jpeg.tobytes(), state["vehicle_count"], state["detections"])
+            raw_jpeg = None
+            ai_jpeg = None
+            ok_raw, buf_raw = cv2.imencode(".jpg", display_raw, encode_params)
+            if ok_raw:
+                raw_jpeg = buf_raw.tobytes()
+            ok_ai, buf_ai = cv2.imencode(".jpg", annotated, encode_params)
+            if ok_ai:
+                ai_jpeg = buf_ai.tobytes()
+            if raw_jpeg or ai_jpeg:
+                self.state.set_frame(raw_jpeg, ai_jpeg, state["vehicle_count"], state["detections"])
             elapsed = time.perf_counter() - started
             time.sleep(max(0.0, interval - elapsed))
 
@@ -1336,12 +1413,21 @@ class CameraWorker:
             annotated_boxes = scale_annotated_boxes(annotated_boxes, scale)
 
             # Hold last boxes briefly when YOLO misses a frame (smoother overlay).
-            if annotated_boxes:
+            if annotated_boxes and vehicle_count > 0:
                 self._held_boxes = list(annotated_boxes)
                 self._held_vehicles = list(vehicles)
                 self._held_detections = list(detections)
                 self._held_counts = (person_count, vehicle_count)
                 self._held_until = now + BOX_HOLD_SEC
+            elif vehicle_count == 0 and VEHICLES_ONLY:
+                self._held_boxes = []
+                self._held_vehicles = []
+                self._held_detections = []
+                self._held_until = 0.0
+                annotated_boxes = []
+                vehicles = []
+                detections = []
+                person_count = 0
             elif now < self._held_until and self._held_boxes:
                 annotated_boxes = list(self._held_boxes)
                 vehicles = list(self._held_vehicles)
@@ -1419,15 +1505,15 @@ class CameraWorker:
 
 
 def main():
-    if not MODEL_PATH.is_file():
-        raise SystemExit(f"Model not found: {MODEL_PATH}")
+    model_name = resolve_model_name()
+    model_path = ensure_model(model_name)
 
     cameras = load_cameras(BASE_DIR)
     if not cameras:
         raise SystemExit("No cameras configured. Set AI_CAMERA_1_IP (and optionally AI_CAMERA_2_IP / AI_CAMERA_3_IP).")
 
-    print(f"Loading {MODEL_PATH}...")
-    model = YOLO(str(MODEL_PATH))
+    print(f"Loading pretrained YOLOv9 ({model_name}) from {model_path}...")
+    model = YOLO(str(model_path))
     try:
         import torch
 
@@ -1453,7 +1539,9 @@ def main():
         f"Stream {STREAM_TARGET_FPS:.0f} fps @ preview {PREVIEW_MAX_WIDTH}px | "
         f"infer ≤{INFER_MAX_WIDTH}px imgsz={IMG_SIZE} conf={CONF} | "
         f"every {INFER_EVERY_SEC}s | OCR={'async' if ocr.enabled else 'off'} | "
-        f"tracker={'ultralytics' if USE_ULTRALYTICS_TRACK else 'iou'}"
+        f"tracker={'ultralytics' if USE_ULTRALYTICS_TRACK else 'iou'} | "
+        f"detect={','.join(COCO_NAMES.get(i, str(i)) for i in DETECT_CLASS_IDS)} | "
+        f"vehicles_only={'yes' if VEHICLES_ONLY else 'no'}"
     )
 
     try:

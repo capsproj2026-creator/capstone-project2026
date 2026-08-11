@@ -21,6 +21,10 @@ class AiDetectionPresenter
             $bits[] = '#'.$det['track_id'];
         }
 
+        if (! empty($det['class']) && $det['class'] !== 'vehicle') {
+            $bits[] = ucfirst((string) $det['class']);
+        }
+
         if (! empty($det['motion_label'])) {
             $bits[] = (string) $det['motion_label'];
         } elseif (($det['motion_state'] ?? '') === 'moving') {

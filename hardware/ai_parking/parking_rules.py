@@ -21,6 +21,7 @@ TRACK_MATCH_IOU = float(os.getenv("AI_PARKING_TRACK_MATCH_IOU", "0.25"))
 # Normalized center movement (px/sec ÷ bbox diagonal). Below = parked, above = moving.
 MOTION_SPEED_THRESH = float(os.getenv("AI_PARKING_MOTION_SPEED_THRESH", "0.12"))
 MOTION_PARK_SEC = float(os.getenv("AI_PARKING_MOTION_PARK_SEC", "1.5"))
+MOTION_SMOOTH_ALPHA = float(os.getenv("AI_PARKING_MOTION_SMOOTH_ALPHA", "0.35"))
 
 
 def _iou_xyxy(a, b) -> float:
@@ -115,6 +116,7 @@ class TrackMemory:
     violation_flag: bool = False
     last_xyxy: tuple[int, int, int, int] | None = None
     prev_center: tuple[float, float] | None = None
+    smooth_center: tuple[float, float] | None = None
     last_motion_at: float = 0.0
     motion_speed: float = 0.0
     # idle | moving | parked
@@ -134,10 +136,18 @@ class TrackMemory:
         bh = max(1.0, float(y2 - y1))
         diag = (bw * bw + bh * bh) ** 0.5
 
+        alpha = max(0.05, min(0.95, MOTION_SMOOTH_ALPHA))
+        if self.smooth_center is None:
+            self.smooth_center = (cx, cy)
+        else:
+            scx, scy = self.smooth_center
+            self.smooth_center = (scx * (1.0 - alpha) + cx * alpha, scy * (1.0 - alpha) + cy * alpha)
+        sx, sy = self.smooth_center
+
         if self.prev_center is not None and self.last_motion_at > 0:
             dt = max(0.05, now - self.last_motion_at)
             px, py = self.prev_center
-            dist = ((cx - px) ** 2 + (cy - py) ** 2) ** 0.5
+            dist = ((sx - px) ** 2 + (sy - py) ** 2) ** 0.5
             self.motion_speed = dist / dt / max(diag, 1.0)
             if self.motion_speed >= MOTION_SPEED_THRESH:
                 self.motion_state = "moving"
@@ -150,7 +160,7 @@ class TrackMemory:
             self.motion_state = "idle"
             self.parked_since = now
 
-        self.prev_center = (cx, cy)
+        self.prev_center = (sx, sy)
         self.last_motion_at = now
         self.last_xyxy = xyxy
         return self.motion_state

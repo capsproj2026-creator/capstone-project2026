@@ -102,19 +102,19 @@ class PlateOCR:
 
         if cls_id == MOTORCYCLE_CLS_ID:
             # Motorcycle plates sit mid-rear; bottom crop often catches tire/mudguard only.
-            y1p = y1 + int(box_h * 0.30)
-            y2p = y1 + int(box_h * 0.68)
+            y1p = y1 + int(box_h * 0.22)
+            y2p = y1 + int(box_h * 0.72)
+            x_pad = int(box_w * 0.02)
         else:
             y1p = y1 + int(box_h * 0.55)
             y2p = y2
-
-        x_pad = int(box_w * 0.04)
+            x_pad = int(box_w * 0.04)
         x1 = max(0, x1 + x_pad)
         y1p = max(0, y1p)
         x2 = min(w, x2 - x_pad)
         y2p = min(h, y2p)
 
-        if x2 - x1 < 24 or y2p - y1p < 12:
+        if x2 - x1 < 20 or y2p - y1p < 10:
             return None
         crop = frame[y1p:y2p, x1:x2]
         if crop is None or crop.size == 0:

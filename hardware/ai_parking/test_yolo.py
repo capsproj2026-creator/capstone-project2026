@@ -6,9 +6,14 @@ import cv2
 from urllib.parse import quote
 from ultralytics import YOLO
 
+from load_env import load_project_env
+from yolo_models import ensure_model, resolve_model_path
+
+load_project_env()
+
 # ========= PATHS =========
 BASE_DIR = Path(__file__).resolve().parent
-MODEL_PATH = BASE_DIR / "models" / "yolov9c.pt"
+MODEL_PATH = resolve_model_path()
 
 # ========= IP BULLET CAMERA CONFIG =========
 CAMERA_IP = "192.168.1.108"
@@ -153,8 +158,7 @@ def draw_detections(frame, result):
 
 
 print(f"Loading model {MODEL_NAME} (imgsz={IMG_SIZE}, conf={CONF})...")
-if not MODEL_PATH.is_file():
-    raise SystemExit(f"ERROR: Model not found at {MODEL_PATH}")
+ensure_model()
 model = YOLO(MODEL_NAME)
 
 # Use GPU if available (much faster + same accuracy)

@@ -1,37 +1,34 @@
-"""Download YOLOv9c weights into hardware/ai_parking/models/."""
+"""Download pretrained YOLOv9 weights into hardware/ai_parking/models/."""
 
 from __future__ import annotations
 
-import shutil
-from pathlib import Path
+import argparse
 
-from ultralytics import YOLO
+from load_env import load_project_env
+from yolo_models import ensure_model, list_variants, resolve_model_name
 
-BASE_DIR = Path(__file__).resolve().parent
-MODEL_PATH = BASE_DIR / "models" / "yolov9c.pt"
+load_project_env()
 
 
 def main() -> None:
-    MODEL_PATH.parent.mkdir(parents=True, exist_ok=True)
-    if MODEL_PATH.is_file():
-        print(f"Model already exists: {MODEL_PATH}")
+    parser = argparse.ArgumentParser(description="Download Ultralytics pretrained YOLOv9 weights.")
+    parser.add_argument(
+        "--model",
+        "-m",
+        default=None,
+        help="Model name: yolov9t, yolov9s, yolov9m, yolov9c (default), yolov9e",
+    )
+    parser.add_argument("--force", action="store_true", help="Re-download even if file exists.")
+    parser.add_argument("--list", action="store_true", help="List supported models and exit.")
+    args = parser.parse_args()
+
+    if args.list:
+        print(list_variants())
         return
 
-    print("Downloading yolov9c.pt (first run may take a minute)...")
-    model = YOLO("yolov9c.pt")
-    source = Path(getattr(model, "ckpt_path", None) or "yolov9c.pt")
-    if not source.is_file():
-        source = BASE_DIR / "yolov9c.pt"
-
-    if source.is_file() and source.resolve() != MODEL_PATH.resolve():
-        shutil.copy2(source, MODEL_PATH)
-        if source.parent == BASE_DIR and source.name == "yolov9c.pt":
-            source.unlink(missing_ok=True)
-
-    if MODEL_PATH.is_file():
-        print(f"Saved model to {MODEL_PATH}")
-    else:
-        raise SystemExit("Download failed — check your internet connection and try again.")
+    name = args.model or resolve_model_name()
+    path = ensure_model(name, force=args.force)
+    print(f"Ready: {path} ({path.stat().st_size // (1024 * 1024)} MB)")
 
 
 if __name__ == "__main__":

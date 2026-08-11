@@ -116,14 +116,31 @@ class AiCameraRegistry
         }
 
         $base = rtrim((string) config('services.ai_parking.stream_base', 'http://127.0.0.1:8090'), '/');
-        $path = (string) ($row['stream_path'] ?? ('/'.$id.'/stream.mjpg'));
-        if ($path === '' || $path[0] !== '/') {
+        $path = trim((string) ($row['stream_path'] ?? ''));
+        if ($path === '') {
+            $path = '/'.$id.'/stream.mjpg';
+        } elseif ($path[0] !== '/') {
             $path = '/'.$path;
         }
 
         $streamUrl = trim((string) ($row['stream_url'] ?? ''));
         if ($streamUrl === '') {
             $streamUrl = $base.$path;
+        }
+
+        $aiPath = trim((string) ($row['ai_stream_path'] ?? ''));
+        if ($aiPath === '') {
+            if (str_ends_with($path, '/stream.mjpg') && $path !== '/stream.mjpg') {
+                $aiPath = substr($path, 0, -strlen('stream.mjpg')).'ai/stream.mjpg';
+            } else {
+                $aiPath = '/'.$id.'/ai/stream.mjpg';
+            }
+        } elseif ($aiPath[0] !== '/') {
+            $aiPath = '/'.$aiPath;
+        }
+        $aiStreamUrl = trim((string) ($row['ai_stream_url'] ?? ''));
+        if ($aiStreamUrl === '') {
+            $aiStreamUrl = $base.$aiPath;
         }
 
         return [
@@ -133,6 +150,8 @@ class AiCameraRegistry
             'area_id' => (int) ($row['area_id'] ?? AiTestLotSeeder::AREA_ID),
             'stream_path' => $path,
             'stream_url' => $streamUrl,
+            'ai_stream_path' => $aiPath,
+            'ai_stream_url' => $aiStreamUrl,
             'enabled' => true,
         ];
     }

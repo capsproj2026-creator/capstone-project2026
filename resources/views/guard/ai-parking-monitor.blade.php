@@ -5,7 +5,7 @@
 @section('content')
     @include('partials.shell.page-header', [
         'title' => 'AI Parking Monitor',
-        'subtitle' => 'Live YOLOv9 · plate scan · moving vs parked',
+        'subtitle' => 'Live YOLOv9 · cars & motorcycles · parked / moving · plate scan',
     ])
 
     @php
@@ -20,10 +20,18 @@
             No AI cameras are configured. Set AI_CAMERA_* values in .env and start the AI parking service.
         </div>
     @else
-        <div class="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <div class="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
             <div class="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
                 <p class="text-xs font-medium text-gray-500">Cameras</p>
                 <p class="mt-1 text-2xl font-bold text-gray-900">{{ $cameras->count() }}</p>
+            </div>
+            <div class="rounded-xl border border-sky-200 bg-sky-50 p-4 shadow-sm">
+                <p class="text-xs font-medium text-sky-700">Parked</p>
+                <p id="ai-parked-count" class="mt-1 text-2xl font-bold text-sky-800">{{ $primaryAi['parked_count'] ?? 0 }}</p>
+            </div>
+            <div class="rounded-xl border border-orange-200 bg-orange-50 p-4 shadow-sm">
+                <p class="text-xs font-medium text-orange-700">Moving</p>
+                <p id="ai-moving-count" class="mt-1 text-2xl font-bold text-orange-800">{{ $primaryAi['moving_count'] ?? 0 }}</p>
             </div>
             <div class="rounded-xl border border-green-200 bg-green-50 p-4 shadow-sm">
                 <p class="text-xs font-medium text-green-700">Available (AI)</p>
@@ -45,7 +53,7 @@
                     $camId = (string) ($cam['id'] ?? '');
                     $health = $healthById->get($camId, []);
                     $snap = $snaps[$camId] ?? [];
-                    $browserUrl = $health['stream_browser_url'] ?? ($cam['stream_url'] ?? null);
+                    $browserUrl = $health['ai_stream_url'] ?? $health['stream_browser_url'] ?? ($cam['ai_stream_url'] ?? $cam['stream_url'] ?? null);
                     $online = (bool) ($health['connected'] ?? $health['stream_reachable'] ?? ! empty($browserUrl));
                     $topDet = data_get($snap, 'detections.0');
                     $plateLine = \App\Support\AiDetectionPresenter::plateLine(is_array($topDet) ? $topDet : null);
@@ -112,10 +120,11 @@
 
         <div class="grid grid-cols-1 gap-4 lg:grid-cols-2">
             <div class="rounded-xl border border-gray-200 bg-white shadow-sm">
-                <div class="border-b border-gray-100 px-4 py-3">
+                <div class="border-b border-gray-100 px-4 py-3 flex items-center justify-between gap-2">
                     <h3 class="font-semibold text-gray-900">Latest Detections</h3>
+                    <span id="ai-det-count" class="rounded-full bg-gray-100 px-2.5 py-0.5 text-xs font-semibold text-gray-600">{{ count($primaryAi['detections'] ?? []) }}</span>
                 </div>
-                <ul id="ai-detections" class="max-h-64 divide-y divide-gray-100 overflow-y-auto text-sm">
+                <ul id="ai-detections" class="max-h-[32rem] divide-y divide-gray-100 overflow-y-auto text-sm">
                     @forelse (($primaryAi['detections'] ?? []) as $det)
                         <li class="flex items-center justify-between gap-3 px-4 py-3">
                             <div class="min-w-0">
@@ -124,12 +133,24 @@
                                         <span class="text-xs text-gray-400">#{{ $det['track_id'] }}</span>
                                     @endif
                                     {{ $det['class'] ?? 'vehicle' }}
-                                    @if (! empty($det['motion_label']))
+                                    @if (($det['class'] ?? '') === 'motorcycle')
+                                        <span class="ml-1 rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-bold uppercase text-emerald-800">MC</span>
+                                    @endif
+                                    @php
+                                        $motionLabel = $det['motion_label'] ?? match ($det['motion_state'] ?? '') {
+                                            'moving' => 'Moving',
+                                            'parked' => 'Parked',
+                                            'idle' => 'Settling',
+                                            default => null,
+                                        };
+                                    @endphp
+                                    @if ($motionLabel)
                                         <span @class([
                                             'ml-1 rounded px-1.5 py-0.5 text-[10px] font-bold uppercase',
                                             'bg-orange-100 text-orange-700' => ($det['motion_state'] ?? '') === 'moving',
                                             'bg-sky-100 text-sky-700' => ($det['motion_state'] ?? '') === 'parked',
-                                        ])>{{ $det['motion_label'] }}</span>
+                                            'bg-gray-100 text-gray-600' => ($det['motion_state'] ?? '') === 'idle',
+                                        ])>{{ $motionLabel }}</span>
                                     @endif
                                     @if (($det['plate_status'] ?? '') === 'unreadable')
                                         <span class="ml-1 text-xs text-slate-500">[Plate Unreadable]</span>
@@ -150,7 +171,7 @@
                             <span class="shrink-0 text-gray-500">{{ isset($det['confidence']) ? round($det['confidence'] * 100).'%' : '—' }}</span>
                         </li>
                     @empty
-                        <li class="px-4 py-10 text-center text-gray-500">No detections yet.</li>
+                        <li class="px-4 py-10 text-center text-gray-500">No vehicles detected.</li>
                     @endforelse
                 </ul>
             </div>
@@ -262,8 +283,11 @@
 
     const available = document.getElementById('ai-available');
     const occupied = document.getElementById('ai-occupied');
+    const parkedCount = document.getElementById('ai-parked-count');
+    const movingCount = document.getElementById('ai-moving-count');
     const updatedAt = document.getElementById('ai-updated-at');
     const detectionsList = document.getElementById('ai-detections');
+    const detCount = document.getElementById('ai-det-count');
     const eventsList = document.getElementById('ai-events');
 
     const formatDet = (det) => {
@@ -271,6 +295,9 @@
         const bits = [];
         if (det.track_id != null) bits.push(`#${det.track_id}`);
         if (det.motion_label) bits.push(det.motion_label);
+        else if (det.motion_state === 'moving') bits.push('Moving');
+        else if (det.motion_state === 'parked') bits.push('Parked');
+        else if (det.motion_state === 'idle') bits.push('Settling');
         if (det.plate_status === 'unreadable') bits.push('Plate Unreadable');
         else if (det.registered && det.owner_name) bits.push([det.owner_name, det.plate].filter(Boolean).join(' · '));
         else if (det.plate) bits.push(`Unknown · ${det.plate}`);
@@ -278,13 +305,24 @@
         return bits.join(' · ');
     };
 
+    const motionLabelFor = (det) => {
+        if (det?.motion_label) return det.motion_label;
+        if (det?.motion_state === 'moving') return 'Moving';
+        if (det?.motion_state === 'parked') return 'Parked';
+        if (det?.motion_state === 'idle') return 'Settling';
+        return null;
+    };
+
     const motionBadge = (det) => {
-        if (!det?.motion_label) return null;
+        const label = motionLabelFor(det);
+        if (!label) return null;
         const span = document.createElement('span');
         span.className = det.motion_state === 'moving'
             ? 'ml-1 rounded px-1.5 py-0.5 text-[10px] font-bold uppercase bg-orange-100 text-orange-700'
-            : 'ml-1 rounded px-1.5 py-0.5 text-[10px] font-bold uppercase bg-sky-100 text-sky-700';
-        span.textContent = det.motion_label;
+            : det.motion_state === 'parked'
+                ? 'ml-1 rounded px-1.5 py-0.5 text-[10px] font-bold uppercase bg-sky-100 text-sky-700'
+                : 'ml-1 rounded px-1.5 py-0.5 text-[10px] font-bold uppercase bg-gray-100 text-gray-600';
+        span.textContent = label;
         return span;
     };
 
@@ -295,6 +333,7 @@
             if (!response.ok) return;
             const data = await response.json();
             const cams = data.ai_cameras || data.cameras || {};
+            const ai = data.ai;
             Object.entries(cams).forEach(([id, snap]) => {
                 const v = document.querySelector(`.js-cam-vehicles[data-camera="${id}"]`);
                 const a = document.querySelector(`.js-cam-available[data-camera="${id}"]`);
@@ -304,24 +343,38 @@
                 if (a) a.textContent = snap.available ?? '—';
                 if (o) o.textContent = snap.occupied ?? '—';
                 if (plateLine) plateLine.textContent = formatDet((snap.detections || [])[0] || null);
+                if (id === (ai?.camera_id || '') || Object.keys(cams).length === 1) {
+                    if (parkedCount) parkedCount.textContent = String(snap.parked_count ?? 0);
+                    if (movingCount) movingCount.textContent = String(snap.moving_count ?? 0);
+                }
             });
 
-            const ai = data.ai;
             if (!ai) return;
+
+            const allDets = [];
+            Object.entries(cams).forEach(([camId, snap]) => {
+                (snap.detections || []).forEach((det) => allDets.push({ ...det, _camera: camId }));
+            });
+            if (allDets.length === 0 && (ai.detections || []).length) {
+                (ai.detections || []).forEach((det) => allDets.push(det));
+            }
+
             if (available) available.textContent = ai.available ?? '—';
             if (occupied) occupied.textContent = ai.occupied ?? '—';
+            if (parkedCount) parkedCount.textContent = String(ai.parked_count ?? 0);
+            if (movingCount) movingCount.textContent = String(ai.moving_count ?? 0);
             if (updatedAt) updatedAt.textContent = ai.updated_at_label || data.updated_at;
+            if (detCount) detCount.textContent = String(allDets.length);
 
             if (detectionsList) {
                 detectionsList.replaceChildren();
-                const dets = ai.detections || [];
-                if (!dets.length) {
+                if (!allDets.length) {
                     const li = document.createElement('li');
                     li.className = 'px-4 py-10 text-center text-gray-500';
-                    li.textContent = 'No detections yet.';
+                    li.textContent = 'No vehicles detected.';
                     detectionsList.append(li);
                 } else {
-                    dets.forEach((det) => {
+                    allDets.forEach((det) => {
                         const li = document.createElement('li');
                         li.className = 'flex items-center justify-between gap-3 px-4 py-3';
                         const left = document.createElement('div');
@@ -334,8 +387,20 @@
                             tid.textContent = `#${det.track_id} `;
                             name.append(tid);
                         }
-                        name.append(document.createTextNode(det.class || 'vehicle'));
-                        const badge = motionBadge(det);
+                            name.append(document.createTextNode(det.class || 'vehicle'));
+                            if (det.class === 'motorcycle') {
+                                const mc = document.createElement('span');
+                                mc.className = 'ml-1 rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-bold uppercase text-emerald-800';
+                                mc.textContent = 'MC';
+                                name.append(mc);
+                            }
+                            if (det._camera) {
+                                const camTag = document.createElement('span');
+                                camTag.className = 'ml-1 text-[10px] font-medium text-gray-400';
+                                camTag.textContent = `[${det._camera}]`;
+                                name.append(camTag);
+                            }
+                            const badge = motionBadge(det);
                         if (badge) name.append(badge);
                         if (det.plate_status === 'unreadable') {
                             const plate = document.createElement('span');
