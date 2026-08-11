@@ -18,6 +18,9 @@ TRACK_HOLD_SEC = float(os.getenv("AI_PARKING_TRACK_HOLD_SEC", "3.0"))
 # Require this many matching OCR reads before locking a plate on a track.
 PLATE_VOTE_NEEDED = int(os.getenv("AI_PARKING_PLATE_VOTE_NEEDED", "1"))
 TRACK_MATCH_IOU = float(os.getenv("AI_PARKING_TRACK_MATCH_IOU", "0.25"))
+# Normalized center movement (px/sec ÷ bbox diagonal). Below = parked, above = moving.
+MOTION_SPEED_THRESH = float(os.getenv("AI_PARKING_MOTION_SPEED_THRESH", "0.12"))
+MOTION_PARK_SEC = float(os.getenv("AI_PARKING_MOTION_PARK_SEC", "1.5"))
 
 
 def _iou_xyxy(a, b) -> float:
@@ -111,10 +114,46 @@ class TrackMemory:
     lookup_plate: str | None = None
     violation_flag: bool = False
     last_xyxy: tuple[int, int, int, int] | None = None
+    prev_center: tuple[float, float] | None = None
+    last_motion_at: float = 0.0
+    motion_speed: float = 0.0
+    # idle | moving | parked
+    motion_state: str = "idle"
+    parked_since: float | None = None
 
     def note_seen(self, now: float) -> None:
         self.last_seen = now
         self.hit_streak += 1
+
+    def update_motion(self, xyxy: tuple[int, int, int, int], now: float) -> str:
+        """Classify vehicle as moving vs parked from bbox center drift."""
+        x1, y1, x2, y2 = xyxy
+        cx = (x1 + x2) / 2.0
+        cy = (y1 + y2) / 2.0
+        bw = max(1.0, float(x2 - x1))
+        bh = max(1.0, float(y2 - y1))
+        diag = (bw * bw + bh * bh) ** 0.5
+
+        if self.prev_center is not None and self.last_motion_at > 0:
+            dt = max(0.05, now - self.last_motion_at)
+            px, py = self.prev_center
+            dist = ((cx - px) ** 2 + (cy - py) ** 2) ** 0.5
+            self.motion_speed = dist / dt / max(diag, 1.0)
+            if self.motion_speed >= MOTION_SPEED_THRESH:
+                self.motion_state = "moving"
+                self.parked_since = None
+            elif self.parked_since is None:
+                self.parked_since = now
+            elif (now - self.parked_since) >= MOTION_PARK_SEC:
+                self.motion_state = "parked"
+        else:
+            self.motion_state = "idle"
+            self.parked_since = now
+
+        self.prev_center = (cx, cy)
+        self.last_motion_at = now
+        self.last_xyxy = xyxy
+        return self.motion_state
 
     def clear_owner(self) -> None:
         self.owner_name = None

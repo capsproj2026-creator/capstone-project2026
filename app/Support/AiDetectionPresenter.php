@@ -21,6 +21,14 @@ class AiDetectionPresenter
             $bits[] = '#'.$det['track_id'];
         }
 
+        if (! empty($det['motion_label'])) {
+            $bits[] = (string) $det['motion_label'];
+        } elseif (($det['motion_state'] ?? '') === 'moving') {
+            $bits[] = 'Moving';
+        } elseif (($det['motion_state'] ?? '') === 'parked') {
+            $bits[] = 'Parked';
+        }
+
         if (($det['plate_status'] ?? '') === 'unreadable') {
             $bits[] = 'Plate Unreadable';
         } elseif (! empty($det['registered']) && ! empty($det['owner_name'])) {

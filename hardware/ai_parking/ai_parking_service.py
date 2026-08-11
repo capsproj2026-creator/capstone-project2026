@@ -354,6 +354,11 @@ def _sync_detection_from_mem(det: dict, mem) -> None:
         det["registration_status"] = mem.registration_status
     if mem.registered is not None:
         det["registered"] = mem.registered
+    if mem.motion_state:
+        det["motion_state"] = mem.motion_state
+        label = _motion_label(mem.motion_state)
+        if label:
+            det["motion_label"] = label
 
 
 def refresh_plates_from_tracks(
@@ -385,14 +390,15 @@ def refresh_plates_from_tracks(
 
     refreshed: list[tuple] = []
     for box in annotated_boxes:
-        x1, y1, x2, y2, name, conf, track_id, plate, plate_status, owner_label = box
+        x1, y1, x2, y2, name, conf, track_id, plate, plate_status, owner_label, motion_state = _unpack_box(box)
         if track_id is not None:
             mem = tracks.get(int(track_id))
             if mem is not None:
                 plate_status = mem.plate_status
                 plate = mem.plate if plate_status == "ok" else None
                 owner_label = mem.overlay_owner_line() or owner_label
-        refreshed.append((x1, y1, x2, y2, name, conf, track_id, plate, plate_status, owner_label))
+                motion_state = mem.motion_state
+        refreshed.append((x1, y1, x2, y2, name, conf, track_id, plate, plate_status, owner_label, motion_state))
     return refreshed
 
 
@@ -472,6 +478,7 @@ def parse_tracks(
         plate = None
         plate_status = "pending"
         ocr_confidence = 0.0
+        motion_state = None
 
         ox1 = int(x1 * scale_ocr)
         oy1 = int(y1 * scale_ocr)
@@ -483,7 +490,7 @@ def parse_tracks(
             plate = mem.plate
             plate_status = mem.plate_status
             ocr_confidence = mem.ocr_confidence
-            mem.last_xyxy = (x1, y1, x2, y2)
+            motion_state = mem.update_motion((x1, y1, x2, y2), now)
             mem.last_ocr_xyxy = (ox1, oy1, ox2, oy2)
             mem.cls_id = row.get("cls_id")
             if plate_queue is not None:
@@ -504,6 +511,9 @@ def parse_tracks(
                 from plate_owner_lookup import lookup_plate_async
 
                 lookup_plate_async(mem)
+
+        else:
+            motion_state = None
 
         owner_label = None
         owner_name = None
@@ -552,9 +562,14 @@ def parse_tracks(
             det["registration_status"] = registration_status
         if registered is not None:
             det["registered"] = registered
+        if motion_state:
+            det["motion_state"] = motion_state
+            label = _motion_label(motion_state)
+            if label:
+                det["motion_label"] = label
 
         detections.append(det)
-        annotated_boxes.append((x1, y1, x2, y2, name, conf, track_id, plate, plate_status, owner_label))
+        annotated_boxes.append((x1, y1, x2, y2, name, conf, track_id, plate, plate_status, owner_label, motion_state))
         vehicles.append({
             "xyxy": (x1, y1, x2, y2),
             "track_id": track_id,
@@ -568,33 +583,41 @@ def parse_tracks(
     return annotated_boxes, detections, vehicles, person_count, vehicle_count
 
 
-def _draw_box_labels(annotated, x1, y1, x2, y2, name, conf, track_id, plate, plate_status, owner_label, lite=False):
-    color = CLASS_COLORS.get(name, (0, 220, 0))
-    cv2.rectangle(annotated, (x1, y1), (x2, y2), color, 2)
-    lines = []
-    class_label = name if not lite else (name[0].upper() if name else "?")
-    if lite:
-        head = f"{class_label}{conf * 100:.0f}"
+def _unpack_box(box: tuple):
+    """Support legacy 10-tuple and extended 11-tuple (motion_state)."""
+    if len(box) >= 11:
+        x1, y1, x2, y2, name, conf, track_id, plate, plate_status, owner_label, motion_state = box[:11]
     else:
-        head = f"{name} {conf * 100:.0f}%"
-    if track_id is not None:
-        head = f"#{track_id} {head}"
-    lines.append(head)
-    if plate_status == "unreadable":
-        lines.append("Plate Unreadable")
-    elif plate:
-        lines.append(str(plate))
-        if owner_label:
-            lines.append(str(owner_label)[:28])
+        x1, y1, x2, y2, name, conf, track_id, plate, plate_status, owner_label = box[:10]
+        motion_state = None
+    return x1, y1, x2, y2, name, conf, track_id, plate, plate_status, owner_label, motion_state
+
+
+def _draw_label_block(annotated, x, y, lines, color, lite=False):
+    """High-contrast stacked labels with dark backing for plate readability."""
     font = cv2.FONT_HERSHEY_SIMPLEX
-    scale = 0.42 if lite else 0.52
+    scale = 0.48 if lite else 0.58
     thick = 1 if lite else 2
-    ty = max(y1 - 8, 16 + 16 * (len(lines) - 1))
-    for i, line in enumerate(lines[:3] if lite else lines[:4]):
+    line_h = 18 if lite else 22
+    pad_x, pad_y = 6, 4
+    max_w = 0
+    sizes = []
+    for line in lines:
+        (tw, th), _ = cv2.getTextSize(str(line), font, scale, thick)
+        max_w = max(max_w, tw)
+        sizes.append((tw, th))
+    block_h = pad_y * 2 + line_h * len(lines)
+    block_w = max_w + pad_x * 2
+    top = max(0, y - block_h - 4)
+    left = max(0, x)
+    cv2.rectangle(annotated, (left, top), (left + block_w, top + block_h), (0, 0, 0), -1)
+    cv2.rectangle(annotated, (left, top), (left + block_w, top + block_h), color, 1)
+    ty = top + pad_y + (sizes[0][1] if sizes else 14)
+    for i, line in enumerate(lines):
         cv2.putText(
             annotated,
-            line,
-            (x1, max(16, ty - (len(lines) - 1 - i) * (14 if lite else 16))),
+            str(line),
+            (left + pad_x, ty + i * line_h),
             font,
             scale,
             color,
@@ -603,17 +626,50 @@ def _draw_box_labels(annotated, x1, y1, x2, y2, name, conf, track_id, plate, pla
         )
 
 
+def _draw_box_labels(annotated, x1, y1, x2, y2, name, conf, track_id, plate, plate_status, owner_label, lite=False, motion_state=None):
+    color = CLASS_COLORS.get(name, (0, 220, 0))
+    if motion_state == "moving":
+        color = (0, 140, 255)  # orange — moving
+    elif motion_state == "parked":
+        color = (255, 180, 0)  # cyan-ish — parked
+    cv2.rectangle(annotated, (x1, y1), (x2, y2), color, 2 if not lite else 2)
+    lines = []
+    class_label = name if not lite else (name[0].upper() if name else "?")
+    if lite:
+        head = f"#{track_id} {class_label}" if track_id is not None else class_label
+    else:
+        head = f"#{track_id} {name} {conf * 100:.0f}%" if track_id is not None else f"{name} {conf * 100:.0f}%"
+    lines.append(head)
+    if motion_state == "moving":
+        lines.append("MOVING")
+    elif motion_state == "parked":
+        lines.append("PARKED")
+    if plate_status == "unreadable":
+        lines.append("PLATE UNREADABLE")
+    elif plate:
+        lines.append(str(plate))
+        if owner_label:
+            lines.append(str(owner_label)[:32])
+    elif track_id is not None:
+        lines.append("Scanning plate…")
+    _draw_label_block(annotated, x1, y1, lines[:4], color, lite=lite)
+
+
+def _motion_label(state: str | None) -> str | None:
+    if state == "moving":
+        return "Moving"
+    if state == "parked":
+        return "Parked"
+    return None
+
+
 def draw_scene(frame, annotated_boxes, zones_data, occupied_slots, active_events, person_count, vehicle_count, use_poly):
     annotated = frame.copy()
     draw_zones(annotated, zones_data, occupied_slots)
 
     for box in annotated_boxes:
-        if len(box) >= 10:
-            x1, y1, x2, y2, name, conf, track_id, plate, plate_status, owner_label = box[:10]
-        else:
-            x1, y1, x2, y2, name, conf, track_id, plate = box[:8]
-            plate_status, owner_label = ("ok" if plate else "pending"), None
-        _draw_box_labels(annotated, x1, y1, x2, y2, name, conf, track_id, plate, plate_status, owner_label, lite=False)
+        x1, y1, x2, y2, name, conf, track_id, plate, plate_status, owner_label, motion_state = _unpack_box(box)
+        _draw_box_labels(annotated, x1, y1, x2, y2, name, conf, track_id, plate, plate_status, owner_label, lite=False, motion_state=motion_state)
 
     mode = "slots" if use_poly else "count-fallback"
     summary = f"People: {person_count} | Vehicles: {vehicle_count} | Mode: {mode}"
@@ -649,12 +705,8 @@ def draw_scene_lite(frame, annotated_boxes, occupied_slots, person_count, vehicl
     """Minimal overlay for low-latency live preview (skip zone polygons / event list)."""
     annotated = frame  # in-place; caller passes a disposable resize copy
     for box in annotated_boxes:
-        if len(box) >= 10:
-            x1, y1, x2, y2, name, conf, track_id, plate, plate_status, owner_label = box[:10]
-        else:
-            x1, y1, x2, y2, name, conf, track_id, plate = box[:8]
-            plate_status, owner_label = ("ok" if plate else "pending"), None
-        _draw_box_labels(annotated, x1, y1, x2, y2, name, conf, track_id, plate, plate_status, owner_label, lite=True)
+        x1, y1, x2, y2, name, conf, track_id, plate, plate_status, owner_label, motion_state = _unpack_box(box)
+        _draw_box_labels(annotated, x1, y1, x2, y2, name, conf, track_id, plate, plate_status, owner_label, lite=True, motion_state=motion_state)
     n_occ = len(occupied_slots) if occupied_slots else 0
     summary = f"P:{person_count} V:{vehicle_count} Occ:{n_occ}"
     h = annotated.shape[0]
