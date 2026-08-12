@@ -33,3 +33,7 @@ Thumbs.db
 *.pt
 *.onnx
 !hardware/ai_parking/models/.gitkeep
+
+# ESP32 local secrets + OCR debug crops
+hardware/esp32_rfid_gate/rfid_gate_config.h
+hardware/ai_parking/debug_plates/

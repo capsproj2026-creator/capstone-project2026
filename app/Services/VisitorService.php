@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\Notification;
+use App\Models\ParkingSlot;
 use App\Models\User;
 use App\Models\Visitor;
 use App\Models\VisitorRfidCard;
@@ -275,6 +276,14 @@ class VisitorService
         }
 
         $visitor->update(['status' => Visitor::STATUS_EXPIRED]);
+
+        ParkingSlot::query()
+            ->where('parked_visitor_id', $visitor->id)
+            ->update([
+                'status' => 'Available',
+                'parked_user_id' => null,
+                'parked_visitor_id' => null,
+            ]);
 
         if ($visitor->rfidCard) {
             $visitor->rfidCard->update(['status' => VisitorRfidCard::STATUS_EXPIRED]);

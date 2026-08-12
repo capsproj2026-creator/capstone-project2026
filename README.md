@@ -265,6 +265,26 @@ Full details: [`hardware/ai_parking/README.md`](hardware/ai_parking/README.md)
 | `REVERB_*` / `VITE_REVERB_*` | Live Gate realtime |
 | `AI_PARKING_*` / `AI_CAMERA_*` | AI parking cameras |
 
+## Production deployment checklist
+
+Before going live, verify:
+
+| Item | Action |
+|------|--------|
+| `APP_DEBUG=false` | Never expose stack traces in production |
+| `APP_URL` | Set to public HTTPS URL |
+| `RFID_API_TOKEN` / `AI_PARKING_API_TOKEN` | Change from dev defaults — empty tokens return HTTP 503 |
+| MongoDB Atlas | Whitelist server IP; set `MONGODB_TLS_ALLOW_INVALID=false` in production |
+| `php artisan storage:link` | Required for violation evidence uploads |
+| `npm run build` | Serve compiled assets from `public/build` |
+| Scheduler | Cron: `* * * * * php artisan schedule:run` (visitor expiry) |
+| Reverb | Run `php artisan reverb:start` for live gate monitor |
+| Queue | Consider `QUEUE_CONNECTION=database` or `redis` for mail |
+| ESP32 | Copy `rfid_gate_config.example.h` → `rfid_gate_config.h`; set WiFi + API URL |
+| Firewall | Allow HTTP port from ESP32/cameras to Laravel host |
+
+Use Apache/Nginx + PHP-FPM instead of `php artisan serve` in production. See [`hardware/esp32_rfid_gate/README.md`](hardware/esp32_rfid_gate/README.md) for boom-gate wiring.
+
 ## Notes
 
 - `capstone.sql` is kept for reference and capstone documentation; it is **not** imported automatically.

@@ -117,6 +117,7 @@ class ParkingController extends Controller
         $payload = ['status' => $status];
         if (in_array($status, ['Available', 'Maintenance', 'Reserved'], true)) {
             $payload['parked_user_id'] = null;
+            $payload['parked_visitor_id'] = null;
         }
 
         $slot->update($payload);

@@ -203,10 +203,11 @@ class AiParkingOccupancyService
                     'occupied' => true,
                 ];
             } else {
-                if (($slot->status ?? '') !== 'Available' || $slot->parked_user_id !== null) {
+                if (($slot->status ?? '') !== 'Available' || $slot->parked_user_id !== null || $slot->parked_visitor_id !== null) {
                     $slot->update([
                         'status' => 'Available',
                         'parked_user_id' => null,
+                        'parked_visitor_id' => null,
                     ]);
                 }
                 $available++;
@@ -260,10 +261,11 @@ class AiParkingOccupancyService
                     'occupied' => true,
                 ];
             } else {
-                if (($slot->status ?? '') !== 'Available' || $slot->parked_user_id !== null) {
+                if (($slot->status ?? '') !== 'Available' || $slot->parked_user_id !== null || $slot->parked_visitor_id !== null) {
                     $slot->update([
                         'status' => 'Available',
                         'parked_user_id' => null,
+                        'parked_visitor_id' => null,
                     ]);
                 }
                 $available++;

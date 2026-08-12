@@ -181,6 +181,11 @@ class DashboardStatsService
             'waitingVisitors' => $visitorStats['waitingVisitors'],
             'rfidReturnsPending' => $visitorStats['rfidReturnsPending'],
             'expiredVisitors' => $visitorStats['expiredVisitors'],
+            'recentViolationLogs' => ViolationLog::query()
+                ->with('user')
+                ->orderByDesc('created_at')
+                ->limit(5)
+                ->get(),
         ];
     }
 
@@ -532,11 +537,7 @@ class DashboardStatsService
         }
 
         $gateDenied = GateLog::query()
-            ->where(function ($q) {
-                $q->where('result', 'Denied')
-                    ->orWhere('result', 'denied')
-                    ->orWhere('result', 'DENIED');
-            })
+            ->whereNotIn('result', [RfidAccessService::STATUS_GRANTED, 'Granted', 'granted'])
             ->get(['gate_id']);
 
         foreach ($gateDenied as $log) {
