@@ -316,6 +316,44 @@ class AiParkingOccupancyTest extends TestCase
         }
     }
 
+    public function test_guard_can_correct_ocr_plate_on_a_track(): void
+    {
+        $guard = User::query()->where('email', 'guard@my.cspc.edu.ph')->first()
+            ?? User::query()->where('user_role_id', 2)->first();
+        if (! $guard) {
+            $this->markTestSkipped('Guard user not found.');
+        }
+        if (! $guard->hasVerifiedEmail()) {
+            $guard->update(['email_verified_at' => now()]);
+        }
+
+        $this->withHeaders(['X-AI-TOKEN' => self::TOKEN])
+            ->postJson('/api/ai-parking/occupancy', [
+                'camera_id' => 'CAM-AI-1',
+                'area_id' => AiTestLotSeeder::AREA_ID,
+                'vehicle_count' => 1,
+                'detections' => [
+                    [
+                        'class' => 'motorcycle',
+                        'confidence' => 0.8,
+                        'plate' => '05010406323',
+                        'track_id' => 77,
+                    ],
+                ],
+            ])
+            ->assertOk();
+
+        $this->actingAs($guard)
+            ->postJson(route('guard.ai-parking.correct-plate'), [
+                'camera_id' => 'CAM-AI-1',
+                'track_id' => 77,
+                'plate' => '0501-0401328',
+            ])
+            ->assertOk()
+            ->assertJsonPath('ok', true)
+            ->assertJsonPath('data.plate', '05010401328');
+    }
+
     public function test_plate_lookup_endpoint_registered_and_unknown(): void
     {
         \App\Support\PlateLookup::forgetIndex();

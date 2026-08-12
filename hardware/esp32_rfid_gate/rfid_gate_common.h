@@ -29,6 +29,9 @@
 #ifndef SCAN_BLOCK_MS
 #define SCAN_BLOCK_MS 3500UL
 #endif
+#ifndef HEARTBEAT_MS
+#define HEARTBEAT_MS 2500UL
+#endif
 
 #define SS_PIN    5
 #define RST_PIN   22
@@ -53,11 +56,13 @@ struct ScanResult {
 };
 
 unsigned long lastScanMs = 0;
+unsigned long lastHeartbeatMs = 0;
 unsigned long gateCycleEndsMs = 0;
 bool gateIsOpen = false;
 
 String uidToHex(MFRC522::Uid &uid);
 ScanResult postScan(const String &uid);
+void pollHeartbeat();
 void handleResult(const ScanResult &result);
 void grantAccess();
 void denyAccess(const ScanResult &result);
@@ -107,6 +112,11 @@ void loopGateClient() {
     WiFi.reconnect();
     delay(500);
     return;
+  }
+
+  if (millis() - lastHeartbeatMs >= HEARTBEAT_MS) {
+    lastHeartbeatMs = millis();
+    pollHeartbeat();
   }
 
   if (!mfrc522.PICC_IsNewCardPresent() || !mfrc522.PICC_ReadCardSerial()) {
@@ -201,6 +211,50 @@ ScanResult postScan(const String &uid) {
   result.status = String((const char*)(doc["status"] | "Access Denied"));
   result.code = String((const char*)(doc["code"] | "access_denied"));
   return result;
+}
+
+void pollHeartbeat() {
+  WiFiClient client;
+  client.setTimeout(5);
+
+  HTTPClient http;
+  http.setReuse(false);
+  String url = String(API_BASE) + "/api/rfid/heartbeat";
+  if (!http.begin(client, url)) {
+    return;
+  }
+
+  http.addHeader("Content-Type", "application/json");
+  http.addHeader("Connection", "close");
+  http.addHeader("X-RFID-TOKEN", RFID_API_TOKEN);
+  http.setConnectTimeout(4000);
+  http.setTimeout(6000);
+
+  StaticJsonDocument<128> body;
+  body["gate_id"] = GATE_ID;
+  String payload;
+  serializeJson(body, payload);
+
+  int code = http.POST(payload);
+  if (code <= 0) {
+    http.end();
+    return;
+  }
+
+  String response = http.getString();
+  http.end();
+
+  StaticJsonDocument<256> doc;
+  if (deserializeJson(doc, response)) {
+    return;
+  }
+
+  bool openCmd = doc["open"] | false;
+  if (openCmd) {
+    Serial.println("Heartbeat: emergency open");
+    ScanResult granted = {true, "Access Granted", "emergency_open"};
+    handleResult(granted);
+  }
 }
 
 void handleResult(const ScanResult &result) {

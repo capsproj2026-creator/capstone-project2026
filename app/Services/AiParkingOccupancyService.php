@@ -58,6 +58,7 @@ class AiParkingOccupancyService
             && ($previous['area_id'] ?? null) === $areaId
         ) {
             $detections = $this->enrichWithOwners($detections);
+            $detections = $this->applyPlateCorrections($cameraId, $detections);
             $detections = $this->attachViolationStatus($detections, $previous['events'] ?? []);
 
             $snapshot = array_merge($previous, [
@@ -101,6 +102,7 @@ class AiParkingOccupancyService
 
         $detections = $this->enrichWithOwners($detections);
         $events = $this->enrichWithOwners($events);
+        $detections = $this->applyPlateCorrections($cameraId, $detections);
         $detections = $this->attachViolationStatus($detections, $events);
 
         $snapshot = [
@@ -379,6 +381,86 @@ class AiParkingOccupancyService
         }
 
         return $scans;
+    }
+
+    /**
+     * Guard-corrected plate for a tracked vehicle. Survives the next occupancy posts.
+     *
+     * @return array<string, mixed>
+     */
+    public function correctPlate(string $cameraId, ?int $trackId, string $plate, ?int $userId = null): array
+    {
+        $cameraId = strtoupper(trim($cameraId));
+        $normalized = PlateLookup::normalize($plate);
+        if ($normalized === '' || $trackId === null) {
+            throw new \InvalidArgumentException('Camera, track, and plate are required.');
+        }
+
+        $key = $this->correctionsKey($cameraId);
+        $map = Cache::get($key, []);
+        if (! is_array($map)) {
+            $map = [];
+        }
+        $map[(string) $trackId] = [
+            'plate' => $normalized,
+            'user_id' => $userId,
+            'at' => now()->toIso8601String(),
+        ];
+        Cache::put($key, $map, now()->addHours(2));
+
+        $snap = $this->latestSnapshot($cameraId);
+        if (is_array($snap)) {
+            $snap['detections'] = $this->applyPlateCorrections($cameraId, $snap['detections'] ?? []);
+            $snap['updated_at'] = now()->toIso8601String();
+            $snap['updated_at_label'] = now()->format('h:i:s A');
+            $ttl = now()->addMinutes(30);
+            Cache::put($this->cacheKeyForCamera($cameraId), $snap, $ttl);
+            $primaryId = app(AiCameraRegistry::class)->primaryCameraId();
+            if (strcasecmp($cameraId, $primaryId) === 0) {
+                Cache::put(self::CACHE_KEY, $snap, $ttl);
+            }
+        }
+
+        $identity = PlateLookup::identity($normalized);
+        $identity['track_id'] = $trackId;
+        $identity['camera_id'] = $cameraId;
+        $identity['plate_corrected'] = true;
+
+        return $identity;
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $detections
+     * @return list<array<string, mixed>>
+     */
+    private function applyPlateCorrections(string $cameraId, array $detections): array
+    {
+        $map = Cache::get($this->correctionsKey($cameraId), []);
+        if (! is_array($map) || $map === []) {
+            return $detections;
+        }
+
+        $changed = false;
+        foreach ($detections as $i => $det) {
+            if (! is_array($det)) {
+                continue;
+            }
+            $tid = isset($det['track_id']) ? (string) $det['track_id'] : '';
+            if ($tid === '' || ! isset($map[$tid]['plate'])) {
+                continue;
+            }
+            $detections[$i]['plate'] = $map[$tid]['plate'];
+            $detections[$i]['plate_status'] = 'ok';
+            $detections[$i]['plate_corrected'] = true;
+            $changed = true;
+        }
+
+        return $changed ? $this->enrichWithOwners($detections) : $detections;
+    }
+
+    private function correctionsKey(string $cameraId): string
+    {
+        return 'ai_parking:plate_corrections:'.strtoupper(trim($cameraId));
     }
 
     /**

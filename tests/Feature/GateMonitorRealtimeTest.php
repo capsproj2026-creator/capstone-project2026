@@ -29,6 +29,8 @@ class GateMonitorRealtimeTest extends TestCase
             ->assertSee('.GateScanProcessed', false)
             ->assertSee('IDLE_MS', false)
             ->assertSee('reverb-app-key', false)
+            ->assertSee('Emergency gate open', false)
+            ->assertSee('GATE-IN-1', false)
             ->assertDontSee("fetch(eventsBase", false)
             ->assertDontSee('setInterval(poll', false);
     }
@@ -78,6 +80,52 @@ class GateMonitorRealtimeTest extends TestCase
         $json = $response->json();
         $this->assertIsArray($json);
         $this->assertArrayHasKey('auth', $json);
+    }
+
+    public function test_guard_can_queue_emergency_open_and_student_cannot(): void
+    {
+        \Illuminate\Support\Facades\Event::fake();
+        \Illuminate\Support\Facades\Config::set('broadcasting.default', 'null');
+
+        try {
+            $guard = User::query()->where('email', 'guard@my.cspc.edu.ph')->first()
+                ?? User::query()->where('user_role_id', 2)->first();
+            $student = User::query()
+                ->where('user_role_id', 3)
+                ->where('status', User::STATUS_GRANTED)
+                ->where('email', '!=', 'guard@my.cspc.edu.ph')
+                ->first();
+        } catch (\Throwable $e) {
+            $this->markTestSkipped('MongoDB unavailable: '.$e->getMessage());
+        }
+
+        if (! $guard) {
+            $this->markTestSkipped('Run php artisan db:seed — guard user not found.');
+        }
+
+        $this->actingAs($guard)
+            ->postJson(route('guard.gate.open'), [
+                'gate_id' => 'GATE-IN-1',
+                'reason' => 'Stuck vehicle at boom',
+            ])
+            ->assertOk()
+            ->assertJsonPath('ok', true)
+            ->assertJsonPath('gate_id', 'GATE-IN-1');
+
+        if ($student && strtolower($student->roleName()) !== 'guard') {
+            $denied = $this->actingAs($student)
+                ->postJson(route('guard.gate.open'), [
+                    'gate_id' => 'GATE-IN-1',
+                    'reason' => 'Should be blocked',
+                ]);
+
+            $this->assertFalse($denied->isSuccessful(), 'Students must not open the boom gate.');
+        }
+
+        \App\Models\GateLog::query()
+            ->where('rfid_uid', 'MANUAL-OVERRIDE')
+            ->where('reason', 'Stuck vehicle at boom')
+            ->delete();
     }
 
     public function test_access_logs_page_does_not_poll_events_endpoint(): void

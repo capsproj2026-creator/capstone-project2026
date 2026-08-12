@@ -168,7 +168,19 @@
                                     <p class="mt-0.5 text-xs text-gray-400">Scanning plate…</p>
                                 @endif
                             </div>
-                            <span class="shrink-0 text-gray-500">{{ isset($det['confidence']) ? round($det['confidence'] * 100).'%' : '—' }}</span>
+                            <div class="flex shrink-0 items-center gap-2">
+                                @if (! empty($det['track_id']))
+                                    <button
+                                        type="button"
+                                        class="rounded-lg border border-indigo-200 px-2 py-1 text-[11px] font-semibold text-indigo-700 hover:bg-indigo-50"
+                                        data-correct-plate
+                                        data-camera="{{ $det['_camera'] ?? ($primaryAi['camera_id'] ?? '') }}"
+                                        data-track="{{ $det['track_id'] }}"
+                                        data-plate="{{ $det['plate'] ?? '' }}"
+                                    >Correct</button>
+                                @endif
+                                <span class="text-gray-500">{{ isset($det['confidence']) ? round($det['confidence'] * 100).'%' : '—' }}</span>
+                            </div>
                         </li>
                     @empty
                         <li class="px-4 py-10 text-center text-gray-500">No vehicles detected.</li>
@@ -213,12 +225,30 @@
             </div>
         </div>
     @endif
+
+    <div id="plate-correct-modal" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/50 p-4" role="dialog" aria-modal="true">
+        <form id="plate-correct-form" class="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
+            <h3 class="text-lg font-bold text-gray-900">Correct plate number</h3>
+            <p class="mt-1 text-sm text-gray-500">Fixes a bad OCR read and looks up the registered owner.</p>
+            <input type="hidden" id="plate-correct-camera">
+            <input type="hidden" id="plate-correct-track">
+            <label class="mt-4 block text-sm font-medium text-gray-700" for="plate-correct-value">Plate</label>
+            <input id="plate-correct-value" type="text" required minlength="4" maxlength="32" class="mt-1 w-full rounded-xl border border-gray-200 px-3 py-2 font-mono text-sm uppercase" placeholder="ABC1234 or 0501-0401328">
+            <p id="plate-correct-error" class="mt-2 hidden text-sm text-red-600"></p>
+            <div class="mt-5 flex justify-end gap-2">
+                <button type="button" id="plate-correct-cancel" class="rounded-xl border border-gray-200 px-4 py-2 text-sm font-semibold text-gray-700">Cancel</button>
+                <button type="submit" class="rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white">Save plate</button>
+            </div>
+        </form>
+    </div>
 @endsection
 
 @push('scripts')
 <script>
 (() => {
     const statusUrl = @json($statusUrl ?? null);
+    const correctUrl = @json($correctPlateUrl ?? null);
+    const csrf = document.querySelector('meta[name="csrf-token"]')?.content || '';
 
     const clocks = () => {
         const label = new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', second: '2-digit' });
@@ -430,10 +460,24 @@
                             sub.textContent = 'Scanning plate…';
                         }
                         left.append(sub);
+                        const right = document.createElement('div');
+                        right.className = 'flex shrink-0 items-center gap-2';
+                        if (det.track_id != null) {
+                            const corr = document.createElement('button');
+                            corr.type = 'button';
+                            corr.className = 'rounded-lg border border-indigo-200 px-2 py-1 text-[11px] font-semibold text-indigo-700 hover:bg-indigo-50';
+                            corr.textContent = 'Correct';
+                            corr.dataset.correctPlate = '1';
+                            corr.dataset.camera = det._camera || (ai?.camera_id || '');
+                            corr.dataset.track = String(det.track_id);
+                            corr.dataset.plate = det.plate || '';
+                            right.append(corr);
+                        }
                         const conf = document.createElement('span');
-                        conf.className = 'shrink-0 text-gray-500';
+                        conf.className = 'text-gray-500';
                         conf.textContent = det.confidence != null ? `${Math.round(det.confidence * 100)}%` : '—';
-                        li.append(left, conf);
+                        right.append(conf);
+                        li.append(left, right);
                         detectionsList.append(li);
                     });
                 }
@@ -477,6 +521,66 @@
     refresh();
     window.setInterval(refresh, 5000);
     document.addEventListener('visibilitychange', () => { if (!document.hidden) refresh(); });
+
+    const plateModal = document.getElementById('plate-correct-modal');
+    const plateForm = document.getElementById('plate-correct-form');
+    const plateErr = document.getElementById('plate-correct-error');
+
+    const closePlateModal = () => {
+        plateModal?.classList.add('hidden');
+        plateModal?.classList.remove('flex');
+        plateErr?.classList.add('hidden');
+    };
+
+    document.addEventListener('click', (e) => {
+        const btn = e.target.closest('[data-correct-plate]');
+        if (!btn) return;
+        document.getElementById('plate-correct-camera').value = btn.dataset.camera || '';
+        document.getElementById('plate-correct-track').value = btn.dataset.track || '';
+        document.getElementById('plate-correct-value').value = btn.dataset.plate || '';
+        plateModal?.classList.remove('hidden');
+        plateModal?.classList.add('flex');
+        document.getElementById('plate-correct-value')?.focus();
+    });
+
+    document.getElementById('plate-correct-cancel')?.addEventListener('click', closePlateModal);
+    plateModal?.addEventListener('click', (e) => { if (e.target === plateModal) closePlateModal(); });
+
+    plateForm?.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        if (!correctUrl) return;
+        try {
+            const res = await fetch(correctUrl, {
+                method: 'POST',
+                headers: {
+                    Accept: 'application/json',
+                    'Content-Type': 'application/json',
+                    'X-CSRF-TOKEN': csrf,
+                },
+                credentials: 'same-origin',
+                body: JSON.stringify({
+                    camera_id: document.getElementById('plate-correct-camera')?.value,
+                    track_id: Number(document.getElementById('plate-correct-track')?.value),
+                    plate: document.getElementById('plate-correct-value')?.value,
+                }),
+            });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) {
+                if (plateErr) {
+                    plateErr.textContent = data.message || 'Could not save plate.';
+                    plateErr.classList.remove('hidden');
+                }
+                return;
+            }
+            closePlateModal();
+            refresh();
+        } catch (err) {
+            if (plateErr) {
+                plateErr.textContent = 'Network error.';
+                plateErr.classList.remove('hidden');
+            }
+        }
+    });
 })();
 </script>
 @endpush

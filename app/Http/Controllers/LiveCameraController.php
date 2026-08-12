@@ -7,6 +7,7 @@ use App\Services\AiCameraRegistry;
 use App\Services\AiParkingHealthService;
 use App\Services\AiParkingOccupancyService;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 use Illuminate\Support\Facades\Http;
 use Illuminate\View\View;
@@ -114,6 +115,7 @@ class LiveCameraController extends Controller
             'aiAreaId' => $areaId,
             'aiAreaName' => $area?->area_name ?? 'AI Test Lot',
             'statusUrl' => route('guard.parking.status'),
+            'correctPlateUrl' => route('guard.ai-parking.correct-plate'),
             'parkingUrl' => route('guard.parking', ['zone_id' => $areaId]),
         ]);
     }
@@ -173,5 +175,37 @@ class LiveCameraController extends Controller
         $zoneId = is_numeric($zoneFilter) ? (int) $zoneFilter : null;
 
         return response()->json($ai->statusPayload($zoneId));
+    }
+
+    public function correctPlate(Request $request, AiParkingOccupancyService $ai, AiCameraRegistry $registry): JsonResponse
+    {
+        $validated = $request->validate([
+            'camera_id' => ['required', 'string', 'max:64'],
+            'track_id' => ['required', 'integer', 'min:0'],
+            'plate' => ['required', 'string', 'min:4', 'max:32'],
+        ]);
+
+        $cameraId = strtoupper(trim($validated['camera_id']));
+        $known = collect($registry->cameras())->pluck('id')->map(fn ($id) => strtoupper((string) $id));
+        if ($known->isNotEmpty() && ! $known->contains($cameraId) && $ai->latestSnapshot($cameraId) === null) {
+            return response()->json(['ok' => false, 'message' => 'Unknown camera.'], 422);
+        }
+
+        try {
+            $identity = $ai->correctPlate(
+                $cameraId,
+                (int) $validated['track_id'],
+                $validated['plate'],
+                $request->user()?->id
+            );
+        } catch (\InvalidArgumentException $e) {
+            return response()->json(['ok' => false, 'message' => $e->getMessage()], 422);
+        }
+
+        return response()->json([
+            'ok' => true,
+            'message' => 'Plate updated.',
+            'data' => $identity,
+        ]);
     }
 }

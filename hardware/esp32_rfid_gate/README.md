@@ -58,3 +58,12 @@ Network/parse errors fail **closed** (deny, no open).
 - Gate opens only when `granted: true`.
 - Duplicate scans during an open cycle do not re-trigger the actuator.
 - Non-blocking gate close — RFID loop keeps running during open window.
+- Heartbeat every `HEARTBEAT_MS` (default 2.5s) marks the gate **Online** on Live Gate Monitor.
+- Guard **Emergency Open** queues a one-shot command; the ESP32 opens on the next heartbeat (no extra hardware).
+
+## Guard emergency open
+
+1. Open **Live Gate Monitor**.
+2. Confirm the gate shows **Online** (ESP32 must be flashed with this firmware).
+3. Click **Open Entry** / **Open Exit**, enter a reason, send.
+4. The boom opens once; the action is stored in Access Logs as `Override`.

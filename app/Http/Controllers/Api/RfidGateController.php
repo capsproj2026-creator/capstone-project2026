@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Services\GateHardwareService;
 use App\Services\RfidAccessService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -41,5 +42,22 @@ class RfidGateController extends Controller
         }
 
         return response()->json($result, $httpStatus);
+    }
+
+    /**
+     * ESP32 keepalive + consume a pending emergency-open command.
+     *
+     * POST /api/rfid/heartbeat
+     * Body: { "gate_id": "GATE-IN-1" }
+     */
+    public function heartbeat(Request $request, GateHardwareService $hardware): JsonResponse
+    {
+        $validated = $request->validate([
+            'gate_id' => ['required', 'string', 'max:64'],
+        ]);
+
+        $result = $hardware->heartbeat($validated['gate_id']);
+
+        return response()->json($result, $result['ok'] ? 200 : 422);
     }
 }

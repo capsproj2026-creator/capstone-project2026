@@ -172,6 +172,9 @@ Route::prefix('guard')->middleware(['auth', 'verified', 'granted', 'no.cache', '
     Route::get('/access-logs/events', [AccessLogController::class, 'events'])->name('access-logs.events');
     Route::get('/live-cameras', [LiveCameraController::class, 'index'])->name('live-cameras');
     Route::get('/ai-parking', [LiveCameraController::class, 'aiMonitor'])->name('ai-parking');
+    Route::post('/ai-parking/correct-plate', [LiveCameraController::class, 'correctPlate'])
+        ->middleware('throttle:30,1')
+        ->name('ai-parking.correct-plate');
     Route::get('/ai-parking/stream/{camera?}', [LiveCameraController::class, 'stream'])->name('ai-parking.stream');
     Route::get('/plate-lookup', [PlateLookupController::class, 'index'])->name('plate-lookup');
     Route::post('/plate-lookup', [PlateLookupController::class, 'index'])->name('plate-lookup.submit');
@@ -187,6 +190,8 @@ Route::prefix('guard')->middleware(['auth', 'verified', 'granted', 'no.cache', '
     Route::post('/visitors/{id}/assign-rfid', [VisitorController::class, 'assignRfid'])->name('visitors.assign-rfid');
     Route::post('/visitors/{id}/return-rfid', [VisitorController::class, 'returnRfid'])->name('visitors.return-rfid');
     Route::get('/gate', [GateMonitorController::class, 'index'])->name('gate');
+    Route::get('/gate/status', [GateMonitorController::class, 'status'])->name('gate.status');
+    Route::post('/gate/open', [GateMonitorController::class, 'open'])->middleware('throttle:20,1')->name('gate.open');
     Route::post('/gate/scan', [GateMonitorController::class, 'scan'])->middleware('throttle:30,1')->name('gate.scan');
     Route::get('/notifications', [GuardNotificationController::class, 'index'])->name('notifications');
     Route::post('/notifications/{action}', [GuardNotificationController::class, 'action'])->name('notifications.action');

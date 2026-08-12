@@ -251,6 +251,7 @@ Full details: [`hardware/ai_parking/README.md`](hardware/ai_parking/README.md)
 - Set `API_BASE` to this PC's Wi-Fi IP, e.g. `http://192.168.1.104:8000` (not `localhost`).
 - Match `RFID_API_TOKEN` with `.env`.
 - Laravel must use `--host=0.0.0.0` so the board can connect.
+- After flashing the updated firmware, Live Gate Monitor shows **Online/Offline** and Guard can **emergency-open** the boom.
 
 **AI parking**
 

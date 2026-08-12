@@ -63,6 +63,52 @@
         </div>
     </div>
 
+    @php $gateStatuses = $gateStatuses ?? []; @endphp
+    <div id="gate-hardware-panel" class="mb-6 grid grid-cols-1 gap-4 lg:grid-cols-2">
+        @foreach ($gateStatuses as $gate)
+            <div class="rounded-xl border border-gray-200 bg-white p-5 shadow-sm" data-gate-card="{{ $gate['gate_id'] }}">
+                <div class="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                        <p class="text-sm font-medium text-gray-500">{{ $gate['label'] }}</p>
+                        <p class="mt-0.5 font-mono text-sm text-gray-700">{{ $gate['gate_id'] }}</p>
+                        <div class="mt-2 flex items-center gap-2">
+                            <span data-gate-dot class="h-2.5 w-2.5 rounded-full {{ $gate['online'] ? 'bg-emerald-500' : 'bg-gray-300' }}"></span>
+                            <p data-gate-online class="text-sm font-semibold {{ $gate['online'] ? 'text-emerald-700' : 'text-gray-500' }}">
+                                {{ $gate['online'] ? 'Online' : 'Offline' }}
+                            </p>
+                            <span data-gate-pending class="{{ ($gate['pending_open'] ?? false) ? '' : 'hidden' }} rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold uppercase text-amber-800">Queued</span>
+                        </div>
+                    </div>
+                    <button
+                        type="button"
+                        class="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-emerald-700"
+                        data-open-gate="{{ $gate['gate_id'] }}"
+                        data-open-label="{{ $gate['label'] }}"
+                    >
+                        <i data-lucide="door-open" class="h-4 w-4"></i>
+                        Open {{ $gate['direction'] }}
+                    </button>
+                </div>
+            </div>
+        @endforeach
+    </div>
+
+    <div id="gate-open-modal" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/50 p-4" role="dialog" aria-modal="true">
+        <form id="gate-open-form" class="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
+            @csrf
+            <h3 class="text-lg font-bold text-gray-900">Emergency gate open</h3>
+            <p id="gate-open-subtitle" class="mt-1 text-sm text-gray-500">Opens the boom on the ESP32. Logged to access history.</p>
+            <input type="hidden" name="gate_id" id="gate-open-id" value="">
+            <label class="mt-4 block text-sm font-medium text-gray-700" for="gate-open-reason">Reason</label>
+            <textarea id="gate-open-reason" name="reason" rows="3" required minlength="3" maxlength="200" class="mt-1 w-full rounded-xl border border-gray-200 px-3 py-2 text-sm" placeholder="e.g. Visitor without RFID, ambulance, stuck vehicle"></textarea>
+            <p id="gate-open-error" class="mt-2 hidden text-sm text-red-600"></p>
+            <div class="mt-5 flex justify-end gap-2">
+                <button type="button" id="gate-open-cancel" class="rounded-xl border border-gray-200 px-4 py-2 text-sm font-semibold text-gray-700">Cancel</button>
+                <button type="submit" id="gate-open-submit" class="rounded-xl bg-emerald-600 px-4 py-2 text-sm font-semibold text-white">Send open command</button>
+            </div>
+        </form>
+    </div>
+
     {{-- Live scan stage (fullscreen target) --}}
     <div id="gate-monitor-stage" class="gate-monitor-stage rounded-2xl border border-gray-200 bg-white p-4 shadow-sm sm:p-6 lg:p-8">
         <div class="mb-4 flex items-center justify-between gap-3 sm:mb-6">
@@ -494,6 +540,109 @@
         document.addEventListener('fullscreenchange', syncFullscreenUi);
         document.addEventListener('webkitfullscreenchange', syncFullscreenUi);
         syncFullscreenUi();
+
+        const statusUrl = @json($gateStatusUrl ?? null);
+        const openUrl = @json($gateOpenUrl ?? null);
+        const csrf = document.querySelector('meta[name="csrf-token"]')?.content || '';
+
+        const paintGates = (gates) => {
+            (gates || []).forEach((gate) => {
+                const card = document.querySelector(`[data-gate-card="${gate.gate_id}"]`);
+                if (!card) return;
+                const dot = card.querySelector('[data-gate-dot]');
+                const label = card.querySelector('[data-gate-online]');
+                const pending = card.querySelector('[data-gate-pending]');
+                if (dot) {
+                    dot.classList.toggle('bg-emerald-500', !!gate.online);
+                    dot.classList.toggle('bg-gray-300', !gate.online);
+                }
+                if (label) {
+                    label.textContent = gate.online ? 'Online' : 'Offline';
+                    label.classList.toggle('text-emerald-700', !!gate.online);
+                    label.classList.toggle('text-gray-500', !gate.online);
+                }
+                pending?.classList.toggle('hidden', !gate.pending_open);
+            });
+        };
+
+        const refreshGateHardware = async () => {
+            if (!statusUrl || document.hidden) return;
+            try {
+                const res = await fetch(statusUrl, { headers: { Accept: 'application/json' }, credentials: 'same-origin', cache: 'no-store' });
+                if (!res.ok) return;
+                const data = await res.json();
+                paintGates(data.gates || []);
+            } catch (e) {}
+        };
+
+        const modal = document.getElementById('gate-open-modal');
+        const form = document.getElementById('gate-open-form');
+        const gateIdInput = document.getElementById('gate-open-id');
+        const subtitle = document.getElementById('gate-open-subtitle');
+        const errEl = document.getElementById('gate-open-error');
+        const submitBtn = document.getElementById('gate-open-submit');
+
+        const closeOpenModal = () => {
+            modal?.classList.add('hidden');
+            modal?.classList.remove('flex');
+            if (errEl) { errEl.classList.add('hidden'); errEl.textContent = ''; }
+        };
+
+        document.querySelectorAll('[data-open-gate]').forEach((btn) => {
+            btn.addEventListener('click', () => {
+                if (gateIdInput) gateIdInput.value = btn.getAttribute('data-open-gate') || '';
+                if (subtitle) subtitle.textContent = `Open ${btn.getAttribute('data-open-label') || 'gate'} from the ESP32. This is logged.`;
+                modal?.classList.remove('hidden');
+                modal?.classList.add('flex');
+                document.getElementById('gate-open-reason')?.focus();
+            });
+        });
+
+        document.getElementById('gate-open-cancel')?.addEventListener('click', closeOpenModal);
+        modal?.addEventListener('click', (e) => { if (e.target === modal) closeOpenModal(); });
+
+        form?.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            if (!openUrl) return;
+            submitBtn && (submitBtn.disabled = true);
+            try {
+                const res = await fetch(openUrl, {
+                    method: 'POST',
+                    headers: {
+                        Accept: 'application/json',
+                        'Content-Type': 'application/json',
+                        'X-CSRF-TOKEN': csrf,
+                    },
+                    credentials: 'same-origin',
+                    body: JSON.stringify({
+                        gate_id: gateIdInput?.value,
+                        reason: document.getElementById('gate-open-reason')?.value || '',
+                    }),
+                });
+                const data = await res.json().catch(() => ({}));
+                if (!res.ok) {
+                    if (errEl) {
+                        errEl.textContent = data.message || Object.values(data.errors || {}).flat()[0] || 'Unable to send open command.';
+                        errEl.classList.remove('hidden');
+                    }
+                    return;
+                }
+                paintGates(data.gates || []);
+                closeOpenModal();
+                form.reset();
+                alert(data.message || 'Open command sent.');
+            } catch (err) {
+                if (errEl) {
+                    errEl.textContent = 'Network error. Try again.';
+                    errEl.classList.remove('hidden');
+                }
+            } finally {
+                submitBtn && (submitBtn.disabled = false);
+            }
+        });
+
+        refreshGateHardware();
+        window.setInterval(refreshGateHardware, 3000);
     })();
 </script>
 @endpush

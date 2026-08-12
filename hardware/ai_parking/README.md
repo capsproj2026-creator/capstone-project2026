@@ -123,6 +123,7 @@ UI: `/admin/live-cameras`, `/guard/live-cameras`, `/guard/ai-parking`
 | `AI_PARKING_BOX_HOLD_SEC` | `0.45` | Hold boxes briefly to reduce flicker |
 | `AI_PARKING_OCR_EVERY_SEC` | `3` | OCR interval per track (async, non-blocking) |
 | `AI_PARKING_OCR_MIN_CONF` | `0.30` | Min OCR conf to accept a plate |
+| `AI_PARKING_PLATE_MODEL` | `models/plate.pt` | Optional dedicated plate YOLO; OpenCV locator is used if missing |
 | `AI_PARKING_OCR_UPSCALE_FACTOR` | `3` | Upscale small plate crops before OCR |
 | `AI_PARKING_OCR_UPSCALE_MIN_WIDTH` | `400` | Minimum crop width after upscale |
 | `AI_PARKING_PLATE_VOTE_NEEDED` | `1` | Matching OCR reads before locking plate |

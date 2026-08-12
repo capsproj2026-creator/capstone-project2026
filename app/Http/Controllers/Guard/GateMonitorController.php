@@ -4,7 +4,9 @@ namespace App\Http\Controllers\Guard;
 
 use App\Http\Controllers\Controller;
 use App\Models\GateLog;
+use App\Services\GateHardwareService;
 use App\Services\GateLogService;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
@@ -24,7 +26,51 @@ class GateMonitorController extends Controller
             'todayEntries' => app(GateLogService::class)->todayCount('Entry'),
             'todayExits' => app(GateLogService::class)->todayCount('Exit'),
             'filterAction' => $action,
+            'gateStatuses' => app(GateHardwareService::class)->statuses(),
+            'gateStatusUrl' => route('guard.gate.status'),
+            'gateOpenUrl' => route('guard.gate.open'),
         ]);
+    }
+
+    public function status(GateHardwareService $hardware): JsonResponse
+    {
+        return response()->json([
+            'ok' => true,
+            'gates' => $hardware->statuses(),
+        ]);
+    }
+
+    public function open(Request $request, GateHardwareService $hardware): JsonResponse|RedirectResponse
+    {
+        $validated = $request->validate([
+            'gate_id' => ['required', 'string', 'in:GATE-IN-1,GATE-OUT-1'],
+            'reason' => ['required', 'string', 'min:3', 'max:200'],
+        ]);
+
+        $result = $hardware->queueOpen(
+            $validated['gate_id'],
+            $request->user(),
+            $validated['reason']
+        );
+
+        $label = $result['gate_id'] === 'GATE-OUT-1' ? 'Exit gate' : 'Entry gate';
+        $message = $result['online']
+            ? "{$label} open command sent. Boom will open on the next ESP32 heartbeat."
+            : "{$label} open queued for 20 seconds. ESP32 is offline — flash/start the board so it can pick up the command.";
+
+        if ($request->expectsJson()) {
+            return response()->json([
+                'ok' => true,
+                'message' => $message,
+                'online' => $result['online'],
+                'gate_id' => $result['gate_id'],
+                'gates' => $hardware->statuses(),
+            ]);
+        }
+
+        return redirect()
+            ->route('guard.gate')
+            ->with($result['online'] ? 'success' : 'error', $message);
     }
 
     public function scan(Request $request, GateLogService $gateLogs): RedirectResponse

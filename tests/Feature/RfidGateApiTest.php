@@ -56,6 +56,7 @@ class RfidGateApiTest extends TestCase
             $this->owner->delete();
         }
         GateLog::query()->where('rfid_uid', 'DEADBEEF99')->delete();
+        GateLog::query()->where('rfid_uid', 'MANUAL-OVERRIDE')->where('reason', 'Ambulance at gate')->delete();
 
         parent::tearDown();
     }
@@ -268,6 +269,38 @@ class RfidGateApiTest extends TestCase
             ])
             ->assertForbidden()
             ->assertJsonPath('status', RfidAccessService::STATUS_DENIED);
+    }
+
+    public function test_heartbeat_requires_token_and_returns_open_command(): void
+    {
+        \Illuminate\Support\Facades\Event::fake();
+        \Illuminate\Support\Facades\Config::set('broadcasting.default', 'null');
+
+        $this->postJson('/api/rfid/heartbeat', ['gate_id' => 'GATE-IN-1'])
+            ->assertUnauthorized();
+
+        $this->withTokenHeader()
+            ->postJson('/api/rfid/heartbeat', ['gate_id' => 'GATE-IN-1'])
+            ->assertOk()
+            ->assertJsonPath('ok', true)
+            ->assertJsonPath('open', false)
+            ->assertJsonPath('gate_id', 'GATE-IN-1');
+
+        $hardware = app(\App\Services\GateHardwareService::class);
+        $this->assertTrue($hardware->isOnline('GATE-IN-1'));
+
+        $operator = User::query()->where('email', 'guard@my.cspc.edu.ph')->first() ?? $this->owner;
+        $hardware->queueOpen('GATE-IN-1', $operator, 'Ambulance at gate');
+
+        $this->withTokenHeader()
+            ->postJson('/api/rfid/heartbeat', ['gate_id' => 'GATE-IN-1'])
+            ->assertOk()
+            ->assertJsonPath('open', true);
+
+        $this->withTokenHeader()
+            ->postJson('/api/rfid/heartbeat', ['gate_id' => 'GATE-IN-1'])
+            ->assertOk()
+            ->assertJsonPath('open', false);
     }
 
     private function withTokenHeader()

@@ -39,6 +39,11 @@ class GateScanPresenter
                 : ($strikes > 0 ? "{$strikes} Strike".($strikes === 1 ? '' : 's') : 'No Violations'))
             : ($log->result ?: 'Access Denied');
 
+        if (strcasecmp((string) $log->action, 'Override') === 0) {
+            $statusLabel = 'Emergency Open';
+            $name = $user?->displayName() ?? 'Guard override';
+        }
+
         $payload = [
             'id' => (string) $log->getKey(),
             'log_number' => $log->daily_log_id ?? (string) $log->getKey(),

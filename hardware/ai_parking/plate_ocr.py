@@ -119,6 +119,14 @@ class PlateOCR:
         crop = frame[y1p:y2p, x1:x2]
         if crop is None or crop.size == 0:
             return None
+        try:
+            from plate_detector import detect_plate_crop
+
+            tighter = detect_plate_crop(crop)
+            if tighter is not None:
+                return tighter
+        except Exception:
+            pass
         return crop.copy()
 
     @staticmethod
