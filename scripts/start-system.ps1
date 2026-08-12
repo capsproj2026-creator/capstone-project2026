@@ -77,6 +77,21 @@ function Start-ProjectWindow([string]$Title, [string[]]$CommandArgs) {
 
 Initialize-DevPath
 
+function Get-DotEnvValue {
+    param(
+        [object[]]$Lines,
+        [string]$Name
+    )
+    if (-not $Lines) { return "" }
+    $pattern = '^\s*' + [regex]::Escape($Name) + '\s*='
+    $line = @($Lines | Where-Object { $_ -match $pattern } | Select-Object -First 1)
+    if ($line.Count -eq 0 -or [string]::IsNullOrWhiteSpace([string]$line[0])) {
+        return ""
+    }
+    $value = ([string]$line[0] -replace ("^\s*" + [regex]::Escape($Name) + "\s*="), "")
+    return $value.Trim().Trim('"').Trim("'")
+}
+
 # Preflight checks so Windows users get clear errors instead of empty service windows.
 $preflight = @()
 if (-not (Get-Command php -ErrorAction SilentlyContinue)) { $preflight += "php (PHP 8.2+)" }
@@ -90,11 +105,11 @@ $appKeyLine = $envLines | Where-Object { $_ -match '^\s*APP_KEY=' } | Select-Obj
 if (-not $appKeyLine -or $appKeyLine -match '^\s*APP_KEY=\s*$') {
     $preflight += "APP_KEY (run: php artisan key:generate)"
 }
-$mongoMode = ($envLines | Where-Object { $_ -match '^\s*MONGODB_MODE=' } | Select-Object -First 1) -replace '^\s*MONGODB_MODE=\s*',''
-$mongoMode = $mongoMode.Trim().Trim('"').Trim("'").ToLower()
-$atlasUser = ($envLines | Where-Object { $_ -match '^\s*MONGODB_ATLAS_USER=' } | Select-Object -First 1) -replace '^\s*MONGODB_ATLAS_USER=\s*',''
-$atlasHost = ($envLines | Where-Object { $_ -match '^\s*MONGODB_ATLAS_HOST=' } | Select-Object -First 1) -replace '^\s*MONGODB_ATLAS_HOST=\s*',''
-$mongoLine = $envLines | Where-Object { $_ -match '^\s*MONGODB_URI=' -and $_ -notmatch '^\s*#' } | Select-Object -First 1
+$mongoMode = (Get-DotEnvValue -Lines $envLines -Name "MONGODB_MODE").ToLower()
+$atlasUser = Get-DotEnvValue -Lines $envLines -Name "MONGODB_ATLAS_USER"
+$atlasHost = Get-DotEnvValue -Lines $envLines -Name "MONGODB_ATLAS_HOST"
+$mongoLine = @($envLines | Where-Object { $_ -match '^\s*MONGODB_URI=' -and $_ -notmatch '^\s*#' } | Select-Object -First 1)
+$mongoLine = if ($mongoLine.Count -gt 0) { [string]$mongoLine[0] } else { "" }
 $hasAtlasParts = ($atlasUser -and $atlasHost)
 $hasDirectUri = ($mongoLine -and $mongoLine -notmatch 'USERNAME:PASSWORD@' -and $mongoLine -match '=\s*\S')
 $hasLocalUri = ($mongoLine -and $mongoLine -match '127\.0\.0\.1:27017')
