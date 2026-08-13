@@ -297,6 +297,17 @@ class RfidGateApiTest extends TestCase
             ->assertOk()
             ->assertJsonPath('open', true);
 
+        // Command is re-delivered a few times so a missed ESP32 parse still opens the servo.
+        $this->withTokenHeader()
+            ->postJson('/api/rfid/heartbeat', ['gate_id' => 'GATE-IN-1'])
+            ->assertOk()
+            ->assertJsonPath('open', true);
+
+        for ($i = 0; $i < \App\Services\GateHardwareService::OPEN_DELIVERIES; $i++) {
+            $this->withTokenHeader()
+                ->postJson('/api/rfid/heartbeat', ['gate_id' => 'GATE-IN-1']);
+        }
+
         $this->withTokenHeader()
             ->postJson('/api/rfid/heartbeat', ['gate_id' => 'GATE-IN-1'])
             ->assertOk()

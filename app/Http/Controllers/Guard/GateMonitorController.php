@@ -57,8 +57,8 @@ class GateMonitorController extends Controller
 
         $actuator = $result['actuator_gate_id'] ?? 'GATE-IN-1';
         $message = $result['online']
-            ? "Emergency open sent. Entry boom servo ({$actuator}) will open on the next heartbeat."
-            : "Emergency open queued. Entry ESP32 ({$actuator}) is offline — power/flash the Entry board.";
+            ? "Emergency open queued. Entry boom should move within a few seconds (keep Entry Online)."
+            : "Emergency open queued, but Entry ESP32 is Offline — power it, check Wi‑Fi/API_BASE, then try again.";
 
         if ($request->expectsJson()) {
             return response()->json([

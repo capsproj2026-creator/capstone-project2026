@@ -262,6 +262,7 @@ void pollHeartbeat() {
   http.setReuse(false);
   String url = String(API_BASE) + "/api/rfid/heartbeat";
   if (!http.begin(client, url)) {
+    Serial.println("Heartbeat: begin failed");
     return;
   }
 
@@ -278,6 +279,7 @@ void pollHeartbeat() {
 
   int code = http.POST(payload);
   if (code <= 0) {
+    Serial.printf("Heartbeat: HTTP error %d\n", code);
     http.end();
     return;
   }
@@ -285,17 +287,43 @@ void pollHeartbeat() {
   String response = http.getString();
   http.end();
 
-  StaticJsonDocument<256> doc;
-  if (deserializeJson(doc, response)) {
+  if (code != 200) {
+    Serial.printf("Heartbeat: status %d body=%s\n", code, response.c_str());
     return;
   }
 
-  bool openCmd = doc["open"] | false;
-  if (openCmd) {
-    Serial.println("Heartbeat: open shared boom (force)");
-    ScanResult granted = {true, "Access Granted", "shared_boom_open"};
-    handleResult(granted, true);
+  // Robust parse — ArduinoJson | operator + plain-text fallback.
+  bool openCmd = false;
+  StaticJsonDocument<384> doc;
+  DeserializationError err = deserializeJson(doc, response);
+  if (!err) {
+    openCmd = doc["open"] | false;
+    if (!openCmd && doc.containsKey("command")) {
+      const char* cmd = doc["command"] | "";
+      openCmd = (strcmp(cmd, "open") == 0);
+    }
+  } else {
+    Serial.printf("Heartbeat: JSON parse fail (%s) body=%s\n", err.c_str(), response.c_str());
   }
+  if (!openCmd) {
+    openCmd = response.indexOf("\"open\":true") >= 0
+      || response.indexOf("\"open\": true") >= 0
+      || response.indexOf("\"command\":\"open\"") >= 0;
+  }
+
+  if (!openCmd) {
+    return;
+  }
+
+  Serial.printf("Heartbeat: OPEN command — %s\n", response.c_str());
+  // Drive servo directly (do not depend on ScanResult / RFID debounce).
+  digitalWrite(PIN_RED, LOW);
+  digitalWrite(PIN_GREEN, HIGH);
+  openGateActuator();
+  gateIsOpen = true;
+  gateCloseAtMs = millis() + GATE_OPEN_MS;
+  gateCycleEndsMs = millis() + SCAN_BLOCK_MS;
+  Serial.println("Emergency/shared boom open applied");
 }
 
 void handleResult(const ScanResult &result, bool forceOpen) {

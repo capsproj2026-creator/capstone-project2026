@@ -20,6 +20,9 @@ class GateHardwareService
 
     public const COMMAND_TTL_SEC = 60;
 
+    /** How many heartbeats keep repeating open:true so a missed ESP32 parse still opens the servo. */
+    public const OPEN_DELIVERIES = 5;
+
     public function normalizeGateId(string $gateId): ?string
     {
         $id = strtoupper(trim($gateId));
@@ -47,7 +50,7 @@ class GateHardwareService
     }
 
     /**
-     * ESP32 heartbeat: mark online and consume a pending open command (once).
+     * ESP32 heartbeat: mark online and deliver a pending open command (retried a few times).
      *
      * @return array{ok: bool, gate_id: string, open: bool, command: string|null, message?: string}
      */
@@ -66,8 +69,7 @@ class GateHardwareService
 
         Cache::put($this->seenKey($id), now()->timestamp, now()->addSeconds(45));
 
-        $cmd = Cache::pull($this->openKey($id));
-        $open = is_array($cmd);
+        $open = $this->consumeOpenDelivery($id);
 
         return [
             'ok' => true,
@@ -78,7 +80,7 @@ class GateHardwareService
     }
 
     /**
-     * Queue a one-shot open command with no Override log (used when Exit RFID should move the shared Entry boom).
+     * Queue a boom-open command with no Override log (Exit RFID → Entry servo).
      */
     public function queueOpenCommand(string $gateId, string $reason = 'Shared boom open'): bool
     {
@@ -87,10 +89,10 @@ class GateHardwareService
             return false;
         }
 
-        Cache::put($this->openKey($id), [
+        $this->storeOpenCommand($id, [
             'reason' => $reason,
             'queued_at' => now()->toIso8601String(),
-        ], now()->addSeconds(self::COMMAND_TTL_SEC));
+        ]);
 
         return true;
     }
@@ -132,12 +134,12 @@ class GateHardwareService
 
         $actuatorId = $shared;
         $reason = trim($reason);
-        Cache::put($this->openKey($actuatorId), [
+        $this->storeOpenCommand($actuatorId, [
             'reason' => $reason,
             'operator_id' => $operator->id,
             'queued_at' => now()->toIso8601String(),
             'requested_gate_id' => $actuatorId,
-        ], now()->addSeconds(self::COMMAND_TTL_SEC));
+        ]);
 
         $log = GateLog::query()->create([
             'user_id' => $operator->id,
@@ -180,6 +182,37 @@ class GateHardwareService
         }
 
         return $out;
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     */
+    private function storeOpenCommand(string $gateId, array $payload): void
+    {
+        Cache::put($this->openKey($gateId), array_merge($payload, [
+            'remain' => self::OPEN_DELIVERIES,
+        ]), now()->addSeconds(self::COMMAND_TTL_SEC));
+    }
+
+    private function consumeOpenDelivery(string $gateId): bool
+    {
+        $key = $this->openKey($gateId);
+        $cmd = Cache::get($key);
+        if (! is_array($cmd)) {
+            return false;
+        }
+
+        $remain = (int) ($cmd['remain'] ?? 1);
+        $remain--;
+
+        if ($remain <= 0) {
+            Cache::forget($key);
+        } else {
+            $cmd['remain'] = $remain;
+            Cache::put($key, $cmd, now()->addSeconds(self::COMMAND_TTL_SEC));
+        }
+
+        return true;
     }
 
     private function seenKey(string $gateId): string
