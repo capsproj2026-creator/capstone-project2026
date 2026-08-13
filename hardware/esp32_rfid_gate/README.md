@@ -88,7 +88,7 @@ RFID_SHARED_BOOM_GATE_ID=GATE-IN-1
 
 ## Timing (`rfid_gate_config.h`)
 
-- `GATE_OPEN_MS` — open duration (default 3000)
+- `GATE_OPEN_MS` — open duration (default 8000 = 8 seconds)
 - `GATE_COOLDOWN_MS` — ignore re-scans (2500)
 - `SCAN_BLOCK_MS` — block duplicate opens (3500)
 - `HEARTBEAT_MS` — online ping + emergency open poll (2500)

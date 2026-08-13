@@ -37,7 +37,7 @@
 #endif
 
 #ifndef GATE_OPEN_MS
-#define GATE_OPEN_MS 3000UL
+#define GATE_OPEN_MS 8000UL
 #endif
 #ifndef GATE_COOLDOWN_MS
 #define GATE_COOLDOWN_MS 2500UL
