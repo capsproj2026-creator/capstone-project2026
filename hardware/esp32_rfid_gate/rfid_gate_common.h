@@ -33,6 +33,26 @@
 #define HEARTBEAT_MS 2500UL
 #endif
 
+#if ACTUATOR_MODE == ACTUATOR_SERVO
+#include <ESP32Servo.h>
+#endif
+
+#ifndef GATE_OPEN_MS
+#define GATE_OPEN_MS 3000UL
+#endif
+#ifndef GATE_COOLDOWN_MS
+#define GATE_COOLDOWN_MS 2500UL
+#endif
+#ifndef SCAN_BLOCK_MS
+#define SCAN_BLOCK_MS 3500UL
+#endif
+#ifndef HEARTBEAT_MS
+#define HEARTBEAT_MS 2500UL
+#endif
+#ifndef SERVO_TEST_ON_BOOT
+#define SERVO_TEST_ON_BOOT 1
+#endif
+
 #define SS_PIN    5
 #define RST_PIN   22
 #define PIN_GREEN 25
@@ -58,6 +78,7 @@ struct ScanResult {
 unsigned long lastScanMs = 0;
 unsigned long lastHeartbeatMs = 0;
 unsigned long gateCycleEndsMs = 0;
+unsigned long gateCloseAtMs = 0;
 bool gateIsOpen = false;
 
 String uidToHex(MFRC522::Uid &uid);
@@ -69,25 +90,44 @@ void denyAccess(const ScanResult &result);
 void openGateActuator();
 void closeGateActuator();
 void updateGateCycle();
+void initGateActuator();
+
+void initGateActuator() {
+#if ACTUATOR_MODE == ACTUATOR_SERVO
+  // Do NOT pinMode(PIN_GATE) before attach — it breaks PWM on ESP32 Arduino core 3.x
+  gateServo.setPeriodHertz(50);
+  bool ok = gateServo.attach(PIN_GATE, 500, 2400);
+  Serial.printf("Actuator: SERVO on GPIO %d (attach=%d)\n", PIN_GATE, ok ? 1 : 0);
+  delay(200);
+  gateServo.write(SERVO_CLOSE_ANGLE);
+  Serial.printf("Servo -> close angle %d\n", SERVO_CLOSE_ANGLE);
+  delay(500);
+
+#if SERVO_TEST_ON_BOOT
+  Serial.println("Servo boot test: open...");
+  gateServo.write(SERVO_OPEN_ANGLE);
+  delay(1200);
+  Serial.println("Servo boot test: close...");
+  gateServo.write(SERVO_CLOSE_ANGLE);
+  delay(800);
+  Serial.println("Servo boot test done. If arm did not move, check 5V supply + common GND + signal on GPIO 14.");
+#endif
+#else
+  pinMode(PIN_GATE, OUTPUT);
+  digitalWrite(PIN_GATE, LOW);
+  Serial.println("Actuator: RELAY");
+#endif
+}
 
 void setupGateHardware() {
   pinMode(PIN_GREEN, OUTPUT);
   pinMode(PIN_RED, OUTPUT);
   pinMode(PIN_BUZZER, OUTPUT);
-  pinMode(PIN_GATE, OUTPUT);
   digitalWrite(PIN_GREEN, LOW);
   digitalWrite(PIN_RED, LOW);
   digitalWrite(PIN_BUZZER, LOW);
 
-#if ACTUATOR_MODE == ACTUATOR_SERVO
-  gateServo.setPeriodHertz(50);
-  gateServo.attach(PIN_GATE, 500, 2400);
-  gateServo.write(SERVO_CLOSE_ANGLE);
-  Serial.println("Actuator: SERVO");
-#else
-  digitalWrite(PIN_GATE, LOW);
-  Serial.println("Actuator: RELAY");
-#endif
+  initGateActuator();
 
   SPI.begin();
   mfrc522.PCD_Init();
@@ -277,6 +317,7 @@ void grantAccess() {
   digitalWrite(PIN_GREEN, HIGH);
   openGateActuator();
   gateIsOpen = true;
+  gateCloseAtMs = millis() + GATE_OPEN_MS;
   gateCycleEndsMs = millis() + SCAN_BLOCK_MS;
   Serial.println("Access Granted — gate opening");
 }
@@ -284,6 +325,7 @@ void grantAccess() {
 void denyAccess(const ScanResult &result) {
   digitalWrite(PIN_GREEN, LOW);
   closeGateActuator();
+  gateCloseAtMs = 0;
 
   digitalWrite(PIN_RED, HIGH);
 
@@ -307,6 +349,7 @@ void denyAccess(const ScanResult &result) {
 
 void openGateActuator() {
 #if ACTUATOR_MODE == ACTUATOR_SERVO
+  Serial.printf("Servo OPEN -> %d deg\n", SERVO_OPEN_ANGLE);
   gateServo.write(SERVO_OPEN_ANGLE);
 #else
   digitalWrite(PIN_GATE, HIGH);
@@ -315,6 +358,7 @@ void openGateActuator() {
 
 void closeGateActuator() {
 #if ACTUATOR_MODE == ACTUATOR_SERVO
+  Serial.printf("Servo CLOSE -> %d deg\n", SERVO_CLOSE_ANGLE);
   gateServo.write(SERVO_CLOSE_ANGLE);
 #else
   digitalWrite(PIN_GATE, LOW);
@@ -323,19 +367,14 @@ void closeGateActuator() {
 }
 
 void updateGateCycle() {
-  if (!gateIsOpen) {
+  if (!gateIsOpen || gateCloseAtMs == 0) {
     return;
   }
 
-  static unsigned long closeAt = 0;
-  if (closeAt == 0) {
-    closeAt = millis() + GATE_OPEN_MS;
-  }
-
-  if (millis() >= closeAt) {
+  if (millis() >= gateCloseAtMs) {
     closeGateActuator();
     digitalWrite(PIN_GREEN, LOW);
-    closeAt = 0;
+    gateCloseAtMs = 0;
     Serial.println("Gate closed");
   }
 }

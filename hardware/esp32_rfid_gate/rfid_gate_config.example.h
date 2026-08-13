@@ -32,6 +32,7 @@
 #define GATE_COOLDOWN_MS 2500UL // Ignore re-scans after a read (ms)
 #define SCAN_BLOCK_MS  3500UL   // Block new opens while gate cycle is active (ms)
 #define HEARTBEAT_MS   2500UL   // ESP32 online ping + emergency-open poll
+#define SERVO_TEST_ON_BOOT 1    // Move arm once at boot to verify wiring
 
 // Servo angles (only used when ACTUATOR_MODE == ACTUATOR_SERVO)
 #define SERVO_OPEN_ANGLE  90
