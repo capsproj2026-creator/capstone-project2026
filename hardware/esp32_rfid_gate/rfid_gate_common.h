@@ -83,7 +83,7 @@ bool gateIsOpen = false;
 String uidToHex(MFRC522::Uid &uid);
 ScanResult postScan(const String &uid);
 void pollHeartbeat();
-void handleResult(const ScanResult &result);
+void handleResult(const ScanResult &result, bool forceOpen = false);
 void grantAccess();
 void denyAccess(const ScanResult &result);
 void openGateActuator();
@@ -292,16 +292,17 @@ void pollHeartbeat() {
 
   bool openCmd = doc["open"] | false;
   if (openCmd) {
-    Serial.println("Heartbeat: open shared boom");
+    Serial.println("Heartbeat: open shared boom (force)");
     ScanResult granted = {true, "Access Granted", "shared_boom_open"};
-    handleResult(granted);
+    handleResult(granted, true);
   }
 }
 
-void handleResult(const ScanResult &result) {
+void handleResult(const ScanResult &result, bool forceOpen) {
   if (result.granted) {
-    if (gateIsOpen || millis() < gateCycleEndsMs) {
-      Serial.println("Gate cycle active — ignoring duplicate open");
+    // RFID debounce only — emergency/shared-boom heartbeat must always move the servo.
+    if (!forceOpen && (gateIsOpen || millis() < gateCycleEndsMs)) {
+      Serial.println("Gate cycle active — ignoring duplicate RFID open");
       digitalWrite(PIN_GREEN, HIGH);
       delay(200);
       digitalWrite(PIN_GREEN, LOW);

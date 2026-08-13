@@ -18,7 +18,7 @@ class GateHardwareService
 
     public const ONLINE_AFTER_SEC = 12;
 
-    public const COMMAND_TTL_SEC = 20;
+    public const COMMAND_TTL_SEC = 60;
 
     public function normalizeGateId(string $gateId): ?string
     {

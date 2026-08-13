@@ -32,6 +32,8 @@ class GateMonitorRealtimeTest extends TestCase
             ->assertSee('Emergency gate open', false)
             ->assertSee('GATE-IN-1', false)
             ->assertSee('data-open-gate="GATE-IN-1"', false)
+            ->assertSee('Entry boom (servo)', false)
+            ->assertDontSee('data-gate-card="GATE-OUT-1"', false)
             ->assertDontSee('data-open-gate="GATE-OUT-1"', false)
             ->assertDontSee("fetch(eventsBase", false)
             ->assertDontSee('setInterval(poll', false);

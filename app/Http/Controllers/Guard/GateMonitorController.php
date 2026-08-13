@@ -25,7 +25,10 @@ class GateMonitorController extends Controller
             'todayEntries' => app(GateLogService::class)->todayCount('Entry'),
             'todayExits' => app(GateLogService::class)->todayCount('Exit'),
             'filterAction' => $action,
-            'gateStatuses' => app(GateHardwareService::class)->statuses(),
+            'gateStatuses' => array_values(array_filter(
+                app(GateHardwareService::class)->statuses(),
+                static fn (array $gate): bool => ($gate['gate_id'] ?? '') === 'GATE-IN-1'
+            )),
             'gateStatusUrl' => route('guard.gate.status'),
             'gateOpenUrl' => route('guard.gate.open'),
         ]);

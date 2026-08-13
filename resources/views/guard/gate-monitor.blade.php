@@ -64,12 +64,12 @@
     </div>
 
     @php $gateStatuses = $gateStatuses ?? []; @endphp
-    <div id="gate-hardware-panel" class="mb-6 grid grid-cols-1 gap-4 lg:grid-cols-2">
+    <div id="gate-hardware-panel" class="mb-6 grid grid-cols-1 gap-4">
         @foreach ($gateStatuses as $gate)
             <div class="rounded-xl border border-gray-200 bg-white p-5 shadow-sm" data-gate-card="{{ $gate['gate_id'] }}">
                 <div class="flex flex-wrap items-start justify-between gap-3">
                     <div>
-                        <p class="text-sm font-medium text-gray-500">{{ $gate['label'] }}</p>
+                        <p class="text-sm font-medium text-gray-500">Entry boom (servo)</p>
                         <p class="mt-0.5 font-mono text-sm text-gray-700">{{ $gate['gate_id'] }}</p>
                         <div class="mt-2 flex items-center gap-2">
                             <span data-gate-dot class="h-2.5 w-2.5 rounded-full {{ $gate['online'] ? 'bg-emerald-500' : 'bg-gray-300' }}"></span>
@@ -78,18 +78,19 @@
                             </p>
                             <span data-gate-pending class="{{ ($gate['pending_open'] ?? false) ? '' : 'hidden' }} rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold uppercase text-amber-800">Queued</span>
                         </div>
+                        @unless ($gate['online'])
+                            <p class="mt-2 text-xs text-amber-700">Entry ESP32 must be Online for emergency open and Exit RFID to move the servo.</p>
+                        @endunless
                     </div>
-                    @if ($gate['gate_id'] === 'GATE-IN-1')
-                        <button
-                            type="button"
-                            class="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-emerald-700"
-                            data-open-gate="GATE-IN-1"
-                            data-open-label="Entry boom (servo)"
-                        >
-                            <i data-lucide="door-open" class="h-4 w-4"></i>
-                            Emergency open
-                        </button>
-                    @endif
+                    <button
+                        type="button"
+                        class="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-emerald-700"
+                        data-open-gate="GATE-IN-1"
+                        data-open-label="Entry boom (servo)"
+                    >
+                        <i data-lucide="door-open" class="h-4 w-4"></i>
+                        Emergency open
+                    </button>
                 </div>
             </div>
         @endforeach
