@@ -5,65 +5,91 @@ Physical gate control runs on the **ESP32**, not Laravel. Laravel validates RFID
 ## Flow
 
 ```
-RFID tap → ESP32 → POST /api/rfid/scan → RfidAccessService → JSON response → relay/servo
+RFID tap → RC522 → ESP32 → POST /api/rfid/scan → Laravel
+                         ↓
+              granted → GPIO 14 servo/relay open
+              denied  → red LED + buzzer
 ```
 
-## Setup
+## Setup (what code to flash)
 
-1. Install Arduino libraries: **MFRC522**, **ArduinoJson**, **ESP32Servo** (servo mode only).
-2. Copy `rfid_gate_config.example.h` → `rfid_gate_config.h` and set WiFi, `API_BASE`, `RFID_API_TOKEN`.
-3. Match `RFID_API_TOKEN` with Laravel `.env` `RFID_API_TOKEN`.
-4. Flash **entry**: `esp32_rfid_gate/esp32_rfid_gate.ino`  
-   Flash **exit**: `esp32_rfid_gate_exit/esp32_rfid_gate_exit.ino`
-5. Run Laravel on all interfaces: `php artisan serve --host=0.0.0.0 --port=8000`
+1. Arduino libraries: **MFRC522**, **ArduinoJson**, **ESP32Servo** (servo mode).
+2. Copy `rfid_gate_config.example.h` → `rfid_gate_config.h` and set WiFi, `API_BASE`, token, actuator mode.
+3. Match `RFID_API_TOKEN` with Laravel `.env`.
+4. Flash:
+   - **Entry:** `esp32_rfid_gate.ino` (this folder)
+   - **Exit:** `../esp32_rfid_gate_exit/esp32_rfid_gate_exit.ino`
+5. Laravel must listen on the LAN: `php artisan serve --host=0.0.0.0 --port=8000` (or `.\start.ps1`).
 
-## Wiring
+You do not paste a new sketch — open those `.ino` files; they include `rfid_gate_common.h`.
 
-| Signal | GPIO | Notes |
-|--------|------|-------|
-| RC522 SDA | 5 | SPI |
-| RC522 RST | 22 | |
-| RC522 SCK/MOSI/MISO | 18/23/19 | |
-| GREEN LED | 25 | Grant |
-| RED LED | 26 | Deny |
-| BUZZER | 27 | Deny pattern |
-| GATE (relay/servo) | 14 | See actuator modes |
+## Wiring overview
 
-## Actuator modes (`rfid_gate_config.h`)
+### RC522 → ESP32
 
-| Mode | Use when |
-|------|----------|
-| `ACTUATOR_RELAY` (default) | Relay module drives boom barrier (HIGH = open) |
-| `ACTUATOR_SERVO` | PWM servo arm — use **external 5V** supply, common GND |
+| RC522 | ESP32 GPIO | Notes |
+|-------|------------|-------|
+| SDA   | 5          | SPI SS |
+| SCK   | 18         | |
+| MOSI  | 23         | |
+| MISO  | 19         | |
+| RST   | 22         | |
+| 3.3V  | 3.3V       | **Not 5V** |
+| GND   | GND        | |
 
-Timing:
+### Feedback
 
-- `GATE_OPEN_MS` — open duration (default 3000 ms)
-- `GATE_COOLDOWN_MS` — ignore re-scans after read (2500 ms)
-- `SCAN_BLOCK_MS` — block duplicate opens during active cycle (3500 ms)
+| Device | GPIO |
+|--------|------|
+| Green LED | 25 |
+| Red LED | 26 |
+| Buzzer | 27 |
+
+### Servo (demo boom arm)
+
+| Servo | Connection |
+|-------|------------|
+| Signal | GPIO **14** |
+| VCC | **External 5V** (not ESP32 3.3V) |
+| GND | External GND **+** ESP32 GND (common ground) |
+
+In `rfid_gate_config.h`:
+
+```cpp
+#define ACTUATOR_MODE  ACTUATOR_SERVO
+#define SERVO_OPEN_ANGLE  90
+#define SERVO_CLOSE_ANGLE 0
+```
+
+### Relay (barrier)
+
+| Relay IN | GPIO **14** (HIGH = open) |
+| GND / VCC | Per module; common GND with ESP32 |
+
+```cpp
+#define ACTUATOR_MODE  ACTUATOR_RELAY
+```
+
+## Timing (`rfid_gate_config.h`)
+
+- `GATE_OPEN_MS` — open duration (default 3000)
+- `GATE_COOLDOWN_MS` — ignore re-scans (2500)
+- `SCAN_BLOCK_MS` — block duplicate opens (3500)
+- `HEARTBEAT_MS` — online ping + emergency open poll (2500)
 
 ## API responses
 
 | `granted` | `code` | Hardware |
 |-----------|--------|----------|
-| true | `access_granted` | Green LED + open gate |
-| false | `access_denied` | Red + 3 buzz pulses |
-| false | `already_inside` / `already_outside` | Red + 2 pulses |
-| false | `card_not_registered` | Red + 5 pulses |
+| true | `access_granted` | Green + open |
+| false | `access_denied` | Red + 3 buzz |
+| false | `already_inside` / `already_outside` | Red + 2 buzz |
+| false | `card_not_registered` | Red + 5 buzz |
 
-Network/parse errors fail **closed** (deny, no open).
-
-## Safety
-
-- Gate opens only when `granted: true`.
-- Duplicate scans during an open cycle do not re-trigger the actuator.
-- Non-blocking gate close — RFID loop keeps running during open window.
-- Heartbeat every `HEARTBEAT_MS` (default 2.5s) marks the gate **Online** on Live Gate Monitor.
-- Guard **Emergency Open** queues a one-shot command; the ESP32 opens on the next heartbeat (no extra hardware).
+Network errors fail **closed** (no open).
 
 ## Guard emergency open
 
-1. Open **Live Gate Monitor**.
-2. Confirm the gate shows **Online** (ESP32 must be flashed with this firmware).
-3. Click **Open Entry** / **Open Exit**, enter a reason, send.
-4. The boom opens once; the action is stored in Access Logs as `Override`.
+1. Live Gate Monitor → gate shows **Online**.
+2. **Open Entry** / **Open Exit** + reason.
+3. ESP32 opens on next heartbeat; logged as `Override`.
