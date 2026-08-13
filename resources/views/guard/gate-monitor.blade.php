@@ -79,15 +79,17 @@
                             <span data-gate-pending class="{{ ($gate['pending_open'] ?? false) ? '' : 'hidden' }} rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold uppercase text-amber-800">Queued</span>
                         </div>
                     </div>
-                    <button
-                        type="button"
-                        class="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-emerald-700"
-                        data-open-gate="{{ $gate['gate_id'] }}"
-                        data-open-label="{{ $gate['label'] }}"
-                    >
-                        <i data-lucide="door-open" class="h-4 w-4"></i>
-                        Open {{ $gate['direction'] }}
-                    </button>
+                    @if ($gate['gate_id'] === 'GATE-IN-1')
+                        <button
+                            type="button"
+                            class="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-emerald-700"
+                            data-open-gate="GATE-IN-1"
+                            data-open-label="Entry boom (servo)"
+                        >
+                            <i data-lucide="door-open" class="h-4 w-4"></i>
+                            Emergency open
+                        </button>
+                    @endif
                 </div>
             </div>
         @endforeach
@@ -97,7 +99,7 @@
         <form id="gate-open-form" class="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
             @csrf
             <h3 class="text-lg font-bold text-gray-900">Emergency gate open</h3>
-            <p id="gate-open-subtitle" class="mt-1 text-sm text-gray-500">Opens the boom on the ESP32. Logged to access history.</p>
+            <p id="gate-open-subtitle" class="mt-1 text-sm text-gray-500">Opens the Entry boom servo. Logged to access history.</p>
             <input type="hidden" name="gate_id" id="gate-open-id" value="">
             <label class="mt-4 block text-sm font-medium text-gray-700" for="gate-open-reason">Reason</label>
             <textarea id="gate-open-reason" name="reason" rows="3" required minlength="3" maxlength="200" class="mt-1 w-full rounded-xl border border-gray-200 px-3 py-2 text-sm" placeholder="e.g. Visitor without RFID, ambulance, stuck vehicle"></textarea>
@@ -591,7 +593,7 @@
         document.querySelectorAll('[data-open-gate]').forEach((btn) => {
             btn.addEventListener('click', () => {
                 if (gateIdInput) gateIdInput.value = btn.getAttribute('data-open-gate') || '';
-                if (subtitle) subtitle.textContent = `Open ${btn.getAttribute('data-open-label') || 'gate'} from the ESP32. This is logged.`;
+                if (subtitle) subtitle.textContent = 'Opens the Entry boom servo on the next heartbeat. This is logged.';
                 modal?.classList.remove('hidden');
                 modal?.classList.add('flex');
                 document.getElementById('gate-open-reason')?.focus();

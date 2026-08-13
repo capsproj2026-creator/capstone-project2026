@@ -11,7 +11,6 @@ use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
 use Illuminate\View\View;
-use InvalidArgumentException;
 
 class GateMonitorController extends Controller
 {
@@ -43,7 +42,7 @@ class GateMonitorController extends Controller
     public function open(Request $request, GateHardwareService $hardware): JsonResponse|RedirectResponse
     {
         $validated = $request->validate([
-            'gate_id' => ['required', 'string', 'in:GATE-IN-1,GATE-OUT-1'],
+            'gate_id' => ['required', 'string', 'in:GATE-IN-1'],
             'reason' => ['required', 'string', 'min:3', 'max:200'],
         ]);
 
@@ -53,11 +52,10 @@ class GateMonitorController extends Controller
             $validated['reason']
         );
 
-        $label = $result['gate_id'] === 'GATE-OUT-1' ? 'Exit gate' : 'Entry gate';
-        $actuator = $result['actuator_gate_id'] ?? $result['gate_id'];
+        $actuator = $result['actuator_gate_id'] ?? 'GATE-IN-1';
         $message = $result['online']
-            ? "{$label} open sent. Shared boom on {$actuator} will open on the next heartbeat."
-            : "{$label} open queued. Shared boom ESP32 ({$actuator}) is offline — power/flash Entry board.";
+            ? "Emergency open sent. Entry boom servo ({$actuator}) will open on the next heartbeat."
+            : "Emergency open queued. Entry ESP32 ({$actuator}) is offline — power/flash the Entry board.";
 
         if ($request->expectsJson()) {
             return response()->json([
@@ -65,6 +63,7 @@ class GateMonitorController extends Controller
                 'message' => $message,
                 'online' => $result['online'],
                 'gate_id' => $result['gate_id'],
+                'actuator_gate_id' => $actuator,
                 'gates' => $hardware->statuses(),
             ]);
         }

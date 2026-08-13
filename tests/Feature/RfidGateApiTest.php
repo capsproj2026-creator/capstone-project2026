@@ -340,28 +340,17 @@ class RfidGateApiTest extends TestCase
             ->assertJsonPath('command', 'open');
     }
 
-    public function test_emergency_open_on_exit_drives_shared_entry_boom(): void
+    public function test_emergency_open_is_entry_servo_only(): void
     {
         \Illuminate\Support\Facades\Event::fake();
         \Illuminate\Support\Facades\Config::set('broadcasting.default', 'null');
         Config::set('services.rfid.shared_boom_gate_id', 'GATE-IN-1');
 
         $operator = User::query()->where('email', 'guard@my.cspc.edu.ph')->first() ?? $this->owner;
-        $result = app(\App\Services\GateHardwareService::class)
-            ->queueOpen('GATE-OUT-1', $operator, 'Ambulance at exit shared boom');
+        $hardware = app(\App\Services\GateHardwareService::class);
 
-        $this->assertSame('GATE-OUT-1', $result['gate_id']);
-        $this->assertSame('GATE-IN-1', $result['actuator_gate_id']);
-
-        $this->withTokenHeader()
-            ->postJson('/api/rfid/heartbeat', ['gate_id' => 'GATE-IN-1'])
-            ->assertOk()
-            ->assertJsonPath('open', true);
-
-        GateLog::query()
-            ->where('rfid_uid', 'MANUAL-OVERRIDE')
-            ->where('reason', 'Ambulance at exit shared boom')
-            ->delete();
+        $this->expectException(\InvalidArgumentException::class);
+        $hardware->queueOpen('GATE-OUT-1', $operator, 'Should reject exit emergency open');
     }
 
     private function withTokenHeader()

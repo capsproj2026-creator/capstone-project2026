@@ -78,7 +78,7 @@ Wire the servo **only** to the Entry ESP32 (GPIO 14 + external 5V).
 
 - Entry grant → Entry opens servo locally
 - Exit grant → Laravel queues open → Entry heartbeat opens the same servo
-- Guard emergency open (Entry or Exit) → same shared boom on Entry
+- Guard emergency open (Entry only) → Entry boom servo
 
 Exit firmware uses `ACTUATOR_NONE` (no local servo).
 
@@ -106,6 +106,7 @@ Network errors fail **closed** (no open).
 
 ## Guard emergency open
 
-1. Live Gate Monitor → gate shows **Online**.
-2. **Open Entry** / **Open Exit** + reason.
-3. ESP32 opens on next heartbeat; logged as `Override`.
+1. Live Gate Monitor → Entry gate shows **Online**.
+2. **Emergency open** on Entry only + reason (drives the boom servo).
+3. Entry ESP32 opens on next heartbeat; logged as `Override`.
+Exit has no emergency-open button.

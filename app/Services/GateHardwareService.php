@@ -117,33 +117,33 @@ class GateHardwareService
     }
 
     /**
-     * Guard emergency open: always drive the shared boom hardware when configured.
+     * Guard emergency open: Entry boom servo only (GATE-IN-1 / shared boom ESP32).
      *
      * @return array{gate_id: string, online: bool, queued: bool, log: GateLog, actuator_gate_id: string}
      */
     public function queueOpen(string $gateId, User $operator, string $reason): array
     {
         $requested = $this->normalizeGateId($gateId);
-        if ($requested === null) {
-            throw new \InvalidArgumentException('Unknown gate.');
+        $shared = $this->normalizeGateId((string) config('services.rfid.shared_boom_gate_id', 'GATE-IN-1')) ?? 'GATE-IN-1';
+
+        if ($requested === null || $requested !== $shared) {
+            throw new \InvalidArgumentException('Emergency open is only available for the Entry boom servo.');
         }
 
-        $shared = $this->normalizeGateId((string) config('services.rfid.shared_boom_gate_id', 'GATE-IN-1')) ?? $requested;
         $actuatorId = $shared;
-
         $reason = trim($reason);
         Cache::put($this->openKey($actuatorId), [
             'reason' => $reason,
             'operator_id' => $operator->id,
             'queued_at' => now()->toIso8601String(),
-            'requested_gate_id' => $requested,
+            'requested_gate_id' => $actuatorId,
         ], now()->addSeconds(self::COMMAND_TTL_SEC));
 
         $log = GateLog::query()->create([
             'user_id' => $operator->id,
             'visitor_id' => null,
             'action' => self::ACTION_OVERRIDE,
-            'gate_id' => $requested,
+            'gate_id' => $actuatorId,
             'rfid_uid' => 'MANUAL-OVERRIDE',
             'result' => RfidAccessService::STATUS_GRANTED,
             'reason' => $reason !== '' ? $reason : 'Guard emergency open',
@@ -153,7 +153,7 @@ class GateHardwareService
         GateScanProcessed::dispatchFromLog($log);
 
         return [
-            'gate_id' => $requested,
+            'gate_id' => $actuatorId,
             'actuator_gate_id' => $actuatorId,
             'online' => $this->isOnline($actuatorId),
             'queued' => true,

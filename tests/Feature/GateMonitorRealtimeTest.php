@@ -31,6 +31,8 @@ class GateMonitorRealtimeTest extends TestCase
             ->assertSee('reverb-app-key', false)
             ->assertSee('Emergency gate open', false)
             ->assertSee('GATE-IN-1', false)
+            ->assertSee('data-open-gate="GATE-IN-1"', false)
+            ->assertDontSee('data-open-gate="GATE-OUT-1"', false)
             ->assertDontSee("fetch(eventsBase", false)
             ->assertDontSee('setInterval(poll', false);
     }
@@ -111,6 +113,13 @@ class GateMonitorRealtimeTest extends TestCase
             ->assertOk()
             ->assertJsonPath('ok', true)
             ->assertJsonPath('gate_id', 'GATE-IN-1');
+
+        $this->actingAs($guard)
+            ->postJson(route('guard.gate.open'), [
+                'gate_id' => 'GATE-OUT-1',
+                'reason' => 'Exit should not have emergency open',
+            ])
+            ->assertStatus(422);
 
         if ($student && strtolower($student->roleName()) !== 'guard') {
             $denied = $this->actingAs($student)
