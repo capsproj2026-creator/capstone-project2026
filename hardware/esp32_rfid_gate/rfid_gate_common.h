@@ -202,7 +202,8 @@ ScanResult postScan(const String &uid) {
   }
 
   WiFiClient client;
-  client.setTimeout(HTTP_READ_MS / 1000);
+  // Do not call client.setTimeout() here — on ESP32 core 3.x it is milliseconds,
+  // and a small value (e.g. 5) causes HTTPC_ERROR_READ_TIMEOUT (-11).
 
   HTTPClient http;
   http.setReuse(false);
@@ -256,7 +257,7 @@ ScanResult postScan(const String &uid) {
 
 void pollHeartbeat() {
   WiFiClient client;
-  client.setTimeout(5);
+  // Avoid client.setTimeout(5) — that is 5ms on many ESP32 cores → error -11.
 
   HTTPClient http;
   http.setReuse(false);
@@ -269,8 +270,8 @@ void pollHeartbeat() {
   http.addHeader("Content-Type", "application/json");
   http.addHeader("Connection", "close");
   http.addHeader("X-RFID-TOKEN", RFID_API_TOKEN);
-  http.setConnectTimeout(4000);
-  http.setTimeout(6000);
+  http.setConnectTimeout(HTTP_CONNECT_MS);
+  http.setTimeout(HTTP_READ_MS);
 
   StaticJsonDocument<128> body;
   body["gate_id"] = GATE_ID;
@@ -279,7 +280,8 @@ void pollHeartbeat() {
 
   int code = http.POST(payload);
   if (code <= 0) {
-    Serial.printf("Heartbeat: HTTP error %d\n", code);
+    Serial.printf("Heartbeat: HTTP error %d (%s) — check Laravel is running at %s\n",
+                  code, HTTPClient::errorToString(code).c_str(), API_BASE);
     http.end();
     return;
   }
