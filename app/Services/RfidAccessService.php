@@ -127,6 +127,7 @@ class RfidAccessService
 
         $this->syncUserParkingOccupancy($user, $direction);
         GateScanProcessed::dispatchFromLog($log);
+        app(GateHardwareService::class)->notifySharedBoomAfterGrant($gateId, $direction);
 
         return $this->response(
             self::STATUS_GRANTED,
@@ -216,6 +217,7 @@ class RfidAccessService
         }
 
         GateScanProcessed::dispatchFromLog($log->fresh(['visitor', 'user']) ?? $log);
+        app(GateHardwareService::class)->notifySharedBoomAfterGrant($gateId, $direction);
 
         return $this->response(
             self::STATUS_GRANTED,

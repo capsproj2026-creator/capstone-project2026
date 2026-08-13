@@ -221,16 +221,28 @@ Laravel **does not** wire to the servo. The ESP32 opens the boom only when the A
 
 Use a resistor (~220Ω) in series with each LED.
 
-### Wiring — Servo → ESP32 (recommended for demo arm)
+### Wiring — Servo (ONE shared boom for Entry + Exit)
 
-| Servo wire | Connect to | Notes |
-|------------|------------|-------|
-| Signal (usually orange/yellow) | **GPIO 14** | PWM from ESP32 |
-| VCC (usually red) | **External 5V +** | Separate supply |
-| GND (usually brown/black) | **External 5V −** **and** ESP32 **GND** | Common ground is required |
+Wire the servo **only to the Entry ESP32**. Do not connect the servo to Exit.
 
-Set in config: `ACTUATOR_MODE ACTUATOR_SERVO`  
-Open angle default **90°**, close **0°** (adjust in `rfid_gate_config.h`).
+| Servo wire | Connect to |
+|------------|------------|
+| Signal | **Entry** ESP32 GPIO **14** |
+| VCC (red) | External **5V** |
+| GND | External GND + **Entry** ESP32 GND |
+
+| Board | Role |
+|-------|------|
+| Entry ESP32 | RC522 + **servo** — opens on Entry grant and when Exit is granted |
+| Exit ESP32 | RC522 only — LEDs/buzzer; Laravel tells Entry to open the boom |
+
+`.env`:
+
+```env
+RFID_SHARED_BOOM_GATE_ID=GATE-IN-1
+```
+
+Exit sketch sets `ACTUATOR_MODE ACTUATOR_NONE` so it does not drive a second servo.
 
 ### Wiring — Relay (real boom barrier)
 

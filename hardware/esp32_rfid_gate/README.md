@@ -72,6 +72,20 @@ In `rfid_gate_config.h`:
 #define ACTUATOR_MODE  ACTUATOR_RELAY
 ```
 
+## Shared boom (one servo for Entry + Exit)
+
+Wire the servo **only** to the Entry ESP32 (GPIO 14 + external 5V).
+
+- Entry grant → Entry opens servo locally
+- Exit grant → Laravel queues open → Entry heartbeat opens the same servo
+- Guard emergency open (Entry or Exit) → same shared boom on Entry
+
+Exit firmware uses `ACTUATOR_NONE` (no local servo).
+
+```env
+RFID_SHARED_BOOM_GATE_ID=GATE-IN-1
+```
+
 ## Timing (`rfid_gate_config.h`)
 
 - `GATE_OPEN_MS` — open duration (default 3000)

@@ -37,6 +37,8 @@ return [
 
     'rfid' => [
         'api_token' => env('RFID_API_TOKEN'),
+        // One physical boom/servo wired to this ESP32 (usually Entry). Exit grants open it via heartbeat.
+        'shared_boom_gate_id' => strtoupper(trim((string) env('RFID_SHARED_BOOM_GATE_ID', 'GATE-IN-1'))),
     ],
 
     'ai_parking' => [

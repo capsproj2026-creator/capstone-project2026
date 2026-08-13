@@ -303,6 +303,67 @@ class RfidGateApiTest extends TestCase
             ->assertJsonPath('open', false);
     }
 
+    public function test_exit_grant_queues_shared_boom_open_on_entry_heartbeat(): void
+    {
+        \Illuminate\Support\Facades\Event::fake();
+        \Illuminate\Support\Facades\Config::set('broadcasting.default', 'null');
+        Config::set('services.rfid.shared_boom_gate_id', 'GATE-IN-1');
+
+        $this->withTokenHeader()
+            ->postJson('/api/rfid/scan', [
+                'uid' => self::UID,
+                'gate_id' => 'GATE-IN-1',
+                'direction' => 'Entry',
+            ])
+            ->assertOk()
+            ->assertJsonPath('granted', true);
+
+        // Entry grant uses local servo — must not leave a pending open on Entry.
+        $this->withTokenHeader()
+            ->postJson('/api/rfid/heartbeat', ['gate_id' => 'GATE-IN-1'])
+            ->assertOk()
+            ->assertJsonPath('open', false);
+
+        $this->withTokenHeader()
+            ->postJson('/api/rfid/scan', [
+                'uid' => self::UID,
+                'gate_id' => 'GATE-OUT-1',
+                'direction' => 'Exit',
+            ])
+            ->assertOk()
+            ->assertJsonPath('granted', true);
+
+        $this->withTokenHeader()
+            ->postJson('/api/rfid/heartbeat', ['gate_id' => 'GATE-IN-1'])
+            ->assertOk()
+            ->assertJsonPath('open', true)
+            ->assertJsonPath('command', 'open');
+    }
+
+    public function test_emergency_open_on_exit_drives_shared_entry_boom(): void
+    {
+        \Illuminate\Support\Facades\Event::fake();
+        \Illuminate\Support\Facades\Config::set('broadcasting.default', 'null');
+        Config::set('services.rfid.shared_boom_gate_id', 'GATE-IN-1');
+
+        $operator = User::query()->where('email', 'guard@my.cspc.edu.ph')->first() ?? $this->owner;
+        $result = app(\App\Services\GateHardwareService::class)
+            ->queueOpen('GATE-OUT-1', $operator, 'Ambulance at exit shared boom');
+
+        $this->assertSame('GATE-OUT-1', $result['gate_id']);
+        $this->assertSame('GATE-IN-1', $result['actuator_gate_id']);
+
+        $this->withTokenHeader()
+            ->postJson('/api/rfid/heartbeat', ['gate_id' => 'GATE-IN-1'])
+            ->assertOk()
+            ->assertJsonPath('open', true);
+
+        GateLog::query()
+            ->where('rfid_uid', 'MANUAL-OVERRIDE')
+            ->where('reason', 'Ambulance at exit shared boom')
+            ->delete();
+    }
+
     private function withTokenHeader()
     {
         return $this->withHeaders(['X-RFID-TOKEN' => self::TOKEN]);

@@ -12,29 +12,33 @@
 #define API_BASE       "http://192.168.1.104:8000"
 #define RFID_API_TOKEN "capstone-rfid-dev-token-change-me"
 
-// ========== GATE IDENTITY (override in sketch if needed) ==========
 #ifndef GATE_ID
 #define GATE_ID   "GATE-IN-1"
 #endif
 #ifndef DIRECTION
-#define DIRECTION "Entry"   // "Entry" or "Exit"
+#define DIRECTION "Entry"
 #endif
 
-// ========== ACTUATOR ==========
-// ACTUATOR_RELAY — relay module on PIN_GATE (HIGH = open, typical boom barrier)
-// ACTUATOR_SERVO — PWM servo (requires ESP32Servo library + external 5V supply)
+// Wire ONE servo to Entry ESP32 only. Exit uses ACTUATOR_NONE (set in exit .ino).
+#ifndef ACTUATOR_NONE
+#define ACTUATOR_NONE 0
+#endif
+#ifndef ACTUATOR_RELAY
 #define ACTUATOR_RELAY 1
+#endif
+#ifndef ACTUATOR_SERVO
 #define ACTUATOR_SERVO 2
-#define ACTUATOR_MODE  ACTUATOR_RELAY
+#endif
+#ifndef ACTUATOR_MODE
+#define ACTUATOR_MODE  ACTUATOR_SERVO
+#endif
 
-// Relay / shared timing
-#define GATE_OPEN_MS   3000UL   // How long gate stays open (ms)
-#define GATE_COOLDOWN_MS 2500UL // Ignore re-scans after a read (ms)
-#define SCAN_BLOCK_MS  3500UL   // Block new opens while gate cycle is active (ms)
-#define HEARTBEAT_MS   2500UL   // ESP32 online ping + emergency-open poll
-#define SERVO_TEST_ON_BOOT 1    // Move arm once at boot to verify wiring
+#define GATE_OPEN_MS   3000UL
+#define GATE_COOLDOWN_MS 2500UL
+#define SCAN_BLOCK_MS  3500UL
+#define HEARTBEAT_MS   2500UL
+#define SERVO_TEST_ON_BOOT 1
 
-// Servo angles (only used when ACTUATOR_MODE == ACTUATOR_SERVO)
 #define SERVO_OPEN_ANGLE  90
 #define SERVO_CLOSE_ANGLE 0
-#define SERVO_CLOSE_DELAY_MS 800UL  // Time for servo to reach close position
+#define SERVO_CLOSE_DELAY_MS 800UL

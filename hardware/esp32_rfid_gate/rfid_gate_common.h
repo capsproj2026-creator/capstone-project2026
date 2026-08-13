@@ -1,6 +1,9 @@
 /**
  * Shared RFID gate client logic — entry and exit sketches include this file.
  * Actuator control stays on ESP32; Laravel only returns grant/deny decisions.
+ *
+ * Shared boom: wire the servo to the Entry ESP32 only. Exit uses ACTUATOR_NONE;
+ * Laravel queues an open to Entry when Exit RFID is granted.
  */
 #pragma once
 
@@ -16,21 +19,17 @@
 #error "Copy rfid_gate_config.example.h to rfid_gate_config.h and configure WiFi/API/token."
 #endif
 
-#if ACTUATOR_MODE == ACTUATOR_SERVO
-#include <ESP32Servo.h>
+#ifndef ACTUATOR_NONE
+#define ACTUATOR_NONE 0
 #endif
-
-#ifndef GATE_OPEN_MS
-#define GATE_OPEN_MS 3000UL
+#ifndef ACTUATOR_RELAY
+#define ACTUATOR_RELAY 1
 #endif
-#ifndef GATE_COOLDOWN_MS
-#define GATE_COOLDOWN_MS 2500UL
+#ifndef ACTUATOR_SERVO
+#define ACTUATOR_SERVO 2
 #endif
-#ifndef SCAN_BLOCK_MS
-#define SCAN_BLOCK_MS 3500UL
-#endif
-#ifndef HEARTBEAT_MS
-#define HEARTBEAT_MS 2500UL
+#ifndef ACTUATOR_MODE
+#define ACTUATOR_MODE ACTUATOR_SERVO
 #endif
 
 #if ACTUATOR_MODE == ACTUATOR_SERVO
@@ -97,7 +96,7 @@ void initGateActuator() {
   // Do NOT pinMode(PIN_GATE) before attach — it breaks PWM on ESP32 Arduino core 3.x
   gateServo.setPeriodHertz(50);
   bool ok = gateServo.attach(PIN_GATE, 500, 2400);
-  Serial.printf("Actuator: SERVO on GPIO %d (attach=%d)\n", PIN_GATE, ok ? 1 : 0);
+  Serial.printf("Actuator: SERVO on GPIO %d (attach=%d) — shared boom for Entry+Exit\n", PIN_GATE, ok ? 1 : 0);
   delay(200);
   gateServo.write(SERVO_CLOSE_ANGLE);
   Serial.printf("Servo -> close angle %d\n", SERVO_CLOSE_ANGLE);
@@ -112,10 +111,12 @@ void initGateActuator() {
   delay(800);
   Serial.println("Servo boot test done. If arm did not move, check 5V supply + common GND + signal on GPIO 14.");
 #endif
-#else
+#elif ACTUATOR_MODE == ACTUATOR_RELAY
   pinMode(PIN_GATE, OUTPUT);
   digitalWrite(PIN_GATE, LOW);
   Serial.println("Actuator: RELAY");
+#else
+  Serial.println("Actuator: NONE (RFID only — shared boom is on Entry ESP32)");
 #endif
 }
 
@@ -291,8 +292,8 @@ void pollHeartbeat() {
 
   bool openCmd = doc["open"] | false;
   if (openCmd) {
-    Serial.println("Heartbeat: emergency open");
-    ScanResult granted = {true, "Access Granted", "emergency_open"};
+    Serial.println("Heartbeat: open shared boom");
+    ScanResult granted = {true, "Access Granted", "shared_boom_open"};
     handleResult(granted);
   }
 }
@@ -351,8 +352,10 @@ void openGateActuator() {
 #if ACTUATOR_MODE == ACTUATOR_SERVO
   Serial.printf("Servo OPEN -> %d deg\n", SERVO_OPEN_ANGLE);
   gateServo.write(SERVO_OPEN_ANGLE);
-#else
+#elif ACTUATOR_MODE == ACTUATOR_RELAY
   digitalWrite(PIN_GATE, HIGH);
+#else
+  Serial.println("No local actuator (shared boom opens on Entry board)");
 #endif
 }
 
@@ -360,7 +363,7 @@ void closeGateActuator() {
 #if ACTUATOR_MODE == ACTUATOR_SERVO
   Serial.printf("Servo CLOSE -> %d deg\n", SERVO_CLOSE_ANGLE);
   gateServo.write(SERVO_CLOSE_ANGLE);
-#else
+#elif ACTUATOR_MODE == ACTUATOR_RELAY
   digitalWrite(PIN_GATE, LOW);
 #endif
   gateIsOpen = false;

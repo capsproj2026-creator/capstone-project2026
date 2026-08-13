@@ -78,29 +78,72 @@ class GateHardwareService
     }
 
     /**
-     * Queue a one-shot open for the ESP32 and log the override.
-     *
-     * @return array{gate_id: string, online: bool, queued: bool, log: GateLog}
+     * Queue a one-shot open command with no Override log (used when Exit RFID should move the shared Entry boom).
      */
-    public function queueOpen(string $gateId, User $operator, string $reason): array
+    public function queueOpenCommand(string $gateId, string $reason = 'Shared boom open'): bool
     {
         $id = $this->normalizeGateId($gateId);
         if ($id === null) {
+            return false;
+        }
+
+        Cache::put($this->openKey($id), [
+            'reason' => $reason,
+            'queued_at' => now()->toIso8601String(),
+        ], now()->addSeconds(self::COMMAND_TTL_SEC));
+
+        return true;
+    }
+
+    /**
+     * After a successful Entry/Exit RFID grant, open the shared physical boom if needed.
+     * Servo is wired only to RFID_SHARED_BOOM_GATE_ID (default GATE-IN-1).
+     * - Grant on that board: ESP32 opens locally (no queue needed).
+     * - Grant on the other board (Exit): queue open so Entry heartbeat moves the servo.
+     */
+    public function notifySharedBoomAfterGrant(string $fromGateId, string $direction): void
+    {
+        $shared = $this->normalizeGateId((string) config('services.rfid.shared_boom_gate_id', 'GATE-IN-1'));
+        if ($shared === null) {
+            return;
+        }
+
+        $from = $this->normalizeGateId($fromGateId) ?? strtoupper(trim($fromGateId));
+        if ($from === $shared) {
+            return;
+        }
+
+        $this->queueOpenCommand($shared, "Shared boom open after {$direction} at {$from}");
+    }
+
+    /**
+     * Guard emergency open: always drive the shared boom hardware when configured.
+     *
+     * @return array{gate_id: string, online: bool, queued: bool, log: GateLog, actuator_gate_id: string}
+     */
+    public function queueOpen(string $gateId, User $operator, string $reason): array
+    {
+        $requested = $this->normalizeGateId($gateId);
+        if ($requested === null) {
             throw new \InvalidArgumentException('Unknown gate.');
         }
 
+        $shared = $this->normalizeGateId((string) config('services.rfid.shared_boom_gate_id', 'GATE-IN-1')) ?? $requested;
+        $actuatorId = $shared;
+
         $reason = trim($reason);
-        Cache::put($this->openKey($id), [
+        Cache::put($this->openKey($actuatorId), [
             'reason' => $reason,
             'operator_id' => $operator->id,
             'queued_at' => now()->toIso8601String(),
+            'requested_gate_id' => $requested,
         ], now()->addSeconds(self::COMMAND_TTL_SEC));
 
         $log = GateLog::query()->create([
             'user_id' => $operator->id,
             'visitor_id' => null,
             'action' => self::ACTION_OVERRIDE,
-            'gate_id' => $id,
+            'gate_id' => $requested,
             'rfid_uid' => 'MANUAL-OVERRIDE',
             'result' => RfidAccessService::STATUS_GRANTED,
             'reason' => $reason !== '' ? $reason : 'Guard emergency open',
@@ -110,8 +153,9 @@ class GateHardwareService
         GateScanProcessed::dispatchFromLog($log);
 
         return [
-            'gate_id' => $id,
-            'online' => $this->isOnline($id),
+            'gate_id' => $requested,
+            'actuator_gate_id' => $actuatorId,
+            'online' => $this->isOnline($actuatorId),
             'queued' => true,
             'log' => $log,
         ];

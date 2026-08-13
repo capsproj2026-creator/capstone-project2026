@@ -54,9 +54,10 @@ class GateMonitorController extends Controller
         );
 
         $label = $result['gate_id'] === 'GATE-OUT-1' ? 'Exit gate' : 'Entry gate';
+        $actuator = $result['actuator_gate_id'] ?? $result['gate_id'];
         $message = $result['online']
-            ? "{$label} open command sent. Boom will open on the next ESP32 heartbeat."
-            : "{$label} open queued for 20 seconds. ESP32 is offline — flash/start the board so it can pick up the command.";
+            ? "{$label} open sent. Shared boom on {$actuator} will open on the next heartbeat."
+            : "{$label} open queued. Shared boom ESP32 ({$actuator}) is offline — power/flash Entry board.";
 
         if ($request->expectsJson()) {
             return response()->json([
