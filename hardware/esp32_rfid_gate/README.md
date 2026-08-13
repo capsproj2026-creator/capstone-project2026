@@ -16,12 +16,14 @@ RFID tap → RC522 → ESP32 → POST /api/rfid/scan → Laravel
 1. Arduino libraries: **MFRC522**, **ArduinoJson**, **ESP32Servo** (servo mode).
 2. Copy `rfid_gate_config.example.h` → `rfid_gate_config.h` and set WiFi, `API_BASE`, token, actuator mode.
 3. Match `RFID_API_TOKEN` with Laravel `.env`.
-4. Flash:
-   - **Entry:** `esp32_rfid_gate.ino` (this folder)
-   - **Exit:** `../esp32_rfid_gate_exit/esp32_rfid_gate_exit.ino`
-5. Laravel must listen on the LAN: `php artisan serve --host=0.0.0.0 --port=8000` (or `.\start.ps1`).
+4. In Arduino IDE: **File → Open** → `esp32_rfid_gate.ino` from **this folder** (must keep `.ino` + `.h` files together).
+5. Flash **Entry** from this folder. For Exit, open `../esp32_rfid_gate_exit/` (or copy all three files into a new sketch folder).
+6. Laravel must listen on the LAN: `.\start.ps1` (uses `--host=0.0.0.0`).
 
-You do not paste a new sketch — open those `.ino` files; they include `rfid_gate_common.h`.
+**Do not paste `rfid_gate_config.h` into the `.ino` file.** That removes `setup()` / `loop()` and causes:
+`undefined reference to setup()` / `undefined reference to loop()`.
+
+The `.ino` must stay small and `#include "rfid_gate_common.h"`. Config stays in `rfid_gate_config.h`.
 
 ## Wiring overview
 
