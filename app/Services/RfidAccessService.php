@@ -34,7 +34,8 @@ class RfidAccessService
      *     gate_id: string,
      *     message: string,
      *     user: array<string, mixed>|null,
-     *     log_id: mixed
+     *     log_id: mixed,
+     *     open_shared_boom: bool
      * }
      */
     public function process(string $uid, string $gateId, string $direction): array
@@ -109,7 +110,8 @@ class RfidAccessService
             return $this->response(self::STATUS_ALREADY_INSIDE, 'already_inside', false, $direction, $gateId, 'Vehicle is already inside campus.', $this->userPayload($user), $log->id);
         }
 
-        if ($direction === 'Exit' && ($lastAction === null || $lastAction === 'Exit')) {
+        if ($direction === 'Exit' && ($lastAction === null || $lastAction === 'Exit')
+            && ! (bool) config('services.rfid.allow_exit_without_entry')) {
             $log = $this->logDeniedAttempt($user, null, $uid, $gateId, $direction, self::STATUS_ALREADY_OUTSIDE, 'Vehicle is already outside campus.');
 
             return $this->response(self::STATUS_ALREADY_OUTSIDE, 'already_outside', false, $direction, $gateId, 'Vehicle is already outside campus.', $this->userPayload($user), $log->id);
@@ -127,7 +129,7 @@ class RfidAccessService
 
         $this->syncUserParkingOccupancy($user, $direction);
         GateScanProcessed::dispatchFromLog($log);
-        app(GateHardwareService::class)->notifySharedBoomAfterGrant($gateId, $direction);
+        $sharedQueued = app(GateHardwareService::class)->notifySharedBoomAfterGrant($gateId, $direction);
 
         return $this->response(
             self::STATUS_GRANTED,
@@ -137,7 +139,8 @@ class RfidAccessService
             $gateId,
             "{$direction} granted for {$user->fullname}.",
             $this->userPayload($user),
-            $log->id
+            $log->id,
+            $sharedQueued
         );
     }
 
@@ -192,7 +195,8 @@ class RfidAccessService
             return $this->response(self::STATUS_ALREADY_INSIDE, 'already_inside', false, $direction, $gateId, 'Visitor vehicle is already inside campus.', $this->visitorPayload($visitor), $log->id);
         }
 
-        if ($direction === 'Exit' && ($lastAction === null || $lastAction === 'Exit')) {
+        if ($direction === 'Exit' && ($lastAction === null || $lastAction === 'Exit')
+            && ! (bool) config('services.rfid.allow_exit_without_entry')) {
             $log = $this->logDeniedAttempt(null, $visitor->id, $uid, $gateId, $direction, self::STATUS_ALREADY_OUTSIDE, 'Visitor vehicle is already outside campus.');
 
             return $this->response(self::STATUS_ALREADY_OUTSIDE, 'already_outside', false, $direction, $gateId, 'Visitor vehicle is already outside campus.', $this->visitorPayload($visitor), $log->id);
@@ -217,7 +221,7 @@ class RfidAccessService
         }
 
         GateScanProcessed::dispatchFromLog($log->fresh(['visitor', 'user']) ?? $log);
-        app(GateHardwareService::class)->notifySharedBoomAfterGrant($gateId, $direction);
+        $sharedQueued = app(GateHardwareService::class)->notifySharedBoomAfterGrant($gateId, $direction);
 
         return $this->response(
             self::STATUS_GRANTED,
@@ -227,7 +231,8 @@ class RfidAccessService
             $gateId,
             "{$direction} granted for visitor {$visitor->displayName()}.",
             $this->visitorPayload($visitor->fresh(['vehicleType'])),
-            $log->id
+            $log->id,
+            $sharedQueued
         );
     }
 
@@ -384,8 +389,11 @@ class RfidAccessService
         string $gateId,
         string $message,
         ?array $user,
-        mixed $logId = null
+        mixed $logId = null,
+        bool $openSharedBoom = false
     ): array {
+        $shared = strtoupper(trim((string) config('services.rfid.shared_boom_gate_id', 'GATE-IN-1')));
+
         return [
             'status' => $status,
             'code' => $code,
@@ -395,6 +403,8 @@ class RfidAccessService
             'message' => $message,
             'user' => $user,
             'log_id' => $logId,
+            'open_shared_boom' => $openSharedBoom,
+            'shared_boom_gate_id' => $shared !== '' ? $shared : 'GATE-IN-1',
         ];
     }
 

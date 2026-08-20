@@ -39,6 +39,8 @@ return [
         'api_token' => env('RFID_API_TOKEN'),
         // One physical boom/servo wired to this ESP32 (usually Entry). Exit grants open it via heartbeat.
         'shared_boom_gate_id' => strtoupper(trim((string) env('RFID_SHARED_BOOM_GATE_ID', 'GATE-IN-1'))),
+        // 1 = Exit RFID can grant (and open Entry servo) even if there is no prior Entry log (hardware demo).
+        'allow_exit_without_entry' => filter_var(env('RFID_ALLOW_EXIT_WITHOUT_ENTRY', false), FILTER_VALIDATE_BOOLEAN),
     ],
 
     'ai_parking' => [

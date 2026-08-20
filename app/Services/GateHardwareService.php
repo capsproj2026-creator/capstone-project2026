@@ -21,7 +21,7 @@ class GateHardwareService
     public const COMMAND_TTL_SEC = 60;
 
     /** How many heartbeats keep repeating open:true so a missed ESP32 parse still opens the servo. */
-    public const OPEN_DELIVERIES = 5;
+    public const OPEN_DELIVERIES = 8;
 
     public function normalizeGateId(string $gateId): ?string
     {
@@ -101,21 +101,23 @@ class GateHardwareService
      * After a successful Entry/Exit RFID grant, open the shared physical boom if needed.
      * Servo is wired only to RFID_SHARED_BOOM_GATE_ID (default GATE-IN-1).
      * - Grant on that board: ESP32 opens locally (no queue needed).
-     * - Grant on the other board (Exit): queue open so Entry heartbeat moves the servo.
+     * @return bool True when an open was queued on the Entry (shared boom) ESP32.
      */
-    public function notifySharedBoomAfterGrant(string $fromGateId, string $direction): void
+    public function notifySharedBoomAfterGrant(string $fromGateId, string $direction): bool
     {
         $shared = $this->normalizeGateId((string) config('services.rfid.shared_boom_gate_id', 'GATE-IN-1'));
         if ($shared === null) {
-            return;
+            return false;
         }
 
         $from = $this->normalizeGateId($fromGateId) ?? strtoupper(trim($fromGateId));
         if ($from === $shared) {
-            return;
+            return false;
         }
 
         $this->queueOpenCommand($shared, "Shared boom open after {$direction} at {$from}");
+
+        return true;
     }
 
     /**

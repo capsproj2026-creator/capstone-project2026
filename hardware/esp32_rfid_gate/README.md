@@ -13,12 +13,46 @@ RFID tap → RC522 → ESP32 → POST /api/rfid/scan → Laravel
 
 ## Setup (what code to flash)
 
+### Arduino IDE 2.x (tested with 2.3.10)
+
+1. **Board package:** ESP32 by Espressif — your log shows **3.3.7** (good).
+   - **Tools → Board → Boards Manager** → search `esp32` → install **esp32 3.3.x**
+2. **Libraries** (Library Manager):
+   | Library | Notes |
+   |---------|--------|
+   | **MFRC522** | RFID reader |
+   | **ArduinoJson** | 6.x or 7.x |
+   | **ESP32Servo** | Use **3.0.x** with ESP32 board **3.x** (fixes `attach=0`) |
+3. **Board settings:** Tools → Board → **ESP32 Dev Module** (or your exact board).
+4. **Port:** Tools → Port → your ESP32 COM port.
+5. Open **`Entry.ino`** from `hardware/arduino/Entry` or `OneDrive\Documents\Arduino\Entry` (after `sync-arduino.bat`).
+6. **Upload.** BOOT button only if upload fails to start.
+
+If compile says `wifi_status_t` unknown — you need the latest synced `rfid_gate_common.h` (uses `wl_status_t` for ESP32 3.3.7). Run **`sync-arduino.bat`**.
+
 1. Arduino libraries: **MFRC522**, **ArduinoJson**, **ESP32Servo** (servo mode).
 2. Copy `rfid_gate_config.example.h` → `rfid_gate_config.h` and set WiFi, `API_BASE`, token, actuator mode.
 3. Match `RFID_API_TOKEN` with Laravel `.env`.
-4. In Arduino IDE: **File → Open** → `esp32_rfid_gate.ino` from **this folder** (must keep `.ino` + `.h` files together).
-5. Flash **Entry** from this folder. For Exit, open `../esp32_rfid_gate_exit/` (or copy all three files into a new sketch folder).
+4. In Arduino IDE: **File → Open** → `hardware/arduino/Entry/Entry.ino` or synced OneDrive copy.
+5. Flash **Entry** to the servo board. Flash **Exit** from `hardware/arduino/Exit/Exit.ino` to the second ESP32.
 6. Laravel must listen on the LAN: `.\start.ps1` (uses `--host=0.0.0.0`).
+
+**Arduino IDE folders (auto-sync):** If you open sketches from  
+`OneDrive\Documents\Arduino\Entry` and `Exit`, run **`sync-arduino.bat`** once, or **`watch-arduino-sync.bat`** to copy every time firmware files change.  
+`start.ps1` also syncs quietly on each start.
+
+**ESP32 firewall (Windows):** If Serial Monitor shows `HTTP error -1 connection refused` but Laravel works in the browser on the PC, double-click **`allow-laravel-firewall.bat`** in the project root once (Admin). That lets Wi‑Fi devices reach port 8000.
+
+**Always-on / power loss:** The ESP32 starts automatically when powered — you only press **BOOT** when uploading code in Arduino IDE, not during normal use. After a blackout, plug power back in; firmware reconnects Wi‑Fi and Laravel by itself (no button press).
+
+### Boot log troubleshooting
+
+| Serial line | Meaning | Fix |
+|-------------|---------|-----|
+| `attach=0` or `channel=0` | Servo PWM failed | Install **ESP32Servo 3.x** if using Arduino ESP32 3.x core; check GPIO 14 wiring + 5V supply |
+| Stuck on `connecting wifi` | Old firmware or wrong SSID | Re-upload latest sketch; set `WIFI_SSID` exactly as phone Wi‑Fi list shows (spaces matter) |
+| `WiFi: SSID not found` | Wrong network name | Fix `WIFI_SSID` in `rfid_gate_config.h` — yours may be `MERCUSYS_08BA` not `MERCUSYS_08BA 2` |
+| `WiFi OK IP:` then heartbeat `-1` | Windows Firewall | Run `allow-laravel-firewall.bat` as Admin on the PC |
 
 **Do not paste `rfid_gate_config.h` into the `.ino` file.** That removes `setup()` / `loop()` and causes:
 `undefined reference to setup()` / `undefined reference to loop()`.

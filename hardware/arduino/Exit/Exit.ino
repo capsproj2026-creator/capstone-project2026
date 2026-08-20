@@ -8,8 +8,8 @@
  * When Exit is granted, Laravel queues open on GATE-IN-1.
  * The Entry ESP32 (with the servo) opens the boom on its next heartbeat.
  *
- * Arduino IDE: open OneDrive\Documents\Arduino\Exit\Exit.ino after sync-arduino.bat
- * (that copy includes rfid_gate_common.h from the same folder).
+ * Arduino IDE: File → Open → hardware/arduino/Exit/Exit.ino
+ * (keep Exit.ino + rfid_gate_common.h + rfid_gate_config.h in this folder)
  */
 
 #define GATE_ID "GATE-OUT-1"

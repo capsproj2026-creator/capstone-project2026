@@ -135,9 +135,17 @@ if ($preflight.Count -gt 0) {
 
 Set-Location $Root
 Write-Host "Checking MongoDB (capstone database)..." -ForegroundColor Cyan
-php artisan config:clear | Out-Null
-php scripts/mongo_ping.php 2>&1 | Out-Null
-if ($LASTEXITCODE -ne 0) {
+# PHP may write harmless warnings to stderr; don't let Stop mode treat them as fatal.
+$prevEap = $ErrorActionPreference
+$ErrorActionPreference = "Continue"
+try {
+    php artisan config:clear 2>$null | Out-Null
+    php scripts/mongo_ping.php 2>$null | Out-Null
+    $mongoOk = ($LASTEXITCODE -eq 0)
+} finally {
+    $ErrorActionPreference = $prevEap
+}
+if (-not $mongoOk) {
     Write-Host ""
     Write-Host "MongoDB is not reachable." -ForegroundColor Red
     Write-Host "  Local: start the MongoDB Windows service, then in .env set:" -ForegroundColor Yellow
@@ -150,6 +158,12 @@ if ($LASTEXITCODE -ne 0) {
 Write-Host "  MongoDB: connected" -ForegroundColor Green
 
 Write-Host "Starting Smart Campus VMS from $Root" -ForegroundColor Green
+
+$arduinoSync = Join-Path $PSScriptRoot "sync-arduino-sketches.ps1"
+if (Test-Path $arduinoSync) {
+    & powershell -NoProfile -ExecutionPolicy Bypass -File $arduinoSync -Quiet 2>$null
+    Write-Host "  Arduino Entry/Exit sketches synced to OneDrive" -ForegroundColor DarkGray
+}
 
 Start-ProjectWindow "Laravel" @("php", "artisan", "serve", "--host=0.0.0.0", "--port=8000")
 Start-Sleep -Milliseconds 800
@@ -186,6 +200,11 @@ Write-Host " Smart Campus VMS is starting" -ForegroundColor Green
 Write-Host "========================================" -ForegroundColor Green
 Write-Host ""
 Write-Host "  Website:  http://127.0.0.1:8000" -ForegroundColor Yellow
+Write-Host "  ESP32 firewall: double-click allow-laravel-firewall.bat once if gate shows connection refused" -ForegroundColor DarkGray
+$esp32Script = Join-Path $PSScriptRoot "esp32-api-url.ps1"
+if (Test-Path $esp32Script) {
+    & powershell -NoProfile -ExecutionPolicy Bypass -File $esp32Script 2>$null
+}
 Write-Host "  Database: MongoDB (capstone)" -ForegroundColor Yellow
 if ($startAi) { Write-Host "  AI feed:  http://127.0.0.1:8090/stream.mjpg" -ForegroundColor Yellow }
 Write-Host ""

@@ -36,4 +36,8 @@ Thumbs.db
 
 # ESP32 local secrets + OCR debug crops
 hardware/esp32_rfid_gate/rfid_gate_config.h
+hardware/arduino/**/rfid_gate_config.h
 hardware/ai_parking/debug_plates/
+
+# Portable arduino-cli (download via scripts/verify-arduino-gate.ps1)
+tools/arduino-cli/

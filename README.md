@@ -347,3 +347,6 @@ Details: [`hardware/ai_parking/README.md`](hardware/ai_parking/README.md)
 - Reference SQL: [`capstone.sql`](capstone.sql) — not imported automatically.
 - Uploads: `storage/app/public` → `public/storage` after `storage:link`.
 - Gate daily IDs: `App\Observers\GateLogObserver`.
+
+Hotspot
+powershell -ExecutionPolicy Bypass -File .\scripts\setup-esp32-gate.ps1 -Hotspot

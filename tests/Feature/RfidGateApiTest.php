@@ -23,6 +23,7 @@ class RfidGateApiTest extends TestCase
         parent::setUp();
 
         Config::set('services.rfid.api_token', self::TOKEN);
+        Config::set('services.rfid.allow_exit_without_entry', false);
 
         try {
             User::query()->where('rfid_uid', self::UID)->delete();
@@ -342,7 +343,9 @@ class RfidGateApiTest extends TestCase
                 'direction' => 'Exit',
             ])
             ->assertOk()
-            ->assertJsonPath('granted', true);
+            ->assertJsonPath('granted', true)
+            ->assertJsonPath('open_shared_boom', true)
+            ->assertJsonPath('shared_boom_gate_id', 'GATE-IN-1');
 
         $this->withTokenHeader()
             ->postJson('/api/rfid/heartbeat', ['gate_id' => 'GATE-IN-1'])

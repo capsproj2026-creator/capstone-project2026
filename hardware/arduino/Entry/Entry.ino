@@ -7,6 +7,8 @@
  *
  * The second ESP32 uses Exit.ino (RFID only, no servo).
  * Exit grants still open THIS servo via Laravel heartbeat.
+ *
+ * Arduino IDE: File → Open → hardware/arduino/Entry/Entry.ino
  */
 
 #define GATE_ID "GATE-IN-1"
