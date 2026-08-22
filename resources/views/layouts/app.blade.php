@@ -46,17 +46,7 @@
             (function () {
                 var root = document.getElementById('portal-root');
                 if (!root) return;
-                var open = window.innerWidth >= 1024;
-                try {
-                    if (open) {
-                        var stored = localStorage.getItem('portal-sidebar-open');
-                        if (stored !== null) open = stored === '1';
-                    } else {
-                        open = false;
-                    }
-                } catch (e) {}
-                if (open) root.classList.add('portal-sidebar-open');
-                else root.classList.add('portal-sidebar-closed');
+                root.classList.add('portal-sidebar-closed');
             })();
         </script>
         {{-- Navbar --}}
@@ -67,13 +57,13 @@
                         type="button"
                         id="portal-menu-btn"
                         class="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-slate-600 transition-colors hover:bg-slate-100 hover:text-[var(--cspc-navy)]"
-                        aria-label="Toggle navigation"
+                        aria-label="Show navigation sidebar"
                         aria-controls="portal-sidebar"
-                        aria-expanded="true"
+                        aria-expanded="false"
                         title="Show or hide sidebar"
                     >
-                        <i data-lucide="panel-left-close" id="portal-menu-icon-open" class="h-5 w-5"></i>
-                        <i data-lucide="panel-left" id="portal-menu-icon-close" class="hidden h-5 w-5"></i>
+                        <i data-lucide="panel-left-close" id="portal-menu-icon-open" class="hidden h-5 w-5"></i>
+                        <i data-lucide="panel-left" id="portal-menu-icon-close" class="h-5 w-5"></i>
                     </button>
 
                     <div class="flex min-w-0 items-center gap-3">
@@ -234,7 +224,7 @@
         </header>
 
         <div class="flex">
-            {{-- Sidebar: toggleable on all breakpoints (drawer + overlay on mobile) --}}
+            {{-- Sidebar: overlay drawer on all breakpoints (does not shift main content) --}}
             <aside
                 id="portal-sidebar"
                 class="portal-sidebar fixed z-30 flex flex-col overflow-y-auto overscroll-contain border-r border-slate-200/80 bg-white shadow-[4px_0_24px_-12px_rgba(15,39,79,0.18)]"
@@ -274,7 +264,7 @@
 
         <div
             id="portal-overlay"
-            class="portal-overlay fixed inset-x-0 bottom-0 z-20 bg-[var(--cspc-navy-deep)]/45 backdrop-blur-[1px] lg:hidden"
+            class="portal-overlay fixed inset-x-0 bottom-0 z-20 bg-[var(--cspc-navy-deep)]/45 backdrop-blur-[1px]"
             aria-hidden="true"
         ></div>
     </div>

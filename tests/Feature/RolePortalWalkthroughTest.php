@@ -85,6 +85,7 @@ class RolePortalWalkthroughTest extends TestCase
             ['guard.access-logs'],
             ['guard.parking'],
             ['guard.ai-parking'],
+            ['guard.plate-lookup'],
             ['guard.live-cameras'],
             ['profile.edit'],
         ];

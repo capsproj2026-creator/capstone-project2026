@@ -128,6 +128,12 @@ class LiveCameraController extends Controller
             abort(503, 'AI parking stream is not configured.');
         }
 
+        // SSRF guard: only proxy to the local AI parking MJPEG service.
+        $host = parse_url($upstream, PHP_URL_HOST);
+        if (! in_array(strtolower((string) $host), ['127.0.0.1', 'localhost', '::1'], true)) {
+            abort(503, 'AI parking stream host is not allowed.');
+        }
+
         try {
             $response = Http::timeout(5)
                 ->withOptions(['stream' => true, 'read_timeout' => 300])

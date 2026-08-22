@@ -62,6 +62,24 @@ class AppServiceProvider extends ServiceProvider
             });
         });
 
+        RateLimiter::for('register-scan-id', function (Request $request) {
+            return Limit::perMinute(30)->by($request->ip())->response(function () {
+                if (request()->expectsJson()) {
+                    return response()->json([
+                        'ok' => false,
+                        'message' => 'Too many ID scan attempts. Please wait about a minute, then try again.',
+                        'id_number' => null,
+                        'first_name' => null,
+                        'last_name' => null,
+                        'middle_name' => null,
+                        'warnings' => [],
+                    ], 429);
+                }
+
+                return response('Too Many Attempts.', 429);
+            });
+        });
+
         GateLog::observe(GateLogObserver::class);
 
         View::share('appTimezone', AppDateTime::timezone());

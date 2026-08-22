@@ -157,6 +157,17 @@ if (-not $mongoOk) {
 }
 Write-Host "  MongoDB: connected" -ForegroundColor Green
 
+$campusIdPython = Join-Path $Root ".venv-campus-id-ocr\Scripts\python.exe"
+if (-not (Test-Path -LiteralPath $campusIdPython)) {
+    Write-Host "Setting up campus ID OCR virtualenv (first run only)..." -ForegroundColor Yellow
+    $ocrSetup = Join-Path $PSScriptRoot "setup-campus-id-ocr.ps1"
+    if (Test-Path -LiteralPath $ocrSetup) {
+        & powershell -NoProfile -ExecutionPolicy Bypass -File $ocrSetup
+    } else {
+        Write-Host "  Warning: campus ID auto-scan setup script missing." -ForegroundColor DarkYellow
+    }
+}
+
 Write-Host "Starting Smart Campus VMS from $Root" -ForegroundColor Green
 
 $arduinoSync = Join-Path $PSScriptRoot "sync-arduino-sketches.ps1"

@@ -69,13 +69,18 @@
 
 #define SS_PIN    5
 #define RST_PIN   22
+#define SCK_PIN   18
+#define MISO_PIN  19
+#define MOSI_PIN  23
 #define PIN_GREEN 25
 #define PIN_RED   26
 #define PIN_BUZZER 27
 #define PIN_GATE  14
 
-const uint16_t HTTP_CONNECT_MS = 8000;
-const uint16_t HTTP_READ_MS    = 20000;
+const uint16_t HTTP_CONNECT_MS = 5000;
+const uint16_t HTTP_READ_MS    = 10000;
+const uint16_t HTTP_HB_CONNECT_MS = 3000;
+const uint16_t HTTP_HB_READ_MS    = 5000;
 
 MFRC522 mfrc522(SS_PIN, RST_PIN);
 
@@ -97,8 +102,10 @@ unsigned long wifiRetryDelayMs = 1000UL;
 unsigned long heartbeatIntervalMs = HEARTBEAT_MS;
 unsigned long gateCycleEndsMs = 0;
 unsigned long gateCloseAtMs = 0;
+unsigned long lastRfidRecoverMs = 0;
 bool gateIsOpen = false;
 bool apiOnline = false;
+bool rfidOk = false;
 int apiFailStreak = 0;
 unsigned long lastLanDiagMs = 0;
 
@@ -116,7 +123,8 @@ void initGateActuator();
 bool ensureWifiConnected();
 void connectWifiStartup();
 void printWifiFailureHelp();
-void logLanDiagnostic();
+bool initRfidReader();
+void recoverRfidIfNeeded();
 
 void logLanDiagnostic() {
   if (millis() - lastLanDiagMs < 15000UL) {
@@ -267,6 +275,50 @@ void initGateActuator() {
 #endif
 }
 
+bool initRfidReader() {
+  // Hard reset pulse on RST — fixes many "online but no UID" boards after bad power-up.
+  pinMode(RST_PIN, OUTPUT);
+  pinMode(SS_PIN, OUTPUT);
+  digitalWrite(SS_PIN, HIGH);
+  digitalWrite(RST_PIN, LOW);
+  delay(50);
+  digitalWrite(RST_PIN, HIGH);
+  delay(50);
+
+  SPI.begin(SCK_PIN, MISO_PIN, MOSI_PIN, SS_PIN);
+  mfrc522.PCD_Init();
+  delay(50);
+  mfrc522.PCD_AntennaOn();
+  mfrc522.PCD_SetAntennaGain(mfrc522.RxGain_max);
+
+  byte v = mfrc522.PCD_ReadRegister(mfrc522.VersionReg);
+  Serial.printf("RC522 VersionReg=0x%02X ", v);
+  if (v == 0x00 || v == 0xFF) {
+    Serial.println("- NOT DETECTED. Wiring checklist:");
+    Serial.println("  3.3V->3.3V (NOT 5V)  GND->GND");
+    Serial.println("  SDA/SS->GPIO5  SCK->18  MOSI->23  MISO->19  RST->22");
+    rfidOk = false;
+    return false;
+  }
+
+  Serial.println("- OK (reader found). Hold card ~1-2 cm over the antenna coil.");
+  Serial.println("Wiring map: SS=5 RST=22 SCK=18 MOSI=23 MISO=19 | LED G=25 R=26 Buzzer=27 | Servo=14(Entry only)");
+  rfidOk = true;
+  return true;
+}
+
+void recoverRfidIfNeeded() {
+  if (rfidOk) {
+    return;
+  }
+  if (millis() - lastRfidRecoverMs < 8000UL) {
+    return;
+  }
+  lastRfidRecoverMs = millis();
+  Serial.println("RC522 retry init...");
+  initRfidReader();
+}
+
 void setupGateHardware() {
   pinMode(PIN_GREEN, OUTPUT);
   pinMode(PIN_RED, OUTPUT);
@@ -276,10 +328,7 @@ void setupGateHardware() {
   digitalWrite(PIN_BUZZER, LOW);
 
   initGateActuator();
-
-  SPI.begin();
-  mfrc522.PCD_Init();
-
+  initRfidReader();
   connectWifiStartup();
 
   lastHeartbeatMs = millis();
@@ -297,13 +346,12 @@ void setupGateHardware() {
 
 void loopGateClient() {
   updateGateCycle();
+  recoverRfidIfNeeded();
 
-  if (!ensureWifiConnected()) {
-    delay(50);
-    return;
-  }
-
-  if (millis() - lastHeartbeatMs >= heartbeatIntervalMs) {
+  // Keep heartbeats only when Wi-Fi is up — still poll RFID even if Wi-Fi drops
+  // so Serial shows UID for wiring tests.
+  bool wifiOk = ensureWifiConnected();
+  if (wifiOk && millis() - lastHeartbeatMs >= heartbeatIntervalMs) {
     lastHeartbeatMs = millis();
     if (pollHeartbeat()) {
       heartbeatIntervalMs = HEARTBEAT_MS;
@@ -317,12 +365,24 @@ void loopGateClient() {
     }
   }
 
-  if (!mfrc522.PICC_IsNewCardPresent() || !mfrc522.PICC_ReadCardSerial()) {
+  if (!rfidOk) {
     return;
+  }
+
+  // MFRC522 often needs two presence checks before a stable serial read.
+  if (!mfrc522.PICC_IsNewCardPresent()) {
+    return;
+  }
+  if (!mfrc522.PICC_ReadCardSerial()) {
+    // Second presence + read attempt (common RC522 quirk).
+    if (!mfrc522.PICC_IsNewCardPresent() || !mfrc522.PICC_ReadCardSerial()) {
+      return;
+    }
   }
 
   if (millis() - lastScanMs < GATE_COOLDOWN_MS) {
     mfrc522.PICC_HaltA();
+    mfrc522.PCD_StopCrypto1();
     return;
   }
   lastScanMs = millis();
@@ -330,6 +390,18 @@ void loopGateClient() {
   String uid = uidToHex(mfrc522.uid);
   Serial.print("UID: ");
   Serial.println(uid);
+
+  // Brief green blink = card was read locally (even before Laravel reply).
+  digitalWrite(PIN_GREEN, HIGH);
+  delay(40);
+  digitalWrite(PIN_GREEN, LOW);
+
+  if (!wifiOk) {
+    Serial.println("WiFi down — UID seen but not sent to Laravel. Fix WiFi/API_HOST.");
+    mfrc522.PICC_HaltA();
+    mfrc522.PCD_StopCrypto1();
+    return;
+  }
 
   ScanResult result = postScan(uid);
   Serial.printf("Decision: granted=%d shared_boom=%d status=%s code=%s\n",
@@ -425,8 +497,8 @@ bool pollHeartbeat() {
   http.addHeader("Content-Type", "application/json");
   http.addHeader("Connection", "close");
   http.addHeader("X-RFID-TOKEN", RFID_API_TOKEN);
-  http.setConnectTimeout(HTTP_CONNECT_MS);
-  http.setTimeout(HTTP_READ_MS);
+  http.setConnectTimeout(HTTP_HB_CONNECT_MS);
+  http.setTimeout(HTTP_HB_READ_MS);
 
   StaticJsonDocument<128> body;
   body["gate_id"] = GATE_ID;
@@ -445,6 +517,7 @@ bool pollHeartbeat() {
     return false;
   }
 
+  apiFailStreak = 0;
   String response = http.getString();
   http.end();
 

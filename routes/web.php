@@ -9,25 +9,26 @@ use App\Http\Controllers\Admin\RfidController;
 use App\Http\Controllers\Admin\SettingsController;
 use App\Http\Controllers\Admin\UserManagementController;
 use App\Http\Controllers\Admin\ViolationController as AdminViolationController;
+use App\Http\Controllers\Auth\CampusIdScanController;
 use App\Http\Controllers\Auth\EmailCheckController;
 use App\Http\Controllers\Auth\EmailVerificationController;
 use App\Http\Controllers\Auth\LoginController;
 use App\Http\Controllers\Auth\RegisterController;
 use App\Http\Controllers\Guard\DashboardController as GuardDashboardController;
 use App\Http\Controllers\Guard\GateMonitorController;
+use App\Http\Controllers\Guard\NotificationController as GuardNotificationController;
 use App\Http\Controllers\Guard\PlateLookupController;
 use App\Http\Controllers\Guard\UserMonitorController;
-use App\Http\Controllers\Guard\NotificationController as GuardNotificationController;
 use App\Http\Controllers\Guard\ViolationController as GuardViolationController;
 use App\Http\Controllers\LiveCameraController;
 use App\Http\Controllers\ParkingController;
 use App\Http\Controllers\ProfileController;
-use App\Http\Controllers\VisitorController;
 use App\Http\Controllers\User\DashboardController as UserDashboardController;
 use App\Http\Controllers\User\EntryExitController;
 use App\Http\Controllers\User\NotificationController;
 use App\Http\Controllers\User\ParkingController as UserParkingController;
 use App\Http\Controllers\User\ViolationController as UserViolationController;
+use App\Http\Controllers\VisitorController;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/', fn () => view('home'))->name('home')->middleware('no.cache');
@@ -40,6 +41,9 @@ Route::middleware(['guest', 'no.cache'])->group(function () {
     Route::get('/register/check-email', [EmailCheckController::class, 'check'])
         ->middleware('throttle:10,1')
         ->name('register.check-email');
+    Route::post('/register/scan-id', [CampusIdScanController::class, 'scan'])
+        ->middleware('throttle:register-scan-id')
+        ->name('register.scan-id');
 });
 
 // GET allows safe sign-out when the session/CSRF token is already stale (never show 419).

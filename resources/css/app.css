@@ -65,8 +65,6 @@
     }
 
     .portal-main {
-        transition: margin-left 300ms cubic-bezier(0.4, 0, 0.2, 1);
-        margin-left: 0;
         min-width: 0;
     }
 
@@ -90,16 +88,6 @@
     .portal-shell.portal-sidebar-open .portal-sidebar {
         transform: translateX(0);
         visibility: visible;
-    }
-
-    @media (min-width: 1024px) {
-        .portal-shell.portal-sidebar-open .portal-main {
-            margin-left: var(--portal-sidebar-w, 17.5rem);
-        }
-
-        .portal-shell.portal-sidebar-closed .portal-main {
-            margin-left: 0;
-        }
     }
 
 }

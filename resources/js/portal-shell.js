@@ -26,12 +26,7 @@ function initPasswordToggles(root = document) {
 
 window.initPasswordToggles = initPasswordToggles;
 
-const SIDEBAR_STORAGE_KEY = 'portal-sidebar-open';
 const SIDEBAR_SCROLL_KEY = 'portal-sidebar-scroll';
-
-function isDesktopNav() {
-    return window.innerWidth >= 1024;
-}
 
 function initPortalShell() {
     const root = document.getElementById('portal-root');
@@ -49,26 +44,6 @@ function initPortalShell() {
     const profileBtn = document.getElementById('portal-profile-btn');
     const profileMenu = document.getElementById('portal-profile-menu');
     const main = document.getElementById('portal-main');
-
-    const readStoredOpen = () => {
-        try {
-            const raw = localStorage.getItem(SIDEBAR_STORAGE_KEY);
-            if (raw === null) {
-                return true;
-            }
-            return raw === '1';
-        } catch (e) {
-            return true;
-        }
-    };
-
-    const writeStoredOpen = (open) => {
-        try {
-            localStorage.setItem(SIDEBAR_STORAGE_KEY, open ? '1' : '0');
-        } catch (e) {
-            // ignore quota / private mode
-        }
-    };
 
     const saveSidebarScroll = () => {
         if (!sidebar) return;
@@ -91,7 +66,7 @@ function initPortalShell() {
         }
     };
 
-    let sidebarOpen = isDesktopNav() ? readStoredOpen() : false;
+    let sidebarOpen = false;
 
     const syncToggleIcons = (open) => {
         menuIconOpen?.classList.toggle('hidden', !open);
@@ -100,8 +75,10 @@ function initPortalShell() {
         menuBtn?.setAttribute('aria-label', open ? 'Hide navigation sidebar' : 'Show navigation sidebar');
     };
 
-    const setSidebarOpen = (open, { persist = true, restoreScroll = false } = {}) => {
+    const setSidebarOpen = (open, { restoreScroll = false } = {}) => {
         if (open === sidebarOpen && !restoreScroll) {
+            syncToggleIcons(open);
+            overlay?.classList.toggle('portal-overlay-active', open);
             return;
         }
 
@@ -112,51 +89,41 @@ function initPortalShell() {
         sidebarOpen = open;
         root.classList.toggle('portal-sidebar-open', open);
         root.classList.toggle('portal-sidebar-closed', !open);
-
-        if (!isDesktopNav()) {
-            root.classList.toggle('portal-sidebar-mobile-open', open);
-            overlay?.classList.toggle('portal-overlay-active', open);
-        } else {
-            overlay?.classList.remove('portal-overlay-active');
-        }
+        overlay?.classList.toggle('portal-overlay-active', open);
 
         syncToggleIcons(open);
-
-        if (persist && isDesktopNav()) {
-            writeStoredOpen(open);
-        }
 
         if (open && restoreScroll) {
             requestAnimationFrame(() => restoreSidebarScroll());
         }
     };
 
-    const collapseSidebar = ({ persist = true } = {}) => {
+    const collapseSidebar = () => {
         if (sidebarOpen) {
-            setSidebarOpen(false, { persist });
+            setSidebarOpen(false);
         }
     };
 
-    /** Maximize content when a dropdown / menu / modal opens. */
+    /** Close the overlay drawer when a dropdown / menu / modal opens. */
     const collapseSidebarForMenu = () => {
-        collapseSidebar({ persist: isDesktopNav() });
+        collapseSidebar();
     };
 
-    setSidebarOpen(sidebarOpen, { persist: false, restoreScroll: sidebarOpen });
+    setSidebarOpen(sidebarOpen, { restoreScroll: sidebarOpen });
 
     menuBtn?.addEventListener('click', () => {
         const next = !sidebarOpen;
-        setSidebarOpen(next, { persist: true, restoreScroll: next });
+        setSidebarOpen(next, { restoreScroll: next });
     });
 
-    overlay?.addEventListener('click', () => setSidebarOpen(false, { persist: !isDesktopNav() }));
+    overlay?.addEventListener('click', () => setSidebarOpen(false));
 
     sidebar?.querySelectorAll('a[href]').forEach((link) => {
         link.addEventListener('click', () => {
             if (link.getAttribute('aria-current') === 'page') {
                 return;
             }
-            setSidebarOpen(false, { persist: isDesktopNav() });
+            setSidebarOpen(false);
         });
     });
 
@@ -204,8 +171,8 @@ function initPortalShell() {
     });
 
     document.addEventListener('keydown', (e) => {
-        if (e.key === 'Escape' && sidebarOpen && !isDesktopNav()) {
-            setSidebarOpen(false, { persist: false });
+        if (e.key === 'Escape' && sidebarOpen) {
+            setSidebarOpen(false);
         }
     });
 
@@ -213,19 +180,6 @@ function initPortalShell() {
         'portal:collapse-sidebar',
         () => collapseSidebarForMenu()
     );
-
-    window.addEventListener('resize', () => {
-        if (isDesktopNav()) {
-            overlay?.classList.remove('portal-overlay-active');
-            root.classList.remove('portal-sidebar-mobile-open');
-            setSidebarOpen(readStoredOpen(), { persist: false, restoreScroll: true });
-            return;
-        }
-
-        if (!sidebarOpen) {
-            overlay?.classList.remove('portal-overlay-active');
-        }
-    });
 
     if (window.lucide?.createIcons) {
         window.lucide.createIcons();

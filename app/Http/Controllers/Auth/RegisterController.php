@@ -135,27 +135,42 @@ class RegisterController extends Controller
             ->all();
 
         $validated = $request->validate([
-            'first_name' => ['required', 'string', 'max:50'],
-            'last_name' => ['required', 'string', 'max:50'],
-            'middle_name' => ['nullable', 'string', 'max:50'],
+            'full_name' => ['required', 'string', 'max:150'],
             'email' => [
                 'required',
                 'email:rfc,dns',
                 'max:100',
                 Rule::unique(User::class, 'email'),
             ],
-            'phone_number' => ['required', 'string', 'max:20'],
+            'phone_number' => ['required', 'string', 'max:20', 'min:7'],
             'password' => PasswordRules::required(),
             'id_number' => ['required', 'string', 'max:50', 'regex:/^[A-Za-z0-9]+$/', Rule::unique(User::class, 'id_number')],
             'reg_category' => ['required', 'in:vehicle'],
             'profile_pic' => ['nullable', 'image', 'max:5120'],
             'id_document' => ['required', 'file', 'mimes:jpg,jpeg,png,pdf', 'max:5120'],
+            'user_type' => ['required', 'in:Student,Staff'],
+            'plate_number' => ['required', 'string', 'max:20', 'min:2'],
+            'department_code' => ['required', 'string', Rule::in(self::REGISTRATION_DEPARTMENT_CODES)],
+            'vehicle_id' => ['required', Rule::in($vehicleIds)],
+            'driver_license' => ['required', 'image', 'max:5120'],
+            'or_cr_photo' => ['required', 'file', 'mimes:jpg,jpeg,png,pdf', 'max:5120'],
         ], [
+            'full_name.required' => 'Please enter your full name.',
             'email.required' => 'Please enter your email address.',
             'email.email' => 'Please enter a valid email address with a working domain (format and DNS check).',
             'email.unique' => 'This email address is already registered.',
+            'phone_number.required' => 'Please enter your phone number.',
+            'phone_number.min' => 'Please enter a valid phone number.',
+            'password.required' => 'Please enter a password.',
             'password.confirmed' => 'Password confirmation does not match.',
+            'plate_number.required' => 'Please enter your plate number.',
+            'plate_number.min' => 'Please enter a valid plate number.',
             'id_document.required' => 'Please upload a valid ID document.',
+            'user_type.required' => 'Please select a user type.',
+            'department_code.required' => 'Please select a department.',
+            'vehicle_id.required' => 'Please select a vehicle type.',
+            'driver_license.required' => 'Please upload your driver\'s license.',
+            'or_cr_photo.required' => 'Please upload your OR/CR document.',
         ]);
 
         if ($blocking && RegistrationCooldown::passwordMatchesDenied($blocking, $validated['password'])) {
@@ -167,25 +182,12 @@ class RegisterController extends Controller
         // Ensure expired denied collisions are gone even if unique rule raced.
         RegistrationCooldown::purgeExpiredDeniedCollisions($email, $idNumber);
 
-        $request->validate([
-            'user_type' => ['required', 'in:Student,Staff'],
-            'plate_number' => ['required', 'string', 'max:20'],
-            'department_code' => ['required', 'string', Rule::in(self::REGISTRATION_DEPARTMENT_CODES)],
-            'vehicle_id' => ['required', Rule::in($vehicleIds)],
-            'driver_license' => ['required', 'image', 'max:5120'],
-            'or_cr_photo' => ['required', 'file', 'mimes:jpg,jpeg,png,pdf', 'max:5120'],
-        ]);
-
         $userRoleId = $request->input('user_type') === 'Student' ? 3 : 4;
         $plateNumber = strtoupper(trim($request->input('plate_number')));
         $departmentCode = $request->input('department_code');
         $vehicleId = (int) $request->input('vehicle_id');
 
-        $fullname = self::composeFullName(
-            $validated['first_name'],
-            $validated['last_name'],
-            $validated['middle_name'] ?? null
-        );
+        $fullname = preg_replace('/\s+/u', ' ', trim($validated['full_name'])) ?: trim($validated['full_name']);
 
         $licenseFilename = SafeUpload::store(
             $request->file('driver_license'),

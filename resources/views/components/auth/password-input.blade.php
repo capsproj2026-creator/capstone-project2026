@@ -12,7 +12,12 @@
 @endphp
 
 <div {{ $attributes->merge(['class' => 'w-full min-w-0']) }}>
-    <label for="{{ $inputId }}" class="mb-1.5 block text-sm font-medium text-gray-700">{{ $label }}</label>
+    <label for="{{ $inputId }}" class="mb-1.5 block text-sm font-medium text-gray-700">
+        {{ $label }}
+        @if ($required)
+            <span class="text-red-500">*</span>
+        @endif
+    </label>
     <div class="relative">
         <input
             type="password"

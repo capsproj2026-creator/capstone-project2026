@@ -5,6 +5,8 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Services\AiCameraRegistry;
 use App\Services\AiParkingOccupancyService;
+use App\Services\AiParkingViolationService;
+use App\Support\PlateLookup;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
@@ -74,7 +76,8 @@ class AiParkingController extends Controller
             $validated['detections'] ?? [],
             $validated['slots'] ?? null,
             $validated['events'] ?? [],
-            (string) ($validated['mode'] ?? 'count')
+            (string) ($validated['mode'] ?? 'count'),
+            $request->exists('detections')
         );
 
         return response()->json([
@@ -107,7 +110,7 @@ class AiParkingController extends Controller
         ]);
 
         $cameraId = (string) ($validated['camera_id'] ?? $registry->primaryCameraId());
-        $results = app(\App\Services\AiParkingViolationService::class)
+        $results = app(AiParkingViolationService::class)
             ->processEvents($validated['events'], $cameraId);
 
         $latest = $service->latestSnapshot($cameraId) ?? [
@@ -149,7 +152,7 @@ class AiParkingController extends Controller
             'plate' => ['required', 'string', 'max:32'],
         ]);
 
-        $identity = \App\Support\PlateLookup::identity($validated['plate']);
+        $identity = PlateLookup::identity($validated['plate']);
         $identity['owner_role'] = $identity['role'] ?? null;
 
         return response()->json([

@@ -51,7 +51,7 @@
                 </div>
             @endif
 
-            <form method="POST" action="{{ route('register') }}" enctype="multipart/form-data" class="space-y-6">
+            <form method="POST" action="{{ route('register') }}" enctype="multipart/form-data" class="space-y-6" id="register-form" novalidate>
                 @csrf
                 <input type="hidden" name="reg_category" id="reg_category" value="vehicle">
 
@@ -65,32 +65,7 @@
                         accept="image/*"
                     />
 
-                    <div class="grid grid-cols-1 gap-4 sm:grid-cols-3">
-                        <x-auth.input label="First Name" name="first_name" required placeholder="Juan" value="{{ old('first_name') }}" />
-                        <x-auth.input label="Last Name" name="last_name" required placeholder="Dela Cruz" value="{{ old('last_name') }}" />
-                        <x-auth.input label="Middle Name (optional)" name="middle_name" placeholder="Optional" value="{{ old('middle_name') }}" />
-                    </div>
-
-                    <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                        <div>
-                            <label for="id_number" class="mb-1.5 block text-sm font-medium text-gray-700">ID Number</label>
-                            <input
-                                type="text"
-                                name="id_number"
-                                id="id_number"
-                                value="{{ old('id_number') }}"
-                                required
-                                inputmode="text"
-                                pattern="[A-Za-z0-9]+"
-                                maxlength="50"
-                                placeholder="e.g. 2026A12345"
-                                title="Use letters and numbers only (max 50)"
-                                class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm text-gray-900 shadow-sm placeholder:text-gray-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20 @error('id_number') border-red-500 focus:border-red-500 focus:ring-red-500/20 @enderror"
-                            >
-                            @error('id_number')
-                                <p class="mt-1 text-xs text-red-600">{{ $message }}</p>
-                            @enderror
-                        </div>
+                    <div>
                         <x-auth.file-input
                             name="id_document"
                             id="id_document"
@@ -98,20 +73,54 @@
                             required
                             accept="image/*,application/pdf"
                         />
+                        <p id="id_scan_status" class="mt-2 hidden text-xs"></p>
+                        <p class="mt-1 text-xs text-gray-500">Upload a clear photo of your CSPC ID to auto-fill your name and SN. You can still edit the fields before submitting.</p>
+                    </div>
+
+                    <x-auth.input
+                        label="Full Name"
+                        name="full_name"
+                        required
+                        placeholder="e.g. John Michael Moral Toldanes"
+                        value="{{ old('full_name') }}"
+                    />
+
+                    <div>
+                        <label for="id_number" class="mb-1.5 block text-sm font-medium text-gray-700">ID Number <span class="text-red-500">*</span></label>
+                        <input
+                            type="text"
+                            name="id_number"
+                            id="id_number"
+                            value="{{ old('id_number') }}"
+                            required
+                            inputmode="text"
+                            pattern="[A-Za-z0-9]+"
+                            maxlength="50"
+                            placeholder="e.g. 231002254 (SN on ID)"
+                            title="Use letters and numbers only (max 50)"
+                            class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm text-gray-900 shadow-sm placeholder:text-gray-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20 @error('id_number') border-red-500 focus:border-red-500 focus:ring-red-500/20 @enderror"
+                        >
+                        @error('id_number')
+                            <p class="mt-1 text-xs text-red-600">{{ $message }}</p>
+                        @enderror
                     </div>
 
                     <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
                         <div>
-                            <label for="email" class="mb-1.5 block text-sm font-medium text-gray-700">Email Address</label>
+                            <label for="email" class="mb-1.5 block text-sm font-medium text-gray-700">Email Address <span class="text-red-500">*</span></label>
                             <input
                                 type="email"
                                 name="email"
                                 id="email"
                                 value="{{ old('email') }}"
                                 required
+                                autocomplete="email"
                                 placeholder="name@example.com"
                                 class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm text-gray-900 shadow-sm placeholder:text-gray-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20 @error('email') border-red-500 focus:border-red-500 focus:ring-red-500/20 @enderror"
                             >
+                            @error('email')
+                                <p class="mt-1 text-xs text-red-600">{{ $message }}</p>
+                            @enderror
                         </div>
                         <x-auth.input label="Phone Number" name="phone_number" required placeholder="09XX XXX XXXX" value="{{ old('phone_number') }}" />
                     </div>
@@ -120,12 +129,14 @@
                         <x-auth.password-input
                             name="password"
                             label="Password"
+                            required
                             autocomplete="new-password"
                             placeholder="{{ $passwordHint ?? '8–15 chars, mixed case, number, symbol' }}"
                         />
                         <x-auth.password-input
                             name="password_confirmation"
                             label="Confirm Password"
+                            required
                             autocomplete="new-password"
                             placeholder="Re-enter password"
                         />
@@ -235,3 +246,148 @@
         </div>
     </div>
 @endsection
+
+@push('scripts')
+    <script>
+        document.addEventListener('DOMContentLoaded', function () {
+            const form = document.getElementById('register-form');
+            const requiredFields = [
+                { id: 'email', label: 'Email address' },
+                { id: 'phone_number', label: 'Phone number' },
+                { id: 'password', label: 'Password' },
+                { id: 'password_confirmation', label: 'Password confirmation' },
+                { id: 'plate_number', label: 'Plate number' },
+            ];
+
+            if (form) {
+                form.addEventListener('submit', function (event) {
+                    for (const field of requiredFields) {
+                        const input = document.getElementById(field.id);
+                        if (!input || String(input.value || '').trim() === '') {
+                            event.preventDefault();
+                            input?.focus();
+                            input?.reportValidity?.();
+                            return;
+                        }
+                    }
+                });
+            }
+
+            const input = document.getElementById('id_document');
+            const statusEl = document.getElementById('id_scan_status');
+            const fields = {
+                id_number: document.getElementById('id_number'),
+                full_name: document.getElementById('full_name'),
+            };
+
+            if (!input || !statusEl) {
+                return;
+            }
+
+            let scanToken = 0;
+            let scanning = false;
+
+            const setStatus = (message, tone) => {
+                statusEl.textContent = message;
+                statusEl.classList.remove('hidden', 'text-blue-700', 'text-green-700', 'text-amber-700', 'text-red-600');
+                statusEl.classList.add(
+                    tone === 'success' ? 'text-green-700'
+                        : tone === 'warning' ? 'text-amber-700'
+                            : tone === 'error' ? 'text-red-600'
+                                : 'text-blue-700'
+                );
+            };
+
+            const fillField = (field, value) => {
+                if (!field || value == null || value === '') {
+                    return;
+                }
+                field.value = value;
+                field.dispatchEvent(new Event('input', { bubbles: true }));
+            };
+
+            input.addEventListener('change', async function () {
+                const file = input.files?.[0];
+                if (!file) {
+                    statusEl.classList.add('hidden');
+                    return;
+                }
+
+                if (scanning) {
+                    return;
+                }
+
+                if (!file.type.startsWith('image/')) {
+                    setStatus('PDF uploaded. Enter your name and SN manually, or upload a JPG/PNG photo for auto-scan.', 'warning');
+                    return;
+                }
+
+                const token = ++scanToken;
+                scanning = true;
+                setStatus('Scanning campus ID… this can take up to a minute on the first scan.', 'info');
+
+                const body = new FormData();
+                body.append('id_document', file);
+                body.append('_token', document.querySelector('meta[name="csrf-token"]')?.content || '');
+
+                try {
+                    const response = await fetch(@json(route('register.scan-id')), {
+                        method: 'POST',
+                        body,
+                        headers: {
+                            'Accept': 'application/json',
+                            'X-Requested-With': 'XMLHttpRequest',
+                        },
+                    });
+
+                    let data = {};
+                    try {
+                        data = await response.json();
+                    } catch (parseError) {
+                        data = {};
+                    }
+
+                    if (token !== scanToken) {
+                        return;
+                    }
+
+                    if (response.status === 429) {
+                        setStatus(data.message || 'Too many scan attempts. Please wait about a minute, then try again.', 'warning');
+                        return;
+                    }
+
+                    if (!response.ok || !data.ok) {
+                        setStatus(data.message || 'Could not scan this photo. Please enter your details manually.', 'warning');
+                        return;
+                    }
+
+                    fillField(fields.id_number, data.id_number);
+
+                    if (data.full_name && data.name_complete) {
+                        fillField(fields.full_name, data.full_name);
+                    }
+
+                    const warnings = Array.isArray(data.warnings) ? data.warnings.filter(Boolean) : [];
+                    if (warnings.length > 0) {
+                        setStatus(`Auto-filled with notes: ${warnings.join(' ')}`, 'warning');
+                    } else if (data.full_name && data.name_complete) {
+                        setStatus('Full name and SN auto-filled from your ID. Please confirm before submitting.', 'success');
+                    } else if (data.id_number) {
+                        setStatus('SN auto-filled. Please enter your full name manually.', 'warning');
+                    } else {
+                        setStatus('Could not scan this photo. Please enter your details manually.', 'warning');
+                    }
+                } catch (error) {
+                    if (token !== scanToken) {
+                        return;
+                    }
+                    setStatus('Scan failed. Please enter your name and SN manually.', 'error');
+                } finally {
+                    if (token === scanToken) {
+                        scanning = false;
+                    }
+                }
+            });
+        });
+    </script>
+@endpush

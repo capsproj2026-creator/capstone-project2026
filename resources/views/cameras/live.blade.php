@@ -128,6 +128,21 @@
                 </div>
             </article>
         @endforeach
+
+        @if (empty($cameras))
+            <div class="col-span-full rounded-xl border border-dashed border-gray-300 bg-white px-6 py-12 text-center">
+                <i data-lucide="video-off" class="mx-auto h-10 w-10 text-gray-400"></i>
+                <p class="mt-3 text-base font-semibold text-gray-800">No CCTV cameras enabled</p>
+                <p class="mt-1 text-sm text-gray-500">
+                    Set <code class="rounded bg-gray-100 px-1">AI_CAMERA_1_ENABLED=true</code> in
+                    <code class="rounded bg-gray-100 px-1">.env</code>, then restart Laravel
+                    (<code class="rounded bg-gray-100 px-1">php artisan config:clear</code>).
+                </p>
+                <p class="mt-2 text-sm text-gray-500">
+                    CCTV is under sidebar <strong>Live Cameras</strong> (not the home Dashboard).
+                </p>
+            </div>
+        @endif
     </div>
 
     {{-- Expand modal --}}

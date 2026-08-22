@@ -5,8 +5,12 @@ namespace Tests\Feature;
 use App\Models\ParkingArea;
 use App\Models\ParkingSlot;
 use App\Models\User;
+use App\Models\ViolationLog;
+use App\Support\PlateLookup;
 use Database\Seeders\AiTestLotSeeder;
 use Illuminate\Support\Facades\Config;
+use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Facades\Storage;
 use Tests\TestCase;
 
 class AiParkingOccupancyTest extends TestCase
@@ -259,7 +263,7 @@ class AiParkingOccupancyTest extends TestCase
 
     public function test_occupancy_enriches_detection_with_registered_owner(): void
     {
-        \App\Support\PlateLookup::forgetIndex();
+        PlateLookup::forgetIndex();
 
         $owner = null;
         try {
@@ -271,7 +275,7 @@ class AiParkingOccupancyTest extends TestCase
                 'department_code' => 'CCS',
                 'vehicle_id' => 1,
                 'id_number' => 'PLATE'.strtoupper(substr(uniqid(), -6)),
-                'plate_number' => 'ABC-1234',
+                'plate_number' => 'ZZZ-4321',
                 'status' => User::STATUS_GRANTED,
                 'Gate_access' => User::GATE_ACCESS_GRANTED,
                 'strike_count' => 0,
@@ -292,7 +296,7 @@ class AiParkingOccupancyTest extends TestCase
                         [
                             'class' => 'car',
                             'confidence' => 0.91,
-                            'plate' => 'ABC1234',
+                            'plate' => 'ZZZ4321',
                             'track_id' => 42,
                         ],
                     ],
@@ -301,7 +305,7 @@ class AiParkingOccupancyTest extends TestCase
                 ->assertJsonPath('status', 'ok');
 
             $det = $response->json('data.detections.0');
-            $this->assertSame('ABC1234', $det['plate']);
+            $this->assertSame('ZZZ4321', $det['plate']);
             $this->assertTrue($det['registered']);
             $this->assertSame('Plate Owner Test', $det['owner_name']);
             $this->assertSame('Registered', $det['registration_status']);
@@ -309,7 +313,7 @@ class AiParkingOccupancyTest extends TestCase
             $this->assertEquals($owner->id, $det['user_id']);
             $this->assertNotEmpty($det['department'] ?? $owner->department_code);
         } finally {
-            \App\Support\PlateLookup::forgetIndex();
+            PlateLookup::forgetIndex();
             if ($owner) {
                 $owner->delete();
             }
@@ -356,7 +360,7 @@ class AiParkingOccupancyTest extends TestCase
 
     public function test_plate_lookup_endpoint_registered_and_unknown(): void
     {
-        \App\Support\PlateLookup::forgetIndex();
+        PlateLookup::forgetIndex();
 
         $owner = null;
         try {
@@ -396,7 +400,7 @@ class AiParkingOccupancyTest extends TestCase
                 ->assertJsonPath('data.owner_label', 'Unknown Vehicle')
                 ->assertJsonPath('data.registration_status', 'Plate Not Registered');
         } finally {
-            \App\Support\PlateLookup::forgetIndex();
+            PlateLookup::forgetIndex();
             if ($owner) {
                 $owner->delete();
             }
@@ -405,7 +409,7 @@ class AiParkingOccupancyTest extends TestCase
 
     public function test_occupancy_marks_unknown_vehicle_when_plate_not_registered(): void
     {
-        \App\Support\PlateLookup::forgetIndex();
+        PlateLookup::forgetIndex();
 
         $response = $this->withHeaders(['X-AI-TOKEN' => self::TOKEN])
             ->postJson('/api/ai-parking/occupancy', [
@@ -479,9 +483,9 @@ class AiParkingOccupancyTest extends TestCase
 
     public function test_violation_event_stores_camera_area_and_evidence(): void
     {
-        \App\Support\PlateLookup::forgetIndex();
-        \Illuminate\Support\Facades\Mail::fake();
-        \Illuminate\Support\Facades\Storage::fake('private');
+        PlateLookup::forgetIndex();
+        Mail::fake();
+        Storage::fake('private');
 
         $owner = null;
         try {
@@ -539,7 +543,7 @@ class AiParkingOccupancyTest extends TestCase
             $det = $response->json('data.detections.0');
             $this->assertSame('no_parking', $det['violation_status'] ?? null);
 
-            $log = \App\Models\ViolationLog::query()
+            $log = ViolationLog::query()
                 ->where('plate_number', 'CIT1111')
                 ->orderByDesc('created_at')
                 ->first();
@@ -550,11 +554,11 @@ class AiParkingOccupancyTest extends TestCase
             $this->assertSame('Automobiles', $log->vehicle_details);
             $this->assertSame(55, (int) $log->track_id);
             $this->assertNotEmpty($log->evidence_photo);
-            \Illuminate\Support\Facades\Storage::disk('public')->assertExists($log->evidence_photo);
+            Storage::disk('public')->assertExists($log->evidence_photo);
         } finally {
-            \App\Support\PlateLookup::forgetIndex();
+            PlateLookup::forgetIndex();
             if ($owner) {
-                \App\Models\ViolationLog::query()->where('user_id', $owner->id)->delete();
+                ViolationLog::query()->where('user_id', $owner->id)->delete();
                 $owner->delete();
             }
         }

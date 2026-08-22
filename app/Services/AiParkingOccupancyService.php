@@ -37,12 +37,15 @@ class AiParkingOccupancyService
         array $detections = [],
         ?array $slots = null,
         array $events = [],
-        string $mode = 'count'
+        string $mode = 'count',
+        bool $detectionsProvided = false
     ): array {
         $area = ParkingArea::query()->findOrFail($areaId);
 
         $detections = $this->filterVehicleDetections($detections);
-        if ($detections === []) {
+        // Only zero the count when the AI explicitly sent detections and none were vehicles.
+        // Count-only posts (no detections key) must keep vehicle_count.
+        if ($detectionsProvided && $detections === []) {
             $vehicleCount = 0;
         }
 
