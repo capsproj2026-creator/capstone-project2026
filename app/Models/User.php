@@ -67,6 +67,7 @@ class User extends Authenticatable implements MustVerifyEmail
         'strike_count',
         'Gate_access',
         'rfid_uid',
+        'google_id',
         'job_title',
         'id_document',
         'declined_at',

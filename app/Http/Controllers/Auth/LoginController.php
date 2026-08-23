@@ -31,7 +31,9 @@ class LoginController extends Controller
             request()->session()->regenerate(true);
         }
 
-        return view('auth.login');
+        return view('auth.login', [
+            'googleSignInEnabled' => \App\Http\Controllers\Auth\GoogleAuthController::isConfigured(),
+        ]);
     }
 
     public function login(Request $request): RedirectResponse

@@ -12,6 +12,7 @@ use App\Http\Controllers\Admin\ViolationController as AdminViolationController;
 use App\Http\Controllers\Auth\CampusIdScanController;
 use App\Http\Controllers\Auth\EmailCheckController;
 use App\Http\Controllers\Auth\EmailVerificationController;
+use App\Http\Controllers\Auth\GoogleAuthController;
 use App\Http\Controllers\Auth\LoginController;
 use App\Http\Controllers\Auth\RegisterController;
 use App\Http\Controllers\Guard\DashboardController as GuardDashboardController;
@@ -36,6 +37,12 @@ Route::get('/', fn () => view('home'))->name('home')->middleware('no.cache');
 Route::middleware(['guest', 'no.cache'])->group(function () {
     Route::get('/login', [LoginController::class, 'show'])->name('login');
     Route::post('/login', [LoginController::class, 'login'])->middleware('throttle:login');
+    Route::get('/auth/google', [GoogleAuthController::class, 'redirect'])
+        ->middleware('throttle:20,1')
+        ->name('auth.google');
+    Route::get('/auth/google/callback', [GoogleAuthController::class, 'callback'])
+        ->middleware('throttle:20,1')
+        ->name('auth.google.callback');
     Route::get('/register', [RegisterController::class, 'show'])->name('register');
     Route::post('/register', [RegisterController::class, 'store'])->middleware('throttle:register');
     Route::get('/register/check-email', [EmailCheckController::class, 'check'])

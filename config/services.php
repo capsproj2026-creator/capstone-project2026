@@ -35,6 +35,14 @@ return [
         ],
     ],
 
+    'google' => [
+        'client_id' => env('GOOGLE_CLIENT_ID'),
+        'client_secret' => env('GOOGLE_CLIENT_SECRET'),
+        'redirect' => env('GOOGLE_REDIRECT_URI', env('APP_URL', 'http://127.0.0.1:8000').'/auth/google/callback'),
+        // Empty = allow any Google email. Default campus domain for CSPC.
+        'allowed_domain' => env('GOOGLE_ALLOWED_DOMAIN', 'my.cspc.edu.ph'),
+    ],
+
     'rfid' => [
         'api_token' => env('RFID_API_TOKEN'),
         // One physical boom/servo wired to this ESP32 (usually Entry). Exit grants open it via heartbeat.

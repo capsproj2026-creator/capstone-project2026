@@ -25,6 +25,8 @@ php artisan storage:link
 
 Edit `.env`: set `MONGODB_URI`, `MONGODB_DATABASE`, and (for hardware) `RFID_API_TOKEN` / `AI_PARKING_API_TOKEN`.
 
+**Optional — Google Sign-In:** set `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` from [Google Cloud Console](https://console.cloud.google.com/) (OAuth 2.0 Web client). Add authorized redirect URI `{APP_URL}/auth/google/callback`. Only `@my.cspc.edu.ph` accounts can sign in (see `GOOGLE_ALLOWED_DOMAIN`). Users must register first; Google is for sign-in only.
+
 ```powershell
 php artisan db:seed
 npm run build
