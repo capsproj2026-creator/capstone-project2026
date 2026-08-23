@@ -11,7 +11,7 @@ class VisitorPreRegisterQr
 {
     public static function preRegisterUrl(): string
     {
-        return route('visitor.pre-register');
+        return VisitorPreRegister::preRegisterUrl();
     }
 
     public static function svg(string $url, int $size = 240): string

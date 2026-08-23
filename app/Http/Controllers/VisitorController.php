@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\Vehicle;
 use App\Models\Visitor;
 use App\Services\VisitorService;
+use App\Support\VisitorPreRegister;
 use App\Support\VisitorPreRegisterQr;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -20,6 +21,7 @@ class VisitorController extends Controller
             'vehicles' => Vehicle::query()->orderBy('id')->get(),
             'routePrefix' => $this->routePrefix($request),
             'preRegisterUrl' => $preRegisterUrl,
+            'preRegisterUsesGoogleForm' => VisitorPreRegister::usesGoogleForm(),
             'preRegisterQrUrl' => route('visitor.pre-register.qr'),
             'preRegisterQrSvg' => VisitorPreRegisterQr::svg($preRegisterUrl),
         ]);

@@ -43,6 +43,13 @@ return [
         'allowed_domain' => env('GOOGLE_ALLOWED_DOMAIN', 'my.cspc.edu.ph'),
     ],
 
+    'visitor_pre_register' => [
+        // When set, QR codes and /visitor/pre-register redirect here instead of the built-in form.
+        'google_form_url' => env('VISITOR_PRE_REGISTER_GOOGLE_FORM_URL'),
+        // Shared secret for Google Apps Script → POST /api/visitor/pre-register/google
+        'webhook_token' => env('VISITOR_PRE_REGISTER_WEBHOOK_TOKEN'),
+    ],
+
     'rfid' => [
         'api_token' => env('RFID_API_TOKEN'),
         // One physical boom/servo wired to this ESP32 (usually Entry). Exit grants open it via heartbeat.

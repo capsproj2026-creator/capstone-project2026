@@ -88,6 +88,10 @@ class AppServiceProvider extends ServiceProvider
             });
         });
 
+        RateLimiter::for('visitor-pre-register-webhook', function (Request $request) {
+            return Limit::perMinute(30)->by($request->ip());
+        });
+
         GateLog::observe(GateLogObserver::class);
 
         View::share('appTimezone', AppDateTime::timezone());

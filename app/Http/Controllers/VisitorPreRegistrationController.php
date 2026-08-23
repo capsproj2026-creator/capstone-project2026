@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Vehicle;
 use App\Services\VisitorService;
+use App\Support\VisitorPreRegister;
 use App\Support\VisitorPreRegisterQr;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -12,8 +13,12 @@ use Illuminate\View\View;
 
 class VisitorPreRegistrationController extends Controller
 {
-    public function show(): View
+    public function show(): RedirectResponse|View
     {
+        if ($googleFormUrl = VisitorPreRegister::googleFormUrl()) {
+            return redirect()->away($googleFormUrl);
+        }
+
         return view('visitors.pre-register', [
             'vehicles' => Vehicle::query()->orderBy('id')->get(),
         ]);
@@ -25,9 +30,10 @@ class VisitorPreRegistrationController extends Controller
             abort(422, 'Invalid submission.');
         }
 
-        $validated = $this->validatedFields($request);
+        $validated = $request->validate(VisitorPreRegister::validationRules());
+        $payload = VisitorPreRegister::payloadForService($validated);
 
-        $visitor = $visitors->preRegister($validated);
+        $visitor = $visitors->preRegister($payload);
 
         return redirect()
             ->route('visitor.pre-register.success')
@@ -37,6 +43,13 @@ class VisitorPreRegistrationController extends Controller
 
     public function success(Request $request): View|RedirectResponse
     {
+        $signedCode = VisitorPreRegister::confirmationCodeFromSignedRequest($request);
+        if ($signedCode !== null) {
+            return view('visitors.pre-register-success', [
+                'confirmationCode' => $signedCode,
+            ]);
+        }
+
         $code = session('pre_register_code');
         $visitorId = session('pre_register_visitor_id');
 
@@ -62,26 +75,6 @@ class VisitorPreRegistrationController extends Controller
             'Content-Type' => 'image/svg+xml',
             'Content-Disposition' => $disposition,
             'Cache-Control' => 'public, max-age=3600',
-        ]);
-    }
-
-    /**
-     * @return array<string, mixed>
-     */
-    private function validatedFields(Request $request): array
-    {
-        return $request->validate([
-            'first_name' => ['required', 'string', 'max:80'],
-            'last_name' => ['required', 'string', 'max:80'],
-            'middle_name' => ['nullable', 'string', 'max:80'],
-            'contact_number' => ['required', 'string', 'max:40'],
-            'email' => ['nullable', 'email', 'max:120'],
-            'purpose' => ['required', 'string', 'max:255'],
-            'office_to_visit' => ['required', 'string', 'max:255'],
-            'expected_exit_at' => ['required', 'date', 'after:now'],
-            'plate_number' => ['required', 'string', 'max:20'],
-            'vehicle_id' => ['required', 'integer'],
-            'vehicle_color' => ['required', 'string', 'max:40'],
         ]);
     }
 }

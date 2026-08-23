@@ -2,8 +2,10 @@
 
 use App\Http\Controllers\Api\AiParkingController;
 use App\Http\Controllers\Api\RfidGateController;
+use App\Http\Controllers\Api\VisitorGoogleFormWebhookController;
 use App\Http\Middleware\VerifyAiParkingApiToken;
 use App\Http\Middleware\VerifyRfidApiToken;
+use App\Http\Middleware\VerifyVisitorPreRegisterWebhookToken;
 use Illuminate\Support\Facades\Route;
 
 /*
@@ -27,4 +29,12 @@ Route::middleware([VerifyAiParkingApiToken::class, 'throttle:30,1'])->group(func
 
 Route::middleware([VerifyAiParkingApiToken::class, 'throttle:20,1'])->group(function () {
     Route::post('/ai-parking/plate-lookup', [AiParkingController::class, 'plateLookup'])->name('api.ai-parking.plate-lookup');
+});
+
+Route::middleware([
+    VerifyVisitorPreRegisterWebhookToken::class,
+    'throttle:visitor-pre-register-webhook',
+])->group(function () {
+    Route::post('/visitor/pre-register/google', [VisitorGoogleFormWebhookController::class, 'store'])
+        ->name('api.visitor.pre-register.google');
 });

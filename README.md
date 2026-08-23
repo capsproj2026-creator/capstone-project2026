@@ -135,17 +135,23 @@ Use `--host=0.0.0.0` so ESP32 boards can reach Laravel on your LAN IP.
 
 ### Visitor pre-registration (public QR)
 
-Visitors can pre-register **without logging in** before reaching the guard booth:
+Visitors can pre-register **without logging in** before reaching the guard booth.
+
+**Mode A — Built-in form (default)**  
+Leave `VISITOR_PRE_REGISTER_GOOGLE_FORM_URL` empty in `.env`.
 
 | URL | Purpose |
 |-----|---------|
 | `/visitor/pre-register` | Public form (same fields as guard registration, no RFID) |
 | `/visitor/pre-register/success` | Shows a reference code after submit |
 
-**Workflow**
+**Mode B — Google Form + webhook**  
+Set `VISITOR_PRE_REGISTER_GOOGLE_FORM_URL` and `VISITOR_PRE_REGISTER_WEBHOOK_TOKEN`. QR codes point to your Google Form; Apps Script syncs submissions into MongoDB. Full setup: [`docs/google-forms/README.md`](docs/google-forms/README.md).
+
+**Workflow (both modes)**
 
 1. Print the QR from **Guard → Register Visitor** (panel at top) or download SVG from `/visitor/pre-register/qr` (guard/admin only).
-2. Visitor scans QR, fills the form, and receives a code like `V-20260823-A7K3`.
+2. Visitor scans QR, fills the form, and receives a code like `V-20260823-A7K3` (on-screen, email, or signed link — see Google Form docs).
 3. At the booth, guard searches **Active Visitors** by ref code, name, or plate, verifies ID, and assigns a temporary RFID.
 
 Pre-registrations are stored as `Visitor` records with status **Waiting** and badge **Pre-registered online**. Physical ID check at the booth is the security control.
