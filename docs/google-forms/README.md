@@ -50,13 +50,19 @@ Add questions with these **exact titles** (matches the Apps Script):
 
 ## Install Apps Script
 
-1. Open the Form → **Responses** → link to Sheets → **Extensions → Apps Script**
-2. Paste [`visitor-pre-register.gs`](visitor-pre-register.gs)
+1. Open Apps Script from **either** place (both work):
+   - **Recommended:** Google Form → **Extensions → Apps Script**
+   - **Also OK:** Form → **Responses** → link to Sheets → open the sheet → **Extensions → Apps Script**
+2. Paste [`visitor-pre-register.gs`](visitor-pre-register.gs) (replace any existing code)
 3. **Project Settings → Script properties:**
    - `WEBHOOK_URL` = `https://your-public-server.example/api/visitor/pre-register/google`
    - `WEBHOOK_TOKEN` = same as Laravel `VISITOR_PRE_REGISTER_WEBHOOK_TOKEN`
-4. Run **`installFormSubmitTrigger`** once and authorize
+4. Run **`installFormSubmitTrigger`** once and authorize when prompted
 5. Submit a test response and confirm the visitor appears under **Guard → Active Visitors**
+
+### Trigger install failed?
+
+If you see `Unexpected error ... FormTriggerBuilder.create`, the old script only worked when opened from the **Form**. Re-paste the latest `visitor-pre-register.gs` (it auto-detects Form vs linked spreadsheet) and run **`installFormSubmitTrigger`** again from the same project.
 
 ## Local development
 

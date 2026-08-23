@@ -3,7 +3,9 @@
  *
  * Setup:
  * 1. Create a Google Form with the question titles listed in FIELD_TITLES below.
- * 2. Form → Link to Sheets → Extensions → Apps Script → paste this file.
+ * 2. Open Apps Script from the Form OR from the linked response spreadsheet:
+ *      Form → Extensions → Apps Script   (recommended)
+ *      Form → Responses → link to Sheets → Extensions → Apps Script
  * 3. Project Settings → Script properties:
  *      WEBHOOK_URL  = https://YOUR_PUBLIC_APP_URL/api/visitor/pre-register/google
  *      WEBHOOK_TOKEN = same as VISITOR_PRE_REGISTER_WEBHOOK_TOKEN in Laravel .env
@@ -30,17 +32,36 @@ var FIELD_TITLES = {
 };
 
 function installFormSubmitTrigger() {
-  var form = FormApp.getActiveForm();
   ScriptApp.getProjectTriggers().forEach(function (trigger) {
     if (trigger.getHandlerFunction() === 'onFormSubmit') {
       ScriptApp.deleteTrigger(trigger);
     }
   });
-  ScriptApp.newTrigger('onFormSubmit')
-    .forForm(form)
-    .onFormSubmit()
-    .create();
-  Logger.log('Installed onFormSubmit trigger.');
+
+  var form = FormApp.getActiveForm();
+  if (form) {
+    ScriptApp.newTrigger('onFormSubmit')
+      .forForm(form)
+      .onFormSubmit()
+      .create();
+    Logger.log('Installed onFormSubmit trigger (form-bound).');
+    return;
+  }
+
+  var spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
+  if (spreadsheet) {
+    ScriptApp.newTrigger('onFormSubmit')
+      .forSpreadsheet(spreadsheet)
+      .onFormSubmit()
+      .create();
+    Logger.log('Installed onFormSubmit trigger (spreadsheet-bound).');
+    return;
+  }
+
+  throw new Error(
+    'Open this script from your Google Form (Extensions → Apps Script) ' +
+      'or from the linked response spreadsheet, then run installFormSubmitTrigger again.'
+  );
 }
 
 function onFormSubmit(e) {
@@ -53,7 +74,16 @@ function onFormSubmit(e) {
     return;
   }
 
-  var payload = buildPayload_(e.response);
+  var payload;
+  if (e.response) {
+    payload = buildPayloadFromFormResponse_(e.response);
+  } else if (e.namedValues) {
+    payload = buildPayloadFromNamedValues_(e.namedValues);
+  } else {
+    Logger.log('Unsupported onFormSubmit event (missing response / namedValues).');
+    return;
+  }
+
   var options = {
     method: 'post',
     contentType: 'application/json',
@@ -93,12 +123,26 @@ function onFormSubmit(e) {
   }
 }
 
-function buildPayload_(formResponse) {
+function buildPayloadFromFormResponse_(formResponse) {
   var byTitle = {};
   formResponse.getItemResponses().forEach(function (itemResponse) {
     byTitle[itemResponse.getItem().getTitle()] = itemResponse.getResponse();
   });
 
+  return buildPayloadFromTitles_(byTitle);
+}
+
+function buildPayloadFromNamedValues_(namedValues) {
+  var byTitle = {};
+  Object.keys(namedValues).forEach(function (title) {
+    var values = namedValues[title];
+    byTitle[title] = values && values.length ? values[0] : '';
+  });
+
+  return buildPayloadFromTitles_(byTitle);
+}
+
+function buildPayloadFromTitles_(byTitle) {
   var exitAt = combineDateTime_(
     byTitle[FIELD_TITLES.exitDate],
     byTitle[FIELD_TITLES.exitTime]
