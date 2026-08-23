@@ -32,9 +32,7 @@ class CapstoneSystemPassTest extends TestCase
     {
         $this->get(route('register'))
             ->assertOk()
-            ->assertSee('First Name')
-            ->assertSee('Last Name')
-            ->assertSee('Middle Name')
+            ->assertSee('Full Name')
             ->assertSee('Valid ID Upload')
             ->assertSee(PasswordRules::hint(), false);
     }

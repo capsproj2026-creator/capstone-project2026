@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Models\User;
 use App\Models\Visitor;
 use App\Services\VisitorService;
+use Illuminate\Support\Facades\Config;
 use Tests\TestCase;
 
 class VisitorPreRegistrationTest extends TestCase
@@ -17,6 +18,8 @@ class VisitorPreRegistrationTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
+
+        Config::set('services.visitor_pre_register.google_form_url', null);
 
         try {
             $this->guardUser = User::query()->where('email', 'guard@my.cspc.edu.ph')->first();
