@@ -29,10 +29,23 @@ use App\Http\Controllers\User\EntryExitController;
 use App\Http\Controllers\User\NotificationController;
 use App\Http\Controllers\User\ParkingController as UserParkingController;
 use App\Http\Controllers\User\ViolationController as UserViolationController;
+use App\Http\Controllers\VisitorPreRegistrationController;
 use App\Http\Controllers\VisitorController;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/', fn () => view('home'))->name('home')->middleware('no.cache');
+
+Route::middleware(['no.cache'])->group(function () {
+    Route::get('/visitor/pre-register', [VisitorPreRegistrationController::class, 'show'])->name('visitor.pre-register');
+    Route::post('/visitor/pre-register', [VisitorPreRegistrationController::class, 'store'])
+        ->middleware('throttle:visitor-pre-register')
+        ->name('visitor.pre-register.store');
+    Route::get('/visitor/pre-register/success', [VisitorPreRegistrationController::class, 'success'])->name('visitor.pre-register.success');
+});
+
+Route::middleware(['auth', 'verified', 'granted', 'no.cache', 'role:Admin,Guard'])->group(function () {
+    Route::get('/visitor/pre-register/qr', [VisitorPreRegistrationController::class, 'qr'])->name('visitor.pre-register.qr');
+});
 
 Route::middleware(['guest', 'no.cache'])->group(function () {
     Route::get('/login', [LoginController::class, 'show'])->name('login');

@@ -22,7 +22,51 @@ class VisitorService
      */
     public function register(array $data, ?User $actor = null): Visitor
     {
-        $visitor = Visitor::query()->create([
+        $visitor = Visitor::query()->create(array_merge(
+            $this->normalizedVisitorFields($data),
+            [
+                'status' => Visitor::STATUS_WAITING,
+                'registered_by' => $actor?->id,
+                'registration_source' => Visitor::SOURCE_GUARD,
+                'notes' => filled($data['notes'] ?? null) ? trim((string) $data['notes']) : null,
+            ]
+        ));
+
+        $uid = trim((string) ($data['rfid_uid'] ?? ''));
+        if ($uid !== '') {
+            $this->assignRfid($visitor, $uid, $actor);
+            $visitor->refresh();
+        }
+
+        return $visitor;
+    }
+
+    /**
+     * Public self-service pre-registration (no RFID; guard assigns at booth).
+     *
+     * @param  array<string, mixed>  $data
+     */
+    public function preRegister(array $data): Visitor
+    {
+        return Visitor::query()->create(array_merge(
+            $this->normalizedVisitorFields($data),
+            [
+                'status' => Visitor::STATUS_WAITING,
+                'registered_by' => null,
+                'registration_source' => Visitor::SOURCE_SELF,
+                'confirmation_code' => $this->generateConfirmationCode(),
+                'notes' => null,
+            ]
+        ));
+    }
+
+    /**
+     * @param  array<string, mixed>  $data
+     * @return array<string, mixed>
+     */
+    private function normalizedVisitorFields(array $data): array
+    {
+        return [
             'first_name' => trim((string) $data['first_name']),
             'last_name' => trim((string) $data['last_name']),
             'middle_name' => filled($data['middle_name'] ?? null) ? trim((string) $data['middle_name']) : null,
@@ -34,18 +78,16 @@ class VisitorService
             'plate_number' => strtoupper(trim((string) $data['plate_number'])),
             'vehicle_id' => (int) $data['vehicle_id'],
             'vehicle_color' => trim((string) $data['vehicle_color']),
-            'status' => Visitor::STATUS_WAITING,
-            'registered_by' => $actor?->id,
-            'notes' => filled($data['notes'] ?? null) ? trim((string) $data['notes']) : null,
-        ]);
+        ];
+    }
 
-        $uid = trim((string) ($data['rfid_uid'] ?? ''));
-        if ($uid !== '') {
-            $this->assignRfid($visitor, $uid, $actor);
-            $visitor->refresh();
-        }
+    private function generateConfirmationCode(): string
+    {
+        do {
+            $code = 'V-'.now()->format('Ymd').'-'.strtoupper(substr(bin2hex(random_bytes(3)), 0, 4));
+        } while (Visitor::query()->where('confirmation_code', $code)->exists());
 
-        return $visitor;
+        return $code;
     }
 
     /**
@@ -325,6 +367,8 @@ class VisitorService
                     $v->displayName(),
                     $v->plate_number,
                     $v->rfid_uid,
+                    $v->confirmation_code,
+                    $v->registration_source,
                     $v->purpose,
                     $v->office_to_visit,
                     $v->email,

@@ -133,6 +133,23 @@ Use `--host=0.0.0.0` so ESP32 boards can reach Laravel on your LAN IP.
 | Guard | `/guard` | Live gate, visitors, AI parking, plate lookup, live cameras |
 | Student / Staff | `/user` | Notifications, parking, violations, entry/exit |
 
+### Visitor pre-registration (public QR)
+
+Visitors can pre-register **without logging in** before reaching the guard booth:
+
+| URL | Purpose |
+|-----|---------|
+| `/visitor/pre-register` | Public form (same fields as guard registration, no RFID) |
+| `/visitor/pre-register/success` | Shows a reference code after submit |
+
+**Workflow**
+
+1. Print the QR from **Guard → Register Visitor** (panel at top) or download SVG from `/visitor/pre-register/qr` (guard/admin only).
+2. Visitor scans QR, fills the form, and receives a code like `V-20260823-A7K3`.
+3. At the booth, guard searches **Active Visitors** by ref code, name, or plate, verifies ID, and assigns a temporary RFID.
+
+Pre-registrations are stored as `Visitor` records with status **Waiting** and badge **Pre-registered online**. Physical ID check at the booth is the security control.
+
 ---
 
 ## ESP32 RFID boom gates

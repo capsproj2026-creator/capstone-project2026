@@ -19,6 +19,10 @@ class Visitor extends MongoModel
 
     public const STATUS_COMPLETED = 'Completed';
 
+    public const SOURCE_GUARD = 'guard';
+
+    public const SOURCE_SELF = 'self';
+
     /** @var list<string> */
     public const ACTIVE_STATUSES = [
         self::STATUS_WAITING,
@@ -46,6 +50,8 @@ class Visitor extends MongoModel
         'time_out',
         'registered_by',
         'notes',
+        'confirmation_code',
+        'registration_source',
     ];
 
     protected function casts(): array
@@ -98,6 +104,11 @@ class Visitor extends MongoModel
         }
 
         return $this->expected_exit_at->lte($at ?? now());
+    }
+
+    public function isSelfPreRegistered(): bool
+    {
+        return (string) ($this->registration_source ?? '') === self::SOURCE_SELF;
     }
 
     public function durationLabel(): string

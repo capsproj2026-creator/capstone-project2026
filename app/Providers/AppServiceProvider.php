@@ -80,6 +80,14 @@ class AppServiceProvider extends ServiceProvider
             });
         });
 
+        RateLimiter::for('visitor-pre-register', function (Request $request) {
+            return Limit::perMinute(10)->by($request->ip())->response(function () {
+                return back()
+                    ->withInput(request()->except('_token', 'website'))
+                    ->withErrors(['form' => 'Too many pre-registration attempts. Please try again in a minute.']);
+            });
+        });
+
         GateLog::observe(GateLogObserver::class);
 
         View::share('appTimezone', AppDateTime::timezone());

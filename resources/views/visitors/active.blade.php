@@ -28,7 +28,7 @@
         <form method="GET" class="flex flex-1 flex-col gap-3 sm:flex-row">
             <div class="relative flex-1">
                 <i data-lucide="search" class="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400"></i>
-                <input type="search" name="search" value="{{ $search }}" placeholder="Search name, plate, RFID, purpose..."
+                <input type="search" name="search" value="{{ $search }}" placeholder="Search name, plate, ref code, RFID, purpose..."
                     class="w-full rounded-xl border border-gray-200 bg-white py-2.5 pl-11 pr-4 text-sm shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20">
             </div>
             <select name="status" class="rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-sm shadow-sm">
@@ -48,10 +48,11 @@
 
     <div class="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
         <div class="overflow-x-auto">
-            <table class="w-full min-w-[70rem] table-fixed border-collapse text-left text-sm">
+            <table class="w-full min-w-[78rem] table-fixed border-collapse text-left text-sm">
                 <thead>
                     <tr class="border-b border-gray-100 bg-gray-50 text-[11px] font-semibold uppercase tracking-wide text-gray-500">
                         <th class="px-4 py-3">Visitor</th>
+                        <th class="px-3 py-3">Ref code</th>
                         <th class="px-3 py-3">Plate</th>
                         <th class="px-3 py-3">RFID</th>
                         <th class="px-3 py-3">Purpose</th>
@@ -70,6 +71,16 @@
                             <td class="px-4 py-3">
                                 <p class="truncate font-semibold text-gray-900" title="{{ $v->displayName() }}">{{ $v->displayName() }}</p>
                                 <p class="truncate text-xs text-gray-500">{{ $v->contact_number }}</p>
+                                @if ($v->isSelfPreRegistered())
+                                    <span class="mt-1 inline-flex rounded-full bg-indigo-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-indigo-700">Pre-registered online</span>
+                                @endif
+                            </td>
+                            <td class="px-3 py-3">
+                                @if ($v->confirmation_code)
+                                    <span class="font-mono text-xs font-semibold text-gray-800">{{ $v->confirmation_code }}</span>
+                                @else
+                                    <span class="text-xs text-gray-400">—</span>
+                                @endif
                             </td>
                             <td class="px-3 py-3 font-medium text-gray-800">{{ $v->plate_number }}</td>
                             <td class="px-3 py-3">
@@ -117,7 +128,7 @@
                         </tr>
                     @empty
                         <tr>
-                            <td colspan="{{ ($canManage ?? false) ? 9 : 8 }}" class="px-6 py-16 text-center text-sm text-gray-500">No active visitors found.</td>
+                            <td colspan="{{ ($canManage ?? false) ? 10 : 9 }}" class="px-6 py-16 text-center text-sm text-gray-500">No active visitors found.</td>
                         </tr>
                     @endforelse
                 </tbody>
