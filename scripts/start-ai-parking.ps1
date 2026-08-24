@@ -12,7 +12,8 @@
   powershell -ExecutionPolicy Bypass -File .\scripts\start-ai-parking.ps1
 #>
 param(
-    [switch]$SkipWebStack
+    [switch]$SkipWebStack,
+    [switch]$SkipNgrok
 )
 
 $ErrorActionPreference = "Stop"
@@ -93,6 +94,7 @@ if (-not $SkipWebStack) {
         Write-Host ""
         Write-Host "Starting website stack (Laravel + Reverb + Vite)..." -ForegroundColor Cyan
         $sysArgs = @("-SkipAi")
+        if ($SkipNgrok) { $sysArgs += "-SkipNgrok" }
         if (Test-Path (Join-Path $Root "public\build\manifest.json")) {
             $sysArgs += "-SkipVite"
         }

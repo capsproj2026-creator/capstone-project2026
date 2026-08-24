@@ -20,7 +20,8 @@ param(
     [switch]$WithAi,
     [switch]$SkipAi,
     [switch]$SkipVite,
-    [switch]$WithGitSync
+    [switch]$WithGitSync,
+    [switch]$SkipNgrok
 )
 
 $ErrorActionPreference = "Stop"
@@ -90,6 +91,41 @@ function Get-DotEnvValue {
     }
     $value = ([string]$line[0] -replace ("^\s*" + [regex]::Escape($Name) + "\s*="), "")
     return $value.Trim().Trim('"').Trim("'")
+}
+
+function Find-NgrokCommand {
+    $cmd = Get-Command ngrok -ErrorAction SilentlyContinue
+    if ($cmd) { return $cmd.Source }
+
+    $candidates = @(
+        "$env:LOCALAPPDATA\Microsoft\WinGet\Links\ngrok.exe",
+        "$env:ProgramFiles\ngrok\ngrok.exe",
+        "${env:ProgramFiles(x86)}\ngrok\ngrok.exe",
+        "$env:USERPROFILE\scoop\apps\ngrok\current\ngrok.exe",
+        "$env:USERPROFILE\scoop\shims\ngrok.exe"
+    )
+    $wingetNgrok = Get-ChildItem -Path "$env:LOCALAPPDATA\Microsoft\WinGet\Packages" -Filter "Ngrok*" -Directory -ErrorAction SilentlyContinue |
+        ForEach-Object { Get-ChildItem -Path $_.FullName -Recurse -Filter "ngrok.exe" -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty FullName }
+    if ($wingetNgrok) { $candidates += $wingetNgrok }
+
+    foreach ($path in $candidates) {
+        if ($path -and (Test-Path -LiteralPath $path)) { return $path }
+    }
+
+    return $null
+}
+
+function Get-NgrokPublicUrl {
+    try {
+        $response = Invoke-RestMethod -Uri "http://127.0.0.1:4040/api/tunnels" -TimeoutSec 4
+        $tunnel = @($response.tunnels | Where-Object { $_.proto -eq "https" } | Select-Object -First 1)
+        if ($tunnel.Count -gt 0 -and $tunnel[0].public_url) {
+            return [string]$tunnel[0].public_url
+        }
+    } catch {
+        return $null
+    }
+    return $null
 }
 
 # Preflight checks so Windows users get clear errors instead of empty service windows.
@@ -178,6 +214,29 @@ if (Test-Path $arduinoSync) {
 
 Start-ProjectWindow "Laravel" @("php", "artisan", "serve", "--host=0.0.0.0", "--port=8000")
 Start-Sleep -Milliseconds 800
+
+$ngrokPublicUrl = $null
+if (-not $SkipNgrok) {
+    $ngrokExe = Find-NgrokCommand
+    if ($ngrokExe) {
+        Start-ProjectWindow "ngrok" @($ngrokExe, "http", "8000")
+        Start-Sleep -Seconds 2
+        for ($i = 0; $i -lt 8; $i++) {
+            $ngrokPublicUrl = Get-NgrokPublicUrl
+            if ($ngrokPublicUrl) { break }
+            Start-Sleep -Milliseconds 750
+        }
+        if ($ngrokPublicUrl) {
+            Write-Host ("  ngrok tunnel: " + $ngrokPublicUrl) -ForegroundColor Green
+        } else {
+            Write-Host "  ngrok: started (open http://127.0.0.1:4040 for the public URL)" -ForegroundColor DarkYellow
+        }
+    } else {
+        Write-Host "  ngrok: not found (install from https://ngrok.com or winget install ngrok)" -ForegroundColor DarkYellow
+        Write-Host "         Google Form webhook needs ngrok when running locally." -ForegroundColor DarkYellow
+    }
+}
+
 Start-ProjectWindow "Reverb" @("php", "artisan", "reverb:start")
 Start-Sleep -Milliseconds 400
 
@@ -211,6 +270,15 @@ Write-Host " Smart Campus VMS is starting" -ForegroundColor Green
 Write-Host "========================================" -ForegroundColor Green
 Write-Host ""
 Write-Host "  Website:  http://127.0.0.1:8000" -ForegroundColor Yellow
+if ($ngrokPublicUrl) {
+    Write-Host ("  Public:   " + $ngrokPublicUrl) -ForegroundColor Yellow
+    Write-Host ("  Webhook:  " + $ngrokPublicUrl + "/api/visitor/pre-register/google") -ForegroundColor Yellow
+    $googleFormUrl = Get-DotEnvValue -Lines $envLines -Name "VISITOR_PRE_REGISTER_GOOGLE_FORM_URL"
+    if ($googleFormUrl) {
+        Write-Host "  Google Form webhook: set Apps Script WEBHOOK_URL to the line above." -ForegroundColor DarkGray
+        Write-Host "  Optional: set APP_URL to the Public URL, then php artisan config:clear" -ForegroundColor DarkGray
+    }
+}
 Write-Host "  ESP32 firewall: double-click allow-laravel-firewall.bat once if gate shows connection refused" -ForegroundColor DarkGray
 $esp32Script = Join-Path $PSScriptRoot "esp32-api-url.ps1"
 if (Test-Path $esp32Script) {
@@ -224,5 +292,6 @@ Write-Host "  Guard:  guard@my.cspc.edu.ph / password123" -ForegroundColor Cyan
 Write-Host ""
 Write-Host "Keep the PowerShell windows open while using the site." -ForegroundColor DarkGray
 Write-Host "One command next time:  .\start.ps1" -ForegroundColor DarkGray
-Write-Host "  -SkipAi   skip AI cameras" -ForegroundColor DarkGray
-Write-Host "  -SkipVite skip npm dev (use if npm run build already done)" -ForegroundColor DarkGray
+Write-Host "  -SkipAi    skip AI cameras" -ForegroundColor DarkGray
+Write-Host "  -SkipVite  skip npm dev (use if npm run build already done)" -ForegroundColor DarkGray
+Write-Host "  -SkipNgrok skip ngrok tunnel (Google Form webhook)" -ForegroundColor DarkGray
