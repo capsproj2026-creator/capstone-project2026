@@ -13,7 +13,7 @@ class DashboardController extends Controller
 {
     public function index(DashboardStatsService $stats): View
     {
-        $user = Auth::user()->load('role');
+        $user = Auth::user()->load(['role', 'vehicleType']);
 
         return view('user.dashboard', array_merge(
             $stats->userStats($user),

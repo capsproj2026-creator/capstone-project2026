@@ -83,29 +83,47 @@ def _merge_lines(*groups):
     return merged
 
 
+def _preprocess_for_ocr(image):
+    """Light contrast enhancement for uneven lighting without destroying glyphs."""
+    if image is None or getattr(image, "size", 0) == 0:
+        return image
+
+    lab = cv2.cvtColor(image, cv2.COLOR_BGR2LAB)
+    luminance, a_channel, b_channel = cv2.split(lab)
+    clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+    luminance = clahe.apply(luminance)
+    enhanced = cv2.merge((luminance, a_channel, b_channel))
+    return cv2.cvtColor(enhanced, cv2.COLOR_LAB2BGR)
+
+
 def scan_image(image_path: Path):
     image = cv2.imread(str(image_path))
     if image is None:
         return {"ok": False, "message": "Unable to read the uploaded image."}
 
     height, width = image.shape[:2]
-    scale = max(1.0, 1200 / max(width, 1))
+    scale = max(1.0, 1400 / max(width, 1))
     if scale > 1.0:
         image = cv2.resize(image, None, fx=scale, fy=scale, interpolation=cv2.INTER_CUBIC)
         height, width = image.shape[:2]
 
+    enhanced = _preprocess_for_ocr(image)
     engine = RapidOCR()
 
-    full_lines = _rapidocr_lines(engine, image, height)
+    full_lines = _rapidocr_lines(engine, enhanced, height)
 
-    sn_crop = image[int(height * 0.12) : int(height * 0.34), int(width * 0.05) : int(width * 0.55)]
+    sn_crop = enhanced[int(height * 0.10) : int(height * 0.38), int(width * 0.03) : int(width * 0.60)]
     sn_lines = _rapidocr_lines(engine, sn_crop, height) if sn_crop.size > 0 else []
 
-    # Name band — include all large printed name lines, stop before address.
-    name_crop = image[int(height * 0.56) : int(height * 0.715), int(width * 0.05) : int(width * 0.82)]
+    # Wider name band for short and multi-line long names (stop before address).
+    name_crop = enhanced[int(height * 0.50) : int(height * 0.78), int(width * 0.03) : int(width * 0.92)]
     name_lines = _rapidocr_lines(engine, name_crop, height) if name_crop.size > 0 else []
 
-    lines = _merge_lines(name_lines, full_lines, sn_lines)
+    # Second pass on a taller name band helps wrapped surnames.
+    name_crop_tall = enhanced[int(height * 0.48) : int(height * 0.82), int(width * 0.03) : int(width * 0.92)]
+    name_lines_tall = _rapidocr_lines(engine, name_crop_tall, height) if name_crop_tall.size > 0 else []
+
+    lines = _merge_lines(name_lines, name_lines_tall, full_lines, sn_lines)
 
     if not lines:
         return {"ok": False, "message": "No text detected on the ID photo."}

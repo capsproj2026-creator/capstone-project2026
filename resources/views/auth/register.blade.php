@@ -81,7 +81,7 @@
                         label="Full Name"
                         name="full_name"
                         required
-                        placeholder="e.g. John Michael Moral Toldanes"
+                        placeholder="e.g. Juan Dela Cruz"
                         value="{{ old('full_name') }}"
                     />
 
@@ -96,7 +96,7 @@
                             inputmode="text"
                             pattern="[A-Za-z0-9]+"
                             maxlength="50"
-                            placeholder="e.g. 231002254 (SN on ID)"
+                            placeholder="e.g. 23100XXXX (SN on ID)"
                             title="Use letters and numbers only (max 50)"
                             class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm text-gray-900 shadow-sm placeholder:text-gray-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20 @error('id_number') border-red-500 focus:border-red-500 focus:ring-red-500/20 @enderror"
                         >

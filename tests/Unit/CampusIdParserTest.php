@@ -94,7 +94,7 @@ class CampusIdParserTest extends TestCase
     {
         $result = $this->parser->parse([
             ['text' => 'SN: 231002254', 'confidence' => 0.92, 'height' => 18, 'center_y' => 0.35],
-            ['text' => 'JOHN MICHAEL MORAL', 'confidence' => 0.88, 'height' => 27, 'center_y' => 0.65],
+            ['text' => 'JOHN MICHAEL', 'confidence' => 0.88, 'height' => 27, 'center_y' => 0.65],
         ]);
 
         $this->assertSame('231002254', $result['id_number']);
@@ -102,6 +102,31 @@ class CampusIdParserTest extends TestCase
         $this->assertFalse($result['name_complete']);
         $this->assertCount(1, $result['warnings']);
         $this->assertStringContainsString('full name', strtolower($result['warnings'][0]));
+    }
+
+    public function test_accepts_short_three_word_name(): void
+    {
+        $result = $this->parser->parse([
+            ['text' => 'SN: 231002254', 'confidence' => 0.92, 'height' => 18, 'center_y' => 0.35],
+            ['text' => 'JUAN DELA CRUZ', 'confidence' => 0.91, 'height' => 27, 'center_y' => 0.65],
+        ]);
+
+        $this->assertSame('Juan Dela Cruz', $result['full_name']);
+        $this->assertTrue($result['name_complete']);
+    }
+
+    public function test_accepts_multi_word_surname_across_lines(): void
+    {
+        $result = $this->parser->parse([
+            ['text' => 'SN: 210021540', 'confidence' => 0.9, 'height' => 16, 'center_y' => 0.32],
+            ['text' => 'ANA MARIA', 'confidence' => 0.93, 'height' => 25, 'center_y' => 0.58],
+            ['text' => 'LOPEZ DE', 'confidence' => 0.92, 'height' => 24, 'center_y' => 0.64],
+            ['text' => 'LA CRUZ', 'confidence' => 0.94, 'height' => 24, 'center_y' => 0.70],
+            ['text' => 'ZONE 4 BATO', 'confidence' => 0.5, 'height' => 14, 'center_y' => 0.84],
+        ]);
+
+        $this->assertSame('Ana Maria Lopez De La Cruz', $result['full_name']);
+        $this->assertTrue($result['name_complete']);
     }
 
     public function test_accepts_single_line_name_with_four_or_more_words(): void

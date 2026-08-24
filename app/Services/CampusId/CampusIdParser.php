@@ -11,14 +11,14 @@ namespace App\Services\CampusId;
  */
 class CampusIdParser
 {
-    private const NAME_BAND_MIN = 0.52;
+    private const NAME_BAND_MIN = 0.48;
 
-    private const NAME_BAND_MAX = 0.715;
+    private const NAME_BAND_MAX = 0.78;
 
     /** @var list<string> */
     private const SKIP_LINE_PATTERNS = [
-        '/\bcamarines\b/i',
-        '/\bpolytechnic\b/i',
+        '/camarines/i',
+        '/polytechnic/i',
         '/\bcolleges?\b/i',
         '/\bnabua\b/i',
         '/\bdate\s*of\s*birth\b/i',
@@ -31,6 +31,7 @@ class CampusIdParser
         '/\bdepartment\b/i',
         '/\bvalid\b/i',
         '/\bexpir/i',
+        '/cristorey/i',
         '/\bcristo\b/i',
         '/\bbato\b/i',
         '/\brey\b/i',
@@ -202,7 +203,7 @@ class CampusIdParser
         }
 
         foreach ($nameGroup as $line) {
-            if ($line['confidence'] < 0.55) {
+            if ($line['confidence'] < 0.48) {
                 return false;
             }
         }
@@ -213,10 +214,11 @@ class CampusIdParser
             $firstLineWords = $this->wordCount($nameGroup[0]['text']);
             $lastLineWords = $this->wordCount($nameGroup[$lineCount - 1]['text']);
 
-            return $firstLineWords >= 2 && $lastLineWords >= 1 && $totalWords >= 3;
+            return $firstLineWords >= 1 && $lastLineWords >= 1 && $totalWords >= 3;
         }
 
-        return $totalWords >= 4;
+        // Short complete names (e.g. Juan Cruz Reyes) and longer single-line OCR.
+        return $totalWords >= 3;
     }
 
     /**
@@ -280,7 +282,7 @@ class CampusIdParser
             return true;
         }
 
-        return ($lineY - $previousY) <= 0.09;
+        return ($lineY - $previousY) <= 0.12;
     }
 
     private function heightsAreSimilar(float $left, float $right): bool
@@ -292,7 +294,7 @@ class CampusIdParser
         $smaller = min($left, $right);
         $larger = max($left, $right);
 
-        return ($smaller / $larger) >= 0.72;
+        return ($smaller / $larger) >= 0.65;
     }
 
     /**
@@ -346,7 +348,8 @@ class CampusIdParser
 
         $upperRatio = $this->uppercaseLetterRatio($text);
 
-        return $upperRatio >= 0.7;
+        // Prefer ALL-CAPS ID printing, but allow mixed-case OCR output.
+        return $upperRatio >= 0.55;
     }
 
     private function wordCount(string $text): int
