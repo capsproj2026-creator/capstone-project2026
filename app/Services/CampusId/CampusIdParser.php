@@ -11,9 +11,9 @@ namespace App\Services\CampusId;
  */
 class CampusIdParser
 {
-    private const NAME_BAND_MIN = 0.48;
+    private const NAME_BAND_MIN = 0.54;
 
-    private const NAME_BAND_MAX = 0.78;
+    private const NAME_BAND_MAX = 0.72;
 
     /** @var list<string> */
     private const SKIP_LINE_PATTERNS = [

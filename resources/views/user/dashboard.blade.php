@@ -88,9 +88,9 @@
     </section>
 
     <div class="mb-6 grid grid-cols-1 gap-6 lg:grid-cols-2">
-        {{-- General Information --}}
-        <section class="rounded-2xl border border-gray-200 bg-white shadow-sm">
-            <div class="border-b border-gray-100 px-5 py-4 sm:px-6">
+        {{-- General Information (collapsed by default) --}}
+        <details class="group overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm open:shadow-md">
+            <summary class="flex cursor-pointer list-none items-center justify-between gap-3 px-5 py-4 sm:px-6 [&::-webkit-details-marker]:hidden">
                 <div class="flex items-center gap-3">
                     <div class="flex h-9 w-9 items-center justify-center rounded-lg bg-blue-50 text-blue-700">
                         <i data-lucide="info" class="h-5 w-5"></i>
@@ -100,8 +100,9 @@
                         <p class="text-xs text-gray-500">Account and campus notices</p>
                     </div>
                 </div>
-            </div>
-            <div class="space-y-3 p-5 sm:p-6">
+                <i data-lucide="chevron-down" class="h-5 w-5 shrink-0 text-gray-400 transition-transform duration-300 group-open:rotate-180"></i>
+            </summary>
+            <div class="space-y-3 border-t border-gray-100 p-5 transition-all duration-300 sm:p-6">
                 @forelse ($generalInfo as $info)
                     <div class="flex gap-3 rounded-xl border border-emerald-100 bg-emerald-50/70 px-4 py-3 text-sm text-emerald-950">
                         <i data-lucide="circle-check" class="mt-0.5 h-4 w-4 shrink-0 text-emerald-600"></i>
@@ -111,11 +112,11 @@
                     <p class="text-sm text-gray-500">No general information available.</p>
                 @endforelse
             </div>
-        </section>
+        </details>
 
-        {{-- Official Parking Rules --}}
-        <section class="rounded-2xl border border-gray-200 bg-white shadow-sm">
-            <div class="border-b border-gray-100 px-5 py-4 sm:px-6">
+        {{-- Official Parking Rules (collapsed by default) --}}
+        <details class="group overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm open:shadow-md">
+            <summary class="flex cursor-pointer list-none items-center justify-between gap-3 px-5 py-4 sm:px-6 [&::-webkit-details-marker]:hidden">
                 <div class="flex items-center gap-3">
                     <div class="flex h-9 w-9 items-center justify-center rounded-lg bg-slate-100 text-slate-700">
                         <i data-lucide="clipboard-list" class="h-5 w-5"></i>
@@ -125,8 +126,9 @@
                         <p class="text-xs text-gray-500">Campus policies you must follow</p>
                     </div>
                 </div>
-            </div>
-            <div class="divide-y divide-gray-100">
+                <i data-lucide="chevron-down" class="h-5 w-5 shrink-0 text-gray-400 transition-transform duration-300 group-open:rotate-180"></i>
+            </summary>
+            <div class="divide-y divide-gray-100 border-t border-gray-100 transition-all duration-300">
                 @forelse ($parkingRules as $index => $rule)
                     <div class="flex gap-3 px-5 py-3.5 sm:px-6">
                         <span class="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-blue-50 text-xs font-bold text-blue-700">{{ $index + 1 }}</span>
@@ -136,7 +138,7 @@
                     <p class="px-5 py-8 text-sm text-gray-500 sm:px-6">No rules posted yet.</p>
                 @endforelse
             </div>
-        </section>
+        </details>
     </div>
 
     {{-- Recent Entry / Exit --}}

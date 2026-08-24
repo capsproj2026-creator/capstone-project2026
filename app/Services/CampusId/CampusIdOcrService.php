@@ -107,36 +107,52 @@ class CampusIdOcrService
                 throw new RuntimeException($message);
             }
 
-            $lines = $payload['lines'] ?? [];
+            // Prefer dedicated name + SN crops so address/header text never enters name parsing.
+            $nameLines = $this->normalizeLinePayload($payload['name_lines'] ?? []);
+            $snLines = $this->normalizeLinePayload($payload['sn_lines'] ?? []);
+            $legacyLines = $this->normalizeLinePayload($payload['lines'] ?? []);
 
-            if (! is_array($lines)) {
-                return [];
+            if ($nameLines !== [] || $snLines !== []) {
+                return array_merge($snLines, $nameLines);
             }
 
-            $normalized = [];
-            foreach ($lines as $line) {
-                if (! is_array($line)) {
-                    continue;
-                }
-
-                $text = trim((string) ($line['text'] ?? ''));
-                if ($text === '') {
-                    continue;
-                }
-
-                $normalized[] = [
-                    'text' => $text,
-                    'confidence' => (float) ($line['confidence'] ?? 0.0),
-                    'height' => (float) ($line['height'] ?? 0.0),
-                    'center_y' => isset($line['center_y']) ? (float) $line['center_y'] : null,
-                ];
-            }
-
-            return $normalized;
+            return $legacyLines;
         } finally {
             @unlink($imagePath);
             @unlink($tempPath);
         }
+    }
+
+    /**
+     * @param  mixed  $lines
+     * @return list<array{text: string, confidence: float, height: float, center_y: ?float}>
+     */
+    private function normalizeLinePayload(mixed $lines): array
+    {
+        if (! is_array($lines)) {
+            return [];
+        }
+
+        $normalized = [];
+        foreach ($lines as $line) {
+            if (! is_array($line)) {
+                continue;
+            }
+
+            $text = trim((string) ($line['text'] ?? ''));
+            if ($text === '') {
+                continue;
+            }
+
+            $normalized[] = [
+                'text' => $text,
+                'confidence' => (float) ($line['confidence'] ?? 0.0),
+                'height' => (float) ($line['height'] ?? 0.0),
+                'center_y' => isset($line['center_y']) ? (float) $line['center_y'] : null,
+            ];
+        }
+
+        return $normalized;
     }
 
     private static function friendlyScanFailure(string $output): string

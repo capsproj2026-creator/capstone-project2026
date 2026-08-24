@@ -137,6 +137,9 @@ class PlateLookup
                 ? 'Registered'
                 : (string) ($user->status ?: 'Registered');
 
+            $vehicleDetails = self::vehicleDetailsForUserPlate($user, $normalized)
+                ?? $user->vehicleType?->vehicle_name;
+
             return [
                 'plate' => $normalized !== '' ? $normalized : strtoupper(trim((string) $plate)),
                 'user_id' => $user->id,
@@ -147,7 +150,7 @@ class PlateLookup
                 'role' => $user->roleName(),
                 'purpose' => null,
                 'registered' => true,
-                'vehicle_details' => $user->vehicleType?->vehicle_name,
+                'vehicle_details' => $vehicleDetails,
                 'department' => $department,
                 'registration_status' => $registrationStatus,
                 'is_visitor' => false,
@@ -214,6 +217,17 @@ class PlateLookup
                     }
                 });
 
+            \App\Models\UserVehicle::query()
+                ->whereNotNull('plate_number')
+                ->where('plate_number', '!=', '')
+                ->get(['user_id', 'plate_number'])
+                ->each(function (\App\Models\UserVehicle $row) use (&$map) {
+                    $key = self::normalize((string) $row->plate_number);
+                    if ($key !== '' && ! isset($map[$key])) {
+                        $map[$key] = $row->user_id;
+                    }
+                });
+
             return $map;
         });
     }
@@ -226,5 +240,23 @@ class PlateLookup
     public static function forgetIndex(): void
     {
         Cache::forget('plate_lookup:normalized_index');
+    }
+
+    /**
+     * Resolve vehicle type name for the specific plate on a multi-vehicle account.
+     */
+    private static function vehicleDetailsForUserPlate(User $user, string $normalizedPlate): ?string
+    {
+        if ($normalizedPlate === '') {
+            return null;
+        }
+
+        $match = \App\Models\UserVehicle::query()
+            ->with('vehicleType')
+            ->where('user_id', $user->id)
+            ->get()
+            ->first(fn (\App\Models\UserVehicle $row) => self::normalize((string) $row->plate_number) === $normalizedPlate);
+
+        return $match?->vehicleType?->vehicle_name;
     }
 }

@@ -3,21 +3,25 @@
 namespace App\Http\Controllers;
 
 use App\Models\User;
+use App\Models\UserVehicle;
 use App\Models\Vehicle;
 use App\Support\SafeUpload;
 use App\Services\NavigationService;
-use App\Support\PlateLookup;
+use App\Services\UserVehicleService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use App\Support\PasswordRules;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\ValidationException;
-use Illuminate\Validation\Rule;
 use Illuminate\View\View;
 
 class ProfileController extends Controller
 {
+    public function __construct(private readonly UserVehicleService $vehicles)
+    {
+    }
+
     public function edit(): View
     {
         $user = Auth::user();
@@ -26,6 +30,7 @@ class ProfileController extends Controller
         return view('profile.edit', [
             'user' => $user,
             'vehicles' => Vehicle::query()->orderBy('id')->get(),
+            'userVehicles' => $this->vehicles->listFor($user),
             'dashboardRoute' => NavigationService::dashboardRouteFor($user),
         ]);
     }
@@ -97,12 +102,31 @@ class ProfileController extends Controller
             return back()->with('success', 'Profile updated successfully!');
         }
 
+        if ($request->has('add_vehicle')) {
+            $this->vehicles->add($user, $request->only(['vehicle_id', 'plate_number']));
+
+            return back()->with('success', 'Vehicle added successfully!');
+        }
+
         if ($request->has('update_vehicle')) {
-            return $this->updateVehicle($request, $user);
+            $vehicle = $this->findOwnedVehicle($user, (int) $request->input('user_vehicle_id'));
+            $this->vehicles->update($user, $vehicle, $request->only(['vehicle_id', 'plate_number']));
+
+            return back()->with('success', 'Vehicle updated successfully!');
         }
 
         if ($request->has('remove_vehicle')) {
-            return $this->removeVehicle($user);
+            $vehicle = $this->findOwnedVehicle($user, (int) $request->input('user_vehicle_id'));
+            $this->vehicles->remove($user, $vehicle);
+
+            return back()->with('success', 'Vehicle removed from your account.');
+        }
+
+        if ($request->has('make_primary_vehicle')) {
+            $vehicle = $this->findOwnedVehicle($user, (int) $request->input('user_vehicle_id'));
+            $this->vehicles->makePrimary($user, $vehicle);
+
+            return back()->with('success', 'Primary vehicle updated.');
         }
 
         if ($request->has('change_password')) {
@@ -131,60 +155,13 @@ class ProfileController extends Controller
         return back();
     }
 
-    private function updateVehicle(Request $request, User $user): RedirectResponse
+    private function findOwnedVehicle(User $user, int $id): UserVehicle
     {
-        $vehicleIds = Vehicle::query()->pluck('id')->map(fn ($id) => (int) $id)->all();
-
-        $validated = $request->validate([
-            'vehicle_id' => ['required', 'integer', Rule::in($vehicleIds)],
-            'plate_number' => ['required', 'string', 'min:2', 'max:20', 'regex:/^[A-Za-z0-9\-\s]+$/'],
-        ], [
-            'vehicle_id.required' => 'Please select a vehicle type.',
-            'vehicle_id.in' => 'Please select a valid vehicle type.',
-            'plate_number.required' => 'Please enter your plate number.',
-            'plate_number.min' => 'Please enter a valid plate number.',
-            'plate_number.regex' => 'Plate number may only contain letters, numbers, spaces, and hyphens.',
-        ]);
-
-        $plate = PlateLookup::normalize($validated['plate_number']);
-        if ($plate === '') {
-            throw ValidationException::withMessages([
-                'plate_number' => 'Please enter a valid plate number.',
-            ]);
+        $vehicle = UserVehicle::query()->find($id);
+        if (! $vehicle || (int) $vehicle->user_id !== (int) $user->id) {
+            abort(404);
         }
 
-        $duplicate = User::query()
-            ->where('id', '<>', $user->id)
-            ->whereNotNull('plate_number')
-            ->where('plate_number', '!=', '')
-            ->get()
-            ->first(fn (User $other) => PlateLookup::normalize((string) $other->plate_number) === $plate);
-
-        if ($duplicate) {
-            throw ValidationException::withMessages([
-                'plate_number' => 'This plate number is already registered to another account.',
-            ]);
-        }
-
-        $user->update([
-            'vehicle_id' => (int) $validated['vehicle_id'],
-            'plate_number' => $plate,
-        ]);
-
-        PlateLookup::forgetIndex();
-
-        return back()->with('success', 'Vehicle saved successfully!');
-    }
-
-    private function removeVehicle(User $user): RedirectResponse
-    {
-        $user->update([
-            'vehicle_id' => null,
-            'plate_number' => null,
-        ]);
-
-        PlateLookup::forgetIndex();
-
-        return back()->with('success', 'Vehicle removed from your account.');
+        return $vehicle;
     }
 }

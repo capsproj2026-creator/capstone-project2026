@@ -116,13 +116,53 @@ COCO_NAMES = {
     7: "truck",
 }
 ALLOWED_VEHICLE_NAMES = frozenset(COCO_NAMES.get(i, "") for i in VEHICLE_CLASS_IDS if i in COCO_NAMES)
+# BGR colors — stable per vehicle type across all cameras (not overridden by motion).
+# COCO YOLOv9 detects car/motorcycle/bus/truck; SUV/Van share "car" unless refined by registry.
 CLASS_COLORS = {
-    "person": (255, 160, 0),
-    "car": (0, 220, 0),
-    "motorcycle": (0, 200, 80),
-    "bus": (0, 180, 255),
-    "truck": (0, 140, 255),
+    "person": (0, 165, 255),       # orange
+    "car": (40, 180, 40),          # green
+    "suv": (0, 140, 255),          # orange-amber
+    "van": (180, 90, 40),          # teal/brown
+    "motorcycle": (0, 215, 255),   # amber/yellow
+    "bus": (200, 60, 220),         # magenta
+    "truck": (255, 120, 40),       # blue
 }
+CLASS_DISPLAY_NAMES = {
+    "person": "Person",
+    "car": "Car",
+    "suv": "SUV",
+    "van": "Van",
+    "motorcycle": "Motorcycle",
+    "bus": "Bus",
+    "truck": "Truck",
+}
+
+
+def _normalize_vehicle_type_key(raw: str | None) -> str | None:
+    if not raw:
+        return None
+    key = str(raw).strip().lower().replace("-", " ").replace("_", " ")
+    if "motor" in key or key in {"mc", "bike"}:
+        return "motorcycle"
+    if "suv" in key:
+        return "suv"
+    if "van" in key:
+        return "van"
+    if "truck" in key or "lorry" in key:
+        return "truck"
+    if "bus" in key:
+        return "bus"
+    if "car" in key or "sedan" in key or "auto" in key:
+        return "car"
+    return None
+
+
+def _overlay_type_key(yolo_name: str, vehicle_details: str | None = None) -> str:
+    """Prefer registered vehicle type (SUV/Van/…) when known; else YOLO class."""
+    registered = _normalize_vehicle_type_key(vehicle_details)
+    if registered:
+        return registered
+    return yolo_name or "car"
 # =====================================
 
 
@@ -422,7 +462,7 @@ def refresh_plates_from_tracks(
 
     refreshed: list[tuple] = []
     for box in annotated_boxes:
-        x1, y1, x2, y2, name, conf, track_id, plate, plate_status, owner_label, motion_state = _unpack_box(box)
+        x1, y1, x2, y2, name, conf, track_id, plate, plate_status, owner_label, motion_state, vehicle_details = _unpack_box(box)
         if track_id is not None:
             mem = tracks.get(int(track_id))
             if mem is not None:
@@ -430,7 +470,8 @@ def refresh_plates_from_tracks(
                 plate = mem.plate if plate_status == "ok" else None
                 owner_label = mem.overlay_owner_line() or owner_label
                 motion_state = mem.motion_state
-        refreshed.append((x1, y1, x2, y2, name, conf, track_id, plate, plate_status, owner_label, motion_state))
+                vehicle_details = mem.vehicle_details or vehicle_details
+        refreshed.append((x1, y1, x2, y2, name, conf, track_id, plate, plate_status, owner_label, motion_state, vehicle_details))
     return refreshed
 
 
@@ -577,7 +618,7 @@ def parse_tracks(
 
         det = {
             "class": name,
-            "vehicle_type": name,
+            "vehicle_type": _overlay_type_key(name, vehicle_details if isinstance(vehicle_details, str) else None) or name,
             "confidence": round(conf, 3),
             "track_id": track_id,
             "plate_status": plate_status,
@@ -604,7 +645,7 @@ def parse_tracks(
         _attach_motion(det, motion_state)
 
         detections.append(det)
-        annotated_boxes.append((x1, y1, x2, y2, name, conf, track_id, plate, plate_status, owner_label, motion_state))
+        annotated_boxes.append((x1, y1, x2, y2, name, conf, track_id, plate, plate_status, owner_label, motion_state, vehicle_details))
         vehicles.append({
             "xyxy": (x1, y1, x2, y2),
             "track_id": track_id,
@@ -622,13 +663,16 @@ def parse_tracks(
 
 
 def _unpack_box(box: tuple):
-    """Support legacy 10-tuple and extended 11-tuple (motion_state)."""
-    if len(box) >= 11:
+    """Support legacy 10/11-tuples and 12-tuple (motion_state + vehicle_details)."""
+    vehicle_details = None
+    motion_state = None
+    if len(box) >= 12:
+        x1, y1, x2, y2, name, conf, track_id, plate, plate_status, owner_label, motion_state, vehicle_details = box[:12]
+    elif len(box) >= 11:
         x1, y1, x2, y2, name, conf, track_id, plate, plate_status, owner_label, motion_state = box[:11]
     else:
         x1, y1, x2, y2, name, conf, track_id, plate, plate_status, owner_label = box[:10]
-        motion_state = None
-    return x1, y1, x2, y2, name, conf, track_id, plate, plate_status, owner_label, motion_state
+    return x1, y1, x2, y2, name, conf, track_id, plate, plate_status, owner_label, motion_state, vehicle_details
 
 
 def _draw_label_block(annotated, x, y, lines, color, lite=False):
@@ -664,19 +708,18 @@ def _draw_label_block(annotated, x, y, lines, color, lite=False):
         )
 
 
-def _draw_box_labels(annotated, x1, y1, x2, y2, name, conf, track_id, plate, plate_status, owner_label, lite=False, motion_state=None):
-    color = CLASS_COLORS.get(name, (0, 220, 0))
-    if motion_state == "moving":
-        color = (0, 140, 255)  # orange — moving
-    elif motion_state == "parked":
-        color = (255, 180, 0)  # cyan-ish — parked
+def _draw_box_labels(annotated, x1, y1, x2, y2, name, conf, track_id, plate, plate_status, owner_label, lite=False, motion_state=None, vehicle_details=None):
+    # Color by vehicle type (registered type when known, else YOLO class) — consistent across cameras.
+    type_key = _overlay_type_key(name, vehicle_details)
+    color = CLASS_COLORS.get(type_key, CLASS_COLORS.get(name, (40, 180, 40)))
     cv2.rectangle(annotated, (x1, y1), (x2, y2), color, 2 if not lite else 2)
     lines = []
-    class_label = name if not lite else (name[0].upper() if name else "?")
+    display_name = CLASS_DISPLAY_NAMES.get(type_key, CLASS_DISPLAY_NAMES.get(name, name or "?"))
+    class_label = display_name if not lite else (display_name[0].upper() if display_name else "?")
     if lite:
         head = f"#{track_id} {class_label}" if track_id is not None else class_label
     else:
-        head = f"#{track_id} {name} {conf * 100:.0f}%" if track_id is not None else f"{name} {conf * 100:.0f}%"
+        head = f"#{track_id} {display_name} {conf * 100:.0f}%" if track_id is not None else f"{display_name} {conf * 100:.0f}%"
     lines.append(head)
     if motion_state == "moving":
         lines.append("MOVING")
@@ -717,8 +760,23 @@ def draw_scene(frame, annotated_boxes, zones_data, occupied_slots, active_events
     draw_zones(annotated, zones_data, occupied_slots)
 
     for box in annotated_boxes:
-        x1, y1, x2, y2, name, conf, track_id, plate, plate_status, owner_label, motion_state = _unpack_box(box)
-        _draw_box_labels(annotated, x1, y1, x2, y2, name, conf, track_id, plate, plate_status, owner_label, lite=False, motion_state=motion_state)
+        x1, y1, x2, y2, name, conf, track_id, plate, plate_status, owner_label, motion_state, vehicle_details = _unpack_box(box)
+        _draw_box_labels(
+            annotated,
+            x1,
+            y1,
+            x2,
+            y2,
+            name,
+            conf,
+            track_id,
+            plate,
+            plate_status,
+            owner_label,
+            lite=False,
+            motion_state=motion_state,
+            vehicle_details=vehicle_details,
+        )
 
     mode = "slots" if use_poly else "count-fallback"
     summary = f"Vehicles: {vehicle_count} | Mode: {mode}" if VEHICLES_ONLY else f"People: {person_count} | Vehicles: {vehicle_count} | Mode: {mode}"
@@ -754,8 +812,23 @@ def draw_scene_lite(frame, annotated_boxes, occupied_slots, person_count, vehicl
     """Minimal overlay for low-latency live preview (skip zone polygons / event list)."""
     annotated = frame  # in-place; caller passes a disposable resize copy
     for box in annotated_boxes:
-        x1, y1, x2, y2, name, conf, track_id, plate, plate_status, owner_label, motion_state = _unpack_box(box)
-        _draw_box_labels(annotated, x1, y1, x2, y2, name, conf, track_id, plate, plate_status, owner_label, lite=True, motion_state=motion_state)
+        x1, y1, x2, y2, name, conf, track_id, plate, plate_status, owner_label, motion_state, vehicle_details = _unpack_box(box)
+        _draw_box_labels(
+            annotated,
+            x1,
+            y1,
+            x2,
+            y2,
+            name,
+            conf,
+            track_id,
+            plate,
+            plate_status,
+            owner_label,
+            lite=True,
+            motion_state=motion_state,
+            vehicle_details=vehicle_details,
+        )
     n_occ = len(occupied_slots) if occupied_slots else 0
     summary = f"V:{vehicle_count} Occ:{n_occ}" if VEHICLES_ONLY else f"P:{person_count} V:{vehicle_count} Occ:{n_occ}"
     h = annotated.shape[0]

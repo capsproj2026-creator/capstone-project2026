@@ -110,25 +110,37 @@ def scan_image(image_path: Path):
     enhanced = _preprocess_for_ocr(image)
     engine = RapidOCR()
 
-    full_lines = _rapidocr_lines(engine, enhanced, height)
-
-    sn_crop = enhanced[int(height * 0.10) : int(height * 0.38), int(width * 0.03) : int(width * 0.60)]
+    # SN region (left of photo, mid-upper card).
+    sn_crop = enhanced[int(height * 0.12) : int(height * 0.36), int(width * 0.03) : int(width * 0.58)]
     sn_lines = _rapidocr_lines(engine, sn_crop, height) if sn_crop.size > 0 else []
 
-    # Wider name band for short and multi-line long names (stop before address).
-    name_crop = enhanced[int(height * 0.50) : int(height * 0.78), int(width * 0.03) : int(width * 0.92)]
-    name_lines = _rapidocr_lines(engine, name_crop, height) if name_crop.size > 0 else []
+    # Name region ONLY — below photo/DOB, above address (circled area on CSPC IDs).
+    # Do not OCR school header, address, or footer into the name path.
+    name_top = int(height * 0.54)
+    name_bottom = int(height * 0.72)
+    name_left = int(width * 0.05)
+    name_right = int(width * 0.95)
+    name_crop = enhanced[name_top:name_bottom, name_left:name_right]
+    name_lines = []
+    if name_crop.size > 0:
+        crop_h = float(max(1, name_crop.shape[0]))
+        name_lines = _rapidocr_lines(engine, name_crop, crop_h)
+        for row in name_lines:
+            local_y = float(row.get("center_y") or 0.0)
+            # Map crop-relative center into full-card y for PHP NAME_BAND filtering.
+            row["center_y"] = round((name_top + local_y * crop_h) / max(height, 1.0), 4)
 
-    # Second pass on a taller name band helps wrapped surnames.
-    name_crop_tall = enhanced[int(height * 0.48) : int(height * 0.82), int(width * 0.03) : int(width * 0.92)]
-    name_lines_tall = _rapidocr_lines(engine, name_crop_tall, height) if name_crop_tall.size > 0 else []
-
-    lines = _merge_lines(name_lines, name_lines_tall, full_lines, sn_lines)
+    lines = _merge_lines(name_lines, sn_lines)
 
     if not lines:
         return {"ok": False, "message": "No text detected on the ID photo."}
 
-    return {"ok": True, "lines": lines}
+    return {
+        "ok": True,
+        "lines": lines,
+        "name_lines": name_lines,
+        "sn_lines": sn_lines,
+    }
 
 
 def main(argv: list[str]) -> int:

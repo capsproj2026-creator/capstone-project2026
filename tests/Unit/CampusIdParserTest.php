@@ -138,4 +138,38 @@ class CampusIdParserTest extends TestCase
         $this->assertSame('John Michael Moral Toldanes', $result['full_name']);
         $this->assertTrue($result['name_complete']);
     }
+
+    public function test_extracts_adrian_style_two_line_name_from_name_band_only(): void
+    {
+        $result = $this->parser->parse([
+            ['text' => 'Camarines Sur Polytechnic Colleges', 'confidence' => 0.95, 'height' => 20, 'center_y' => 0.06],
+            ['text' => 'SN: 231002119', 'confidence' => 0.93, 'height' => 16, 'center_y' => 0.28],
+            ['text' => 'NOVEMBER 04, 2004', 'confidence' => 0.9, 'height' => 14, 'center_y' => 0.42],
+            ['text' => 'ADRIAN ADAMS MANZANAL', 'confidence' => 0.96, 'height' => 28, 'center_y' => 0.60],
+            ['text' => 'DADUYA', 'confidence' => 0.98, 'height' => 24, 'center_y' => 0.66],
+            ['text' => '368, ZONE 4, LA PURISIMA, PILI, CAMARINES SUR', 'confidence' => 0.88, 'height' => 18, 'center_y' => 0.78],
+            ['text' => 'BSIT', 'confidence' => 0.99, 'height' => 20, 'center_y' => 0.94],
+        ]);
+
+        $this->assertSame('231002119', $result['id_number']);
+        $this->assertSame('Adrian Adams Manzanal Daduya', $result['full_name']);
+        $this->assertTrue($result['name_complete']);
+        $this->assertStringNotContainsString('Pili', $result['full_name'] ?? '');
+        $this->assertStringNotContainsString('Polytechnic', $result['full_name'] ?? '');
+    }
+
+    public function test_ignores_name_candidates_outside_designated_band(): void
+    {
+        $result = $this->parser->parse([
+            ['text' => 'SN: 231002119', 'confidence' => 0.93, 'height' => 16, 'center_y' => 0.28],
+            // Outside name band (header-ish / address) — must not become the name.
+            ['text' => 'FAKE HEADER NAME', 'confidence' => 0.99, 'height' => 30, 'center_y' => 0.10],
+            ['text' => 'ADDRESS LOOKALIKE PERSON', 'confidence' => 0.99, 'height' => 28, 'center_y' => 0.85],
+            ['text' => 'ADRIAN ADAMS MANZANAL', 'confidence' => 0.96, 'height' => 28, 'center_y' => 0.60],
+            ['text' => 'DADUYA', 'confidence' => 0.98, 'height' => 24, 'center_y' => 0.66],
+        ]);
+
+        $this->assertSame('Adrian Adams Manzanal Daduya', $result['full_name']);
+        $this->assertTrue($result['name_complete']);
+    }
 }
