@@ -87,22 +87,24 @@
         </div>
     </section>
 
-    <div class="mb-6 grid grid-cols-1 gap-6 lg:grid-cols-2">
-        {{-- General Information (collapsed by default) --}}
-        <details class="group overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm open:shadow-md">
-            <summary class="flex cursor-pointer list-none items-center justify-between gap-3 px-5 py-4 sm:px-6 [&::-webkit-details-marker]:hidden">
-                <div class="flex items-center gap-3">
-                    <div class="flex h-9 w-9 items-center justify-center rounded-lg bg-blue-50 text-blue-700">
+    {{-- Stacked accordions: each panel sizes on its own so opening one never stretches the other --}}
+    <div class="mb-6 flex flex-col gap-4" data-dashboard-accordions>
+        <details class="dashboard-accordion group overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm transition-[box-shadow] duration-200 open:border-blue-200 open:shadow-md">
+            <summary class="flex cursor-pointer list-none items-center justify-between gap-3 px-5 py-4 select-none hover:bg-gray-50/80 sm:px-6 [&::-webkit-details-marker]:hidden">
+                <div class="flex min-w-0 items-center gap-3">
+                    <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-blue-50 text-blue-700">
                         <i data-lucide="info" class="h-5 w-5"></i>
                     </div>
-                    <div>
+                    <div class="min-w-0">
                         <h3 class="font-semibold text-gray-900">General Information</h3>
                         <p class="text-xs text-gray-500">Account and campus notices</p>
                     </div>
                 </div>
-                <i data-lucide="chevron-down" class="h-5 w-5 shrink-0 text-gray-400 transition-transform duration-300 group-open:rotate-180"></i>
+                <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gray-100 text-gray-500 transition-colors duration-200 group-open:bg-blue-50 group-open:text-blue-700">
+                    <i data-lucide="chevron-down" class="h-4 w-4 transition-transform duration-200 group-open:rotate-180"></i>
+                </span>
             </summary>
-            <div class="space-y-3 border-t border-gray-100 p-5 transition-all duration-300 sm:p-6">
+            <div class="max-h-72 space-y-3 overflow-y-auto border-t border-gray-100 p-5 sm:max-h-80 sm:p-6">
                 @forelse ($generalInfo as $info)
                     <div class="flex gap-3 rounded-xl border border-emerald-100 bg-emerald-50/70 px-4 py-3 text-sm text-emerald-950">
                         <i data-lucide="circle-check" class="mt-0.5 h-4 w-4 shrink-0 text-emerald-600"></i>
@@ -114,21 +116,22 @@
             </div>
         </details>
 
-        {{-- Official Parking Rules (collapsed by default) --}}
-        <details class="group overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm open:shadow-md">
-            <summary class="flex cursor-pointer list-none items-center justify-between gap-3 px-5 py-4 sm:px-6 [&::-webkit-details-marker]:hidden">
-                <div class="flex items-center gap-3">
-                    <div class="flex h-9 w-9 items-center justify-center rounded-lg bg-slate-100 text-slate-700">
+        <details class="dashboard-accordion group overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm transition-[box-shadow] duration-200 open:border-blue-200 open:shadow-md">
+            <summary class="flex cursor-pointer list-none items-center justify-between gap-3 px-5 py-4 select-none hover:bg-gray-50/80 sm:px-6 [&::-webkit-details-marker]:hidden">
+                <div class="flex min-w-0 items-center gap-3">
+                    <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-700">
                         <i data-lucide="clipboard-list" class="h-5 w-5"></i>
                     </div>
-                    <div>
+                    <div class="min-w-0">
                         <h3 class="font-semibold text-gray-900">Official Parking Rules</h3>
                         <p class="text-xs text-gray-500">Campus policies you must follow</p>
                     </div>
                 </div>
-                <i data-lucide="chevron-down" class="h-5 w-5 shrink-0 text-gray-400 transition-transform duration-300 group-open:rotate-180"></i>
+                <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gray-100 text-gray-500 transition-colors duration-200 group-open:bg-blue-50 group-open:text-blue-700">
+                    <i data-lucide="chevron-down" class="h-4 w-4 transition-transform duration-200 group-open:rotate-180"></i>
+                </span>
             </summary>
-            <div class="divide-y divide-gray-100 border-t border-gray-100 transition-all duration-300">
+            <div class="max-h-72 divide-y divide-gray-100 overflow-y-auto border-t border-gray-100 sm:max-h-80">
                 @forelse ($parkingRules as $index => $rule)
                     <div class="flex gap-3 px-5 py-3.5 sm:px-6">
                         <span class="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-blue-50 text-xs font-bold text-blue-700">{{ $index + 1 }}</span>
@@ -140,6 +143,27 @@
             </div>
         </details>
     </div>
+
+    @push('scripts')
+        <script>
+            (() => {
+                const root = document.querySelector('[data-dashboard-accordions]');
+                if (!root) return;
+
+                const panels = Array.from(root.querySelectorAll('details.dashboard-accordion'));
+                panels.forEach((panel) => {
+                    panel.addEventListener('toggle', () => {
+                        if (!panel.open) return;
+                        panels.forEach((other) => {
+                            if (other !== panel && other.open) {
+                                other.open = false;
+                            }
+                        });
+                    });
+                });
+            })();
+        </script>
+    @endpush
 
     {{-- Recent Entry / Exit --}}
     <section class="mb-6 overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
