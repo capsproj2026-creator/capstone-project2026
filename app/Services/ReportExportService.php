@@ -57,9 +57,15 @@ class ReportExportService
         return self::LABELS[$this->normalizeType($type)];
     }
 
-    public function fileSlug(string $type): string
+    public function fileSlug(string $type, bool $withTimestamp = true): string
     {
-        return self::FILE_SLUGS[$this->normalizeType($type)];
+        $slug = self::FILE_SLUGS[$this->normalizeType($type)];
+
+        if (! $withTimestamp) {
+            return $slug;
+        }
+
+        return $slug.'_'.now()->format('Y-m-d_His');
     }
 
     /**

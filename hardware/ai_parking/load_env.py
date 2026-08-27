@@ -36,7 +36,8 @@ def load_project_env() -> Path | None:
         "AI_STREAM_HOST": "AI_STREAM_HOST",
         "AI_STREAM_PORT": "AI_STREAM_PORT",
         "AI_USE_WEBCAM": "AI_USE_WEBCAM",
-        "APP_URL": "AI_LARAVEL_API_BASE",
+        # Never copy APP_URL here — it may be an ngrok host that Python cannot POST to.
+        "AI_LARAVEL_API_BASE": "AI_LARAVEL_API_BASE",
     }
 
     prefixes = ("AI_CAMERA_", "AI_PARKING_", "AI_STREAM_", "AI_USE_", "AI_LARAVEL_")

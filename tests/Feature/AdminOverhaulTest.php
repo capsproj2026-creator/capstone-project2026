@@ -337,7 +337,10 @@ class AdminOverhaulTest extends TestCase
                 ->get(route('admin.reports.export-pdf', ['type' => $type]));
             $pdf->assertOk();
             $pdf->assertHeader('content-type', 'application/pdf');
-            $this->assertStringContainsString($slug.'.pdf', $pdf->headers->get('content-disposition') ?? '');
+            $this->assertMatchesRegularExpression(
+                '/'.$slug.'_\d{4}-\d{2}-\d{2}_\d{6}\.pdf/',
+                $pdf->headers->get('content-disposition') ?? ''
+            );
 
             $excel = $this->actingAs($this->admin)
                 ->get(route('admin.reports.export-excel', ['type' => $type]));
@@ -346,7 +349,10 @@ class AdminOverhaulTest extends TestCase
                 'spreadsheetml.sheet',
                 $excel->headers->get('content-type') ?? ''
             );
-            $this->assertStringContainsString($slug.'.xlsx', $excel->headers->get('content-disposition') ?? '');
+            $this->assertMatchesRegularExpression(
+                '/'.$slug.'_\d{4}-\d{2}-\d{2}_\d{6}\.xlsx/',
+                $excel->headers->get('content-disposition') ?? ''
+            );
             $this->assertSame('PK', substr($excel->getContent(), 0, 2));
         }
     }

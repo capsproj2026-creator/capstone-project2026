@@ -195,15 +195,22 @@
                     href="{{ route('admin.registrations') }}"
                     class="flex items-center justify-center gap-2 rounded-xl border border-gray-200 bg-white px-4 py-3.5 text-sm font-semibold text-gray-800 transition hover:bg-gray-50"
                 >
-                    <i data-lucide="user-plus" class="h-4 w-4 text-gray-500"></i>
-                    Add New User
+                    <i data-lucide="clipboard-list" class="h-4 w-4 text-gray-500"></i>
+                    Registrations
                 </a>
                 <a
-                    href="{{ route('admin.violations') }}"
+                    href="{{ route('admin.rfid') }}"
                     class="flex items-center justify-center gap-2 rounded-xl border border-gray-200 bg-white px-4 py-3.5 text-sm font-semibold text-gray-800 transition hover:bg-gray-50"
                 >
-                    <i data-lucide="triangle-alert" class="h-4 w-4 text-gray-500"></i>
-                    Log Violation
+                    <i data-lucide="credit-card" class="h-4 w-4 text-gray-500"></i>
+                    RFID Assignment
+                </a>
+                <a
+                    href="{{ route('admin.users') }}"
+                    class="flex items-center justify-center gap-2 rounded-xl border border-gray-200 bg-white px-4 py-3.5 text-sm font-semibold text-gray-800 transition hover:bg-gray-50"
+                >
+                    <i data-lucide="users" class="h-4 w-4 text-gray-500"></i>
+                    User Management
                 </a>
                 <a
                     href="{{ route('admin.reports') }}"

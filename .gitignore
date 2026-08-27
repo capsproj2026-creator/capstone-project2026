@@ -42,3 +42,6 @@ hardware/ai_parking/debug_plates/
 
 # Portable arduino-cli (download via scripts/verify-arduino-gate.ps1)
 tools/arduino-cli/
+
+# Local ngrok agent (install via scripts/install-ngrok.ps1)
+tools/ngrok/

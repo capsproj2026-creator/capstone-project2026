@@ -98,6 +98,7 @@ function Find-NgrokCommand {
     if ($cmd) { return $cmd.Source }
 
     $candidates = @(
+        (Join-Path $Root "tools\ngrok\ngrok.exe"),
         "$env:LOCALAPPDATA\Microsoft\WinGet\Links\ngrok.exe",
         "$env:ProgramFiles\ngrok\ngrok.exe",
         "${env:ProgramFiles(x86)}\ngrok\ngrok.exe",

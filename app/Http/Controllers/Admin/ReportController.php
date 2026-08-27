@@ -134,7 +134,10 @@ class ReportController extends Controller
         $type = $exports->normalizeType($request->query('type'));
         $payload = $exports->build($type, $this->rangeFromRequest($request));
 
-        $pdf = Pdf::loadView('admin.reports.pdf', $payload)->setPaper('a4', 'portrait');
+        $pdf = Pdf::loadView('admin.reports.pdf', $payload)
+            ->setPaper('a4', 'portrait')
+            ->setOption('isPhpEnabled', true)
+            ->setOption('isHtml5ParserEnabled', true);
 
         return $pdf->download($exports->fileSlug($type).'.pdf');
     }
