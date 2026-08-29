@@ -52,6 +52,7 @@ class Visitor extends MongoModel
         'notes',
         'confirmation_code',
         'registration_source',
+        'form_completed_at',
     ];
 
     protected function casts(): array
@@ -63,6 +64,7 @@ class Visitor extends MongoModel
             'expected_exit_at' => 'datetime',
             'time_in' => 'datetime',
             'time_out' => 'datetime',
+            'form_completed_at' => 'datetime',
         ];
     }
 

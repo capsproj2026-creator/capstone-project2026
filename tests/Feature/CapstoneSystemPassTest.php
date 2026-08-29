@@ -33,7 +33,10 @@ class CapstoneSystemPassTest extends TestCase
         $this->get(route('register'))
             ->assertOk()
             ->assertSee('Full Name')
-            ->assertSee('Valid ID Upload')
+            ->assertSee('School ID')
+            ->assertSee('Profile Picture')
+            ->assertSee('LTO Official Receipt (OR)')
+            ->assertSee('Color')
             ->assertSee(PasswordRules::hint(), false);
     }
 
@@ -62,9 +65,81 @@ class CapstoneSystemPassTest extends TestCase
         $this->assertSame(User::STATUS_DENIED, $pending->status);
         $this->assertSame(User::GATE_ACCESS_DENIED, $pending->Gate_access);
         $this->assertNotNull($pending->declined_at);
+        $this->assertSame('Incomplete documents', $pending->decline_remarks);
         $this->assertTrue(RegistrationCooldown::isWithinCooldown($pending));
 
         $pending->delete();
+    }
+
+    public function test_admin_can_approve_pending_registration_without_payment(): void
+    {
+        $pending = User::query()->create([
+            'id' => (int) (microtime(true) * 1000) % 2000000000,
+            'fullname' => 'Approve Unpaid User',
+            'email' => 'approve.unpaid.'.uniqid().'@example.com',
+            'password' => Hash::make('OldPass1!xx'),
+            'user_role_id' => 3,
+            'id_number' => 'APU'.substr((string) time(), -6),
+            'status' => User::STATUS_PENDING,
+            'Gate_access' => User::GATE_ACCESS_PENDING,
+            'payment_status' => 'unpaid',
+            'strike_count' => 0,
+            'created_at' => now(),
+        ]);
+
+        $this->actingAs($this->admin)
+            ->post(route('admin.registrations.approve', ['id' => $pending->id]))
+            ->assertRedirect();
+
+        $pending->refresh();
+        $this->assertSame(User::STATUS_GRANTED, $pending->status);
+        $this->assertSame(User::GATE_ACCESS_PENDING, $pending->Gate_access);
+
+        $notice = \App\Models\Notification::query()
+            ->where('user_id', $pending->id)
+            ->where('title', 'Account Approved')
+            ->orderByDesc('created_at')
+            ->first();
+        $this->assertNotNull($notice);
+        $this->assertStringNotContainsString('You now have campus access.', (string) $notice->message);
+
+        $pending->delete();
+    }
+
+    public function test_declined_registration_allows_empty_remarks(): void
+    {
+        $pending = User::query()->create([
+            'id' => (int) (microtime(true) * 1000) % 2000000000,
+            'fullname' => 'Decline Empty Remarks',
+            'email' => 'decline.empty.'.uniqid().'@example.com',
+            'password' => Hash::make('OldPass1!xx'),
+            'user_role_id' => 3,
+            'id_number' => 'DEE'.substr((string) time(), -6),
+            'status' => User::STATUS_PENDING,
+            'Gate_access' => User::GATE_ACCESS_PENDING,
+            'strike_count' => 0,
+            'created_at' => now(),
+        ]);
+
+        $this->actingAs($this->admin)
+            ->post(route('admin.registrations.decline', ['id' => $pending->id]))
+            ->assertRedirect();
+
+        $pending->refresh();
+        $this->assertSame(User::STATUS_DENIED, $pending->status);
+        $this->assertNull($pending->decline_remarks);
+
+        $pending->delete();
+    }
+
+    public function test_registrations_page_uses_decline_modal(): void
+    {
+        $this->actingAs($this->admin)
+            ->get(route('admin.registrations'))
+            ->assertOk()
+            ->assertSee('decline-modal', false)
+            ->assertSee('Confirm Decline', false)
+            ->assertSee('Reason / remarks (optional)', false);
     }
 
     public function test_admin_can_update_slot_status(): void

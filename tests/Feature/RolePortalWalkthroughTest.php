@@ -58,6 +58,7 @@ class RolePortalWalkthroughTest extends TestCase
             ['admin.visitors.history'],
             ['admin.parking'],
             ['admin.parking.zone-access'],
+            ['admin.parking.layout'],
             ['admin.violations'],
             ['admin.access-logs'],
             ['admin.reports'],

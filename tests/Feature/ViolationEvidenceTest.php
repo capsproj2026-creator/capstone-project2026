@@ -109,23 +109,30 @@ class ViolationEvidenceTest extends TestCase
         $this->assertNotNull($log);
         $this->assertTrue($log->hasEvidence());
         $this->assertNotEmpty($log->evidence_photo);
-        $this->assertTrue(Storage::disk('public')->exists($log->evidence_photo));
+        $this->assertTrue(Storage::disk('private')->exists($log->evidence_photo));
+        $this->assertFalse(Storage::disk('public')->exists($log->evidence_photo));
         $this->assertCount(1, $log->evidencePaths());
 
         $urls = ViolationEvidence::urlsFor($log, 'guard.violations.evidence');
         $this->assertNotEmpty($urls);
-        $this->assertStringContainsString('/storage/violation-evidence/', $urls[0]);
+        $this->assertStringContainsString('/violations/', $urls[0]);
+        $this->assertStringContainsString('/evidence/', $urls[0]);
+        $this->assertStringNotContainsString('/storage/violation-evidence/', $urls[0]);
+
+        $publicLeak = $this->get('/storage/'.$log->evidence_photo);
+        $this->assertNotSame(200, $publicLeak->getStatusCode());
+        $this->assertContains($publicLeak->getStatusCode(), [403, 404]);
 
         Mail::assertSent(VehicleViolationMail::class);
 
-        Storage::disk('public')->delete($log->evidence_photo);
+        Storage::disk('private')->delete($log->evidence_photo);
         ViolationLog::query()->where('_id', $log->getKey())->delete();
     }
 
     public function test_user_can_view_own_violation_evidence_only(): void
     {
         $storedPath = 'violation-evidence/auth-test-'.uniqid().'.jpg';
-        Storage::disk('public')->put($storedPath, base64_decode(
+        Storage::disk('private')->put($storedPath, base64_decode(
             '/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/2wBDAQkJCQwLDBgNDRgyIRwhMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjL/wAARCAABAAEDASIAAhEBAxEB/8QAFQABAQAAAAAAAAAAAAAAAAAAAAn/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/8QAFQEBAQAAAAAAAAAAAAAAAAAAAAX/xAAUEQEAAAAAAAAAAAAAAAAAAAAA/9oADAMBAAIQAxAAAAGfAP/EABQQAQAAAAAAAAAAAAAAAAAAAAD/2gAIAQEAAQUCf//EABQRAQAAAAAAAAAAAAAAAAAAAAD/2gAIAQMBAT8Bf//EABQRAQAAAAAAAAAAAAAAAAAAAAD/2gAIAQIBAT8Bf//Z'
         ));
 
@@ -180,7 +187,7 @@ class ViolationEvidenceTest extends TestCase
             ->assertSee('My Violations')
             ->assertSee('View Evidence', false);
 
-        Storage::disk('public')->delete($storedPath);
+        Storage::disk('private')->delete($storedPath);
         ViolationLog::query()->where('_id', $log->getKey())->delete();
     }
 
@@ -209,5 +216,17 @@ class ViolationEvidenceTest extends TestCase
         $this->assertStringNotContainsString('id="portal-sidebar-edge-toggle"', $html);
         $this->assertSame(1, substr_count($html, 'id="portal-menu-btn"'));
         $this->assertStringContainsString('id="violation-evidence-modal"', $html);
+    }
+
+    public function test_active_violation_types_exclude_over_speeding(): void
+    {
+        try {
+            ViolationType::query()->where('violation_name', 'Over Speeding')->update(['status' => 'Inactive']);
+            $names = ViolationType::query()->where('status', 'Active')->pluck('violation_name')->all();
+        } catch (\Throwable $e) {
+            $this->markTestSkipped('MongoDB unavailable: '.$e->getMessage());
+        }
+
+        $this->assertNotContains('Over Speeding', $names);
     }
 }

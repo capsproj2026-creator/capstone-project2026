@@ -24,11 +24,22 @@ class RegistrationController extends Controller
             $status = 'All';
         }
 
-        $pendingCount = User::query()->where('status', User::STATUS_PENDING)->count();
+        $pendingCount = User::query()
+            ->where('status', User::STATUS_PENDING)
+            ->whereIn('user_role_id', [
+                NavigationService::ROLE_STUDENT,
+                NavigationService::ROLE_STAFF,
+            ])
+            ->count();
         $approvedCount = User::query()->where('status', User::STATUS_GRANTED)->count();
         $declinedCount = User::query()->where('status', User::STATUS_DENIED)->count();
 
-        $requestsQuery = User::query()->with('role')->orderByDesc('id');
+        $requestsQuery = User::query()->with('role')
+            ->whereIn('user_role_id', [
+                NavigationService::ROLE_STUDENT,
+                NavigationService::ROLE_STAFF,
+            ])
+            ->orderByDesc('id');
 
         if ($status === 'All') {
             $requestsQuery->whereIn('status', $registrationStatuses);
@@ -50,6 +61,12 @@ class RegistrationController extends Controller
     {
         $user = User::query()->with('role')->findOrFail($id);
 
+        if ($user->isTemporaryAccount()) {
+            return redirect()
+                ->route('admin.registrations', ['status' => User::STATUS_PENDING])
+                ->with('error', 'This student or faculty has not completed registration yet.');
+        }
+
         if ($user->status !== User::STATUS_PENDING) {
             return redirect()
                 ->route('admin.registrations', ['status' => 'All'])
@@ -57,6 +74,19 @@ class RegistrationController extends Controller
         }
 
         $updates = ['status' => User::STATUS_GRANTED];
+
+        /*
+         * TODO: Enable payment-gated approval later (do not ship a payment product yet).
+         * When payment_status is not "paid", keep the account Pending and flash:
+         * "Cannot approve until payment is recorded."
+         * Follow-up: admin "Mark as paid" action that sets payment_status, payment_reference, paid_at.
+         *
+         * if (($user->payment_status ?? null) !== 'paid') {
+         *     return redirect()
+         *         ->route('admin.registrations', ['status' => 'All'])
+         *         ->with('error', 'Cannot approve until payment is recorded.');
+         * }
+         */
 
         // Admins and guards receive portal + gate access immediately.
         if (in_array((int) $user->user_role_id, [
@@ -72,12 +102,16 @@ class RegistrationController extends Controller
         $this->updateRegistrationStatus($user, 'Approved');
 
         $roleName = $user->role?->role_name ?? 'User';
+        $gateGranted = ($user->fresh()?->Gate_access ?? $user->Gate_access) === User::GATE_ACCESS_GRANTED;
+        $accessNote = $gateGranted
+            ? 'You now have campus access.'
+            : 'Campus entry is enabled after RFID / gate access is granted.';
 
         Notification::query()->create([
             'user_id' => $user->id,
             'sender_id' => auth()->id(),
             'title' => 'Account Approved',
-            'message' => "Your account registration as {$roleName} has been approved. You now have campus access.",
+            'message' => "Your account registration as {$roleName} has been approved. {$accessNote}",
             'type' => 'System',
             'is_read' => false,
             'created_at' => now(),
@@ -96,32 +130,50 @@ class RegistrationController extends Controller
 
         $user = User::query()->with('role')->findOrFail($id);
 
-        if ($user->status !== User::STATUS_PENDING) {
+        $wasTemporary = $user->isTemporaryAccount();
+        if ($wasTemporary) {
+            app(\App\Services\TemporaryRfidService::class)->expireAndUnbind($user);
+        }
+
+        if ($user->status !== User::STATUS_PENDING && ! $wasTemporary) {
             return redirect()
                 ->route('admin.registrations', ['status' => 'All'])
                 ->with('error', 'This registration is no longer pending.');
         }
 
-        $user->update([
+        $updates = [
             'status' => User::STATUS_DENIED,
             'Gate_access' => User::GATE_ACCESS_DENIED,
             'declined_at' => now(),
-        ]);
+            'decline_remarks' => filled($validated['remarks'] ?? null) ? trim((string) $validated['remarks']) : null,
+        ];
+
+        if ($wasTemporary) {
+            $updates['account_type'] = \App\Services\TemporaryRfidService::ACCOUNT_FULL;
+            $updates['temp_conversion_token'] = null;
+        }
+
+        $user->update($updates);
 
         $roleName = $user->role?->role_name ?? 'User';
+        $remarks = filled($validated['remarks'] ?? null) ? trim((string) $validated['remarks']) : null;
+        $message = "Your registration as {$roleName} has been declined. You may submit a new registration after 3 days.";
+        if ($remarks) {
+            $message .= ' Reason: '.$remarks;
+        }
 
         // Notify the vehicle owner by email (Declined), including optional admin remarks.
         $this->updateRegistrationStatus(
             $user,
             'Declined',
-            $validated['remarks'] ?? null
+            $remarks
         );
 
         Notification::query()->create([
             'user_id' => $user->id,
             'sender_id' => auth()->id(),
             'title' => 'Account Declined',
-            'message' => "Your registration as {$roleName} has been declined. You may submit a new registration after 3 days.",
+            'message' => $message,
             'type' => 'System',
             'is_read' => false,
             'created_at' => now(),
@@ -141,6 +193,11 @@ class RegistrationController extends Controller
      */
     private function updateRegistrationStatus(User $user, string $status, ?string $remarks = null): void
     {
+        $email = trim((string) ($user->email ?? ''));
+        if ($email === '' || str_ends_with(strtolower($email), '.invalid')) {
+            return;
+        }
+
         try {
             Mail::to($user->email)->send(new RegistrationStatusMail(
                 ownerName: $user->fullname,
@@ -148,7 +205,6 @@ class RegistrationController extends Controller
                 remarks: $remarks,
             ));
         } catch (\Throwable $e) {
-            // Registration still succeeds even if email fails — error is logged for admins.
             report($e);
         }
     }

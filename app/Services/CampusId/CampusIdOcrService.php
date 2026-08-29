@@ -47,7 +47,7 @@ class CampusIdOcrService
             ];
         }
 
-        $lines = $this->runPythonOcr($file);
+        $lines = $this->runPythonOcr($file, false);
         $parsed = $this->parser->parse($lines);
 
         $hasAny = $parsed['id_number'] !== null || ($parsed['full_name'] !== null && $parsed['name_complete']);
@@ -65,9 +65,17 @@ class CampusIdOcrService
     }
 
     /**
-     * @return list<array{text: string, confidence: float}>
+     * @return list<array{text: string, confidence: float, height: float, center_y: ?float}>
      */
-    private function runPythonOcr(UploadedFile $file): array
+    public function extractLines(UploadedFile $file, bool $fullCard = false): array
+    {
+        return $this->runPythonOcr($file, $fullCard);
+    }
+
+    /**
+     * @return list<array{text: string, confidence: float, height: float, center_y: ?float}>
+     */
+    private function runPythonOcr(UploadedFile $file, bool $fullCard = false): array
     {
         $script = base_path('scripts/scan_campus_id.py');
 
@@ -87,10 +95,15 @@ class CampusIdOcrService
             $file->move(dirname($imagePath), basename($imagePath));
 
             $python = CampusIdPythonResolver::binary();
-            $result = Process::timeout(180)->run(array_merge(
+            $command = array_merge(
                 CampusIdPythonResolver::commandPrefix($python),
                 [$script, $imagePath]
-            ));
+            );
+            if ($fullCard) {
+                $command[] = '--full';
+            }
+
+            $result = Process::timeout(180)->run($command);
 
             if (! $result->successful()) {
                 $output = trim($result->errorOutput() ?: $result->output() ?: 'Campus ID scan failed.');
@@ -107,10 +120,15 @@ class CampusIdOcrService
                 throw new RuntimeException($message);
             }
 
+            $legacyLines = $this->normalizeLinePayload($payload['lines'] ?? []);
+
+            if ($fullCard) {
+                return $legacyLines;
+            }
+
             // Prefer dedicated name + SN crops so address/header text never enters name parsing.
             $nameLines = $this->normalizeLinePayload($payload['name_lines'] ?? []);
             $snLines = $this->normalizeLinePayload($payload['sn_lines'] ?? []);
-            $legacyLines = $this->normalizeLinePayload($payload['lines'] ?? []);
 
             if ($nameLines !== [] || $snLines !== []) {
                 return array_merge($snLines, $nameLines);

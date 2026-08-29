@@ -4,6 +4,7 @@
     'label',
     'required' => false,
     'accept' => 'image/*',
+    'capture' => null,
 ])
 
 @php
@@ -40,6 +41,7 @@
             id="{{ $inputId }}"
             accept="{{ $accept }}"
             @if($required) required @endif
+            @if($capture) capture="{{ $capture }}" @endif
             class="sr-only"
             data-file-input
             onchange="document.getElementById('{{ $inputId }}_label').textContent = this.files?.[0]?.name || 'No file chosen'"

@@ -48,6 +48,8 @@ return [
         'google_form_url' => env('VISITOR_PRE_REGISTER_GOOGLE_FORM_URL'),
         // Shared secret for Google Apps Script → POST /api/visitor/pre-register/google
         'webhook_token' => env('VISITOR_PRE_REGISTER_WEBHOOK_TOKEN'),
+        // After campus entry, the same form may still be submitted for this many hours.
+        'post_entry_hours' => max(1, (int) env('VISITOR_POST_ENTRY_HOURS', 5)),
     ],
 
     'rfid' => [
@@ -56,6 +58,11 @@ return [
         'shared_boom_gate_id' => strtoupper(trim((string) env('RFID_SHARED_BOOM_GATE_ID', 'GATE-IN-1'))),
         // 1 = Exit RFID can grant (and open Entry servo) even if there is no prior Entry log (hardware demo).
         'allow_exit_without_entry' => filter_var(env('RFID_ALLOW_EXIT_WITHOUT_ENTRY', false), FILTER_VALIDATE_BOOLEAN),
+        // Unknown RFID at Entry: unregistered student/faculty get a one-time gate pass
+        // until they complete vehicle registration (visitors use VisitorRfidCard).
+        'temp_access_enabled' => filter_var(env('RFID_TEMP_ACCESS_ENABLED', true), FILTER_VALIDATE_BOOLEAN),
+        'temp_access_hours' => max(1, (int) env('RFID_TEMP_ACCESS_HOURS', 5)),
+        'temp_access_max' => max(1, (int) env('RFID_TEMP_ACCESS_MAX', 3)),
     ],
 
     'ai_parking' => [

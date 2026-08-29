@@ -5,14 +5,15 @@ namespace App\Http\Controllers;
 use App\Models\User;
 use App\Models\UserVehicle;
 use App\Models\Vehicle;
+use App\Support\PasswordRules;
 use App\Support\SafeUpload;
 use App\Services\NavigationService;
 use App\Services\UserVehicleService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
-use App\Support\PasswordRules;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Validation\ValidationException;
 use Illuminate\View\View;
 
@@ -59,6 +60,7 @@ class ProfileController extends Controller
                     },
                 ],
                 'profile_pic' => ['nullable', 'image', 'max:5120'],
+                'address' => ['nullable', 'string', 'max:255'],
             ], [
                 'email.required' => 'Please enter your email address.',
                 'email.email' => 'Please enter a valid email address with a working domain (format and DNS check).',
@@ -70,6 +72,7 @@ class ProfileController extends Controller
                 'fullname' => $validated['fullname'],
                 'phone_number' => $validated['phone_number'],
                 'email' => $validated['email'],
+                'address' => mb_strtoupper(trim((string) ($validated['address'] ?? '')), 'UTF-8') ?: null,
             ];
 
             if ($request->hasFile('profile_pic')) {
@@ -86,12 +89,20 @@ class ProfileController extends Controller
             }
 
             if ($emailChanged) {
+                if (RateLimiter::tooManyAttempts('profile-email:'.$user->id, 6)) {
+                    throw ValidationException::withMessages([
+                        'email' => 'Too many email changes. Please wait a minute and try again.',
+                    ]);
+                }
+
                 $data['email_verified_at'] = null;
             }
 
             $user->update($data);
 
             if ($emailChanged) {
+                RateLimiter::hit('profile-email:'.$user->id, 60);
+
                 $user->sendEmailVerificationNotification();
 
                 return redirect()
@@ -103,14 +114,14 @@ class ProfileController extends Controller
         }
 
         if ($request->has('add_vehicle')) {
-            $this->vehicles->add($user, $request->only(['vehicle_id', 'plate_number']));
+            $this->vehicles->add($user, $request->only(['vehicle_id', 'plate_number', 'vehicle_model', 'vehicle_color']));
 
             return back()->with('success', 'Vehicle added successfully!');
         }
 
         if ($request->has('update_vehicle')) {
             $vehicle = $this->findOwnedVehicle($user, (int) $request->input('user_vehicle_id'));
-            $this->vehicles->update($user, $vehicle, $request->only(['vehicle_id', 'plate_number']));
+            $this->vehicles->update($user, $vehicle, $request->only(['vehicle_id', 'plate_number', 'vehicle_model', 'vehicle_color']));
 
             return back()->with('success', 'Vehicle updated successfully!');
         }

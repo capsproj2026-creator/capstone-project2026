@@ -41,4 +41,14 @@ class ParkingSlot extends MongoModel
     {
         return $this->belongsTo(Visitor::class, 'parked_visitor_id');
     }
+
+    public function isOccupied(): bool
+    {
+        if (($this->status ?? '') === 'Occupied') {
+            return true;
+        }
+
+        return (int) ($this->parked_user_id ?? 0) > 0
+            || (int) ($this->parked_visitor_id ?? 0) > 0;
+    }
 }

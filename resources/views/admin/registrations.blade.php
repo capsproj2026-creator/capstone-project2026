@@ -122,10 +122,14 @@
                 <tbody class="divide-y divide-gray-100">
                     @forelse ($requests as $row)
                         @php
-                            $roleLabel = $row->role?->role_name ?: $row->roleName();
-                            $isStudent = strcasecmp((string) $roleLabel, 'Student') === 0;
-                            $isStaff = strcasecmp((string) $roleLabel, 'Staff') === 0;
+                            $isIncompleteTemp = $row->isTemporaryAccount();
+                            $roleLabel = $isIncompleteTemp ? $row->gateRoleLabel() : ($row->role?->role_name ?: $row->roleName());
+                            $isStudent = strcasecmp((string) $roleLabel, 'Student') === 0 || str_contains((string) $roleLabel, 'Student');
+                            $isStaff = strcasecmp((string) $roleLabel, 'Staff') === 0 || str_contains((string) $roleLabel, 'Faculty');
                             $email = $row->email ?: '—';
+                            if ($isIncompleteTemp || str_ends_with(strtolower((string) $email), '.invalid')) {
+                                $email = '—';
+                            }
                             $idNumber = $row->id_number ?: '—';
                             $plate = $row->plate_number ?: '';
                             $registeredAt = $row->created_at ? $row->created_at->format('M j, Y') : '—';
@@ -160,7 +164,9 @@
                             </td>
                             <td class="px-3 py-3 text-gray-600">{{ $registeredAt }}</td>
                             <td class="px-3 py-3">
-                                @if ($row->status === 'Pending')
+                                @if ($isIncompleteTemp)
+                                    <span class="inline-flex rounded-full bg-amber-50 px-2.5 py-0.5 text-xs font-semibold text-amber-700">Not registered yet</span>
+                                @elseif ($row->status === 'Pending')
                                     <span class="inline-flex rounded-full bg-amber-50 px-2.5 py-0.5 text-xs font-semibold text-amber-700">Pending</span>
                                 @elseif ($row->status === 'Granted')
                                     <span class="inline-flex rounded-full bg-emerald-50 px-2.5 py-0.5 text-xs font-semibold text-emerald-700">Approved</span>
@@ -175,20 +181,28 @@
                                            class="inline-flex items-center justify-center rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-50">
                                             View profile
                                         </a>
-                                        @if ($row->status === 'Pending')
+                                        @if ($row->status === 'Pending' && ! $isIncompleteTemp)
+                                            {{-- TODO payment gate: hide/disable Approve until $row->payment_status === 'paid'
+                                            @if (($row->payment_status ?? null) !== 'paid')
+                                                <button type="button" disabled class="inline-flex cursor-not-allowed items-center justify-center rounded-lg bg-gray-300 px-3 py-1.5 text-xs font-semibold text-gray-600">Approve (awaiting payment)</button>
+                                            @else
+                                            --}}
                                             <form method="POST" action="{{ route('admin.registrations.approve', $row->id) }}" onsubmit="return confirm('Approve this registration?')">
                                                 @csrf
                                                 <button type="submit" class="inline-flex items-center justify-center rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700">Approve</button>
                                             </form>
+                                            {{-- @endif --}}
                                         @endif
                                     </div>
                                     @if ($row->status === 'Pending')
-                                        <form method="POST" action="{{ route('admin.registrations.decline', $row->id) }}" class="flex w-full max-w-xs flex-wrap items-center justify-end gap-2" onsubmit="return confirm('Decline this registration?')">
-                                            @csrf
-                                            <input type="text" name="remarks" placeholder="Decline reason (optional)" maxlength="500"
-                                                class="min-w-[8rem] flex-1 rounded-lg border border-gray-300 px-2.5 py-1.5 text-xs">
-                                            <button type="submit" class="inline-flex items-center justify-center rounded-lg bg-rose-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-rose-700">Decline</button>
-                                        </form>
+                                        <button
+                                            type="button"
+                                            class="js-open-decline inline-flex items-center justify-center rounded-lg bg-rose-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-rose-700"
+                                            data-decline-url="{{ route('admin.registrations.decline', $row->id) }}"
+                                            data-decline-name="{{ $row->fullname }}"
+                                        >
+                                            Decline
+                                        </button>
                                     @endif
                                 </div>
                             </td>
@@ -207,6 +221,20 @@
                 No registrations match your search.
             </div>
         </div>
+    </div>
+
+    <div id="decline-modal" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/50 p-4" role="dialog" aria-modal="true" aria-labelledby="decline-modal-title">
+        <form id="decline-form" method="POST" action="" class="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
+            @csrf
+            <h3 id="decline-modal-title" class="text-lg font-bold text-gray-900">Decline registration</h3>
+            <p id="decline-modal-subtitle" class="mt-1 text-sm text-gray-500">Optional remarks are included in the email and in-app notice.</p>
+            <label class="mt-4 block text-sm font-medium text-gray-700" for="decline-remarks">Reason / remarks (optional)</label>
+            <textarea id="decline-remarks" name="remarks" rows="3" maxlength="500" class="mt-1 w-full rounded-xl border border-gray-200 px-3 py-2 text-sm" placeholder="e.g. Unreadable OR/CR, name mismatch"></textarea>
+            <div class="mt-5 flex justify-end gap-2">
+                <button type="button" id="decline-cancel" class="rounded-xl border border-gray-200 px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50">Cancel</button>
+                <button type="submit" class="rounded-xl bg-rose-600 px-4 py-2 text-sm font-semibold text-white hover:bg-rose-700">Confirm Decline</button>
+            </div>
+        </form>
     </div>
 @endsection
 
@@ -228,6 +256,36 @@
             emptySearch?.classList.toggle('hidden', visible > 0 || rows.length === 0);
         };
         searchInput?.addEventListener('input', applySearch);
+
+        const modal = document.getElementById('decline-modal');
+        const form = document.getElementById('decline-form');
+        const subtitle = document.getElementById('decline-modal-subtitle');
+        const remarks = document.getElementById('decline-remarks');
+        const closeModal = () => {
+            modal?.classList.add('hidden');
+            modal?.classList.remove('flex');
+            if (remarks) remarks.value = '';
+        };
+        document.querySelectorAll('.js-open-decline').forEach((button) => {
+            button.addEventListener('click', () => {
+                if (!form) return;
+                form.action = button.dataset.declineUrl || '';
+                if (subtitle) {
+                    const name = button.dataset.declineName || 'this applicant';
+                    subtitle.textContent = `Decline ${name}? Remarks are optional and will be included in the email and in-app notice.`;
+                }
+                modal?.classList.remove('hidden');
+                modal?.classList.add('flex');
+                remarks?.focus();
+            });
+        });
+        document.getElementById('decline-cancel')?.addEventListener('click', closeModal);
+        modal?.addEventListener('click', (event) => {
+            if (event.target === modal) closeModal();
+        });
+        document.addEventListener('keydown', (event) => {
+            if (event.key === 'Escape') closeModal();
+        });
     });
 </script>
 @endpush

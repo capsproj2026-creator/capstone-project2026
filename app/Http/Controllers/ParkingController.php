@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\ParkingArea;
 use App\Models\ParkingSlot;
 use App\Services\AiParkingOccupancyService;
+use App\Services\ParkingLayoutService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\View\View;
@@ -65,6 +66,37 @@ class ParkingController extends Controller
     {
         return view('admin.parking-zone-access', [
             'zones' => ParkingArea::query()->orderBy('id')->get(),
+        ]);
+    }
+
+    public function layout(Request $request, ParkingLayoutService $layout): View
+    {
+        $zones = ParkingArea::query()->orderBy('id')->get();
+        $zoneId = is_numeric($request->query('zone_id')) ? (int) $request->query('zone_id') : 0;
+        $selectedZone = $zoneId > 0
+            ? $zones->first(fn (ParkingArea $zone) => (int) $zone->id === $zoneId)
+            : $zones->first();
+
+        $slots = $selectedZone
+            ? ParkingSlot::query()
+                ->where('area_id', $selectedZone->id)
+                ->orderBy('slot_number')
+                ->get()
+            : collect();
+
+        $occupiedByArea = ParkingSlot::query()
+            ->where('status', 'Occupied')
+            ->get(['area_id'])
+            ->groupBy(fn (ParkingSlot $slot) => (int) $slot->area_id)
+            ->map(fn ($group) => $group->count());
+
+        return view('admin.parking-layout', [
+            'zones' => $zones,
+            'selectedZone' => $selectedZone,
+            'slots' => $slots,
+            'occupiedByArea' => $occupiedByArea,
+            'protectedAreaIds' => $layout->protectedAreaIds(),
+            'layoutService' => $layout,
         ]);
     }
 
@@ -134,5 +166,69 @@ class ParkingController extends Controller
         }
 
         return back()->with('success', "Slot {$slot->slot_number} set to {$status}.");
+    }
+
+    public function storeArea(Request $request, ParkingLayoutService $layout): RedirectResponse
+    {
+        $validated = $request->validate([
+            'area_name' => ['required', 'string', 'max:120'],
+            'slot_prefix' => ['required', 'string', 'max:8'],
+            'slot_count' => ['required', 'integer', 'min:1', 'max:200'],
+            'designation_notes' => ['nullable', 'string', 'max:255'],
+            'is_visible' => ['nullable', 'boolean'],
+            'allowed_roles' => ['nullable', 'array'],
+            'allowed_roles.*' => ['in:Student,Staff,Visitor'],
+        ]);
+
+        $area = $layout->createArea([
+            'area_name' => $validated['area_name'],
+            'slot_prefix' => $validated['slot_prefix'],
+            'slot_count' => (int) $validated['slot_count'],
+            'designation_notes' => $validated['designation_notes'] ?? null,
+            'is_visible' => $request->boolean('is_visible', true),
+            'allowed_roles' => $validated['allowed_roles'] ?? ['Student', 'Staff'],
+        ]);
+
+        return redirect()
+            ->route('admin.parking.layout', ['zone_id' => $area->id])
+            ->with('success', "Parking area \"{$area->area_name}\" added with {$area->capacity} space(s).");
+    }
+
+    public function destroyArea(int $id, ParkingLayoutService $layout): RedirectResponse
+    {
+        $area = ParkingArea::query()->findOrFail($id);
+        $name = $area->area_name;
+        $layout->deleteArea($area);
+
+        return redirect()
+            ->route('admin.parking.layout')
+            ->with('success', "Parking area \"{$name}\" removed.");
+    }
+
+    public function storeSlots(Request $request, ParkingLayoutService $layout): RedirectResponse
+    {
+        $validated = $request->validate([
+            'area_id' => ['required', 'integer'],
+            'slot_count' => ['required', 'integer', 'min:1', 'max:50'],
+        ]);
+
+        $area = ParkingArea::query()->findOrFail((int) $validated['area_id']);
+        $added = $layout->addSlots($area, (int) $validated['slot_count']);
+
+        return redirect()
+            ->route('admin.parking.layout', ['zone_id' => $area->id])
+            ->with('success', "Added {$added} parking space(s) to {$area->area_name}.");
+    }
+
+    public function destroySlot(int $id, ParkingLayoutService $layout): RedirectResponse
+    {
+        $slot = ParkingSlot::query()->findOrFail($id);
+        $label = $slot->slot_number;
+        $areaId = $slot->area_id;
+        $layout->deleteSlot($slot);
+
+        return redirect()
+            ->route('admin.parking.layout', ['zone_id' => $areaId])
+            ->with('success', "Parking space {$label} removed.");
     }
 }

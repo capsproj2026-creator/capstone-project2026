@@ -93,6 +93,7 @@ struct ScanResult {
   bool openSharedBoom;
   String status;
   String code;
+  String message;
 };
 
 unsigned long lastScanMs = 0;
@@ -407,6 +408,9 @@ void loopGateClient() {
   ScanResult result = postScan(uid);
   Serial.printf("Decision: granted=%d shared_boom=%d status=%s code=%s\n",
                 result.granted, result.openSharedBoom, result.status.c_str(), result.code.c_str());
+  if (result.message.length() > 0) {
+    Serial.printf("Laravel: %s\n", result.message.c_str());
+  }
   handleResult(result);
 
   mfrc522.PICC_HaltA();
@@ -424,7 +428,7 @@ String uidToHex(MFRC522::Uid &uid) {
 }
 
 ScanResult postScan(const String &uid) {
-  ScanResult fail = {false, false, "Access Denied", "network_error"};
+  ScanResult fail = {false, false, "Access Denied", "network_error", ""};
 
   if (WiFi.status() != WL_CONNECTED) {
     Serial.println("HTTP skipped: WiFi disconnected");
@@ -462,6 +466,7 @@ ScanResult postScan(const String &uid) {
 
   if (code <= 0) {
     Serial.printf("HTTP failed (%d): %s\n", code, HTTPClient::errorToString(code).c_str());
+    Serial.printf("HINT: ESP32 could not reach Laravel at %s:%d. PC Wi-Fi IP must be API_HOST. Keep artisan serve --host=0.0.0.0 running, then re-flash.\n", API_HOST, API_PORT);
     http.end();
     return fail;
   }
@@ -481,6 +486,7 @@ ScanResult postScan(const String &uid) {
   result.openSharedBoom = doc["open_shared_boom"] | false;
   result.status = String((const char*)(doc["status"] | "Access Denied"));
   result.code = String((const char*)(doc["code"] | "access_denied"));
+  result.message = String((const char*)(doc["message"] | ""));
   return result;
 }
 
@@ -618,21 +624,24 @@ void denyAccess(const ScanResult &result) {
   delay(400);
   digitalWrite(PIN_RED, LOW);
   Serial.printf("Denied (%s)\n", result.code.c_str());
+  if (result.message.length() > 0) {
+    Serial.printf("Reason: %s\n", result.message.c_str());
+  }
   if (result.code == "already_inside") {
     Serial.println("HINT: This card is already INSIDE. Tap it on the EXIT ESP32 (Exit.ino / GATE-OUT-1), not Entry.");
   } else if (result.code == "already_outside") {
     Serial.println("HINT: Tap this card on ENTRY first, then on EXIT. Exit is denied until there is an Entry log.");
   } else if (result.code == "card_not_registered") {
-    Serial.println("HINT: Admin -> RFID Assignment -> set UID to this card.");
+    Serial.println("HINT: Unknown cards are granted only on ENTRY. Tap Entry first. Exit never creates a new pass.");
   } else if (result.code == "network_error") {
-    Serial.println("HINT: Exit board must use same Wi-Fi + API_HOST as Entry. Upload Exit.ino (not Entry.ino).");
+    Serial.println("HINT: Same Wi-Fi as the PC. API_HOST must be this PC's Wi-Fi IP. Re-flash Entry AND Exit after changing it.");
   }
 }
 
 void openGateActuator() {
 #if ACTUATOR_MODE == ACTUATOR_SERVO
   if (!gateServo.attached()) {
-    Serial.println("Servo OPEN skipped — not attached (see boot log channel=0)");
+    Serial.println("Servo OPEN skipped — not attached (see boot log attached=0)");
     return;
   }
   Serial.printf("Servo OPEN -> %d deg\n", SERVO_OPEN_ANGLE);

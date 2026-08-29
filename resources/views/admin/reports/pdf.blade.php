@@ -278,7 +278,7 @@
                 <td class="mid">&nbsp;</td>
                 <td class="right">
                     {{ $title }}<br>
-                    Generated {{ ph_datetime($generated_at, 'F j, Y g:i A') }}
+        Generated {{ ph_datetime($generated_at, 'F j, Y g:i A') }}
                 </td>
             </tr>
         </table>
@@ -456,38 +456,38 @@
                         <tr><th class="banner" colspan="5">Registered Users</th></tr>
                         <tr><th>Name</th><th>Role</th><th>ID</th><th>Status</th><th class="num">Strikes</th></tr>
                     </thead>
-                    <tbody>
+                <tbody>
                         @forelse ($usersList as $user)
-                            <tr>
-                                <td>{{ $user->fullname }}</td>
-                                <td>{{ $user->role?->role_name }}</td>
-                                <td>{{ $user->id_number }}</td>
-                                <td>{{ $user->isLocked() ? 'Locked' : $user->status }}</td>
+                        <tr>
+                            <td>{{ $user->fullname }}</td>
+                            <td>{{ $user->role?->role_name }}</td>
+                            <td>{{ $user->id_number }}</td>
+                            <td>{{ $user->isLocked() ? 'Locked' : $user->status }}</td>
                                 <td class="num">{{ $user->strike_count }}</td>
-                            </tr>
+                        </tr>
                         @empty
                             <tr><td colspan="5" class="muted">No users to list.</td></tr>
                         @endforelse
-                    </tbody>
-                </table>
+                </tbody>
+            </table>
             </td></tr></table>
-        @endif
+    @endif
 
-        @if (in_array($type, ['all', 'violations'], true))
+    @if (in_array($type, ['all', 'violations'], true))
             <table class="block together"><tr><td class="cell">
                 <table class="data">
                     <thead>
                         <tr><th class="banner" colspan="2">Violations by Location</th></tr>
                         <tr><th>Location</th><th class="num">Count</th></tr>
                     </thead>
-                    <tbody>
-                        @forelse (($violationsByLocation['labels'] ?? []) as $i => $label)
+            <tbody>
+                @forelse (($violationsByLocation['labels'] ?? []) as $i => $label)
                             <tr><td>{{ $label }}</td><td class="num">{{ $violationsByLocation['values'][$i] ?? 0 }}</td></tr>
-                        @empty
-                            <tr><td colspan="2" class="muted">No location data.</td></tr>
-                        @endforelse
-                    </tbody>
-                </table>
+                @empty
+                    <tr><td colspan="2" class="muted">No location data.</td></tr>
+                @endforelse
+            </tbody>
+        </table>
             </td></tr></table>
 
             <table class="block together"><tr><td class="cell">
@@ -496,20 +496,20 @@
                         <tr><th class="banner" colspan="5">Repeat Offenders</th></tr>
                         <tr><th>Rank</th><th>Name</th><th>ID</th><th>Type</th><th class="num">Violations</th></tr>
                     </thead>
-                    <tbody>
+            <tbody>
                         @forelse (($repeatOffenders ?? []) as $row)
-                            <tr>
-                                <td>#{{ $row['rank'] }}</td>
-                                <td>{{ $row['name'] }}</td>
-                                <td>{{ $row['id_number'] }}</td>
-                                <td>{{ $row['user_type'] }}</td>
+                    <tr>
+                        <td>#{{ $row['rank'] }}</td>
+                        <td>{{ $row['name'] }}</td>
+                        <td>{{ $row['id_number'] }}</td>
+                        <td>{{ $row['user_type'] }}</td>
                                 <td class="num">{{ $row['violations'] }}</td>
-                            </tr>
-                        @empty
-                            <tr><td colspan="5" class="muted">No repeat offenders.</td></tr>
-                        @endforelse
-                    </tbody>
-                </table>
+                    </tr>
+                @empty
+                    <tr><td colspan="5" class="muted">No repeat offenders.</td></tr>
+                @endforelse
+            </tbody>
+        </table>
             </td></tr></table>
 
             <table class="block {{ $violationsList->count() <= 12 ? 'together' : '' }}"><tr><td class="cell">
@@ -518,50 +518,50 @@
                         <tr><th class="banner" colspan="5">Violation Records</th></tr>
                         <tr><th>Date</th><th>Violator</th><th>Plate</th><th>Type</th><th>Status</th></tr>
                     </thead>
-                    <tbody>
+            <tbody>
                         @forelse ($violationsList as $v)
-                            <tr>
-                                <td>{{ ph_datetime($v->created_at, 'Y-m-d H:i') }}</td>
-                                <td>{{ $v->violator_name }}</td>
-                                <td>{{ $v->plate_number }}</td>
-                                <td>{{ $v->violation_type }}</td>
-                                <td>{{ $v->status }}</td>
-                            </tr>
-                        @empty
-                            <tr><td colspan="5" class="muted">No violations in range.</td></tr>
-                        @endforelse
-                    </tbody>
-                </table>
+                    <tr>
+                        <td>{{ ph_datetime($v->created_at, 'Y-m-d H:i') }}</td>
+                        <td>{{ $v->violator_name }}</td>
+                        <td>{{ $v->plate_number }}</td>
+                        <td>{{ $v->violation_type }}</td>
+                        <td>{{ $v->status }}</td>
+                    </tr>
+                @empty
+                    <tr><td colspan="5" class="muted">No violations in range.</td></tr>
+                @endforelse
+            </tbody>
+        </table>
             </td></tr></table>
-        @endif
+    @endif
 
-        @if (in_array($type, ['all', 'parking'], true))
+    @if (in_array($type, ['all', 'parking'], true))
             <table class="block together"><tr><td class="cell">
                 <table class="data">
-                    <thead>
+            <thead>
                         <tr><th class="banner" colspan="5">Parking Areas</th></tr>
-                        <tr>
-                            <th>Area</th>
+                <tr>
+                    <th>Area</th>
                             <th class="num">Capacity</th>
                             <th class="num">Occupied</th>
                             <th class="num">Available</th>
                             <th class="num">Util %</th>
-                        </tr>
-                    </thead>
-                    <tbody>
+                </tr>
+            </thead>
+            <tbody>
                         @forelse (($parkingAreas ?? []) as $area)
-                            <tr>
-                                <td>{{ $area['name'] }}</td>
+                    <tr>
+                        <td>{{ $area['name'] }}</td>
                                 <td class="num">{{ $area['capacity'] }}</td>
                                 <td class="num">{{ $area['occupied'] }}</td>
                                 <td class="num">{{ $area['available'] }}</td>
                                 <td class="num">{{ $area['utilization'] }}%</td>
-                            </tr>
+                    </tr>
                         @empty
                             <tr><td colspan="5" class="muted">No parking area records.</td></tr>
                         @endforelse
-                    </tbody>
-                </table>
+            </tbody>
+        </table>
             </td></tr></table>
 
             <table class="block together"><tr><td class="cell">
@@ -570,31 +570,31 @@
                         <tr><th class="banner" colspan="2">Daily Pattern (Estimated Occupancy)</th></tr>
                         <tr><th>Hour</th><th class="num">Occupancy</th></tr>
                     </thead>
-                    <tbody>
+            <tbody>
                         @foreach (($parkingDailyPattern['labels'] ?? []) as $i => $label)
-                            <tr>
-                                <td>{{ $label }}</td>
+                    <tr>
+                        <td>{{ $label }}</td>
                                 <td class="num">{{ $parkingDailyPattern['values'][$i] ?? 0 }}</td>
-                            </tr>
-                        @endforeach
-                    </tbody>
-                </table>
+                    </tr>
+                @endforeach
+            </tbody>
+        </table>
             </td></tr></table>
-        @endif
+    @endif
 
-        @if (in_array($type, ['all', 'access'], true))
+    @if (in_array($type, ['all', 'access'], true))
             <table class="block together"><tr><td class="cell">
                 <table class="data">
                     <thead>
                         <tr><th class="banner" colspan="3">Exits (Last 7 Days)</th></tr>
                         <tr><th>Date</th><th>Day</th><th class="num">Count</th></tr>
                     </thead>
-                    <tbody>
+            <tbody>
                         @foreach (($exitsByDay ?? []) as $day)
                             <tr><td>{{ $day['date'] }}</td><td>{{ $day['label'] }}</td><td class="num">{{ $day['count'] }}</td></tr>
-                        @endforeach
-                    </tbody>
-                </table>
+                @endforeach
+            </tbody>
+        </table>
             </td></tr></table>
 
             <table class="block together"><tr><td class="cell">
@@ -603,15 +603,15 @@
                         <tr><th class="banner" colspan="2">Peak Entry/Exit Hours</th></tr>
                         <tr><th>Hour</th><th class="num">Count</th></tr>
                     </thead>
-                    <tbody>
+            <tbody>
                         @foreach (($peakEntryExitHours['labels'] ?? []) as $i => $label)
-                            <tr>
-                                <td>{{ $label }}</td>
+                    <tr>
+                        <td>{{ $label }}</td>
                                 <td class="num">{{ $peakEntryExitHours['values'][$i] ?? 0 }}</td>
-                            </tr>
-                        @endforeach
-                    </tbody>
-                </table>
+                    </tr>
+                @endforeach
+            </tbody>
+        </table>
             </td></tr></table>
 
             <table class="block {{ $logsList->count() <= 12 ? 'together' : '' }}"><tr><td class="cell">
@@ -620,22 +620,22 @@
                         <tr><th class="banner" colspan="5">Access Logs</th></tr>
                         <tr><th>Time</th><th>Action</th><th>Gate</th><th>Result</th><th>User</th></tr>
                     </thead>
-                    <tbody>
+            <tbody>
                         @forelse ($logsList as $log)
-                            <tr>
-                                <td>{{ ph_datetime($log->timestamp, 'Y-m-d H:i') }}</td>
-                                <td>{{ $log->action }}</td>
-                                <td>{{ $log->gate_id }}</td>
-                                <td>{{ $log->result }}</td>
-                                <td>{{ $log->user?->fullname ?? '—' }}</td>
-                            </tr>
-                        @empty
-                            <tr><td colspan="5" class="muted">No access logs in range.</td></tr>
-                        @endforelse
-                    </tbody>
-                </table>
+                    <tr>
+                        <td>{{ ph_datetime($log->timestamp, 'Y-m-d H:i') }}</td>
+                        <td>{{ $log->action }}</td>
+                        <td>{{ $log->gate_id }}</td>
+                        <td>{{ $log->result }}</td>
+                        <td>{{ $log->user?->fullname ?? '—' }}</td>
+                    </tr>
+                @empty
+                    <tr><td colspan="5" class="muted">No access logs in range.</td></tr>
+                @endforelse
+            </tbody>
+        </table>
             </td></tr></table>
-        @endif
+    @endif
     </div>
 </body>
 </html>

@@ -16,6 +16,7 @@ class ParkingArea extends MongoModel
         'designation_notes',
         'is_visible',
         'allowed_roles',
+        'slot_prefix',
     ];
 
     protected function casts(): array

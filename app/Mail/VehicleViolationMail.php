@@ -66,10 +66,7 @@ class VehicleViolationMail extends Mailable
                 'occurredTime' => $occurred->timezone(config('app.timezone', 'Asia/Manila'))->format('g:i A'),
                 'hasEvidence' => $cidMap !== [],
                 'evidenceCids' => array_values($cidMap),
-                'evidencePublicUrls' => array_values(array_filter(array_map(
-                    fn (string $path) => ViolationEvidence::publicUrl($path),
-                    $this->evidencePaths
-                ))),
+                'evidencePublicUrls' => [],
             ],
         );
     }

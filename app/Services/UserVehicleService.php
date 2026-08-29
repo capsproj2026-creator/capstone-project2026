@@ -38,6 +38,8 @@ class UserVehicleService
             'user_id' => $user->id,
             'vehicle_id' => $vehicleId,
             'plate_number' => $plate,
+            'vehicle_model' => $user->vehicle_model,
+            'vehicle_color' => $user->vehicle_color,
             'is_primary' => true,
         ]);
 
@@ -64,6 +66,8 @@ class UserVehicleService
             'user_id' => $user->id,
             'vehicle_id' => $validated['vehicle_id'],
             'plate_number' => $validated['plate_number'],
+            'vehicle_model' => $validated['vehicle_model'],
+            'vehicle_color' => $validated['vehicle_color'],
             'is_primary' => $isPrimary,
         ]);
 
@@ -85,6 +89,8 @@ class UserVehicleService
         $vehicle->update([
             'vehicle_id' => $validated['vehicle_id'],
             'plate_number' => $validated['plate_number'],
+            'vehicle_model' => $validated['vehicle_model'],
+            'vehicle_color' => $validated['vehicle_color'],
         ]);
 
         $this->syncPrimaryToUser($user);
@@ -147,6 +153,8 @@ class UserVehicleService
             $user->update([
                 'plate_number' => $primary->plate_number,
                 'vehicle_id' => $primary->vehicle_id,
+                'vehicle_model' => $primary->vehicle_model ?: $user->vehicle_model,
+                'vehicle_color' => $primary->vehicle_color ?: $user->vehicle_color,
             ]);
 
             return;
@@ -169,6 +177,8 @@ class UserVehicleService
         $validator = validator($data, [
             'vehicle_id' => ['required', 'integer', Rule::in($vehicleIds)],
             'plate_number' => ['required', 'string', 'min:2', 'max:20', 'regex:/^[A-Za-z0-9\-\s]+$/'],
+            'vehicle_model' => ['nullable', 'string', 'max:80'],
+            'vehicle_color' => ['nullable', 'string', 'max:40'],
         ], [
             'vehicle_id.required' => 'Please select a vehicle type.',
             'vehicle_id.in' => 'Please select a valid vehicle type.',
@@ -189,6 +199,8 @@ class UserVehicleService
         return [
             'vehicle_id' => (int) $validated['vehicle_id'],
             'plate_number' => $plate,
+            'vehicle_model' => trim((string) ($validated['vehicle_model'] ?? '')) ?: null,
+            'vehicle_color' => trim((string) ($validated['vehicle_color'] ?? '')) ?: null,
         ];
     }
 

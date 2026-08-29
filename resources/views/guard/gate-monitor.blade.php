@@ -158,6 +158,10 @@
                         <h3 id="scan-name" class="mt-4 text-2xl font-bold text-gray-900 sm:text-3xl">—</h3>
                         <span id="scan-role" class="mt-2 inline-flex rounded-full bg-gray-100 px-3 py-1 text-sm font-medium text-gray-600">—</span>
                         <p id="scan-purpose" class="mt-2 hidden text-sm text-gray-500"></p>
+                        <div id="scan-temp-banner" class="mt-4 hidden rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-left">
+                            <p id="scan-temp-banner-text" class="text-sm font-semibold text-amber-900">Unregistered student/faculty — complete vehicle registration within 5 hours</p>
+                            <p id="scan-temp-register" class="mt-1 hidden break-all text-xs text-amber-800"></p>
+                        </div>
                     </div>
 
                     <div class="space-y-3 px-5 pb-5 sm:px-6">
@@ -290,6 +294,7 @@
             if (r === 'student') return 'bg-blue-50 text-blue-700';
             if (r === 'staff') return 'bg-violet-50 text-violet-700';
             if (r === 'visitor') return 'bg-teal-50 text-teal-700';
+            if (r === 'temporary') return 'bg-amber-50 text-amber-800';
             return 'bg-gray-100 text-gray-600';
         };
 
@@ -360,6 +365,29 @@
                 } else {
                     purposeEl.textContent = '';
                     purposeEl.classList.add('hidden');
+                }
+            }
+
+            const tempBanner = document.getElementById('scan-temp-banner');
+            const tempText = document.getElementById('scan-temp-banner-text');
+            const tempRegister = document.getElementById('scan-temp-register');
+            if (tempBanner) {
+                if (latest.is_temporary) {
+                    tempBanner.classList.remove('hidden');
+                    if (tempText) {
+                        tempText.textContent = latest.temporary_message || 'Unregistered student/faculty — complete vehicle registration within 5 hours';
+                    }
+                    if (tempRegister) {
+                        if (latest.register_url) {
+                            tempRegister.textContent = latest.register_url;
+                            tempRegister.classList.remove('hidden');
+                        } else {
+                            tempRegister.textContent = '';
+                            tempRegister.classList.add('hidden');
+                        }
+                    }
+                } else {
+                    tempBanner.classList.add('hidden');
                 }
             }
 

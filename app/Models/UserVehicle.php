@@ -14,6 +14,8 @@ class UserVehicle extends MongoModel
         'user_id',
         'vehicle_id',
         'plate_number',
+        'vehicle_model',
+        'vehicle_color',
         'is_primary',
     ];
 

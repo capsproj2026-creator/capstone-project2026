@@ -28,6 +28,7 @@ class VisitorService
                 'status' => Visitor::STATUS_WAITING,
                 'registered_by' => $actor?->id,
                 'registration_source' => Visitor::SOURCE_GUARD,
+                'form_completed_at' => now(),
                 'notes' => filled($data['notes'] ?? null) ? trim((string) $data['notes']) : null,
             ]
         ));
@@ -43,21 +44,79 @@ class VisitorService
 
     /**
      * Public self-service pre-registration (no RFID; guard assigns at booth).
+     * The same form may also complete an active visit after the visitor is already inside,
+     * for post_entry_hours (default 5) after campus entry.
      *
      * @param  array<string, mixed>  $data
      */
     public function preRegister(array $data): Visitor
     {
+        $fields = $this->normalizedVisitorFields($data);
+        $existing = $this->findActiveByPlate((string) $fields['plate_number']);
+
+        if ($existing) {
+            if (in_array((string) $existing->status, [Visitor::STATUS_INSIDE, Visitor::STATUS_OUTSIDE], true)
+                && $this->postEntryFormExpired($existing)) {
+                $hours = $this->postEntryHours();
+                throw ValidationException::withMessages([
+                    'plate_number' => "This visit’s form window ended {$hours} hours after campus entry. Ask the guard for help.",
+                ]);
+            }
+
+            $this->update($existing, $fields);
+            $existing->update([
+                'form_completed_at' => now(),
+                'registration_source' => $existing->registration_source ?: Visitor::SOURCE_SELF,
+                'confirmation_code' => $existing->confirmation_code ?: $this->generateConfirmationCode(),
+            ]);
+
+            return $existing->fresh(['vehicleType', 'rfidCard']) ?? $existing;
+        }
+
         return Visitor::query()->create(array_merge(
-            $this->normalizedVisitorFields($data),
+            $fields,
             [
                 'status' => Visitor::STATUS_WAITING,
                 'registered_by' => null,
                 'registration_source' => Visitor::SOURCE_SELF,
                 'confirmation_code' => $this->generateConfirmationCode(),
+                'form_completed_at' => now(),
                 'notes' => null,
             ]
         ));
+    }
+
+    public function postEntryHours(): int
+    {
+        return max(1, (int) config('services.visitor_pre_register.post_entry_hours', 5));
+    }
+
+    public function postEntryFormExpired(Visitor $visitor): bool
+    {
+        $started = $visitor->time_in;
+        if (! $started) {
+            return false;
+        }
+
+        return $started->copy()->addHours($this->postEntryHours())->lte(now());
+    }
+
+    public function findActiveByPlate(string $plate): ?Visitor
+    {
+        $plate = strtoupper(trim($plate));
+        if ($plate === '') {
+            return null;
+        }
+
+        return Visitor::query()
+            ->where('plate_number', $plate)
+            ->whereIn('status', [
+                Visitor::STATUS_WAITING,
+                Visitor::STATUS_INSIDE,
+                Visitor::STATUS_OUTSIDE,
+            ])
+            ->orderByDesc('id')
+            ->first();
     }
 
     /**

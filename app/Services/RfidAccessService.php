@@ -50,6 +50,10 @@ class RfidAccessService
             ->first();
 
         if ($user) {
+            if ($user->isTemporaryAccount()) {
+                return $this->processTemporaryUser($user, $uid, $gateId, $direction);
+            }
+
             return $this->processUser($user, $uid, $gateId, $direction);
         }
 
@@ -61,9 +65,108 @@ class RfidAccessService
             return $this->processVisitorCard($card, $uid, $gateId, $direction);
         }
 
-        $log = $this->logDeniedAttempt(null, null, $uid, $gateId, $direction, self::STATUS_CARD_NOT_REGISTERED, 'RFID card is not registered in the system.');
+        return $this->processUnknownCard($uid, $gateId, $direction);
+    }
 
-        return $this->response(self::STATUS_CARD_NOT_REGISTERED, 'card_not_registered', false, $direction, $gateId, 'RFID card is not registered in the system.', null, $log->id);
+    private function processUnknownCard(string $uid, string $gateId, string $direction): array
+    {
+        $temps = app(TemporaryRfidService::class);
+
+        if (! $temps->enabled() || $direction !== 'Entry') {
+            $log = $this->logDeniedAttempt(null, null, $uid, $gateId, $direction, self::STATUS_CARD_NOT_REGISTERED, 'RFID card is not registered in the system.');
+
+            return $this->response(self::STATUS_CARD_NOT_REGISTERED, 'card_not_registered', false, $direction, $gateId, 'RFID card is not registered in the system.', null, $log->id);
+        }
+
+        $key = $temps->identityKeyForUid($uid);
+        if ($temps->countForIdentity($key) >= $temps->maxAccounts()) {
+            $log = $this->logDeniedAttempt(null, null, $uid, $gateId, $direction, self::STATUS_DENIED, TemporaryRfidService::LIMIT_MESSAGE);
+
+            return $this->response(self::STATUS_DENIED, 'access_denied', false, $direction, $gateId, TemporaryRfidService::LIMIT_MESSAGE, null, $log->id);
+        }
+
+        try {
+            $user = $temps->createForUid($uid);
+        } catch (\Throwable $e) {
+            $message = $e->getMessage() !== '' ? $e->getMessage() : TemporaryRfidService::LIMIT_MESSAGE;
+            $log = $this->logDeniedAttempt(null, null, $uid, $gateId, $direction, self::STATUS_DENIED, $message);
+
+            return $this->response(self::STATUS_DENIED, 'access_denied', false, $direction, $gateId, $message, null, $log->id);
+        }
+
+        return $this->processTemporaryUser($user->fresh(['role', 'vehicleType']) ?? $user, $uid, $gateId, $direction);
+    }
+
+    private function processTemporaryUser(User $user, string $uid, string $gateId, string $direction): array
+    {
+        $temps = app(TemporaryRfidService::class);
+
+        if ($user->temporaryAccessExpired()) {
+            $temps->expireAndUnbind($user);
+            $reason = TemporaryRfidService::EXPIRED_MESSAGE;
+            $log = $this->logDeniedAttempt($user->fresh() ?? $user, null, $uid, $gateId, $direction, self::STATUS_DENIED, $reason);
+
+            return $this->response(self::STATUS_DENIED, 'access_denied', false, $direction, $gateId, $reason, $this->userPayload($user), $log->id);
+        }
+
+        $temps->clearPlaceholderEmail($user);
+
+        if ($user->isLocked()) {
+            $reason = $user->loginBlockedReason() ?? 'Account is not active.';
+            $log = $this->logDeniedAttempt($user, null, $uid, $gateId, $direction, self::STATUS_DENIED, $reason);
+
+            return $this->response(self::STATUS_DENIED, 'access_denied', false, $direction, $gateId, $reason, $this->userPayload($user), $log->id);
+        }
+
+        $lastAction = $this->lastActionForUser($user);
+
+        if ($direction === 'Entry' && $lastAction === 'Entry') {
+            $log = $this->logDeniedAttempt($user, null, $uid, $gateId, $direction, self::STATUS_ALREADY_INSIDE, 'Vehicle is already inside campus.');
+
+            return $this->response(self::STATUS_ALREADY_INSIDE, 'already_inside', false, $direction, $gateId, 'Vehicle is already inside campus.', $this->userPayload($user), $log->id);
+        }
+
+        if ($direction === 'Entry' && $lastAction === 'Exit') {
+            $reason = TemporaryRfidService::ONE_TIME_MESSAGE;
+            $log = $this->logDeniedAttempt($user, null, $uid, $gateId, $direction, self::STATUS_DENIED, $reason);
+
+            return $this->response(self::STATUS_DENIED, 'access_denied', false, $direction, $gateId, $reason, $this->userPayload($user), $log->id);
+        }
+
+        if ($direction === 'Exit' && ($lastAction === null || $lastAction === 'Exit')) {
+            $reason = TemporaryRfidService::EXIT_ONLY_AFTER_ENTRY;
+            $log = $this->logDeniedAttempt($user, null, $uid, $gateId, $direction, self::STATUS_ALREADY_OUTSIDE, $reason);
+
+            return $this->response(self::STATUS_ALREADY_OUTSIDE, 'already_outside', false, $direction, $gateId, $reason, $this->userPayload($user), $log->id);
+        }
+
+        $reason = $temps->grantReason();
+        $log = GateLog::query()->create([
+            'user_id' => $user->id,
+            'visitor_id' => null,
+            'action' => $direction,
+            'gate_id' => $gateId,
+            'rfid_uid' => $uid,
+            'result' => self::STATUS_GRANTED,
+            'reason' => $reason,
+            'timestamp' => now(),
+        ]);
+
+        $this->syncUserParkingOccupancy($user, $direction);
+        GateScanProcessed::dispatchFromLog($log);
+        $sharedQueued = app(GateHardwareService::class)->notifySharedBoomAfterGrant($gateId, $direction);
+
+        return $this->response(
+            self::STATUS_GRANTED,
+            'access_granted',
+            true,
+            $direction,
+            $gateId,
+            $reason,
+            $this->userPayload($user),
+            $log->id,
+            $sharedQueued
+        );
     }
 
     private function processUser(User $user, string $uid, string $gateId, string $direction): array
@@ -413,13 +516,19 @@ class RfidAccessService
      */
     private function userPayload(User $user): array
     {
+        $temps = app(TemporaryRfidService::class);
+        $isTemporary = $user->isTemporaryAccount();
+
         return [
             'id' => $user->id,
             'name' => $user->name,
             'id_number' => $user->id_number,
             'plate_number' => $user->plate_number,
-            'role' => $user->roleName(),
+            'role' => $isTemporary ? $user->gateRoleLabel() : $user->roleName(),
             'is_visitor' => false,
+            'is_temporary' => $isTemporary,
+            'temporary_expires_at' => $isTemporary ? $user->temporary_expires_at?->toIso8601String() : null,
+            'register_url' => $isTemporary ? $temps->registrationUrl($user) : null,
         ];
     }
 

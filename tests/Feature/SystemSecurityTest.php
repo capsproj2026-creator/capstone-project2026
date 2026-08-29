@@ -42,6 +42,7 @@ class SystemSecurityTest extends TestCase
             route('admin.reports.export-pdf'),
             route('admin.reports.export-excel'),
             route('admin.parking.zone-access'),
+            route('admin.parking.layout'),
             route('guard.dashboard'),
             route('guard.gate'),
             route('user.dashboard'),

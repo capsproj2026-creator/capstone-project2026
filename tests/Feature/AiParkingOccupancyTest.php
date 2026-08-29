@@ -554,7 +554,8 @@ class AiParkingOccupancyTest extends TestCase
             $this->assertSame('Automobiles', $log->vehicle_details);
             $this->assertSame(55, (int) $log->track_id);
             $this->assertNotEmpty($log->evidence_photo);
-            Storage::disk('public')->assertExists($log->evidence_photo);
+            Storage::disk('private')->assertExists($log->evidence_photo);
+            Storage::disk('public')->assertMissing($log->evidence_photo);
         } finally {
             PlateLookup::forgetIndex();
             if ($owner) {

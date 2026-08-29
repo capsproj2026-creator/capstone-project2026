@@ -142,4 +142,80 @@ class VisitorPreRegistrationTest extends TestCase
             ->assertOk()
             ->assertHeader('Content-Type', 'image/svg+xml');
     }
+
+    public function test_form_updates_inside_visitor_within_five_hours(): void
+    {
+        $plate = 'IN'.random_int(1000, 9999);
+        $visitor = app(VisitorService::class)->register([
+            'first_name' => 'Walkin',
+            'last_name' => 'Guest',
+            'contact_number' => '09170001111',
+            'purpose' => 'Meeting',
+            'office_to_visit' => 'CCS',
+            'expected_exit_at' => now()->addHours(6),
+            'plate_number' => $plate,
+            'vehicle_id' => 1,
+            'vehicle_color' => 'Blue',
+        ], $this->guardUser);
+        $this->visitorIds[] = (int) $visitor->id;
+
+        app(VisitorService::class)->markInside($visitor);
+        $visitor->refresh();
+        $this->assertSame(Visitor::STATUS_INSIDE, $visitor->status);
+
+        $exitAt = now()->addHours(3)->format('Y-m-d\TH:i');
+        $this->post(route('visitor.pre-register.store'), [
+            'first_name' => 'Walkin',
+            'last_name' => 'Guest',
+            'contact_number' => '09170001111',
+            'purpose' => 'Updated after entry',
+            'office_to_visit' => 'Registrar',
+            'expected_exit_at' => $exitAt,
+            'plate_number' => $plate,
+            'vehicle_id' => 1,
+            'vehicle_color' => 'Blue',
+        ])->assertRedirect(route('visitor.pre-register.success'));
+
+        $visitor->refresh();
+        $this->assertSame(Visitor::STATUS_INSIDE, $visitor->status);
+        $this->assertSame('Updated after entry', $visitor->purpose);
+        $this->assertSame('Registrar', $visitor->office_to_visit);
+        $this->assertNotNull($visitor->form_completed_at);
+        $this->assertSame(1, Visitor::query()->where('plate_number', strtoupper($plate))->count());
+    }
+
+    public function test_form_rejected_five_hours_after_entry(): void
+    {
+        $plate = 'EX'.random_int(1000, 9999);
+        $visitor = app(VisitorService::class)->register([
+            'first_name' => 'Late',
+            'last_name' => 'Form',
+            'contact_number' => '09170002222',
+            'purpose' => 'Visit',
+            'office_to_visit' => 'GSU',
+            'expected_exit_at' => now()->addHours(8),
+            'plate_number' => $plate,
+            'vehicle_id' => 1,
+            'vehicle_color' => 'White',
+        ], $this->guardUser);
+        $this->visitorIds[] = (int) $visitor->id;
+
+        app(VisitorService::class)->markInside($visitor);
+        $visitor->update(['time_in' => now()->subHours(5)->subMinute()]);
+
+        $this->post(route('visitor.pre-register.store'), [
+            'first_name' => 'Late',
+            'last_name' => 'Form',
+            'contact_number' => '09170002222',
+            'purpose' => 'Too late',
+            'office_to_visit' => 'GSU',
+            'expected_exit_at' => now()->addHours(2)->format('Y-m-d\TH:i'),
+            'plate_number' => $plate,
+            'vehicle_id' => 1,
+            'vehicle_color' => 'White',
+        ])->assertSessionHasErrors('plate_number');
+
+        $visitor->refresh();
+        $this->assertSame('Visit', $visitor->purpose);
+    }
 }

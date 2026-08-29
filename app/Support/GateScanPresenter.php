@@ -33,10 +33,14 @@ class GateScanPresenter
                 ->join('') ?: 'U'
         );
 
+        $isTemporary = (bool) $user?->isTemporaryAccount();
+
         $statusLabel = $granted
             ? ($isVisitor
                 ? 'Visitor'
-                : ($strikes > 0 ? "{$strikes} Strike".($strikes === 1 ? '' : 's') : 'No Violations'))
+                : ($isTemporary
+                    ? 'Not registered yet'
+                    : ($strikes > 0 ? "{$strikes} Strike".($strikes === 1 ? '' : 's') : 'No Violations')))
             : ($log->result ?: 'Access Denied');
 
         if (strcasecmp((string) $log->action, 'Override') === 0) {
@@ -52,8 +56,16 @@ class GateScanPresenter
             'profile_picture_url' => $user
                 ? $user->profilePictureUrl()
                 : 'https://ui-avatars.com/api/?name='.urlencode($name).'&background='.($isVisitor ? '0d9488' : '64748b').'&color=fff&size=256',
-            'role' => $isVisitor ? 'Visitor' : ($user?->roleName() ?? 'Unknown'),
+            'role' => $isVisitor ? 'Visitor' : ($user?->gateRoleLabel() ?? 'Unknown'),
             'is_visitor' => $isVisitor,
+            'is_temporary' => $isTemporary,
+            'temporary_expires_at' => $isTemporary ? $user?->temporary_expires_at?->toIso8601String() : null,
+            'temporary_message' => $isTemporary
+                ? app(\App\Services\TemporaryRfidService::class)->grantReason()
+                : null,
+            'register_url' => $isTemporary
+                ? app(\App\Services\TemporaryRfidService::class)->registrationUrl($user)
+                : null,
             'purpose' => $isVisitor ? ($visitor->purpose ?? null) : null,
             'id_number' => $user?->id_number,
             'plate_number' => $isVisitor ? $visitor->plate_number : $user?->plate_number,

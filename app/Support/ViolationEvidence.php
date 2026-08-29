@@ -6,11 +6,11 @@ use App\Models\ViolationLog;
 use Illuminate\Support\Facades\Storage;
 
 /**
- * Resolve violation evidence paths and public/authenticated image URLs.
+ * Resolve violation evidence paths and authenticated image URLs.
  */
 class ViolationEvidence
 {
-    public const DISK = 'public';
+    public const DISK = 'private';
 
     public const DIRECTORY = 'violation-evidence';
 
@@ -60,8 +60,7 @@ class ViolationEvidence
     }
 
     /**
-     * Prefer public Storage::url() when the file exists on the public disk.
-     * Fall back to an authorized route URL for legacy private-disk files.
+     * Always use authenticated evidence routes — never public /storage URLs.
      *
      * @return list<string>
      */
@@ -71,13 +70,6 @@ class ViolationEvidence
         $urls = [];
 
         foreach (self::pathsFor($log) as $index => $path) {
-            self::ensurePublicCopy($path);
-
-            if (Storage::disk(self::DISK)->exists($path)) {
-                $urls[] = Storage::disk(self::DISK)->url($path);
-                continue;
-            }
-
             $urls[] = route($routeName, ['id' => $id, 'index' => $index]);
         }
 
@@ -95,29 +87,16 @@ class ViolationEvidence
     public static function absolutePath(string $path): ?string
     {
         $path = self::normalizePath($path);
-        self::ensurePublicCopy($path);
 
         if (Storage::disk(self::DISK)->exists($path)) {
             return Storage::disk(self::DISK)->path($path);
         }
 
-        if (Storage::disk('private')->exists($path)) {
-            return Storage::disk('private')->path($path);
+        if (Storage::disk('public')->exists($path)) {
+            return Storage::disk('public')->path($path);
         }
 
         return null;
-    }
-
-    public static function publicUrl(string $path): ?string
-    {
-        $path = self::normalizePath($path);
-        self::ensurePublicCopy($path);
-
-        if (! Storage::disk(self::DISK)->exists($path)) {
-            return null;
-        }
-
-        return Storage::disk(self::DISK)->url($path);
     }
 
     public static function normalizePath(string $path): string
@@ -130,27 +109,5 @@ class ViolationEvidence
         }
 
         return $path;
-    }
-
-    /**
-     * Copy legacy private-disk evidence into the public disk once so Storage::url works.
-     */
-    public static function ensurePublicCopy(string $path): void
-    {
-        $path = self::normalizePath($path);
-
-        if ($path === '' || Storage::disk(self::DISK)->exists($path)) {
-            return;
-        }
-
-        if (! Storage::disk('private')->exists($path)) {
-            return;
-        }
-
-        try {
-            Storage::disk(self::DISK)->put($path, Storage::disk('private')->get($path));
-        } catch (\Throwable $e) {
-            report($e);
-        }
     }
 }

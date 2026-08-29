@@ -96,7 +96,7 @@ def _preprocess_for_ocr(image):
     return cv2.cvtColor(enhanced, cv2.COLOR_LAB2BGR)
 
 
-def scan_image(image_path: Path):
+def scan_image(image_path: Path, full_card: bool = False):
     image = cv2.imread(str(image_path))
     if image is None:
         return {"ok": False, "message": "Unable to read the uploaded image."}
@@ -109,6 +109,33 @@ def scan_image(image_path: Path):
 
     enhanced = _preprocess_for_ocr(image)
     engine = RapidOCR()
+
+    if full_card:
+        lines = _rapidocr_lines(engine, enhanced, height)
+
+        # Extra pass over the PH DL address band (below name, left/center, smaller type).
+        addr_top = int(height * 0.26)
+        addr_bottom = int(height * 0.70)
+        addr_right = int(width * 0.78)
+        addr_crop = enhanced[addr_top:addr_bottom, 0:addr_right]
+        addr_lines = []
+        if addr_crop.size > 0:
+            crop_h = float(max(1, addr_crop.shape[0]))
+            addr_lines = _rapidocr_lines(engine, addr_crop, crop_h)
+            for row in addr_lines:
+                local_y = float(row.get("center_y") or 0.0)
+                row["center_y"] = round((addr_top + local_y * crop_h) / max(height, 1.0), 4)
+
+        lines = _merge_lines(lines, addr_lines)
+        if not lines:
+            return {"ok": False, "message": "No text detected on the document photo."}
+
+        return {
+            "ok": True,
+            "lines": lines,
+            "name_lines": [],
+            "sn_lines": [],
+        }
 
     # SN region (left of photo, mid-upper card).
     sn_crop = enhanced[int(height * 0.12) : int(height * 0.36), int(width * 0.03) : int(width * 0.58)]
@@ -144,12 +171,12 @@ def scan_image(image_path: Path):
 
 
 def main(argv: list[str]) -> int:
-    if len(argv) != 2:
-        print(json.dumps({"ok": False, "message": "Usage: scan_campus_id.py <image-path>"}))
+    if len(argv) < 2:
+        print(json.dumps({"ok": False, "message": "Usage: scan_campus_id.py <image-path> [--full]"}))
         return 1
 
     try:
-        result = scan_image(Path(argv[1]))
+        result = scan_image(Path(argv[1]), full_card="--full" in argv[2:])
     except Exception as exc:  # pragma: no cover - runtime safety net
         print(json.dumps({"ok": False, "message": f"Campus ID scan failed: {exc}"}))
         return 1

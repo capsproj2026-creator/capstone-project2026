@@ -6,7 +6,7 @@ use Illuminate\Support\Facades\Storage;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
 /**
- * Serve violation evidence from public or legacy private disk with path allowlisting.
+ * Serve violation evidence from the private disk (legacy public copies still readable).
  */
 class PrivateEvidence
 {
@@ -33,13 +33,11 @@ class PrivateEvidence
             abort(404);
         }
 
-        ViolationEvidence::ensurePublicCopy($path);
-
         $disk = null;
-        if (Storage::disk('public')->exists($path)) {
-            $disk = 'public';
-        } elseif (Storage::disk('private')->exists($path)) {
+        if (Storage::disk('private')->exists($path)) {
             $disk = 'private';
+        } elseif (Storage::disk('public')->exists($path)) {
+            $disk = 'public';
         }
 
         if ($disk === null) {

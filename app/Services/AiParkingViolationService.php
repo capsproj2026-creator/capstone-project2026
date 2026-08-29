@@ -238,7 +238,7 @@ class AiParkingViolationService
         $path = 'violation-evidence/ai-'.Str::uuid()->toString().'.jpg';
 
         try {
-            Storage::disk('public')->put($path, $binary);
+            Storage::disk('private')->put($path, $binary);
 
             return $path;
         } catch (\Throwable $e) {

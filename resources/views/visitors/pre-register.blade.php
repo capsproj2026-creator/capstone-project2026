@@ -14,8 +14,8 @@
                 <div class="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-white/10">
                     <i data-lucide="clipboard-list" class="h-8 w-8"></i>
                 </div>
-                <h1 class="text-2xl font-bold">Visitor Pre-Registration</h1>
-                <p class="mt-1 text-sm text-blue-100">Fill this form before going to the guard booth</p>
+                <h1 class="text-2xl font-bold">Visitor Registration</h1>
+                <p class="mt-1 text-sm text-blue-100">Fill this form before the booth, or after you enter campus — within {{ (int) config('services.visitor_pre_register.post_entry_hours', 5) }} hours of entry</p>
             </div>
         </div>
 
@@ -101,7 +101,7 @@
                     </div>
                 </div>
 
-                <p class="text-xs text-gray-500">After submitting, you will receive a reference code. Show it to the guard at the booth to receive your temporary RFID.</p>
+                <p class="text-xs text-gray-500">Before arrival, show the reference code at the booth. If you are already on campus, submit this form with the same plate number within {{ (int) config('services.visitor_pre_register.post_entry_hours', 5) }} hours of entry.</p>
 
                 <button type="submit" class="flex w-full items-center justify-center gap-2 rounded-lg bg-blue-600 py-3 text-sm font-semibold text-white hover:bg-blue-700">
                     <i data-lucide="send" class="h-4 w-4"></i>

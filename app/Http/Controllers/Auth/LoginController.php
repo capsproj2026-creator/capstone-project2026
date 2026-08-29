@@ -60,6 +60,17 @@ class LoginController extends Controller
             return back()->with('error', 'Invalid email or password.')->onlyInput('email');
         }
 
+        if ($user->isTemporaryAccount()) {
+            $token = trim((string) ($user->temp_conversion_token ?? ''));
+            if ($token !== '') {
+                return redirect()
+                    ->route('register', ['temp' => $token])
+                    ->with('success', 'Complete your student/faculty vehicle registration to keep campus access.');
+            }
+
+            return back()->with('error', $user->loginBlockedReason() ?? 'Complete full registration to continue.')->onlyInput('email');
+        }
+
         try {
             app(ViolationEnforcementService::class)->reconcileFromViolationHistory($user);
             $user->refresh();

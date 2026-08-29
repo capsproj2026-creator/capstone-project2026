@@ -34,6 +34,15 @@ class AdminOverhaulTest extends TestCase
             ->assertSee('Zone Access');
     }
 
+    public function test_parking_layout_page_loads(): void
+    {
+        $this->actingAs($this->admin)
+            ->get(route('admin.parking.layout'))
+            ->assertOk()
+            ->assertSee('Zones & Spaces', false)
+            ->assertSee('Add parking area', false);
+    }
+
     public function test_reports_export_returns_csv(): void
     {
         $response = $this->actingAs($this->admin)
@@ -372,5 +381,118 @@ class AdminOverhaulTest extends TestCase
             ])
             ->assertRedirect(route('admin.parking.zone-access'))
             ->assertSessionHas('success');
+    }
+
+    public function test_admin_document_route_accepts_id_or_and_cr(): void
+    {
+        foreach (['license', 'orcr', 'or', 'cr', 'id'] as $doc) {
+            $url = route('admin.users.document', ['id' => $this->admin->id, 'doc' => $doc]);
+            $matched = app('router')->getRoutes()->match(
+                \Illuminate\Http\Request::create($url, 'GET')
+            );
+
+            $this->assertSame('admin.users.document', $matched->getName());
+            $this->assertSame($doc, $matched->parameter('doc'));
+        }
+    }
+
+    public function test_admin_can_add_and_remove_parking_area_and_space(): void
+    {
+        $prefix = 'ZX'.random_int(10, 99);
+        $name = 'Test Lot '.$prefix;
+
+        $this->actingAs($this->admin)
+            ->from(route('admin.parking.layout'))
+            ->post(route('admin.parking.areas.store'), [
+                'area_name' => $name,
+                'slot_prefix' => $prefix,
+                'slot_count' => 2,
+                'designation_notes' => 'Students',
+                'is_visible' => '1',
+                'allowed_roles' => ['Student'],
+            ])
+            ->assertRedirect()
+            ->assertSessionHas('success');
+
+        $area = \App\Models\ParkingArea::query()->where('area_name', $name)->first();
+        $this->assertNotNull($area);
+        $slots = \App\Models\ParkingSlot::query()->where('area_id', $area->id)->orderBy('slot_number')->get();
+        $this->assertCount(2, $slots);
+        $this->assertSame(2, (int) $area->capacity);
+
+        $this->actingAs($this->admin)
+            ->from(route('admin.parking.layout', ['zone_id' => $area->id]))
+            ->post(route('admin.parking.slots.store'), [
+                'area_id' => $area->id,
+                'slot_count' => 1,
+            ])
+            ->assertRedirect(route('admin.parking.layout', ['zone_id' => $area->id]));
+
+        $this->assertSame(3, \App\Models\ParkingSlot::query()->where('area_id', $area->id)->count());
+
+        $removable = \App\Models\ParkingSlot::query()->where('area_id', $area->id)->orderByDesc('id')->first();
+        $this->actingAs($this->admin)
+            ->post(route('admin.parking.slots.destroy', $removable->id))
+            ->assertRedirect(route('admin.parking.layout', ['zone_id' => $area->id]));
+        $this->assertNull(\App\Models\ParkingSlot::query()->find($removable->id));
+
+        $occupied = \App\Models\ParkingSlot::query()->where('area_id', $area->id)->first();
+        $occupied->update(['status' => 'Occupied']);
+        $this->actingAs($this->admin)
+            ->from(route('admin.parking.layout', ['zone_id' => $area->id]))
+            ->post(route('admin.parking.areas.destroy', $area->id))
+            ->assertRedirect()
+            ->assertSessionHasErrors('area');
+        $this->assertNotNull(\App\Models\ParkingArea::query()->find($area->id));
+
+        $occupied->update(['status' => 'Available']);
+        $this->actingAs($this->admin)
+            ->post(route('admin.parking.areas.destroy', $area->id))
+            ->assertRedirect(route('admin.parking.layout'));
+        $this->assertNull(\App\Models\ParkingArea::query()->find($area->id));
+        $this->assertSame(0, \App\Models\ParkingSlot::query()->where('area_id', $area->id)->count());
+    }
+
+    public function test_admin_cannot_delete_ai_parking_area(): void
+    {
+        $aiId = \Database\Seeders\AiTestLotSeeder::AREA_ID;
+        $area = \App\Models\ParkingArea::query()->find($aiId);
+        if (! $area) {
+            $this->markTestSkipped('AI parking area not seeded.');
+        }
+
+        $this->actingAs($this->admin)
+            ->from(route('admin.parking.layout'))
+            ->post(route('admin.parking.areas.destroy', $aiId))
+            ->assertRedirect()
+            ->assertSessionHasErrors('area');
+
+        $this->assertNotNull(\App\Models\ParkingArea::query()->find($aiId));
+    }
+
+    public function test_guard_cannot_add_parking_area(): void
+    {
+        $guard = User::query()->where('email', 'guard@my.cspc.edu.ph')->first();
+        if (! $guard) {
+            $this->markTestSkipped('Guard user not seeded.');
+        }
+        if (! $guard->hasVerifiedEmail()) {
+            $guard->update(['email_verified_at' => now()]);
+        }
+        if ($guard->status !== User::STATUS_GRANTED) {
+            $guard->update(['status' => User::STATUS_GRANTED]);
+        }
+
+        $prefix = 'ZG'.random_int(10, 99);
+        $this->actingAs($guard)
+            ->post(route('admin.parking.areas.store'), [
+                'area_name' => 'Guard Lot '.$prefix,
+                'slot_prefix' => $prefix,
+                'slot_count' => 1,
+                'allowed_roles' => ['Student'],
+            ])
+            ->assertRedirect();
+
+        $this->assertNull(\App\Models\ParkingArea::query()->where('slot_prefix', $prefix)->first());
     }
 }

@@ -75,7 +75,7 @@
                         'border-green-200 bg-green-50/40' => $isVisible,
                         'border-gray-200 bg-gray-50/80' => ! $isVisible,
                     ]) data-zone-card>
-                        <div class="mb-4 flex items-start justify-between gap-3">
+                            <div class="mb-4 flex items-start justify-between gap-3">
                             <div class="min-w-0">
                                 <div class="flex flex-wrap items-center gap-2">
                                     <h3 class="font-semibold text-gray-900">{{ $zone->area_name }}</h3>

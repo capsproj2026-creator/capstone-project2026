@@ -11,6 +11,8 @@ use App\Http\Controllers\Admin\UserManagementController;
 use App\Http\Controllers\Admin\ViolationController as AdminViolationController;
 use App\Http\Controllers\Auth\CampusIdScanController;
 use App\Http\Controllers\Auth\EmailCheckController;
+use App\Http\Controllers\Auth\LicenseScanController;
+use App\Http\Controllers\Auth\OrCrScanController;
 use App\Http\Controllers\Auth\EmailVerificationController;
 use App\Http\Controllers\Auth\GoogleAuthController;
 use App\Http\Controllers\Auth\LoginController;
@@ -64,6 +66,12 @@ Route::middleware(['guest', 'no.cache'])->group(function () {
     Route::post('/register/scan-id', [CampusIdScanController::class, 'scan'])
         ->middleware('throttle:register-scan-id')
         ->name('register.scan-id');
+    Route::post('/register/scan-license', [LicenseScanController::class, 'scan'])
+        ->middleware('throttle:register-scan-id')
+        ->name('register.scan-license');
+    Route::post('/register/scan-orcr', [OrCrScanController::class, 'scan'])
+        ->middleware('throttle:register-scan-id')
+        ->name('register.scan-orcr');
 });
 
 // GET allows safe sign-out when the session/CSRF token is already stale (never show 419).
@@ -97,7 +105,7 @@ Route::prefix('admin')->middleware(['auth', 'verified', 'granted', 'no.cache', '
         ->name('users.show');
     Route::get('/users/{id}/document/{doc}', [UserManagementController::class, 'document'])
         ->middleware('permission:manage_users')
-        ->whereIn('doc', ['license', 'orcr'])
+        ->whereIn('doc', ['license', 'orcr', 'or', 'cr', 'id'])
         ->name('users.document');
     Route::get('/guards/create', [GuardRegistrationController::class, 'create'])
         ->middleware('permission:manage_admins')
@@ -119,12 +127,27 @@ Route::prefix('admin')->middleware(['auth', 'verified', 'granted', 'no.cache', '
     Route::get('/parking/zone-access', [ParkingController::class, 'zoneAccess'])
         ->middleware('permission:manage_parking')
         ->name('parking.zone-access');
+    Route::get('/parking/layout', [ParkingController::class, 'layout'])
+        ->middleware('permission:manage_parking')
+        ->name('parking.layout');
     Route::post('/parking/areas', [ParkingController::class, 'updateAreas'])
         ->middleware('permission:manage_parking')
         ->name('parking.areas.update');
+    Route::post('/parking/areas/store', [ParkingController::class, 'storeArea'])
+        ->middleware('permission:manage_parking')
+        ->name('parking.areas.store');
+    Route::post('/parking/areas/{id}/delete', [ParkingController::class, 'destroyArea'])
+        ->middleware('permission:manage_parking')
+        ->name('parking.areas.destroy');
     Route::post('/parking/slots/status', [ParkingController::class, 'updateSlotStatus'])
         ->middleware('permission:manage_parking')
         ->name('parking.slots.update');
+    Route::post('/parking/slots/store', [ParkingController::class, 'storeSlots'])
+        ->middleware('permission:manage_parking')
+        ->name('parking.slots.store');
+    Route::post('/parking/slots/{id}/delete', [ParkingController::class, 'destroySlot'])
+        ->middleware('permission:manage_parking')
+        ->name('parking.slots.destroy');
     Route::get('/settings', [SettingsController::class, 'index'])->name('settings');
     Route::post('/settings/general', [SettingsController::class, 'updateGeneral'])
         ->middleware('permission:system_settings')

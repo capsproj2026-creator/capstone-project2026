@@ -76,6 +76,11 @@
                     <x-auth.input label="Full Name" name="fullname" :value="$user->fullname" required />
                     <x-auth.input label="Email Address" name="email" type="email" :value="$user->email" required />
                     <x-auth.input label="Phone Number" name="phone_number" :value="$user->phone_number" required />
+                    <div>
+                        <label for="address" class="mb-1.5 block text-sm font-medium text-gray-700">Address</label>
+                        <textarea name="address" id="address" rows="2" maxlength="255"
+                            class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm uppercase text-gray-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20">{{ old('address', $user->address) }}</textarea>
+                    </div>
                     <x-auth.file-input name="profile_pic" id="profile_pic" label="Profile Photo" accept="image/*" />
                     <button type="submit" class="w-full rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-blue-700 sm:w-auto">
                         Save Profile
@@ -146,7 +151,7 @@
                                 </div>
                             </div>
 
-                            <form method="POST" action="{{ route('profile.update') }}" class="grid grid-cols-1 gap-3 sm:grid-cols-[1fr_1fr_auto]">
+                            <form method="POST" action="{{ route('profile.update') }}" class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
                                 @csrf
                                 <input type="hidden" name="update_vehicle" value="1">
                                 <input type="hidden" name="user_vehicle_id" value="{{ $uv->id }}">
@@ -162,7 +167,15 @@
                                     <label class="mb-1 block text-xs font-medium text-gray-600">Plate Number</label>
                                     <input type="text" name="plate_number" value="{{ $uv->plate_number }}" required maxlength="20" class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm uppercase">
                                 </div>
-                                <div class="flex items-end">
+                                <div>
+                                    <label class="mb-1 block text-xs font-medium text-gray-600">Model</label>
+                                    <input type="text" name="vehicle_model" value="{{ $uv->vehicle_model ?? $user->vehicle_model }}" maxlength="80" class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm">
+                                </div>
+                                <div>
+                                    <label class="mb-1 block text-xs font-medium text-gray-600">Color</label>
+                                    <input type="text" name="vehicle_color" value="{{ $uv->vehicle_color ?? $user->vehicle_color }}" maxlength="40" class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm">
+                                </div>
+                                <div class="sm:col-span-2 lg:col-span-4 flex items-end">
                                     <button type="submit" class="w-full rounded-lg bg-gray-900 px-4 py-2 text-sm font-semibold text-white hover:bg-gray-800 sm:w-auto">Update Vehicle</button>
                                 </div>
                             </form>
@@ -178,7 +191,7 @@
                     <i data-lucide="plus-circle" class="h-4 w-4"></i>
                     Add Vehicle
                 </h4>
-                <form method="POST" action="{{ route('profile.update') }}" class="grid grid-cols-1 gap-3 sm:grid-cols-[1fr_1fr_auto]">
+                <form method="POST" action="{{ route('profile.update') }}" class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
                     @csrf
                     <input type="hidden" name="add_vehicle" value="1">
                     <div>
@@ -194,7 +207,15 @@
                         <label for="add_plate_number" class="mb-1 block text-xs font-medium text-gray-700">Plate Number <span class="text-red-500">*</span></label>
                         <input type="text" name="plate_number" id="add_plate_number" value="{{ old('plate_number') }}" required maxlength="20" placeholder="ABC-1234" class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm uppercase">
                     </div>
-                    <div class="flex items-end">
+                    <div>
+                        <label for="add_vehicle_model" class="mb-1 block text-xs font-medium text-gray-700">Model</label>
+                        <input type="text" name="vehicle_model" id="add_vehicle_model" value="{{ old('vehicle_model') }}" maxlength="80" class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm">
+                    </div>
+                    <div>
+                        <label for="add_vehicle_color" class="mb-1 block text-xs font-medium text-gray-700">Color</label>
+                        <input type="text" name="vehicle_color" id="add_vehicle_color" value="{{ old('vehicle_color') }}" maxlength="40" class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm">
+                    </div>
+                    <div class="sm:col-span-2 lg:col-span-4 flex items-end">
                         <button type="submit" class="w-full rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-blue-700 sm:w-auto">Add Vehicle</button>
                     </div>
                 </form>

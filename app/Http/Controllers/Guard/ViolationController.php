@@ -86,12 +86,12 @@ class ViolationController extends Controller
         if ($request->hasFile('evidence_photos')) {
             foreach ($request->file('evidence_photos') as $file) {
                 if ($file) {
-                    $evidencePaths[] = $file->store('violation-evidence', 'public');
+                    $evidencePaths[] = $file->store('violation-evidence', 'private');
                 }
             }
         }
         if ($evidencePaths === [] && $request->hasFile('evidence_photo')) {
-            $evidencePaths[] = $request->file('evidence_photo')->store('violation-evidence', 'public');
+            $evidencePaths[] = $request->file('evidence_photo')->store('violation-evidence', 'private');
         }
 
         if ($requirePhoto && $evidencePaths === []) {

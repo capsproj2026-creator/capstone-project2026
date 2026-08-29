@@ -75,8 +75,8 @@
 </div>
 
 <div class="mb-6 rounded-xl border border-gray-200 bg-white p-4 sm:p-5">
-    <form method="GET" action="{{ route($parkingRoute) }}" class="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-        <div class="w-full lg:max-w-md">
+    <div class="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+        <form method="GET" action="{{ route($parkingRoute) }}" class="w-full lg:max-w-md">
             <label for="zone_id" class="mb-1.5 block text-sm font-medium text-gray-700">Parking Zone</label>
             <select
                 name="zone_id"
@@ -101,27 +101,29 @@
                     Showing all {{ $slots->count() }} slot(s) across campus.
                 @endif
             </p>
-        </div>
+        </form>
 
-        <div class="flex flex-wrap gap-2">
-            <span class="inline-flex items-center gap-1.5 rounded-full border border-green-200 bg-green-50 px-3 py-1 text-xs font-medium text-green-700">
-                <span class="h-2 w-2 rounded-full bg-green-500"></span>
-                Available
-            </span>
-            <span class="inline-flex items-center gap-1.5 rounded-full border border-red-200 bg-red-50 px-3 py-1 text-xs font-medium text-red-700">
-                <span class="h-2 w-2 rounded-full bg-red-500"></span>
-                Occupied
-            </span>
-            <span class="inline-flex items-center gap-1.5 rounded-full border border-blue-200 bg-blue-50 px-3 py-1 text-xs font-medium text-blue-700">
-                <span class="h-2 w-2 rounded-full bg-blue-500"></span>
-                Reserved
-            </span>
-            <span class="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-medium text-slate-700">
-                <span class="h-2 w-2 rounded-full bg-slate-500"></span>
-                Maintenance
-            </span>
+        <div class="flex flex-col gap-3 sm:items-end">
+            <div class="flex flex-wrap gap-2">
+                <span class="inline-flex items-center gap-1.5 rounded-full border border-green-200 bg-green-50 px-3 py-1 text-xs font-medium text-green-700">
+                    <span class="h-2 w-2 rounded-full bg-green-500"></span>
+                    Available
+                </span>
+                <span class="inline-flex items-center gap-1.5 rounded-full border border-red-200 bg-red-50 px-3 py-1 text-xs font-medium text-red-700">
+                    <span class="h-2 w-2 rounded-full bg-red-500"></span>
+                    Occupied
+                </span>
+                <span class="inline-flex items-center gap-1.5 rounded-full border border-blue-200 bg-blue-50 px-3 py-1 text-xs font-medium text-blue-700">
+                    <span class="h-2 w-2 rounded-full bg-blue-500"></span>
+                    Reserved
+                </span>
+                <span class="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-medium text-slate-700">
+                    <span class="h-2 w-2 rounded-full bg-slate-500"></span>
+                    Maintenance
+                </span>
+            </div>
         </div>
-    </form>
+    </div>
 </div>
 
 <div class="mb-8 rounded-xl border border-gray-200 bg-white">
@@ -343,7 +345,8 @@
 
         if (updateSlotUrl) {
             document.querySelectorAll('[data-admin-slot]').forEach((card) => {
-                card.addEventListener('click', async () => {
+                card.addEventListener('click', async (event) => {
+                    if (event.target.closest('form')) return;
                     const statuses = ['Available', 'Occupied', 'Reserved', 'Maintenance'];
                     const current = card.dataset.currentStatus || 'Available';
                     const next = prompt(`Set status for ${card.dataset.slotNumber || 'slot'}:\n${statuses.join(' | ')}`, current);

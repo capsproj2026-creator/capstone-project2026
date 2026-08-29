@@ -239,13 +239,14 @@ void initGateActuator() {
   ESP32PWM::allocateTimer(3);
 
   gateServo.setPeriodHertz(50);
+  // attach() may return 0 on success (LEDC channel 0). Use attached() — 0 is not a failure.
   int channel = gateServo.attach(PIN_GATE, 500, 2400);
-  if (channel <= 0) {
+  if (!gateServo.attached()) {
     Serial.println("Servo attach failed on GPIO 14 — retrying simple attach...");
     channel = gateServo.attach(PIN_GATE);
   }
-  bool ok = channel > 0;
-  Serial.printf("Actuator: SERVO on GPIO %d (channel=%d) — shared boom for Entry+Exit\n", PIN_GATE, channel);
+  bool ok = gateServo.attached();
+  Serial.printf("Actuator: SERVO on GPIO %d (channel=%d attached=%d) — shared boom for Entry+Exit\n", PIN_GATE, channel, ok ? 1 : 0);
   if (!ok) {
     Serial.println("WARNING: Servo not attached. Update ESP32Servo library (3.x for Arduino ESP32 3.x).");
     Serial.println("         Check signal on GPIO 14 + external 5V + common GND.");

@@ -19,8 +19,8 @@ class CampusIdScanTest extends TestCase
     {
         $this->get(route('register'))
             ->assertOk()
-            ->assertSee('id_scan_status', false)
-            ->assertSee('auto-fill your name and SN', false);
+            ->assertSee('School ID')
+            ->assertDontSee('auto-fill your name and SN', false);
     }
 
     public function test_scan_endpoint_returns_parsed_fields(): void

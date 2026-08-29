@@ -49,7 +49,8 @@ If compile says `wifi_status_t` unknown — you need the latest synced `rfid_gat
 
 | Serial line | Meaning | Fix |
 |-------------|---------|-----|
-| `attach=0` or `channel=0` | Servo PWM failed | Install **ESP32Servo 3.x** if using Arduino ESP32 3.x core; check GPIO 14 wiring + 5V supply |
+| `Servo attach failed` then `attached=1` | Harmless on old firmware (channel 0 is success) | Re-flash latest sketch; ignore if boom still moves |
+| `attached=0` or `WARNING: Servo not attached` | Servo PWM really failed | Install **ESP32Servo 3.x** with Arduino ESP32 3.x; check GPIO 14 wiring + external 5V + common GND |
 | Stuck on `connecting wifi` | Old firmware or wrong SSID | Re-upload latest sketch; set `WIFI_SSID` exactly as phone Wi‑Fi list shows (spaces matter) |
 | `WiFi: SSID not found` | Wrong network name | Fix `WIFI_SSID` in `rfid_gate_config.h` — yours may be `MERCUSYS_08BA` not `MERCUSYS_08BA 2` |
 | `WiFi OK IP:` then heartbeat `-1` | Windows Firewall | Run `allow-laravel-firewall.bat` as Admin on the PC |

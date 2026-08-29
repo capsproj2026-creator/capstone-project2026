@@ -5,36 +5,36 @@
 @section('use_campus_bg', '1')
 
 @section('card_width')
-    max-w-2xl
+    max-w-3xl
 @endsection
 
 @section('content')
     <div class="overflow-hidden rounded-2xl border border-white/30 bg-white/95 shadow-2xl backdrop-blur-sm">
-        <div class="relative overflow-hidden bg-gradient-to-br from-blue-700 via-blue-800 to-slate-900 px-6 py-8 text-center text-white">
+        <div class="relative overflow-hidden bg-gradient-to-br from-blue-700 via-blue-800 to-slate-900 px-6 py-7 text-center text-white sm:px-8">
             <div class="pointer-events-none absolute inset-0 opacity-25" style="background-image: radial-gradient(circle at 20% 20%, #fff 0, transparent 40%), radial-gradient(circle at 80% 0%, #93c5fd 0, transparent 35%), radial-gradient(circle at 50% 100%, #1e3a8a 0, transparent 45%);"></div>
             <div class="relative">
-                <div class="mx-auto mb-4 flex h-20 w-20 items-center justify-center">
+                <div class="mx-auto mb-3 flex h-16 w-16 items-center justify-center sm:h-20 sm:w-20">
                     @if (! empty($hasCspcLogo) || is_file(public_path('images/cspc-logo.png')))
-                        <img src="{{ asset('images/cspc-logo.png') }}" alt="Camarines Sur Polytechnic Colleges" class="h-20 w-20 object-contain drop-shadow-lg">
+                        <img src="{{ asset('images/cspc-logo.png') }}" alt="Camarines Sur Polytechnic Colleges" class="h-16 w-16 object-contain drop-shadow-lg sm:h-20 sm:w-20">
                     @else
                         <i data-lucide="parking-square" class="h-7 w-7"></i>
                     @endif
                 </div>
-                <h1 class="text-2xl font-bold">Create Account</h1>
-                <p class="mt-1 text-sm text-blue-100">Join the CSPC Vehicle Management System</p>
+                <h1 class="text-2xl font-bold tracking-tight">Vehicle Registration</h1>
+                <p class="mt-1 text-sm text-blue-100">CSPC Gate pass for campus vehicles</p>
             </div>
         </div>
 
-        <div class="p-6 sm:p-8">
+        <div class="p-5 sm:p-8">
             @if (!empty($dbError))
-                <div class="mb-4 flex gap-2 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+                <div class="mb-5 flex gap-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
                     <i data-lucide="database" class="mt-0.5 h-4 w-4 shrink-0"></i>
                     <span>{{ $dbError }}</span>
                 </div>
             @endif
 
             @if ($errors->any() && empty($dbError))
-                <div class="mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
+                <div class="mb-5 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
                     <p class="font-medium">Please fix the following:</p>
                     <ul class="mt-2 list-inside list-disc space-y-1 text-xs">
                         @foreach ($errors->all() as $error)
@@ -45,36 +45,103 @@
             @endif
 
             @if (session('success'))
-                <div class="mb-4 flex gap-2 rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800">
+                <div class="mb-5 flex gap-2 rounded-xl border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800">
                     <i data-lucide="circle-check" class="mt-0.5 h-4 w-4 shrink-0"></i>
                     <span>{{ session('success') }}</span>
                 </div>
             @endif
 
-            <form method="POST" action="{{ route('register') }}" enctype="multipart/form-data" class="space-y-6" id="register-form" novalidate>
+            @if (! empty($converting))
+                <div class="mb-5 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">
+                    <p class="font-semibold">Unregistered student/faculty — finish this form to keep campus entry.</p>
+                    <p class="mt-1 text-xs text-amber-800">
+                        RFID {{ $converting->rfid_uid ?: $converting->temp_rfid_uid }} is already linked.
+                        @if ($converting->temporary_expires_at)
+                            Register before <span id="temp-deadline">{{ $converting->temporary_expires_at->timezone(config('app.timezone'))->format('M j, Y g:i A') }}</span>
+                            (<span id="temp-countdown">calculating…</span>).
+                        @endif
+                    </p>
+                </div>
+            @endif
+
+            <ol class="mb-6 hidden grid-cols-4 gap-2 sm:grid">
+                <li class="rounded-lg bg-blue-50 px-2 py-2 text-center">
+                    <p class="text-[10px] font-semibold uppercase tracking-wide text-blue-700">Step 1</p>
+                    <p class="text-xs font-medium text-gray-800">License</p>
+                </li>
+                <li class="rounded-lg bg-slate-50 px-2 py-2 text-center">
+                    <p class="text-[10px] font-semibold uppercase tracking-wide text-slate-500">Step 2</p>
+                    <p class="text-xs font-medium text-gray-800">Your info</p>
+                </li>
+                <li class="rounded-lg bg-slate-50 px-2 py-2 text-center">
+                    <p class="text-[10px] font-semibold uppercase tracking-wide text-slate-500">Step 3</p>
+                    <p class="text-xs font-medium text-gray-800">Vehicle</p>
+                </li>
+                <li class="rounded-lg bg-slate-50 px-2 py-2 text-center">
+                    <p class="text-[10px] font-semibold uppercase tracking-wide text-slate-500">Step 4</p>
+                    <p class="text-xs font-medium text-gray-800">LTO files</p>
+                </li>
+            </ol>
+
+            <form method="POST" action="{{ route('register') }}" enctype="multipart/form-data" class="divide-y divide-gray-100" id="register-form" novalidate>
                 @csrf
                 <input type="hidden" name="reg_category" id="reg_category" value="vehicle">
+                @if (! empty($converting))
+                    <input type="hidden" name="temp_token" value="{{ old('temp_token', $converting->temp_conversion_token) }}">
+                @endif
 
-                <div class="space-y-4 rounded-xl border border-gray-200 bg-gray-50/50 p-4 sm:p-5">
-                    <h2 class="text-sm font-semibold text-gray-900">Personal Information</h2>
+                <section class="space-y-4 pb-8">
+                    <div class="flex items-start gap-3">
+                        <span class="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-blue-600 text-xs font-bold text-white">1</span>
+                        <div>
+                            <h2 class="text-base font-semibold text-gray-900">Driver’s license</h2>
+                            <p class="mt-0.5 text-sm text-gray-500">Upload a clear photo of the <strong class="font-medium text-gray-700">front</strong> of your license. We’ll try to fill your name, address, and license number — please check them before submitting.</p>
+                        </div>
+                    </div>
 
-                    <x-auth.file-input
-                        name="profile_pic"
-                        id="profile_pic"
-                        label="Profile Picture"
-                        accept="image/*"
-                    />
-
-                    <div>
+                    <div class="grid grid-cols-1 gap-4 sm:grid-cols-[1fr_auto] sm:items-start">
                         <x-auth.file-input
-                            name="id_document"
-                            id="id_document"
-                            label="Valid ID Upload"
+                            name="driver_license"
+                            id="driver_license"
+                            label="Driver’s License Photo"
                             required
-                            accept="image/*,application/pdf"
+                            accept="image/*"
                         />
-                        <p id="id_scan_status" class="mt-2 hidden text-xs"></p>
-                        <p class="mt-1 text-xs text-gray-500">Upload a clear photo of your CSPC ID to auto-fill your name and SN. You can still edit the fields before submitting.</p>
+                        <img id="license-preview" alt="Driver’s license preview" class="hidden max-h-36 w-full rounded-xl border border-gray-200 bg-slate-50 object-contain sm:max-w-[11rem]">
+                    </div>
+                    <p id="license_scan_status" class="hidden text-xs"></p>
+                    @error('driver_license')
+                        <p class="text-xs text-red-600">{{ $message }}</p>
+                    @enderror
+                </section>
+
+                <section class="space-y-4 py-8">
+                    <div class="flex items-start gap-3">
+                        <span class="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-blue-600 text-xs font-bold text-white">2</span>
+                        <div>
+                            <h2 class="text-base font-semibold text-gray-900">Your information</h2>
+                            <p class="mt-0.5 text-sm text-gray-500">Photos, contact details, and campus account. Correct anything the scan missed.</p>
+                        </div>
+                    </div>
+
+                    <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                        <x-auth.file-input
+                            name="profile_pic"
+                            id="profile_pic"
+                            label="Profile Picture"
+                            required
+                            accept="image/*"
+                        />
+                        <div>
+                            <x-auth.file-input
+                                name="id_document"
+                                id="id_document"
+                                label="School ID"
+                                required
+                                accept="image/*,application/pdf"
+                            />
+                            <p class="mt-1 text-xs text-gray-500">Clear photo of your school ID. It is saved with your registration and is not scanned.</p>
+                        </div>
                     </div>
 
                     <x-auth.input
@@ -86,23 +153,42 @@
                     />
 
                     <div>
-                        <label for="id_number" class="mb-1.5 block text-sm font-medium text-gray-700">ID Number <span class="text-red-500">*</span></label>
-                        <input
-                            type="text"
-                            name="id_number"
-                            id="id_number"
-                            value="{{ old('id_number') }}"
+                        <label for="address" class="mb-1.5 block text-sm font-medium text-gray-700">Address <span class="text-red-500">*</span></label>
+                        <textarea
+                            name="address"
+                            id="address"
+                            rows="2"
                             required
-                            inputmode="text"
-                            pattern="[A-Za-z0-9]+"
-                            maxlength="50"
-                            placeholder="e.g. 23100XXXX (SN on ID)"
-                            title="Use letters and numbers only (max 50)"
-                            class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm text-gray-900 shadow-sm placeholder:text-gray-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20 @error('id_number') border-red-500 focus:border-red-500 focus:ring-red-500/20 @enderror"
-                        >
-                        @error('id_number')
+                            placeholder="House / street, barangay, city, province"
+                            class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm uppercase text-gray-900 shadow-sm placeholder:text-gray-400 placeholder:normal-case focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20 @error('address') border-red-500 focus:border-red-500 focus:ring-red-500/20 @enderror"
+                        >{{ old('address') }}</textarea>
+                        <p class="mt-1 text-xs text-gray-500">Street, barangay, city, and province should appear once. Fix duplicates if needed.</p>
+                        @error('address')
                             <p class="mt-1 text-xs text-red-600">{{ $message }}</p>
                         @enderror
+                    </div>
+
+                    <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                        <x-auth.input label="Contact Number" name="phone_number" required placeholder="09XX XXX XXXX" value="{{ old('phone_number') }}" />
+                        <div>
+                            <label for="id_number" class="mb-1.5 block text-sm font-medium text-gray-700">ID Number / SN <span class="text-red-500">*</span></label>
+                            <input
+                                type="text"
+                                name="id_number"
+                                id="id_number"
+                                value="{{ old('id_number') }}"
+                                required
+                                inputmode="text"
+                                pattern="[A-Za-z0-9]+"
+                                maxlength="50"
+                                placeholder="e.g. 23100XXXX"
+                                title="Use letters and numbers only (max 50)"
+                                class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm text-gray-900 shadow-sm placeholder:text-gray-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20 @error('id_number') border-red-500 focus:border-red-500 focus:ring-red-500/20 @enderror"
+                            >
+                            @error('id_number')
+                                <p class="mt-1 text-xs text-red-600">{{ $message }}</p>
+                            @enderror
+                        </div>
                     </div>
 
                     <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -122,7 +208,13 @@
                                 <p class="mt-1 text-xs text-red-600">{{ $message }}</p>
                             @enderror
                         </div>
-                        <x-auth.input label="Phone Number" name="phone_number" required placeholder="09XX XXX XXXX" value="{{ old('phone_number') }}" />
+                        <x-auth.input
+                            label="Driver’s License Number"
+                            name="driver_license_number"
+                            required
+                            placeholder="e.g. N01-12-345678"
+                            value="{{ old('driver_license_number') }}"
+                        />
                     </div>
 
                     <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -180,17 +272,20 @@
                             @enderror
                         </div>
                     </div>
-                </div>
+                </section>
 
-                <div id="vehicle-fields" class="space-y-4 rounded-xl border border-blue-200 bg-blue-50/30 p-4 sm:p-5">
-                    <h2 class="flex items-center gap-2 text-sm font-semibold text-gray-900">
-                        <i data-lucide="car" class="h-4 w-4 text-blue-600"></i>
-                        Vehicle Details
-                    </h2>
+                <section id="vehicle-fields" class="space-y-4 py-8">
+                    <div class="flex items-start gap-3">
+                        <span class="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-blue-600 text-xs font-bold text-white">3</span>
+                        <div>
+                            <h2 class="text-base font-semibold text-gray-900">Vehicle</h2>
+                            <p class="mt-0.5 text-sm text-gray-500">Use the same details printed on your OR and CR.</p>
+                        </div>
+                    </div>
 
                     <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
                         <div>
-                            <label for="vehicle_id" class="mb-1.5 block text-sm font-medium text-gray-700">Vehicle Type <span class="text-red-500">*</span></label>
+                            <label for="vehicle_id" class="mb-1.5 block text-sm font-medium text-gray-700">Type of Vehicle <span class="text-red-500">*</span></label>
                             <select
                                 name="vehicle_id"
                                 id="vehicle_id"
@@ -208,35 +303,63 @@
                                 <p class="mt-1 text-xs text-red-600">{{ $message }}</p>
                             @enderror
                         </div>
-                        <x-auth.input label="Plate Number" name="plate_number" required placeholder="ABC-1234" value="{{ old('plate_number') }}" />
+                        <x-auth.input label="Model" name="vehicle_model" required placeholder="e.g. Honda Click 125" value="{{ old('vehicle_model', $converting?->vehicle_model) }}" />
                     </div>
 
                     <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                        <x-auth.file-input
-                            name="driver_license"
-                            id="driver_license"
-                            label="Driver's License"
-                            required
-                            accept="image/*"
-                        />
-                        <x-auth.file-input
-                            name="or_cr_photo"
-                            id="or_cr_photo"
-                            label="OR / CR File (Image or PDF)"
-                            required
-                            accept="image/*,application/pdf"
-                        />
+                        <x-auth.input label="Color" name="vehicle_color" required placeholder="e.g. White" value="{{ old('vehicle_color', $converting?->vehicle_color) }}" />
+                        <x-auth.input label="Plate Number" name="plate_number" required placeholder="ABC-1234" value="{{ old('plate_number', $converting?->plate_number) }}" />
                     </div>
-                    <p class="text-xs text-gray-500">Driver's license image and OR/CR document (image or PDF) are required for vehicle owner registration.</p>
-                </div>
+                    @if (! empty($converting) && filled($converting->rfid_uid ?: $converting->temp_rfid_uid))
+                        <p class="text-xs text-gray-500">RFID UID <span class="font-mono font-semibold text-gray-800">{{ $converting->rfid_uid ?: $converting->temp_rfid_uid }}</span> will stay linked after you register.</p>
+                    @endif
+                </section>
 
-                <button
-                    type="submit"
-                    class="flex w-full cursor-pointer items-center justify-center gap-2 rounded-lg bg-blue-600 py-3 text-sm font-semibold text-white transition-colors hover:bg-blue-700"
-                >
-                    <i data-lucide="user-plus" class="h-4 w-4"></i>
-                    Register Account
-                </button>
+                <section class="space-y-4 py-8">
+                    <div class="flex items-start gap-3">
+                        <span class="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-blue-600 text-xs font-bold text-white">4</span>
+                        <div>
+                            <h2 class="text-base font-semibold text-gray-900">LTO documents</h2>
+                            <p class="mt-0.5 text-sm text-gray-500">Upload clear photos of your Official Receipt and Certificate of Registration.</p>
+                        </div>
+                    </div>
+
+                    <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                        <div>
+                            <x-auth.file-input
+                                name="lto_or_photo"
+                                id="lto_or_photo"
+                                label="LTO Official Receipt (OR)"
+                                required
+                                accept="image/*,application/pdf"
+                                capture="environment"
+                            />
+                            <p id="or_scan_status" class="mt-2 hidden text-xs"></p>
+                        </div>
+                        <div>
+                            <x-auth.file-input
+                                name="lto_cr_photo"
+                                id="lto_cr_photo"
+                                label="LTO Certificate of Registration (CR)"
+                                required
+                                accept="image/*,application/pdf"
+                                capture="environment"
+                            />
+                            <p id="cr_scan_status" class="mt-2 hidden text-xs"></p>
+                        </div>
+                    </div>
+                </section>
+
+                <div class="pt-8">
+                    <button
+                        type="submit"
+                        class="flex w-full cursor-pointer items-center justify-center gap-2 rounded-xl bg-blue-600 py-3 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-blue-700"
+                    >
+                        <i data-lucide="{{ ! empty($converting) ? 'clipboard-check' : 'user-plus' }}" class="h-4 w-4"></i>
+                        {{ ! empty($converting) ? 'Complete Registration' : 'Submit registration' }}
+                    </button>
+                    <p class="mt-3 text-center text-xs text-gray-500">GSU reviews submissions before gate access is granted.</p>
+                </div>
             </form>
 
             <p class="mt-6 text-center text-sm text-gray-500">
@@ -253,7 +376,7 @@
             const form = document.getElementById('register-form');
             const requiredFields = [
                 { id: 'email', label: 'Email address' },
-                { id: 'phone_number', label: 'Phone number' },
+                { id: 'phone_number', label: 'Contact number' },
                 { id: 'password', label: 'Password' },
                 { id: 'password_confirmation', label: 'Password confirmation' },
                 { id: 'plate_number', label: 'Plate number' },
@@ -270,27 +393,35 @@
                             return;
                         }
                     }
+
+                    const licenseInput = document.getElementById('driver_license');
+                    if (!licenseInput?.files?.length) {
+                        event.preventDefault();
+                        licenseInput?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                        setStatus(
+                            document.getElementById('license_scan_status'),
+                            'Please upload a photo of your driver’s license.',
+                            'error'
+                        );
+                        return;
+                    }
+
+                    const profileInput = document.getElementById('profile_pic');
+                    if (!profileInput?.files?.length) {
+                        event.preventDefault();
+                        profileInput?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                        profileInput?.reportValidity?.();
+                    }
                 });
             }
 
-            const input = document.getElementById('id_document');
-            const statusEl = document.getElementById('id_scan_status');
-            const fields = {
-                id_number: document.getElementById('id_number'),
-                full_name: document.getElementById('full_name'),
-            };
-
-            if (!input || !statusEl) {
-                return;
-            }
-
-            let scanToken = 0;
-            let scanning = false;
-
-            const setStatus = (message, tone) => {
-                statusEl.textContent = message;
-                statusEl.classList.remove('hidden', 'text-blue-700', 'text-green-700', 'text-amber-700', 'text-red-600');
-                statusEl.classList.add(
+            const setStatus = (el, message, tone) => {
+                if (!el) {
+                    return;
+                }
+                el.textContent = message;
+                el.classList.remove('hidden', 'text-blue-700', 'text-green-700', 'text-amber-700', 'text-red-600', 'text-gray-500');
+                el.classList.add(
                     tone === 'success' ? 'text-green-700'
                         : tone === 'warning' ? 'text-amber-700'
                             : tone === 'error' ? 'text-red-600'
@@ -302,36 +433,40 @@
                 if (!field || value == null || value === '') {
                     return;
                 }
-                field.value = value;
+                field.value = field.id === 'address' ? String(value).toUpperCase() : value;
                 field.dispatchEvent(new Event('input', { bubbles: true }));
+                field.dispatchEvent(new Event('change', { bubbles: true }));
             };
 
-            input.addEventListener('change', async function () {
-                const file = input.files?.[0];
-                if (!file) {
-                    statusEl.classList.add('hidden');
-                    return;
+            document.getElementById('address')?.addEventListener('input', function () {
+                const start = this.selectionStart;
+                const end = this.selectionEnd;
+                this.value = String(this.value || '').toUpperCase();
+                if (typeof start === 'number' && typeof end === 'number') {
+                    this.setSelectionRange(start, end);
                 }
+            });
 
-                if (scanning) {
+            const scanDocument = async ({ input, endpoint, fieldName, statusEl, onSuccess }) => {
+                const file = input?.files?.[0];
+                if (!file) {
+                    statusEl?.classList.add('hidden');
                     return;
                 }
 
                 if (!file.type.startsWith('image/')) {
-                    setStatus('PDF uploaded. Enter your name and SN manually, or upload a JPG/PNG photo for auto-scan.', 'warning');
+                    setStatus(statusEl, 'PDF uploaded. Enter details manually, or upload a JPG/PNG photo for auto-scan.', 'warning');
                     return;
                 }
 
-                const token = ++scanToken;
-                scanning = true;
-                setStatus('Scanning campus ID… this can take up to a minute on the first scan.', 'info');
+                setStatus(statusEl, 'Reading your license… this can take a moment.', 'info');
 
                 const body = new FormData();
-                body.append('id_document', file);
+                body.append(fieldName, file);
                 body.append('_token', document.querySelector('meta[name="csrf-token"]')?.content || '');
 
                 try {
-                    const response = await fetch(@json(route('register.scan-id')), {
+                    const response = await fetch(endpoint, {
                         method: 'POST',
                         body,
                         headers: {
@@ -347,47 +482,130 @@
                         data = {};
                     }
 
-                    if (token !== scanToken) {
-                        return;
-                    }
-
                     if (response.status === 429) {
-                        setStatus(data.message || 'Too many scan attempts. Please wait about a minute, then try again.', 'warning');
+                        setStatus(statusEl, data.message || 'Too many scan attempts. Please wait about a minute, then try again.', 'warning');
                         return;
                     }
 
-                    if (!response.ok || !data.ok) {
-                        setStatus(data.message || 'Could not scan this photo. Please enter your details manually.', 'warning');
+                    if (data.address || data.full_name || data.driver_license_number || data.plate_number || (Array.isArray(data.warnings) && data.warnings.length)) {
+                        onSuccess(data);
                         return;
                     }
 
-                    fillField(fields.id_number, data.id_number);
-
-                    if (data.full_name && data.name_complete) {
-                        fillField(fields.full_name, data.full_name);
-                    }
-
-                    const warnings = Array.isArray(data.warnings) ? data.warnings.filter(Boolean) : [];
-                    if (warnings.length > 0) {
-                        setStatus(`Auto-filled with notes: ${warnings.join(' ')}`, 'warning');
-                    } else if (data.full_name && data.name_complete) {
-                        setStatus('Full name and SN auto-filled from your ID. Please confirm before submitting.', 'success');
-                    } else if (data.id_number) {
-                        setStatus('SN auto-filled. Please enter your full name manually.', 'warning');
-                    } else {
-                        setStatus('Could not scan this photo. Please enter your details manually.', 'warning');
-                    }
+                    setStatus(statusEl, data.message || 'Could not scan this photo. Please enter your details manually.', 'warning');
                 } catch (error) {
-                    if (token !== scanToken) {
+                    setStatus(statusEl, 'Scan failed. Please enter your details manually.', 'error');
+                }
+            };
+
+            const licenseInput = document.getElementById('driver_license');
+            const licenseStatus = document.getElementById('license_scan_status');
+
+            const applyLicenseScan = (data) => {
+                fillField(document.getElementById('full_name'), data.full_name);
+                fillField(document.getElementById('address'), data.address);
+                fillField(document.getElementById('phone_number'), data.phone_number);
+                fillField(document.getElementById('driver_license_number'), data.driver_license_number);
+                if (data.plate_number) {
+                    fillField(document.getElementById('plate_number'), data.plate_number);
+                }
+
+                const warnings = Array.isArray(data.warnings) ? data.warnings.filter(Boolean) : [];
+                if (warnings.length > 0) {
+                    setStatus(licenseStatus, `Filled what we could. ${warnings.join(' ')}`, 'warning');
+                } else {
+                    setStatus(licenseStatus, 'Details filled from your license. Please check your name, address, and license number.', 'success');
+                }
+            };
+
+            const licensePreview = document.getElementById('license-preview');
+            licenseInput?.addEventListener('change', () => {
+                const file = licenseInput.files?.[0];
+                if (file && file.type.startsWith('image/') && licensePreview) {
+                    licensePreview.src = URL.createObjectURL(file);
+                    licensePreview.classList.remove('hidden');
+                } else if (licensePreview) {
+                    licensePreview.classList.add('hidden');
+                    licensePreview.removeAttribute('src');
+                }
+
+                scanDocument({
+                    input: licenseInput,
+                    endpoint: @json(route('register.scan-license')),
+                    fieldName: 'driver_license',
+                    statusEl: licenseStatus,
+                    onSuccess: applyLicenseScan,
+                });
+            });
+
+            const scanOrCr = (input, kind, statusEl) => {
+                const file = input?.files?.[0];
+                if (!file || !statusEl) {
+                    return;
+                }
+                if (!file.type.startsWith('image/')) {
+                    setStatus(statusEl, 'PDF uploaded. Review the file before submitting — auto-check works best with a photo.', 'warning');
+                    return;
+                }
+
+                setStatus(statusEl, 'Checking document…', 'info');
+                const body = new FormData();
+                body.append('document', file);
+                body.append('kind', kind);
+                body.append('plate_number', document.getElementById('plate_number')?.value || '');
+                body.append('_token', document.querySelector('meta[name="csrf-token"]')?.content || '');
+
+                fetch(@json(route('register.scan-orcr')), {
+                    method: 'POST',
+                    body,
+                    headers: {
+                        'Accept': 'application/json',
+                        'X-Requested-With': 'XMLHttpRequest',
+                    },
+                }).then(async (response) => {
+                    let data = {};
+                    try {
+                        data = await response.json();
+                    } catch (parseError) {
+                        data = {};
+                    }
+                    const warnings = Array.isArray(data.warnings) ? data.warnings.filter(Boolean) : [];
+                    if (warnings.length) {
+                        setStatus(statusEl, warnings.join(' '), 'warning');
+                    } else {
+                        setStatus(statusEl, data.message || 'Document looks like an LTO file. Please still review before submitting.', 'success');
+                    }
+                    if (data.plate_number && !document.getElementById('plate_number')?.value) {
+                        fillField(document.getElementById('plate_number'), data.plate_number);
+                    }
+                }).catch(() => {
+                    setStatus(statusEl, 'Could not auto-check this file. Review it manually before submitting.', 'warning');
+                });
+            };
+
+            document.getElementById('lto_or_photo')?.addEventListener('change', function () {
+                scanOrCr(this, 'or', document.getElementById('or_scan_status'));
+            });
+            document.getElementById('lto_cr_photo')?.addEventListener('change', function () {
+                scanOrCr(this, 'cr', document.getElementById('cr_scan_status'));
+            });
+
+            const countdownEl = document.getElementById('temp-countdown');
+            const expiresAt = @json(optional($converting?->temporary_expires_at)->toIso8601String());
+            if (countdownEl && expiresAt) {
+                const tick = () => {
+                    const remaining = new Date(expiresAt).getTime() - Date.now();
+                    if (remaining <= 0) {
+                        countdownEl.textContent = 'expired — register now to restore access after approval';
                         return;
                     }
-                    setStatus('Scan failed. Please enter your name and SN manually.', 'error');
-                } finally {
-                    if (token === scanToken) {
-                        scanning = false;
-                    }
-                }
-            });
+                    const hours = Math.floor(remaining / 3600000);
+                    const minutes = Math.floor((remaining % 3600000) / 60000);
+                    countdownEl.textContent = hours + 'h ' + minutes + 'm remaining';
+                };
+                tick();
+                window.setInterval(tick, 30000);
+            }
         });
     </script>
 @endpush

@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\User;
 use App\Services\NavigationService;
 use App\Services\RfidAccessService;
+use App\Services\TemporaryRfidService;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -155,10 +156,7 @@ class RfidController extends Controller
                 ->with('error', 'Cannot approve RFID for a denied registration. Re-approve the registration first.');
         }
 
-        $taken = User::query()
-            ->where('rfid_uid', $uid)
-            ->where('id', '!=', $user->id)
-            ->exists();
+        $taken = $this->rfidUidTakenByAnother($uid, (int) $user->id);
 
         if ($taken) {
             return redirect()
@@ -219,10 +217,7 @@ class RfidController extends Controller
                     ->with('error', 'Enter and save a valid RFID UID before granting access.');
             }
 
-            $taken = User::query()
-                ->where('rfid_uid', $uid)
-                ->where('id', '!=', $user->id)
-                ->exists();
+            $taken = $this->rfidUidTakenByAnother($uid, (int) $user->id);
 
             if ($taken) {
                 return redirect()
@@ -276,5 +271,22 @@ class RfidController extends Controller
         }
 
         return redirect()->route('admin.rfid', ['tab' => $tab]);
+    }
+
+    private function rfidUidTakenByAnother(string $uid, int $ignoreUserId): bool
+    {
+        return User::query()
+            ->where('id', '!=', $ignoreUserId)
+            ->where(function ($q) use ($uid) {
+                $q->where('rfid_uid', $uid)
+                    ->orWhere(function ($inner) use ($uid) {
+                        $inner->where('temp_rfid_uid', $uid)
+                            ->where(function ($type) {
+                                $type->whereNull('account_type')
+                                    ->orWhere('account_type', '!=', TemporaryRfidService::ACCOUNT_TEMPORARY);
+                            });
+                    });
+            })
+            ->exists();
     }
 }

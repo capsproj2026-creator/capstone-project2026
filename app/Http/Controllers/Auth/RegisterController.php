@@ -9,6 +9,7 @@ use App\Models\User;
 use App\Models\Vehicle;
 use App\Services\NavigationService;
 use App\Services\SequenceService;
+use App\Services\TemporaryRfidService;
 use App\Support\PasswordRules;
 use App\Support\RegistrationCooldown;
 use App\Support\SafeUpload;
@@ -33,9 +34,6 @@ class RegisterController extends Controller
         'BUHI',
     ];
 
-    /**
-     * @return array<string, string>
-     */
     public static function registrationDepartmentLabels(): array
     {
         return [
@@ -49,7 +47,7 @@ class RegisterController extends Controller
         ];
     }
 
-    public function show(): View|RedirectResponse
+    public function show(Request $request): View|RedirectResponse
     {
         $user = Auth::user();
 
@@ -89,12 +87,15 @@ class RegisterController extends Controller
             $dbError = 'Database connection is not available. Registration form options may be empty until the database is configured.';
         }
 
+        $converting = app(TemporaryRfidService::class)->findByConversionToken($request->query('temp') ?? $request->old('temp_token'));
+
         return view('auth.register', [
             'dbError' => $dbError,
             'departments' => $departments,
             'vehicleTypes' => $vehicleTypes,
             'passwordHint' => PasswordRules::hint(),
             'hasCspcLogo' => is_file(public_path('images/cspc-logo.png')),
+            'converting' => $converting,
         ]);
     }
 
@@ -119,10 +120,15 @@ class RegisterController extends Controller
     {
         $email = strtolower(trim((string) $request->input('email')));
         $idNumber = trim((string) $request->input('id_number'));
+        $temps = app(TemporaryRfidService::class);
+        $converting = $temps->findByConversionToken($request->input('temp_token'));
 
         RegistrationCooldown::purgeExpiredDeniedCollisions($email, $idNumber);
 
         $blocking = RegistrationCooldown::findBlockingDeniedUser($email, $idNumber);
+        if ($blocking && $converting && (int) $blocking->id === (int) $converting->id) {
+            $blocking = null;
+        }
         if ($blocking && RegistrationCooldown::isWithinCooldown($blocking)) {
             throw ValidationException::withMessages([
                 'email' => RegistrationCooldown::remainingMessage($blocking),
@@ -134,43 +140,57 @@ class RegisterController extends Controller
             ->map(fn ($id) => (string) $id)
             ->all();
 
+        $ignoreId = $converting?->id;
+
         $validated = $request->validate([
+            'temp_token' => ['nullable', 'string', 'max:80'],
             'full_name' => ['required', 'string', 'max:150'],
+            'address' => ['required', 'string', 'max:255'],
             'email' => [
                 'required',
                 'email:rfc,dns',
                 'max:100',
-                Rule::unique(User::class, 'email'),
+                Rule::unique(User::class, 'email')->ignore($ignoreId),
             ],
             'phone_number' => ['required', 'string', 'max:20', 'min:7'],
             'password' => PasswordRules::required(),
-            'id_number' => ['required', 'string', 'max:50', 'regex:/^[A-Za-z0-9]+$/', Rule::unique(User::class, 'id_number')],
+            'id_number' => ['required', 'string', 'max:50', 'regex:/^[A-Za-z0-9]+$/', Rule::unique(User::class, 'id_number')->ignore($ignoreId)],
             'reg_category' => ['required', 'in:vehicle'],
-            'profile_pic' => ['nullable', 'image', 'max:5120'],
+            'profile_pic' => ['required', 'image', 'max:5120'],
             'id_document' => ['required', 'file', 'mimes:jpg,jpeg,png,pdf', 'max:5120'],
             'user_type' => ['required', 'in:Student,Staff'],
             'plate_number' => ['required', 'string', 'max:20', 'min:2'],
+            'vehicle_model' => ['required', 'string', 'max:80'],
+            'vehicle_color' => ['required', 'string', 'max:40'],
             'department_code' => ['required', 'string', Rule::in(self::REGISTRATION_DEPARTMENT_CODES)],
             'vehicle_id' => ['required', Rule::in($vehicleIds)],
+            'driver_license_number' => ['required', 'string', 'max:30'],
             'driver_license' => ['required', 'image', 'max:5120'],
-            'or_cr_photo' => ['required', 'file', 'mimes:jpg,jpeg,png,pdf', 'max:5120'],
+            'lto_or_photo' => ['required', 'file', 'mimes:jpg,jpeg,png,pdf', 'max:5120'],
+            'lto_cr_photo' => ['required', 'file', 'mimes:jpg,jpeg,png,pdf', 'max:5120'],
         ], [
             'full_name.required' => 'Please enter your full name.',
+            'address.required' => 'Please enter your address.',
             'email.required' => 'Please enter your email address.',
             'email.email' => 'Please enter a valid email address with a working domain (format and DNS check).',
             'email.unique' => 'This email address is already registered.',
-            'phone_number.required' => 'Please enter your phone number.',
-            'phone_number.min' => 'Please enter a valid phone number.',
+            'phone_number.required' => 'Please enter your contact number.',
+            'phone_number.min' => 'Please enter a valid contact number.',
             'password.required' => 'Please enter a password.',
             'password.confirmed' => 'Password confirmation does not match.',
             'plate_number.required' => 'Please enter your plate number.',
             'plate_number.min' => 'Please enter a valid plate number.',
-            'id_document.required' => 'Please upload a valid ID document.',
+            'vehicle_model.required' => 'Please enter the vehicle model.',
+            'vehicle_color.required' => 'Please enter the vehicle color.',
+            'id_document.required' => 'Please upload a clear photo of a valid identification / school ID.',
+            'profile_pic.required' => 'Please upload a profile picture.',
             'user_type.required' => 'Please select a user type.',
             'department_code.required' => 'Please select a department.',
             'vehicle_id.required' => 'Please select a vehicle type.',
-            'driver_license.required' => 'Please upload your driver\'s license.',
-            'or_cr_photo.required' => 'Please upload your OR/CR document.',
+            'driver_license_number.required' => 'Please enter your driver\'s license number.',
+            'driver_license.required' => 'Please capture or upload your driver\'s license in the scanner.',
+            'lto_or_photo.required' => 'Please upload a clear photo of the LTO Official Receipt (OR).',
+            'lto_cr_photo.required' => 'Please upload a clear photo of the LTO Certificate of Registration (CR).',
         ]);
 
         if ($blocking && RegistrationCooldown::passwordMatchesDenied($blocking, $validated['password'])) {
@@ -195,10 +215,16 @@ class RegisterController extends Controller
             'LIC',
             'local'
         );
-        $orcrFilename = SafeUpload::store(
-            $request->file('or_cr_photo'),
+        $orFilename = SafeUpload::store(
+            $request->file('lto_or_photo'),
             'uploads/documents/orcr',
-            'ORCR',
+            'OR',
+            'local'
+        );
+        $crFilename = SafeUpload::store(
+            $request->file('lto_cr_photo'),
+            'uploads/documents/cr',
+            'CR',
             'local'
         );
         $idDocFilename = SafeUpload::store(
@@ -214,16 +240,23 @@ class RegisterController extends Controller
             'fullname' => $fullname,
             'email' => $validated['email'],
             'phone_number' => $validated['phone_number'],
+            'address' => mb_strtoupper(trim($validated['address']), 'UTF-8'),
+            'application_date' => now(),
             'password' => Hash::make($validated['password']),
             'user_role_id' => $userRoleId,
             'department_code' => $departmentCode,
             'vehicle_id' => $vehicleId,
+            'vehicle_model' => trim($validated['vehicle_model']),
+            'vehicle_color' => trim($validated['vehicle_color']),
             'id_number' => $validated['id_number'],
             'plate_number' => $plateNumber,
+            'driver_license_number' => strtoupper(trim($validated['driver_license_number'])),
             'profile_pic' => $profileFilename,
             'id_document' => $idDocFilename,
             'driver_license' => $licenseFilename,
-            'or_cr_photo' => $orcrFilename,
+            'or_cr_photo' => $orFilename,
+            'lto_or_photo' => $orFilename,
+            'lto_cr_photo' => $crFilename,
             'status' => User::STATUS_PENDING,
             'strike_count' => 0,
             'Gate_access' => User::GATE_ACCESS_PENDING,
@@ -234,24 +267,31 @@ class RegisterController extends Controller
 
         $user = null;
         $lastError = null;
-        for ($attempt = 0; $attempt < 2; $attempt++) {
-            try {
-                $payloadWithId = $payload;
-                $payloadWithId['id'] = SequenceService::next('users');
 
-                $user = User::query()->create($payloadWithId);
-                $lastError = null;
-                break;
-            } catch (\Throwable $e) {
-                $lastError = $e;
-                if ($attempt === 1 || ! str_contains($e->getMessage(), 'duplicate key')) {
-                    throw $e;
+        if ($converting) {
+            unset($payload['created_at']);
+            $user = $temps->convertToFull($converting, $payload);
+        } else {
+            for ($attempt = 0; $attempt < 2; $attempt++) {
+                try {
+                    $payloadWithId = $payload;
+                    $payloadWithId['id'] = SequenceService::next('users');
+                    $payloadWithId['account_type'] = TemporaryRfidService::ACCOUNT_FULL;
+
+                    $user = User::query()->create($payloadWithId);
+                    $lastError = null;
+                    break;
+                } catch (\Throwable $e) {
+                    $lastError = $e;
+                    if ($attempt === 1 || ! str_contains($e->getMessage(), 'duplicate key')) {
+                        throw $e;
+                    }
                 }
             }
-        }
 
-        if (! $user && $lastError) {
-            throw $lastError;
+            if (! $user && $lastError) {
+                throw $lastError;
+            }
         }
 
         Notification::query()->create([
@@ -272,18 +312,6 @@ class RegisterController extends Controller
         return redirect()
             ->route('verification.notice')
             ->with('success', 'Registration successful! Please verify your email to continue.');
-    }
-
-    public static function composeFullName(string $first, string $last, ?string $middle = null): string
-    {
-        $parts = [trim($first)];
-        $middle = trim((string) $middle);
-        if ($middle !== '') {
-            $parts[] = $middle;
-        }
-        $parts[] = trim($last);
-
-        return preg_replace('/\s+/', ' ', implode(' ', $parts)) ?: trim($first.' '.$last);
     }
 
     private function storeUpload(Request $request, string $field, string $directory, string $default): string

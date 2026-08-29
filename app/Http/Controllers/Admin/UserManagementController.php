@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
+use App\Models\GateLog;
 use App\Models\User;
 use App\Support\SearchHelper;
 use Illuminate\Http\Request;
@@ -88,8 +89,15 @@ class UserManagementController extends Controller
             ? 'Back to Registrations'
             : 'Back to User Management';
 
+        $user = User::query()->with(['role', 'department', 'vehicleType'])->findOrFail($id);
+
         return view('admin.view-user', [
-            'user' => User::query()->with(['role', 'department', 'vehicleType'])->findOrFail($id),
+            'user' => $user,
+            'recentGateLogs' => GateLog::query()
+                ->where('user_id', $user->id)
+                ->orderByDesc('timestamp')
+                ->limit(10)
+                ->get(),
             'backUrl' => $backUrl,
             'backLabel' => $backLabel,
         ]);
@@ -100,12 +108,22 @@ class UserManagementController extends Controller
      */
     public function document(int $id, string $doc): BinaryFileResponse
     {
-        abort_unless(in_array($doc, ['license', 'orcr'], true), 404);
+        abort_unless(in_array($doc, ['license', 'orcr', 'or', 'cr', 'id'], true), 404);
 
         $user = User::query()->findOrFail($id);
-        $field = $doc === 'orcr' ? 'or_cr_photo' : 'driver_license';
-        $directory = $doc === 'orcr' ? 'uploads/documents/orcr' : 'uploads/documents/license';
+
+        [$field, $directory] = match ($doc) {
+            'orcr' => ['or_cr_photo', 'uploads/documents/orcr'],
+            'or' => ['lto_or_photo', 'uploads/documents/orcr'],
+            'cr' => ['lto_cr_photo', 'uploads/documents/cr'],
+            'id' => ['id_document', 'uploads/documents/id'],
+            default => ['driver_license', 'uploads/documents/license'],
+        };
+
         $absolute = $user->resolveDocumentAbsolutePath($field, $directory);
+        if ($absolute === null && $doc === 'or') {
+            $absolute = $user->resolveDocumentAbsolutePath('or_cr_photo', 'uploads/documents/orcr');
+        }
 
         abort_if($absolute === null || ! is_file($absolute), 404);
 

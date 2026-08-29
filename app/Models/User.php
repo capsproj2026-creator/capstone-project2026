@@ -62,15 +62,39 @@ class User extends Authenticatable implements MustVerifyEmail
         'id_number',
         'plate_number',
         'driver_license',
+        'driver_license_number',
         'or_cr_photo',
+        'lto_or_photo',
+        'lto_cr_photo',
+        'address',
+        'application_date',
+        'vehicle_model',
+        'vehicle_color',
+        'ownership_type',
+        'ownership_other',
+        'usage_type',
+        'usage_other',
+        'affiliation',
+        'affiliation_other',
+        'course_year_section',
         'status',
         'strike_count',
         'Gate_access',
         'rfid_uid',
+        'temp_rfid_uid',
+        'payment_status',
+        'payment_reference',
+        'paid_at',
         'google_id',
         'job_title',
         'id_document',
         'declined_at',
+        'decline_remarks',
+        'account_type',
+        'temporary_expires_at',
+        'temporary_sequence',
+        'temp_identity_key',
+        'temp_conversion_token',
         'email_verified_at',
         'email_verification_token',
         'email_verification_expires_at',
@@ -88,10 +112,30 @@ class User extends Authenticatable implements MustVerifyEmail
             'user_role_id' => 'integer',
             'vehicle_id' => 'integer',
             'created_at' => 'datetime',
+            'application_date' => 'datetime',
             'declined_at' => 'datetime',
+            'temporary_expires_at' => 'datetime',
+            'temporary_sequence' => 'integer',
+            'paid_at' => 'datetime',
             'email_verified_at' => 'datetime',
             'email_verification_expires_at' => 'datetime',
         ];
+    }
+
+    public function isTemporaryAccount(): bool
+    {
+        return ($this->account_type ?? '') === \App\Services\TemporaryRfidService::ACCOUNT_TEMPORARY;
+    }
+
+    public function temporaryAccessExpired(): bool
+    {
+        if (! $this->isTemporaryAccount()) {
+            return false;
+        }
+
+        $expires = $this->temporary_expires_at;
+
+        return $expires !== null && $expires->lte(now());
     }
 
     public function role(): BelongsTo
@@ -202,7 +246,19 @@ class User extends Authenticatable implements MustVerifyEmail
 
     public function isCampusVehicleOwner(): bool
     {
-        return in_array((int) ($this->user_role_id ?? 0), [3, 4], true);
+        return in_array((int) ($this->user_role_id ?? 0), [
+            \App\Services\NavigationService::ROLE_STUDENT,
+            \App\Services\NavigationService::ROLE_STAFF,
+        ], true);
+    }
+
+    public function gateRoleLabel(): string
+    {
+        if ($this->isTemporaryAccount()) {
+            return 'Student / Faculty';
+        }
+
+        return $this->roleName() ?? 'Unknown';
     }
 
     public function loginBlockedReason(): ?string
@@ -211,8 +267,20 @@ class User extends Authenticatable implements MustVerifyEmail
             return 'Your account has been permanently locked after receiving '.self::MAX_STRIKES.' violations. Contact the administration office.';
         }
 
+        if ($this->isTemporaryAccount()) {
+            if ($this->temporaryAccessExpired()) {
+                return \App\Services\TemporaryRfidService::EXPIRED_MESSAGE;
+            }
+
+            return 'This is an unregistered student/faculty gate pass. Complete vehicle registration to keep campus access.';
+        }
+
         if ($this->status === self::STATUS_DENIED) {
-            return 'Your registration was declined.';
+            $remarks = trim((string) ($this->decline_remarks ?? ''));
+
+            return $remarks !== ''
+                ? 'Your registration was declined: '.$remarks
+                : 'Your registration was declined.';
         }
 
         if ($this->status === self::STATUS_PENDING) {
@@ -268,7 +336,12 @@ class User extends Authenticatable implements MustVerifyEmail
 
         // Prefer private local disk; fall back to legacy public copies.
         if (Storage::disk('local')->exists($path) || Storage::disk('public')->exists($path)) {
-            $doc = $field === 'or_cr_photo' ? 'orcr' : 'license';
+            $doc = match ($field) {
+                'or_cr_photo', 'lto_or_photo' => $field === 'lto_or_photo' ? 'or' : 'orcr',
+                'lto_cr_photo' => 'cr',
+                'id_document' => 'id',
+                default => 'license',
+            };
 
             return route('admin.users.document', ['id' => $this->id, 'doc' => $doc]);
         }
