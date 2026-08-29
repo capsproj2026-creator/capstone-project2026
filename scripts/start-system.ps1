@@ -138,6 +138,14 @@ if (-not $SkipVite) {
     if (-not (Test-Path (Join-Path $Root "node_modules"))) { $preflight += "node_modules (run: npm install)" }
 }
 $envLines = Get-Content (Join-Path $Root ".env") -ErrorAction SilentlyContinue
+
+if (-not $WithGitSync) {
+    $autoSync = (Get-DotEnvValue -Lines $envLines -Name "GITHUB_AUTO_SYNC").ToLower()
+    if ($autoSync -in @('1', 'true', 'yes', 'on')) {
+        $WithGitSync = $true
+    }
+}
+
 $appKeyLine = $envLines | Where-Object { $_ -match '^\s*APP_KEY=' } | Select-Object -First 1
 if (-not $appKeyLine -or $appKeyLine -match '^\s*APP_KEY=\s*$') {
     $preflight += "APP_KEY (run: php artisan key:generate)"
@@ -296,3 +304,6 @@ Write-Host "One command next time:  .\start.ps1" -ForegroundColor DarkGray
 Write-Host "  -SkipAi    skip AI cameras" -ForegroundColor DarkGray
 Write-Host "  -SkipVite  skip npm dev (use if npm run build already done)" -ForegroundColor DarkGray
 Write-Host "  -SkipNgrok skip ngrok tunnel (Google Form webhook)" -ForegroundColor DarkGray
+if ($WithGitSync) {
+    Write-Host "  GitHub:   auto-sync watcher running (pull + push every 90s)" -ForegroundColor DarkGray
+}

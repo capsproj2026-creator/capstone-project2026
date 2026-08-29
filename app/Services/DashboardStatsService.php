@@ -57,6 +57,8 @@ class DashboardStatsService
         $exitsByDay = $this->gateCountsByDay('Exit', $weekStart);
         $weeklyTrends = [
             'labels' => $entriesByDay->pluck('label')->values()->all(),
+            'entries' => $entriesByDay->pluck('count')->values()->all(),
+            'exits' => $exitsByDay->pluck('count')->values()->all(),
             'values' => $entriesByDay->values()->map(function (array $day, int $index) use ($exitsByDay) {
                 return (int) $day['count'] + (int) ($exitsByDay[$index]['count'] ?? 0);
             })->all(),
@@ -121,10 +123,11 @@ class DashboardStatsService
 
         if (array_sum($values) === 0) {
             return [
-                'labels' => ['No Data'],
-                'values' => [1],
-                'percents' => [0],
-                'colors' => ['#E5E7EB'],
+                'labels' => ['No License Plate', 'Unauthorized Parking', 'Overstay', 'Other'],
+                'values' => [0, 0, 0, 0],
+                'percents' => [0, 0, 0, 0],
+                'colors' => ['#3B82F6', '#8B5CF6', '#EC4899', '#64748B'],
+                'total' => 0,
             ];
         }
 
@@ -138,6 +141,7 @@ class DashboardStatsService
             'values' => $values,
             'percents' => $percents,
             'colors' => array_slice($palette, 0, count($labels)),
+            'total' => (int) $counts->sum(),
         ];
     }
 

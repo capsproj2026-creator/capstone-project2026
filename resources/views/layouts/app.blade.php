@@ -22,8 +22,18 @@
     $hasCspcLogo = is_file(public_path('images/cspc-logo.png'));
 @endphp
 <!DOCTYPE html>
-<html lang="{{ str_replace('_', '-', app()->getLocale()) }}">
+<html lang="{{ str_replace('_', '-', app()->getLocale()) }}" class="h-full">
 <head>
+    <script>
+        (function () {
+            try {
+                var theme = localStorage.getItem('portal-theme');
+                if (theme === 'dark' || (!theme && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+                    document.documentElement.classList.add('dark');
+                }
+            } catch (e) { /* ignore */ }
+        })();
+    </script>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="csrf-token" content="{{ csrf_token() }}">
@@ -40,8 +50,8 @@
     @vite(['resources/css/app.css', 'resources/js/app.js'])
     @stack('styles')
 </head>
-<body class="min-h-screen bg-slate-50 font-sans antialiased text-slate-900">
-    <div id="portal-root" class="portal-shell min-h-screen bg-slate-50">
+<body class="min-h-screen font-sans antialiased">
+    <div id="portal-root" class="portal-shell min-h-screen">
         <script>
             (function () {
                 var root = document.getElementById('portal-root');
@@ -50,13 +60,13 @@
             })();
         </script>
         {{-- Navbar --}}
-        <header class="portal-header sticky top-0 z-40 border-b border-slate-200/80 bg-white/95 shadow-sm backdrop-blur-md">
+        <header class="portal-header portal-header-bar sticky top-0 z-40 border-b shadow-sm">
             <div class="flex h-full items-center justify-between gap-3 px-3 sm:px-5 lg:px-6">
                 <div class="flex min-w-0 items-center gap-2.5 sm:gap-3">
                     <button
                         type="button"
                         id="portal-menu-btn"
-                        class="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-slate-600 transition-colors hover:bg-slate-100 hover:text-[var(--cspc-navy)]"
+                        class="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-[var(--portal-text-muted)] transition-colors hover:bg-[var(--portal-bg-subtle)] hover:text-[var(--cspc-navy)]"
                         aria-label="Show navigation sidebar"
                         aria-controls="portal-sidebar"
                         aria-expanded="false"
@@ -80,36 +90,47 @@
                         @endif
                         <div class="min-w-0">
                             <div class="flex flex-wrap items-center gap-x-2 gap-y-0.5">
-                                <h1 class="truncate text-sm font-bold tracking-tight text-[var(--cspc-navy)] sm:text-[15px]">
+                                <h1 class="truncate text-sm font-bold tracking-tight text-[var(--portal-text)] sm:text-[15px] dark:text-white">
                                     {{ $portalTitle }}
                                 </h1>
-                                <span class="hidden rounded-full bg-[var(--cspc-gold-soft)] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-[var(--cspc-navy-deep)] sm:inline-block">
+                                <span class="hidden rounded-full bg-[var(--cspc-gold-soft)] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-[var(--cspc-navy-deep)] dark:bg-amber-500/15 dark:text-amber-300 sm:inline-block">
                                     CSPC
                                 </span>
                             </div>
-                            <p class="truncate text-xs text-slate-500">{{ $portalSubtitle }}</p>
+                            <p class="truncate text-xs portal-muted">{{ $portalSubtitle }}</p>
                         </div>
                     </div>
                 </div>
 
                 <div class="flex shrink-0 items-center gap-1.5 sm:gap-3">
+                    <button
+                        type="button"
+                        id="portal-theme-toggle"
+                        class="portal-theme-toggle inline-flex h-10 w-10 items-center justify-center rounded-xl transition-colors"
+                        aria-label="Toggle dark mode"
+                        title="Toggle light / dark theme"
+                    >
+                        <i data-lucide="moon" id="portal-theme-icon-dark" class="h-[18px] w-[18px]"></i>
+                        <i data-lucide="sun" id="portal-theme-icon-light" class="hidden h-[18px] w-[18px]"></i>
+                    </button>
+
                     <div
-                        class="hidden items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-1.5 sm:flex"
+                        class="hidden items-center gap-2 rounded-xl border border-[var(--portal-border-strong)] bg-[var(--portal-bg-subtle)] px-3 py-1.5 sm:flex dark:border-[var(--portal-border)]"
                         data-ph-clock
                         data-timezone="{{ $appTimezone ?? 'Asia/Manila' }}"
                         title="Philippine Time ({{ $appTimezone ?? 'Asia/Manila' }})"
                     >
                         <i data-lucide="clock-3" class="h-3.5 w-3.5 text-[var(--cspc-navy)]"></i>
                         <div class="text-right leading-tight">
-                            <p class="text-sm font-semibold tabular-nums text-slate-900" data-ph-clock-time>—:—:—</p>
-                            <p class="text-[10px] font-medium text-slate-500" data-ph-clock-date>Asia/Manila</p>
+                            <p class="text-sm font-semibold tabular-nums text-[var(--portal-text)]" data-ph-clock-time>—:—:—</p>
+                            <p class="text-[10px] font-medium portal-muted" data-ph-clock-date>Asia/Manila</p>
                         </div>
                     </div>
 
                     @if ($notificationsUrl)
                         <a
                             href="{{ $notificationsUrl }}"
-                            class="relative inline-flex h-10 w-10 items-center justify-center rounded-xl text-slate-600 transition-colors hover:bg-slate-100 hover:text-[var(--cspc-navy)]"
+                            class="relative inline-flex h-10 w-10 items-center justify-center rounded-xl text-[var(--portal-text-muted)] transition-colors hover:bg-[var(--portal-bg-subtle)] hover:text-[var(--cspc-navy)]"
                             aria-label="Notifications"
                             data-notification-bell
                         >
@@ -132,21 +153,21 @@
                         <button
                             type="button"
                             id="portal-profile-btn"
-                            class="flex items-center gap-2 rounded-xl border border-transparent p-1 pr-1.5 transition-colors hover:border-slate-200 hover:bg-slate-50 sm:pr-2.5"
+                            class="flex items-center gap-2 rounded-xl border border-transparent p-1 pr-1.5 transition-colors hover:border-[var(--portal-border-strong)] hover:bg-[var(--portal-bg-subtle)] sm:pr-2.5"
                             aria-haspopup="menu"
                             aria-expanded="false"
                         >
                             <x-portal.avatar :user="$authUser" size="sm" :accent="$profileAccent" />
                             <div class="hidden min-w-0 max-w-[150px] text-left md:block">
-                                <p class="truncate text-sm font-semibold text-slate-900">{{ $profileName }}</p>
-                                <p class="truncate text-xs text-slate-500">{{ $profileRole }}</p>
+                                <p class="truncate text-sm font-semibold text-[var(--portal-text)]">{{ $profileName }}</p>
+                                <p class="truncate text-xs portal-muted">{{ $profileRole }}</p>
                             </div>
                             <i data-lucide="chevron-down" class="hidden h-4 w-4 text-slate-400 md:block"></i>
                         </button>
 
                         <div
                             id="portal-profile-menu"
-                            class="absolute right-0 z-50 mt-2 hidden w-80 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-xl shadow-slate-900/10"
+                            class="absolute right-0 z-50 mt-2 hidden w-80 overflow-hidden rounded-2xl border border-[var(--portal-border-strong)] bg-[var(--portal-surface)] shadow-xl dark:border-[var(--portal-border)] dark:shadow-black/40"
                             role="menu"
                         >
                             <div class="border-b border-slate-100 bg-gradient-to-br from-[var(--cspc-navy)] to-[var(--cspc-navy-deep)] px-4 py-4 text-white">
@@ -227,7 +248,7 @@
             {{-- Sidebar: overlay drawer on all breakpoints (does not shift main content) --}}
             <aside
                 id="portal-sidebar"
-                class="portal-sidebar fixed z-30 flex flex-col overflow-y-auto overscroll-contain border-r border-slate-200/80 bg-white shadow-[4px_0_24px_-12px_rgba(15,39,79,0.18)]"
+                class="portal-sidebar portal-sidebar-panel fixed z-30 flex flex-col overflow-y-auto overscroll-contain border-r shadow-[4px_0_24px_-12px_rgba(15,39,79,0.18)]"
                 aria-label="Primary navigation"
             >
                 <nav id="portal-sidebar-nav" class="flex min-h-full flex-1 flex-col p-3 sm:p-4" aria-label="Primary">
@@ -236,7 +257,7 @@
             </aside>
 
             {{-- Main content --}}
-            <main id="portal-main" class="portal-main min-w-0 flex-1 p-4 sm:p-6 lg:p-8">
+            <main id="portal-main" class="portal-main portal-main-area min-w-0 flex-1 p-4 sm:p-6 lg:p-8">
                 @if (session('success'))
                     <div class="mb-4 rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800">
                         {{ session('success') }}
@@ -264,7 +285,8 @@
 
         <div
             id="portal-overlay"
-            class="portal-overlay fixed inset-x-0 bottom-0 z-20 bg-[var(--cspc-navy-deep)]/45 backdrop-blur-[1px]"
+            class="portal-overlay fixed inset-x-0 bottom-0 z-20 backdrop-blur-[1px]"
+            style="background: var(--portal-overlay-bg);"
             aria-hidden="true"
         ></div>
     </div>

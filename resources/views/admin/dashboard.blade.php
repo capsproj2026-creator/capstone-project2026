@@ -30,121 +30,134 @@
 
     {{-- Summary cards --}}
     <div class="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <div class="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+        <div class="portal-card p-5">
             <div class="mb-3 flex items-start justify-between">
-                <p class="text-sm font-medium text-gray-500">Total Users</p>
-                <i data-lucide="users" class="h-5 w-5 text-gray-400"></i>
+                <p class="text-sm font-medium portal-muted">Total Users</p>
+                <span class="portal-stat-icon portal-stat-icon--blue"><i data-lucide="users" class="h-4 w-4"></i></span>
             </div>
-            <p class="text-3xl font-bold tracking-tight text-gray-900">{{ number_format($totalUsers) }}</p>
+            <p class="portal-stat-value text-3xl font-bold tracking-tight">{{ number_format($totalUsers) }}</p>
             <p class="mt-2 text-sm">
-                <span class="font-medium text-emerald-600">{{ number_format($activeUsers) }} active</span>
-                <span class="text-gray-400"> • </span>
-                <span class="font-medium text-red-600">{{ number_format($suspendedUsers) }} suspended</span>
+                <span class="font-medium text-emerald-600 dark:text-emerald-400">{{ number_format($activeUsers) }} active</span>
+                <span class="text-gray-400 dark:text-slate-600"> • </span>
+                <span class="font-medium text-red-600 dark:text-red-400">{{ number_format($suspendedUsers) }} suspended</span>
             </p>
         </div>
 
-        <div class="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+        <div class="portal-card p-5">
             <div class="mb-3 flex items-start justify-between">
-                <p class="text-sm font-medium text-gray-500">Active Violations</p>
-                <i data-lucide="triangle-alert" class="h-5 w-5 text-gray-400"></i>
+                <p class="text-sm font-medium portal-muted">Active Violations</p>
+                <span class="portal-stat-icon portal-stat-icon--red"><i data-lucide="triangle-alert" class="h-4 w-4"></i></span>
             </div>
-            <p class="text-3xl font-bold tracking-tight text-gray-900">{{ number_format($activeViolations) }}</p>
-            <p class="mt-2 text-sm font-medium text-red-600">3-Strike System</p>
+            <p class="portal-stat-value text-3xl font-bold tracking-tight">{{ number_format($activeViolations) }}</p>
+            <p class="mt-2 text-sm font-medium text-red-600 dark:text-red-400">3-Strike System</p>
         </div>
 
-        <div class="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+        <div class="portal-card p-5">
             <div class="mb-3 flex items-start justify-between">
-                <p class="text-sm font-medium text-gray-500">Today's Activity</p>
-                <i data-lucide="trending-up" class="h-5 w-5 text-gray-400"></i>
+                <p class="text-sm font-medium portal-muted">Today's Activity</p>
+                <span class="portal-stat-icon portal-stat-icon--violet"><i data-lucide="trending-up" class="h-4 w-4"></i></span>
             </div>
-            <p class="text-3xl font-bold tracking-tight text-gray-900">{{ number_format($todayActivity) }}</p>
-            <p class="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-gray-500">
+            <p class="portal-stat-value text-3xl font-bold tracking-tight">{{ number_format($todayActivity) }}</p>
+            <p class="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm portal-muted">
                 <span class="inline-flex items-center gap-1">
-                    <i data-lucide="log-in" class="h-3.5 w-3.5 text-blue-600"></i>
+                    <i data-lucide="log-in" class="h-3.5 w-3.5 text-blue-600 dark:text-blue-400"></i>
                     {{ number_format($todayEntries) }} entries
                 </span>
-                <span class="text-gray-300">•</span>
+                <span class="text-gray-300 dark:text-slate-600">•</span>
                 <span class="inline-flex items-center gap-1">
-                    <i data-lucide="log-out" class="h-3.5 w-3.5 text-purple-600"></i>
+                    <i data-lucide="log-out" class="h-3.5 w-3.5 text-purple-600 dark:text-violet-400"></i>
                     {{ number_format($todayExits) }} exits
                 </span>
             </p>
         </div>
 
-        <div class="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+        <div class="portal-card p-5">
             <div class="mb-3 flex items-start justify-between">
-                <p class="text-sm font-medium text-gray-500">Parking</p>
-                <i data-lucide="parking-square" class="h-5 w-5 text-gray-400"></i>
+                <p class="text-sm font-medium portal-muted">Parking</p>
+                <span class="portal-stat-icon portal-stat-icon--blue"><i data-lucide="parking-square" class="h-4 w-4"></i></span>
             </div>
-            <p class="text-3xl font-bold tracking-tight text-gray-900">
+            <p class="portal-stat-value text-3xl font-bold tracking-tight">
                 {{ number_format($occupiedSlots) }}/{{ number_format($totalSlots) }}
             </p>
-            <p class="mt-2 text-sm font-medium text-blue-600">{{ $parkingAvailablePercent }}% available</p>
+            <p class="mt-2 text-sm font-medium text-blue-600 dark:text-blue-400">{{ $parkingAvailablePercent }}% available</p>
         </div>
     </div>
 
     <div class="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <div class="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+        <div class="portal-card p-5">
             <div class="mb-3 flex items-start justify-between">
-                <p class="text-sm font-medium text-gray-500">Visitors Today</p>
-                <i data-lucide="clipboard-plus" class="h-5 w-5 text-gray-400"></i>
+                <p class="text-sm font-medium portal-muted">Visitors Today</p>
+                <span class="portal-stat-icon portal-stat-icon--slate"><i data-lucide="clipboard-plus" class="h-4 w-4"></i></span>
             </div>
-            <p class="text-3xl font-bold tracking-tight text-gray-900">{{ number_format($visitorsToday ?? 0) }}</p>
+            <p class="portal-stat-value text-3xl font-bold tracking-tight">{{ number_format($visitorsToday ?? 0) }}</p>
         </div>
-        <div class="rounded-xl border border-teal-100 bg-white p-5 shadow-sm">
+        <div class="portal-card p-5">
             <div class="mb-3 flex items-start justify-between">
-                <p class="text-sm font-medium text-gray-500">Active Visitors</p>
-                <i data-lucide="user-round-check" class="h-5 w-5 text-teal-500"></i>
+                <p class="text-sm font-medium portal-muted">Active Visitors</p>
+                <span class="portal-stat-icon portal-stat-icon--emerald"><i data-lucide="user-round-check" class="h-4 w-4"></i></span>
             </div>
-            <p class="text-3xl font-bold tracking-tight text-teal-700">{{ number_format($activeVisitors ?? 0) }}</p>
+            <p class="text-3xl font-bold tracking-tight text-teal-700 dark:text-emerald-400">{{ number_format($activeVisitors ?? 0) }}</p>
         </div>
-        <div class="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+        <div class="portal-card p-5">
             <div class="mb-3 flex items-start justify-between">
-                <p class="text-sm font-medium text-gray-500">Completed Visits</p>
-                <i data-lucide="history" class="h-5 w-5 text-gray-400"></i>
+                <p class="text-sm font-medium portal-muted">Completed Visits</p>
+                <span class="portal-stat-icon portal-stat-icon--slate"><i data-lucide="history" class="h-4 w-4"></i></span>
             </div>
-            <p class="text-3xl font-bold tracking-tight text-gray-900">{{ number_format($completedVisits ?? 0) }}</p>
+            <p class="portal-stat-value text-3xl font-bold tracking-tight">{{ number_format($completedVisits ?? 0) }}</p>
         </div>
-        <div class="rounded-xl border border-rose-100 bg-white p-5 shadow-sm">
+        <div class="portal-card p-5">
             <div class="mb-3 flex items-start justify-between">
-                <p class="text-sm font-medium text-gray-500">Expired Visitors</p>
-                <i data-lucide="clock" class="h-5 w-5 text-rose-500"></i>
+                <p class="text-sm font-medium portal-muted">Expired Visitors</p>
+                <span class="portal-stat-icon portal-stat-icon--rose"><i data-lucide="clock" class="h-4 w-4"></i></span>
             </div>
-            <p class="text-3xl font-bold tracking-tight text-rose-700">{{ number_format($expiredVisitors ?? 0) }}</p>
+            <p class="text-3xl font-bold tracking-tight text-rose-700 dark:text-rose-400">{{ number_format($expiredVisitors ?? 0) }}</p>
         </div>
     </div>
 
-    {{-- Charts: matched card height --}}
+    {{-- Charts --}}
     <div class="mb-6 grid grid-cols-1 gap-4 lg:grid-cols-2 lg:items-stretch">
-        <div class="flex h-[380px] flex-col rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
-            <h3 class="mb-4 shrink-0 text-base font-semibold text-gray-900">Weekly Entry/Exit Trends</h3>
+        <div class="portal-card flex h-[380px] flex-col p-6">
+            <div class="mb-4 flex shrink-0 items-center justify-between gap-3">
+                <h3 class="portal-heading text-base font-semibold">Weekly Entry/Exit Trends</h3>
+                <div class="hidden items-center gap-3 text-xs portal-muted sm:flex">
+                    <span class="inline-flex items-center gap-1.5"><span class="h-2.5 w-2.5 rounded-sm bg-blue-500"></span> Entries</span>
+                    <span class="inline-flex items-center gap-1.5"><span class="h-2.5 w-2.5 rounded-sm bg-violet-500"></span> Exits</span>
+                </div>
+            </div>
             <div class="relative min-h-0 flex-1">
                 <canvas id="chart-weekly-trends"></canvas>
             </div>
         </div>
 
-        <div class="flex h-[380px] flex-col rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
-            <h3 class="mb-4 shrink-0 text-base font-semibold text-gray-900">Violation Types Distribution</h3>
-            <div class="relative min-h-0 flex-1">
-                <canvas id="chart-violation-types"></canvas>
+        <div class="portal-card flex h-[380px] flex-col p-6">
+            <h3 class="portal-heading mb-4 shrink-0 text-base font-semibold">Violation Types Distribution</h3>
+            <div class="grid min-h-0 flex-1 grid-cols-1 gap-4 sm:grid-cols-[1fr_auto]">
+                <div class="relative min-h-[220px]">
+                    <canvas id="chart-violation-types"></canvas>
+                    <div class="portal-donut-center" id="violation-donut-center">
+                        <span class="portal-donut-center-value" id="violation-donut-total">{{ number_format($activeViolations) }}</span>
+                        <span class="portal-donut-center-label">Total Violations</span>
+                    </div>
+                </div>
+                <div class="portal-chart-legend justify-center sm:min-w-[170px]" id="violation-chart-legend"></div>
             </div>
         </div>
     </div>
 
     {{-- Recent Violations + Quick Actions --}}
     <div class="grid grid-cols-1 gap-6 xl:grid-cols-2">
-        <div class="rounded-xl border border-gray-200 bg-white shadow-sm">
-            <div class="flex items-center justify-between gap-3 border-b border-gray-100 px-5 py-4 sm:px-6">
-                <h3 class="text-base font-semibold text-gray-900">Recent Violations</h3>
+        <div class="portal-card">
+            <div class="portal-card-header flex items-center justify-between gap-3 px-5 py-4 sm:px-6">
+                <h3 class="portal-heading text-base font-semibold">Recent Violations</h3>
                 <a
                     href="{{ route('admin.violations') }}"
-                    class="rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50"
+                    class="portal-btn-outline rounded-lg px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:text-slate-300"
                 >
                     View All
                 </a>
             </div>
 
-            <div class="divide-y divide-gray-100">
+            <div class="divide-y divide-gray-100 dark:divide-[var(--portal-border)]">
                 @forelse ($recentViolations as $violation)
                     @php
                         $typeLabel = strtolower(trim((string) ($violation->violation_type ?? 'violation')));
@@ -183,47 +196,45 @@
                         </span>
                     </div>
                 @empty
-                    <p class="px-5 py-10 text-center text-sm text-gray-500 sm:px-6">No violations recorded yet.</p>
+                    <div class="flex flex-col items-center justify-center px-5 py-16 text-center sm:px-6">
+                        <div class="mb-5 flex h-20 w-20 items-center justify-center rounded-2xl border border-blue-500/20 bg-gradient-to-br from-blue-500/10 to-violet-600/15 shadow-[0_0_40px_rgba(59,130,246,0.15)]">
+                            <i data-lucide="clipboard-list" class="h-10 w-10 text-blue-400"></i>
+                        </div>
+                        <p class="text-sm font-medium portal-muted">No violations recorded yet.</p>
+                    </div>
                 @endforelse
             </div>
         </div>
 
-        <div class="rounded-xl border border-gray-200 bg-white p-5 shadow-sm sm:p-6">
-            <h3 class="mb-4 text-base font-semibold text-gray-900">Quick Actions</h3>
+        <div class="portal-card p-5 sm:p-6">
+            <h3 class="portal-heading mb-4 text-base font-semibold">Quick Actions</h3>
             <div class="space-y-3">
                 <a
-                    href="{{ route('admin.registrations') }}"
-                    class="flex items-center justify-center gap-2 rounded-xl border border-gray-200 bg-white px-4 py-3.5 text-sm font-semibold text-gray-800 transition hover:bg-gray-50"
-                >
-                    <i data-lucide="clipboard-list" class="h-4 w-4 text-gray-500"></i>
-                    Registrations
-                </a>
-                <a
-                    href="{{ route('admin.rfid') }}"
-                    class="flex items-center justify-center gap-2 rounded-xl border border-gray-200 bg-white px-4 py-3.5 text-sm font-semibold text-gray-800 transition hover:bg-gray-50"
-                >
-                    <i data-lucide="credit-card" class="h-4 w-4 text-gray-500"></i>
-                    RFID Assignment
-                </a>
-                <a
                     href="{{ route('admin.users') }}"
-                    class="flex items-center justify-center gap-2 rounded-xl border border-gray-200 bg-white px-4 py-3.5 text-sm font-semibold text-gray-800 transition hover:bg-gray-50"
+                    class="portal-btn-gradient flex items-center justify-center gap-2 rounded-xl px-4 py-3.5 text-sm font-semibold"
                 >
-                    <i data-lucide="users" class="h-4 w-4 text-gray-500"></i>
-                    User Management
+                    <i data-lucide="user-plus" class="h-4 w-4"></i>
+                    Add New User
+                </a>
+                <a
+                    href="{{ route('admin.violations') }}"
+                    class="portal-btn-outline flex items-center justify-center gap-2 rounded-xl border border-gray-200 px-4 py-3.5 text-sm font-semibold text-gray-800 transition hover:bg-gray-50 dark:text-slate-200"
+                >
+                    <i data-lucide="triangle-alert" class="h-4 w-4 text-gray-500 dark:text-red-400"></i>
+                    Log Violation
                 </a>
                 <a
                     href="{{ route('admin.reports') }}"
-                    class="flex items-center justify-center gap-2 rounded-xl border border-gray-200 bg-white px-4 py-3.5 text-sm font-semibold text-gray-800 transition hover:bg-gray-50"
+                    class="portal-btn-outline flex items-center justify-center gap-2 rounded-xl border border-gray-200 px-4 py-3.5 text-sm font-semibold text-gray-800 transition hover:bg-gray-50 dark:text-slate-200"
                 >
-                    <i data-lucide="bar-chart-3" class="h-4 w-4 text-gray-500"></i>
+                    <i data-lucide="bar-chart-3" class="h-4 w-4 text-gray-500 dark:text-blue-300"></i>
                     Generate Report
                 </a>
                 <a
                     href="{{ route('admin.parking') }}"
-                    class="flex items-center justify-center gap-2 rounded-xl border border-gray-200 bg-white px-4 py-3.5 text-sm font-semibold text-gray-800 transition hover:bg-gray-50"
+                    class="portal-btn-outline flex items-center justify-center gap-2 rounded-xl border border-gray-200 px-4 py-3.5 text-sm font-semibold text-gray-800 transition hover:bg-gray-50 dark:text-slate-200"
                 >
-                    <i data-lucide="parking-square" class="h-4 w-4 text-gray-500"></i>
+                    <i data-lucide="parking-square" class="h-4 w-4 text-gray-500 dark:text-violet-300"></i>
                     View Parking Map
                 </a>
             </div>
@@ -243,146 +254,165 @@
 <script>
 (() => {
     if (window.lucide) window.lucide.createIcons();
-    if (window.ChartDataLabels) {
-        Chart.register(ChartDataLabels);
-    }
+    if (window.ChartDataLabels) Chart.register(ChartDataLabels);
+
+    const isDark = () => document.documentElement.classList.contains('dark');
+    const chartGrid = () => (isDark() ? 'rgba(148, 163, 184, 0.12)' : '#E5E7EB');
+    const chartTick = () => (isDark() ? '#94a3b8' : '#6B7280');
+    const chartBorder = () => (isDark() ? 'rgba(71, 85, 105, 0.5)' : '#D1D5DB');
+    const pieBorder = () => (isDark() ? '#121a2e' : '#ffffff');
 
     const weekly = @json($weeklyTrends);
     const distribution = @json($violationTypeDistribution);
 
+    let weeklyChart = null;
+    let pieChart = null;
+
+    const renderViolationLegend = () => {
+        const legendEl = document.getElementById('violation-chart-legend');
+        if (!legendEl) return;
+        const labels = distribution.labels || [];
+        const colors = distribution.colors || [];
+        const percents = distribution.percents || [];
+        legendEl.innerHTML = labels.map((label, i) => `
+            <div class="portal-chart-legend-item">
+                <span class="portal-chart-legend-dot" style="background:${colors[i] || '#64748b'}"></span>
+                <span>${label}: ${percents[i] ?? 0}%</span>
+            </div>
+        `).join('');
+    };
+    renderViolationLegend();
+
     const weeklyCanvas = document.getElementById('chart-weekly-trends');
     if (weeklyCanvas && window.Chart) {
-        const values = weekly.values || [];
-        const peak = Math.max(0, ...values);
-        const yMax = peak <= 10
-            ? Math.max(6, Math.ceil(peak / 2) * 2)
-            : Math.max(45, Math.ceil(peak / 45) * 45);
-        const yStep = peak <= 10 ? 2 : 45;
+        const buildWeekly = () => {
+            const entries = weekly.entries || weekly.values || [];
+            const exits = weekly.exits || [];
+            const peak = Math.max(0, ...entries, ...exits);
+            const yMax = peak <= 10
+                ? Math.max(6, Math.ceil(peak / 2) * 2)
+                : Math.max(45, Math.ceil(peak / 45) * 45);
+            const yStep = peak <= 10 ? 2 : 45;
 
-        new Chart(weeklyCanvas, {
-            type: 'bar',
-            data: {
-                labels: weekly.labels,
-                datasets: [{
-                    data: values,
-                    backgroundColor: '#8B5CF6',
-                    borderRadius: 2,
-                    borderSkipped: false,
-                    categoryPercentage: 0.65,
-                    barPercentage: 0.85,
-                    maxBarThickness: 48,
-                }],
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                layout: { padding: { top: 8, right: 12 } },
-                plugins: {
-                    legend: { display: false },
-                    datalabels: { display: false },
-                    tooltip: {
-                        callbacks: {
-                            title: (items) => items[0]?.label ?? '',
-                            label: (ctx) => ` ${ctx.parsed.y} entries + exits`,
+            const config = {
+                type: 'bar',
+                data: {
+                    labels: weekly.labels,
+                    datasets: [
+                        {
+                            label: 'Entries',
+                            data: entries,
+                            backgroundColor: isDark() ? '#3b82f6' : '#6366f1',
+                            borderRadius: 3,
+                            borderSkipped: false,
+                            maxBarThickness: 22,
+                        },
+                        {
+                            label: 'Exits',
+                            data: exits,
+                            backgroundColor: isDark() ? '#8b5cf6' : '#a855f7',
+                            borderRadius: 3,
+                            borderSkipped: false,
+                            maxBarThickness: 22,
+                        },
+                    ],
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    layout: { padding: { top: 8, right: 8 } },
+                    plugins: {
+                        legend: { display: false },
+                        datalabels: { display: false },
+                        tooltip: {
+                            mode: 'index',
+                            intersect: false,
+                        },
+                    },
+                    scales: {
+                        x: {
+                            grid: { display: false, drawTicks: false },
+                            ticks: { color: chartTick(), font: { size: 11 } },
+                            border: { display: true, color: chartBorder() },
+                        },
+                        y: {
+                            beginAtZero: true,
+                            min: 0,
+                            max: yMax,
+                            ticks: {
+                                color: chartTick(),
+                                font: { size: 11 },
+                                stepSize: yStep,
+                                precision: 0,
+                            },
+                            grid: {
+                                color: chartGrid(),
+                                borderDash: [4, 4],
+                                drawTicks: false,
+                            },
+                            border: { display: false },
                         },
                     },
                 },
-                scales: {
-                    x: {
-                        grid: {
-                            display: true,
-                            color: '#E5E7EB',
-                            borderDash: [4, 4],
-                            drawTicks: false,
-                        },
-                        ticks: {
-                            color: '#6B7280',
-                            font: { size: 12 },
-                        },
-                        border: {
-                            display: true,
-                            color: '#D1D5DB',
-                        },
-                    },
-                    y: {
-                        beginAtZero: true,
-                        min: 0,
-                        max: yMax,
-                        ticks: {
-                            color: '#6B7280',
-                            font: { size: 12 },
-                            stepSize: yStep,
-                            precision: 0,
-                        },
-                        grid: {
-                            color: '#E5E7EB',
-                            borderDash: [4, 4],
-                            drawTicks: false,
-                        },
-                        border: {
-                            display: true,
-                            color: '#D1D5DB',
-                        },
-                    },
-                },
-            },
-        });
+            };
+
+            if (weeklyChart) weeklyChart.destroy();
+            weeklyChart = new Chart(weeklyCanvas, config);
+        };
+        buildWeekly();
+        window.addEventListener('portal:theme-change', buildWeekly);
     }
 
     const pieCanvas = document.getElementById('chart-violation-types');
     if (pieCanvas && window.Chart) {
-        const colors = distribution.colors || [];
-        const labels = distribution.labels || [];
-        const percents = distribution.percents || [];
-        const hasData = labels[0] !== 'No Data';
+        const buildPie = () => {
+            const colors = distribution.colors || [];
+            const labels = distribution.labels || [];
+            const values = distribution.values || [];
+            const total = distribution.total ?? values.reduce((a, b) => a + b, 0);
+            const hasData = total > 0;
 
-        new Chart(pieCanvas, {
-            type: 'pie',
-            data: {
-                labels,
-                datasets: [{
-                    data: distribution.values,
-                    backgroundColor: colors,
-                    borderWidth: 2,
-                    borderColor: '#ffffff',
-                    hoverOffset: 4,
-                }],
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                layout: { padding: 28 },
-                plugins: {
-                    legend: { display: false },
-                    tooltip: {
-                        callbacks: {
-                            label: (ctx) => {
-                                const pct = percents[ctx.dataIndex] ?? 0;
-                                return ` ${ctx.label}: ${pct}%`;
+            const centerTotal = document.getElementById('violation-donut-total');
+            if (centerTotal) centerTotal.textContent = String(total);
+
+            const config = {
+                type: 'doughnut',
+                data: {
+                    labels,
+                    datasets: [{
+                        data: hasData ? values : [1],
+                        backgroundColor: hasData ? colors : [isDark() ? 'rgba(51, 65, 85, 0.55)' : '#e2e8f0'],
+                        borderWidth: 2,
+                        borderColor: pieBorder(),
+                        hoverOffset: 4,
+                    }],
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    cutout: '68%',
+                    layout: { padding: 8 },
+                    plugins: {
+                        legend: { display: false },
+                        datalabels: { display: false },
+                        tooltip: {
+                            enabled: hasData,
+                            callbacks: {
+                                label: (ctx) => {
+                                    const pct = distribution.percents?.[ctx.dataIndex] ?? 0;
+                                    return ` ${ctx.label}: ${pct}%`;
+                                },
                             },
                         },
                     },
-                    datalabels: hasData ? {
-                        display: true,
-                        anchor: 'end',
-                        align: 'end',
-                        offset: 6,
-                        clamp: true,
-                        color: (ctx) => colors[ctx.dataIndex] || '#374151',
-                        font: {
-                            size: 12,
-                            weight: '600',
-                        },
-                        formatter: (value, ctx) => {
-                            const label = labels[ctx.dataIndex] || '';
-                            const pct = percents[ctx.dataIndex] ?? 0;
-                            if (!value || pct <= 0) return '';
-                            return `${label}: ${pct}%`;
-                        },
-                    } : { display: false },
                 },
-            },
-        });
+            };
+
+            if (pieChart) pieChart.destroy();
+            pieChart = new Chart(pieCanvas, config);
+        };
+        buildPie();
+        window.addEventListener('portal:theme-change', buildPie);
     }
 })();
 </script>

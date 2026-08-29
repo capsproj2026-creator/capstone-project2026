@@ -27,10 +27,51 @@ function initPasswordToggles(root = document) {
 window.initPasswordToggles = initPasswordToggles;
 
 const SIDEBAR_SCROLL_KEY = 'portal-sidebar-scroll';
+const THEME_STORAGE_KEY = 'portal-theme';
+
+function syncThemeToggleIcons() {
+    const isDark = document.documentElement.classList.contains('dark');
+    const darkIcon = document.getElementById('portal-theme-icon-dark');
+    const lightIcon = document.getElementById('portal-theme-icon-light');
+    darkIcon?.classList.toggle('hidden', isDark);
+    lightIcon?.classList.toggle('hidden', !isDark);
+}
+
+function applyPortalTheme(mode) {
+    const root = document.documentElement;
+    if (mode === 'dark') {
+        root.classList.add('dark');
+    } else {
+        root.classList.remove('dark');
+    }
+    try {
+        localStorage.setItem(THEME_STORAGE_KEY, mode);
+    } catch (e) {
+        // ignore
+    }
+    syncThemeToggleIcons();
+    window.dispatchEvent(new CustomEvent('portal:theme-change', { detail: { mode } }));
+}
+
+function initPortalTheme() {
+    const toggle = document.getElementById('portal-theme-toggle');
+    syncThemeToggleIcons();
+    toggle?.addEventListener('click', () => {
+        const next = document.documentElement.classList.contains('dark') ? 'light' : 'dark';
+        applyPortalTheme(next);
+        if (window.lucide?.createIcons) {
+            window.lucide.createIcons();
+        }
+    });
+}
+
+window.applyPortalTheme = applyPortalTheme;
+window.isPortalDarkTheme = () => document.documentElement.classList.contains('dark');
 
 function initPortalShell() {
     const root = document.getElementById('portal-root');
     initPasswordToggles(document);
+    initPortalTheme();
 
     if (!root) {
         return;

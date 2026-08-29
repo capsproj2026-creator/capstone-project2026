@@ -26,13 +26,17 @@ $IgnorePrefixes = @(
     "storage/",
     "vendor/",
     "node_modules/",
+    "tools/ngrok/",
+    "tools/arduino-cli/",
+    ".venv-campus-id-ocr/",
     "hardware/ai_parking/__pycache__/",
     "hardware/ai_parking/debug_plates/"
 )
 $IgnoreGlobs = @(
     "*.log",
     "*.pyc",
-    ".phpunit.result.cache"
+    ".phpunit.result.cache",
+    "**/rfid_gate_config.h"
 )
 
 function Get-DotEnvValue([string]$Key) {

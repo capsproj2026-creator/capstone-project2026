@@ -37,6 +37,7 @@ Thumbs.db
 
 # ESP32 local secrets + OCR debug crops
 hardware/esp32_rfid_gate/rfid_gate_config.h
+hardware/esp32_rfid_gate_exit/rfid_gate_config.h
 hardware/arduino/**/rfid_gate_config.h
 hardware/ai_parking/debug_plates/
 
