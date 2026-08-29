@@ -46,7 +46,7 @@
             object-position: center;
         }
         .page-bg .bg-fallback {
-            background: linear-gradient(160deg, #1e3a8a 0%, #0f172a 55%, #1e293b 100%);
+            background: linear-gradient(160deg, #1A365D 0%, #0f172a 55%, #1e293b 100%);
         }
         .page-bg::after {
             content: '';

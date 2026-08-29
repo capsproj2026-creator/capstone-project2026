@@ -460,7 +460,7 @@
                         @forelse ($usersList as $user)
                         <tr>
                             <td>{{ $user->fullname }}</td>
-                            <td>{{ $user->role?->role_name }}</td>
+                            <td>{{ $user->displayRoleLabel() }}</td>
                             <td>{{ $user->id_number }}</td>
                             <td>{{ $user->isLocked() ? 'Locked' : $user->status }}</td>
                                 <td class="num">{{ $user->strike_count }}</td>

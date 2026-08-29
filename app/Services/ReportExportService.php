@@ -197,7 +197,7 @@ class ReportExportService
                     $userRows[] = [
                         $user->fullname,
                         $user->email,
-                        $user->role?->role_name ?? '',
+                        $user->displayRoleLabel(),
                         $user->id_number,
                         $user->isLocked() ? 'Locked' : $user->status,
                         (int) ($user->strike_count ?? 0),

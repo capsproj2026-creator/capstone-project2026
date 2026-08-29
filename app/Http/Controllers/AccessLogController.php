@@ -193,7 +193,7 @@ class AccessLogController extends Controller
             'timestamp' => $log->timestamp ? ph_datetime($log->timestamp, 'n/j/Y, g:i:s A') : '—',
             'name' => $user?->displayName() ?? 'Unknown',
             'id_number' => $user?->id_number ?? ($user?->id ?? '—'),
-            'role' => $user?->roleName() ?? '—',
+            'role' => $user?->displayRoleLabel() ?? '—',
             'rfid_uid' => $log->displayRfid(),
             'action' => $log->action,
             'gate' => $log->displayGate(),

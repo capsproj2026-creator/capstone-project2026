@@ -10,8 +10,8 @@
 
 @section('content')
     <div class="overflow-hidden rounded-2xl border border-white/30 bg-white/95 shadow-2xl backdrop-blur-sm">
-        <div class="relative overflow-hidden bg-gradient-to-br from-blue-700 via-blue-800 to-slate-900 px-6 py-7 text-center text-white sm:px-8">
-            <div class="pointer-events-none absolute inset-0 opacity-25" style="background-image: radial-gradient(circle at 20% 20%, #fff 0, transparent 40%), radial-gradient(circle at 80% 0%, #93c5fd 0, transparent 35%), radial-gradient(circle at 50% 100%, #1e3a8a 0, transparent 45%);"></div>
+        <div class="relative overflow-hidden bg-gradient-to-br from-[#1A365D] via-[#122844] to-slate-900 px-6 py-7 text-center text-white sm:px-8">
+            <div class="pointer-events-none absolute inset-0 opacity-25" style="background-image: radial-gradient(circle at 20% 20%, #fff 0, transparent 40%), radial-gradient(circle at 80% 0%, #93c5fd 0, transparent 35%), radial-gradient(circle at 50% 100%, #1A365D 0, transparent 45%);"></div>
             <div class="relative">
                 <div class="mx-auto mb-3 flex h-16 w-16 items-center justify-center sm:h-20 sm:w-20">
                     @if (! empty($hasCspcLogo) || is_file(public_path('images/cspc-logo.png')))
@@ -353,7 +353,7 @@
                 <div class="pt-8">
                     <button
                         type="submit"
-                        class="flex w-full cursor-pointer items-center justify-center gap-2 rounded-xl bg-blue-600 py-3 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-blue-700"
+                        class="flex w-full cursor-pointer items-center justify-center gap-2 rounded-xl bg-[#5D9FD1] py-3 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-[#4A8FC4]"
                     >
                         <i data-lucide="{{ ! empty($converting) ? 'clipboard-check' : 'user-plus' }}" class="h-4 w-4"></i>
                         {{ ! empty($converting) ? 'Complete Registration' : 'Submit registration' }}

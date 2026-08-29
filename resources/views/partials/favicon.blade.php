@@ -16,4 +16,4 @@
 @if ($appleIcon)
     <link rel="apple-touch-icon" href="{{ asset('apple-touch-icon.png') }}">
 @endif
-<meta name="theme-color" content="#1e3a8a">
+<meta name="theme-color" content="#1A365D">

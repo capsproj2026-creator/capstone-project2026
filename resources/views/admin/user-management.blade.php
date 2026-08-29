@@ -99,11 +99,12 @@
                 <tbody class="divide-y divide-gray-100">
                     @forelse ($users as $u)
                         @php
-                            $roleLabel = $u->role?->role_name ?: $u->roleName();
-                            $isStudent = strcasecmp((string) $roleLabel, 'Student') === 0;
-                            $isStaff = strcasecmp((string) $roleLabel, 'Staff') === 0;
+                            $roleLabel = $u->displayRoleLabel();
+                            $isUnregistered = $u->isUnregisteredStudentFaculty();
+                            $isStudent = ! $isUnregistered && strcasecmp((string) $roleLabel, 'Student') === 0;
+                            $isStaff = ! $isUnregistered && strcasecmp((string) $roleLabel, 'Staff') === 0;
                             $isGuard = strcasecmp((string) $roleLabel, 'Guard') === 0;
-                            $email = $u->email ?: '—';
+                            $email = $u->displayEmail();
                             $idNumber = $u->id_number ?: '—';
                             $isLocked = $u->isLocked();
                             $profileUrl = route('admin.users.show', ['id' => $u->id, 'from' => 'users']);
@@ -120,8 +121,9 @@
                                     'inline-flex rounded-md px-2 py-0.5 text-xs font-medium',
                                     'bg-blue-50 text-blue-700' => $isStudent,
                                     'bg-violet-50 text-violet-700' => $isStaff,
+                                    'bg-sky-50 text-sky-800' => $isUnregistered,
                                     'bg-slate-100 text-slate-700' => $isGuard,
-                                    'bg-gray-100 text-gray-600' => ! $isStudent && ! $isStaff && ! $isGuard,
+                                    'bg-gray-100 text-gray-600' => ! $isStudent && ! $isStaff && ! $isGuard && ! $isUnregistered,
                                 ])>{{ $roleLabel }}</span>
                             </td>
                             <td class="px-3 py-3.5">
@@ -140,7 +142,9 @@
                                 ])>{{ $strikes }}/{{ \App\Models\User::MAX_STRIKES }}</span>
                             </td>
                             <td class="px-3 py-3.5">
-                                @if ($isLocked)
+                                @if ($isUnregistered)
+                                    <span class="inline-flex rounded-full bg-amber-50 px-2.5 py-0.5 text-xs font-semibold text-amber-700">Not registered yet</span>
+                                @elseif ($isLocked)
                                     <span class="inline-flex rounded-full bg-red-50 px-2.5 py-0.5 text-xs font-semibold text-red-700">Locked</span>
                                 @elseif ($u->status === 'Granted')
                                     <span class="inline-flex rounded-full bg-emerald-50 px-2.5 py-0.5 text-xs font-semibold text-emerald-700">Granted</span>

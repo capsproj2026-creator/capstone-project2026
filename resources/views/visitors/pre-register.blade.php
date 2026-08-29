@@ -8,7 +8,7 @@
 
 @section('content')
     <div class="w-full overflow-hidden rounded-2xl border border-white/30 bg-white/95 shadow-2xl backdrop-blur-sm">
-        <div class="relative overflow-hidden bg-gradient-to-br from-blue-700 via-blue-800 to-slate-900 px-6 py-8 text-center text-white">
+        <div class="relative overflow-hidden bg-gradient-to-br from-[#1A365D] via-[#122844] to-slate-900 px-6 py-8 text-center text-white">
             <div class="pointer-events-none absolute inset-0 opacity-25" style="background-image: radial-gradient(circle at 20% 20%, #fff 0, transparent 40%), radial-gradient(circle at 80% 0%, #93c5fd 0, transparent 35%);"></div>
             <div class="relative">
                 <div class="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-white/10">
@@ -103,7 +103,7 @@
 
                 <p class="text-xs text-gray-500">Before arrival, show the reference code at the booth. If you are already on campus, submit this form with the same plate number within {{ (int) config('services.visitor_pre_register.post_entry_hours', 5) }} hours of entry.</p>
 
-                <button type="submit" class="flex w-full items-center justify-center gap-2 rounded-lg bg-blue-600 py-3 text-sm font-semibold text-white hover:bg-blue-700">
+                <button type="submit" class="flex w-full items-center justify-center gap-2 rounded-lg bg-[#5D9FD1] py-3 text-sm font-semibold text-white hover:bg-[#4A8FC4]">
                     <i data-lucide="send" class="h-4 w-4"></i>
                     Submit Pre-Registration
                 </button>

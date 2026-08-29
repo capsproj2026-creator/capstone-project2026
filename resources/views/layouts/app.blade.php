@@ -18,7 +18,7 @@
     $portalSubtitle = trim($__env->yieldContent('portal_subtitle')) ?: 'Vehicle Management System';
     $portalIcon = trim($__env->yieldContent('portal_icon')) ?: 'parking-square';
     $brandBg = trim($__env->yieldContent('brand_bg')) ?: 'bg-[var(--cspc-navy)]';
-    $navActiveClass = trim($__env->yieldContent('nav_active_class')) ?: 'portal-nav-item--active bg-[var(--cspc-navy-soft)] text-[var(--cspc-navy)] shadow-sm';
+    $navActiveClass = trim($__env->yieldContent('nav_active_class')) ?: 'portal-nav-item--active';
     $hasCspcLogo = is_file(public_path('images/cspc-logo.png'));
 @endphp
 <!DOCTYPE html>
@@ -66,7 +66,7 @@
                     <button
                         type="button"
                         id="portal-menu-btn"
-                        class="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-[var(--portal-text-muted)] transition-colors hover:bg-[var(--portal-bg-subtle)] hover:text-[var(--cspc-navy)]"
+                        class="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-white transition-colors hover:bg-white/10"
                         aria-label="Show navigation sidebar"
                         aria-controls="portal-sidebar"
                         aria-expanded="false"
@@ -90,14 +90,14 @@
                         @endif
                         <div class="min-w-0">
                             <div class="flex flex-wrap items-center gap-x-2 gap-y-0.5">
-                                <h1 class="truncate text-sm font-bold tracking-tight text-[var(--portal-text)] sm:text-[15px] dark:text-white">
+                                <h1 class="truncate text-sm font-bold tracking-tight text-white sm:text-[15px]">
                                     {{ $portalTitle }}
                                 </h1>
-                                <span class="hidden rounded-full bg-[var(--cspc-gold-soft)] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-[var(--cspc-navy-deep)] dark:bg-amber-500/15 dark:text-amber-300 sm:inline-block">
+                                <span class="portal-header-cspc hidden rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide sm:inline-block">
                                     CSPC
                                 </span>
                             </div>
-                            <p class="truncate text-xs portal-muted">{{ $portalSubtitle }}</p>
+                            <p class="truncate text-xs text-white/75">{{ $portalSubtitle }}</p>
                         </div>
                     </div>
                 </div>
@@ -115,22 +115,21 @@
                     </button>
 
                     <div
-                        class="hidden items-center gap-2 rounded-xl border border-[var(--portal-border-strong)] bg-[var(--portal-bg-subtle)] px-3 py-1.5 sm:flex dark:border-[var(--portal-border)]"
+                        class="hidden items-center gap-2 px-1 py-1.5 sm:flex"
                         data-ph-clock
                         data-timezone="{{ $appTimezone ?? 'Asia/Manila' }}"
                         title="Philippine Time ({{ $appTimezone ?? 'Asia/Manila' }})"
                     >
-                        <i data-lucide="clock-3" class="h-3.5 w-3.5 text-[var(--cspc-navy)]"></i>
                         <div class="text-right leading-tight">
-                            <p class="text-sm font-semibold tabular-nums text-[var(--portal-text)]" data-ph-clock-time>—:—:—</p>
-                            <p class="text-[10px] font-medium portal-muted" data-ph-clock-date>Asia/Manila</p>
+                            <p class="text-sm font-semibold tabular-nums text-white" data-ph-clock-time>—:—:—</p>
+                            <p class="text-[10px] font-medium text-white/75" data-ph-clock-date>Asia/Manila</p>
                         </div>
                     </div>
 
                     @if ($notificationsUrl)
                         <a
                             href="{{ $notificationsUrl }}"
-                            class="relative inline-flex h-10 w-10 items-center justify-center rounded-xl text-[var(--portal-text-muted)] transition-colors hover:bg-[var(--portal-bg-subtle)] hover:text-[var(--cspc-navy)]"
+                            class="relative inline-flex h-10 w-10 items-center justify-center rounded-xl text-white transition-colors hover:bg-white/10"
                             aria-label="Notifications"
                             data-notification-bell
                         >
@@ -153,16 +152,16 @@
                         <button
                             type="button"
                             id="portal-profile-btn"
-                            class="flex items-center gap-2 rounded-xl border border-transparent p-1 pr-1.5 transition-colors hover:border-[var(--portal-border-strong)] hover:bg-[var(--portal-bg-subtle)] sm:pr-2.5"
+                            class="flex items-center gap-2 rounded-xl border border-transparent p-1 pr-1.5 transition-colors hover:bg-white/10 sm:pr-2.5"
                             aria-haspopup="menu"
                             aria-expanded="false"
                         >
                             <x-portal.avatar :user="$authUser" size="sm" :accent="$profileAccent" />
                             <div class="hidden min-w-0 max-w-[150px] text-left md:block">
-                                <p class="truncate text-sm font-semibold text-[var(--portal-text)]">{{ $profileName }}</p>
-                                <p class="truncate text-xs portal-muted">{{ $profileRole }}</p>
+                                <p class="truncate text-sm font-semibold text-white">{{ $profileName }}</p>
+                                <p class="truncate text-xs text-white/75">{{ $profileRole }}</p>
                             </div>
-                            <i data-lucide="chevron-down" class="hidden h-4 w-4 text-slate-400 md:block"></i>
+                            <i data-lucide="chevron-down" class="hidden h-4 w-4 text-white/70 md:block"></i>
                         </button>
 
                         <div
@@ -241,7 +240,6 @@
                     </div>
                 </div>
             </div>
-            <div class="pointer-events-none absolute inset-x-0 bottom-0 h-[3px] bg-gradient-to-r from-[var(--cspc-navy)] via-[var(--cspc-gold)] to-[var(--cspc-navy)]" aria-hidden="true"></div>
         </header>
 
         <div class="flex">

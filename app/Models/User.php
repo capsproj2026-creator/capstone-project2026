@@ -127,6 +127,41 @@ class User extends Authenticatable implements MustVerifyEmail
         return ($this->account_type ?? '') === \App\Services\TemporaryRfidService::ACCOUNT_TEMPORARY;
     }
 
+    public function isUnregisteredStudentFaculty(): bool
+    {
+        if ($this->isTemporaryAccount()) {
+            return true;
+        }
+
+        $name = mb_strtolower(trim((string) ($this->fullname ?? $this->name ?? '')));
+
+        return in_array($name, [
+            mb_strtolower(\App\Services\TemporaryRfidService::PLACEHOLDER_NAME),
+            'temporary access',
+            'unregistered student / faculty',
+            'unregistered student/faculty',
+        ], true);
+    }
+
+    public function displayRoleLabel(): string
+    {
+        if ($this->isUnregisteredStudentFaculty()) {
+            return 'Student / Faculty';
+        }
+
+        return $this->roleName();
+    }
+
+    public function displayEmail(): string
+    {
+        $email = trim((string) ($this->email ?? ''));
+        if ($this->isUnregisteredStudentFaculty() || $email === '' || str_ends_with(strtolower($email), '.invalid')) {
+            return '—';
+        }
+
+        return $email;
+    }
+
     public function temporaryAccessExpired(): bool
     {
         if (! $this->isTemporaryAccount()) {
@@ -254,11 +289,11 @@ class User extends Authenticatable implements MustVerifyEmail
 
     public function gateRoleLabel(): string
     {
-        if ($this->isTemporaryAccount()) {
+        if ($this->isUnregisteredStudentFaculty()) {
             return 'Student / Faculty';
         }
 
-        return $this->roleName() ?? 'Unknown';
+        return $this->roleName() ?: 'Unknown';
     }
 
     public function loginBlockedReason(): ?string

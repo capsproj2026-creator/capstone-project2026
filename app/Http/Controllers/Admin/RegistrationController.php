@@ -24,15 +24,20 @@ class RegistrationController extends Controller
             $status = 'All';
         }
 
+        $ownerRoles = [NavigationService::ROLE_STUDENT, NavigationService::ROLE_STAFF];
+
         $pendingCount = User::query()
             ->where('status', User::STATUS_PENDING)
-            ->whereIn('user_role_id', [
-                NavigationService::ROLE_STUDENT,
-                NavigationService::ROLE_STAFF,
-            ])
+            ->whereIn('user_role_id', $ownerRoles)
             ->count();
-        $approvedCount = User::query()->where('status', User::STATUS_GRANTED)->count();
-        $declinedCount = User::query()->where('status', User::STATUS_DENIED)->count();
+        $approvedCount = User::query()
+            ->where('status', User::STATUS_GRANTED)
+            ->whereIn('user_role_id', $ownerRoles)
+            ->count();
+        $declinedCount = User::query()
+            ->where('status', User::STATUS_DENIED)
+            ->whereIn('user_role_id', $ownerRoles)
+            ->count();
 
         $requestsQuery = User::query()->with('role')
             ->whereIn('user_role_id', [
@@ -124,8 +129,15 @@ class RegistrationController extends Controller
 
     public function decline(Request $request, int $id): RedirectResponse
     {
+        $request->merge([
+            'remarks' => trim((string) $request->input('remarks', '')),
+        ]);
+
         $validated = $request->validate([
-            'remarks' => ['nullable', 'string', 'max:500'],
+            'remarks' => ['required', 'string', 'min:3', 'max:500'],
+        ], [
+            'remarks.required' => 'Please enter a reason before declining this registration.',
+            'remarks.min' => 'Please enter a reason of at least 3 characters before declining.',
         ]);
 
         $user = User::query()->with('role')->findOrFail($id);
@@ -145,7 +157,7 @@ class RegistrationController extends Controller
             'status' => User::STATUS_DENIED,
             'Gate_access' => User::GATE_ACCESS_DENIED,
             'declined_at' => now(),
-            'decline_remarks' => filled($validated['remarks'] ?? null) ? trim((string) $validated['remarks']) : null,
+            'decline_remarks' => trim((string) $validated['remarks']),
         ];
 
         if ($wasTemporary) {
@@ -156,13 +168,10 @@ class RegistrationController extends Controller
         $user->update($updates);
 
         $roleName = $user->role?->role_name ?? 'User';
-        $remarks = filled($validated['remarks'] ?? null) ? trim((string) $validated['remarks']) : null;
-        $message = "Your registration as {$roleName} has been declined. You may submit a new registration after 3 days.";
-        if ($remarks) {
-            $message .= ' Reason: '.$remarks;
-        }
+        $remarks = trim((string) $validated['remarks']);
+        $message = "Your registration as {$roleName} has been declined. You may submit a new registration after 3 days. Reason: {$remarks}";
 
-        // Notify the vehicle owner by email (Declined), including optional admin remarks.
+        // Notify the vehicle owner by email (Declined), including the required admin remarks.
         $this->updateRegistrationStatus(
             $user,
             'Declined',

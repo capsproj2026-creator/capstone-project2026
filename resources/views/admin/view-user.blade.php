@@ -17,17 +17,17 @@
                     class="h-20 w-20 rounded-xl border border-gray-200 object-cover sm:h-24 sm:w-24">
                 <div>
                     <h1 class="text-2xl font-bold text-gray-900">{{ $user->fullname }}</h1>
-                    <p class="text-sm text-gray-500">{{ $user->role?->role_name }} · {{ $user->id_number }}</p>
+                    <p class="text-sm text-gray-500">{{ $user->displayRoleLabel() }} · {{ $user->id_number }}</p>
                 </div>
             </div>
             <span @class([
                 'inline-flex w-fit rounded-full px-4 py-1.5 text-sm font-semibold',
                 'bg-red-100 text-red-700' => $user->isLocked(),
-                'bg-green-100 text-green-700' => ! $user->isLocked() && $user->status === 'Granted',
-                'bg-amber-100 text-amber-700' => ! $user->isLocked() && $user->status === 'Pending',
-                'bg-gray-100 text-gray-700' => ! $user->isLocked() && ! in_array($user->status, ['Granted', 'Pending'], true),
+                'bg-amber-100 text-amber-700' => ! $user->isLocked() && ($user->isUnregisteredStudentFaculty() || $user->status === 'Pending'),
+                'bg-green-100 text-green-700' => ! $user->isLocked() && ! $user->isUnregisteredStudentFaculty() && $user->status === 'Granted',
+                'bg-gray-100 text-gray-700' => ! $user->isLocked() && ! $user->isUnregisteredStudentFaculty() && ! in_array($user->status, ['Granted', 'Pending'], true),
             ])>
-                {{ $user->isLocked() ? 'Locked' : $user->status }}
+                {{ $user->isLocked() ? 'Locked' : ($user->isUnregisteredStudentFaculty() ? 'Not registered yet' : $user->status) }}
             </span>
         </div>
 
@@ -41,7 +41,7 @@
         <div class="mb-8 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
             <div class="rounded-lg border border-gray-100 bg-gray-50 p-4">
                 <p class="text-xs font-semibold uppercase tracking-wide text-gray-500">Email</p>
-                <p class="mt-1 text-sm font-medium text-gray-900">{{ $user->email }}</p>
+                <p class="mt-1 text-sm font-medium text-gray-900">{{ $user->displayEmail() }}</p>
             </div>
             <div class="rounded-lg border border-gray-100 bg-gray-50 p-4">
                 <p class="text-xs font-semibold uppercase tracking-wide text-gray-500">Phone</p>

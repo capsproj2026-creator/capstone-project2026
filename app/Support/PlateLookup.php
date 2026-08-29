@@ -147,7 +147,7 @@ class PlateLookup
                 'owner_name' => $user->displayName(),
                 'owner_label' => $user->displayName(),
                 'id_number' => $user->id_number,
-                'role' => $user->roleName(),
+                'role' => $user->displayRoleLabel(),
                 'purpose' => null,
                 'registered' => true,
                 'vehicle_details' => $vehicleDetails,

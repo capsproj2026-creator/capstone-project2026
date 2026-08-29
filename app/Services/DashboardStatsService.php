@@ -102,7 +102,7 @@ class DashboardStatsService
      */
     private function violationTypeDistribution(): array
     {
-        $palette = ['#8B5CF6', '#3B82F6', '#EC4899', '#F59E0B', '#10B981'];
+        $palette = ['#93C5FD', '#BFDBFE', '#6EE7B7', '#5D9FD1', '#F87171'];
         $counts = ViolationLog::query()
             ->get(['violation_type'])
             ->groupBy(fn ($row) => trim((string) ($row->violation_type ?: 'Other')) ?: 'Other')
@@ -126,7 +126,7 @@ class DashboardStatsService
                 'labels' => ['No License Plate', 'Unauthorized Parking', 'Overstay', 'Other'],
                 'values' => [0, 0, 0, 0],
                 'percents' => [0, 0, 0, 0],
-                'colors' => ['#3B82F6', '#8B5CF6', '#EC4899', '#64748B'],
+                'colors' => ['#93C5FD', '#BFDBFE', '#6EE7B7', '#5D9FD1'],
                 'total' => 0,
             ];
         }
@@ -442,7 +442,7 @@ class DashboardStatsService
         return [
             'labels' => ['Students', 'Staff', 'Visitors'],
             'values' => [$student, $staff, $visitor],
-            'colors' => ['#3B82F6', '#8B5CF6', '#EC4899'],
+            'colors' => ['#93C5FD', '#BFDBFE', '#6EE7B7'],
         ];
     }
 
@@ -564,7 +564,7 @@ class DashboardStatsService
      */
     private function violationTrendsByType(int $months): array
     {
-        $palette = ['#EAB308', '#EF4444', '#8B5CF6', '#3B82F6', '#F97316'];
+        $palette = ['#5D9FD1', '#F87171', '#6EE7B7', '#93C5FD', '#BFDBFE'];
         $all = ViolationLog::query()->get(['violation_type', 'created_at']);
         $topTypes = $all
             ->groupBy(fn ($row) => $row->violation_type ?: 'Other')
@@ -684,7 +684,7 @@ class DashboardStatsService
                 'rank' => $index + 1,
                 'name' => $user?->name ?: $row['name'],
                 'id_number' => $user?->id_number ?: $row['id_number'],
-                'user_type' => strtolower($user?->roleName() ?: $row['user_type']),
+                'user_type' => strtolower($user?->displayRoleLabel() ?: $row['user_type']),
                 'violations' => $row['violations'],
             ];
         });

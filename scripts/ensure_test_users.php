@@ -53,7 +53,7 @@ User::query()->updateOrCreate(
     ['email' => 'guard@my.cspc.edu.ph'],
     array_merge($defaults, [
         'id' => 2,
-        'fullname' => 'Test Guard',
+        'fullname' => 'Campus Guard',
         'email' => 'guard@my.cspc.edu.ph',
         'user_role_id' => 2,
         'id_number' => 'GUARD-001',

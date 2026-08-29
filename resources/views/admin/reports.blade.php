@@ -269,8 +269,8 @@
                 {
                     label: 'Entries',
                     data: monthly.entries,
-                    borderColor: '#60A5FA',
-                    backgroundColor: 'rgba(96, 165, 250, 0.35)',
+                    borderColor: '#5D9FD1',
+                    backgroundColor: 'rgba(93, 159, 209, 0.28)',
                     fill: true,
                     tension: 0.35,
                     pointRadius: 0,
@@ -278,8 +278,8 @@
                 {
                     label: 'Exits',
                     data: monthly.exits,
-                    borderColor: '#A78BFA',
-                    backgroundColor: 'rgba(167, 139, 250, 0.35)',
+                    borderColor: '#93C5FD',
+                    backgroundColor: 'rgba(147, 197, 253, 0.35)',
                     fill: true,
                     tension: 0.35,
                     pointRadius: 0,
@@ -358,8 +358,8 @@
             datasets: [{
                 label: 'Estimated occupancy',
                 data: parking.values,
-                borderColor: '#EF4444',
-                backgroundColor: 'rgba(239, 68, 68, 0.45)',
+                borderColor: '#F87171',
+                backgroundColor: 'rgba(248, 113, 113, 0.45)',
                 fill: true,
                 tension: 0.4,
                 pointRadius: 0,
@@ -384,7 +384,7 @@
             labels: byLoc.labels.length ? byLoc.labels : ['No data'],
             datasets: [{
                 data: byLoc.values.length ? byLoc.values : [0],
-                backgroundColor: '#F97316',
+                backgroundColor: '#F87171',
                 borderRadius: 6,
                 maxBarThickness: 48,
             }],
@@ -423,7 +423,7 @@
             labels: peak.labels,
             datasets: [{
                 data: peak.values,
-                backgroundColor: '#3B82F6',
+                backgroundColor: '#5D9FD1',
                 borderRadius: 4,
                 maxBarThickness: 28,
             }],

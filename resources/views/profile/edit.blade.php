@@ -36,7 +36,7 @@
                 <x-portal.avatar :user="$user" size="xl" />
                 <div class="min-w-0 flex-1">
                     <h2 class="truncate text-xl font-semibold text-gray-900">{{ $user->fullname }}</h2>
-                    <p class="mt-0.5 text-sm text-gray-500">{{ $user->roleName() }} · ID {{ $user->id_number }}</p>
+                    <p class="mt-0.5 text-sm text-gray-500">{{ $user->displayRoleLabel() }} · ID {{ $user->id_number }}</p>
                     <p class="mt-1 truncate text-sm text-gray-500">{{ $user->email }}</p>
                     @if ($userVehicles->isNotEmpty())
                         <div class="mt-2 flex flex-wrap gap-2">

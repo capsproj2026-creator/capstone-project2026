@@ -38,7 +38,7 @@
                         <td class="px-6 py-4 font-medium text-gray-900">{{ $campusUser->fullname }}</td>
                         <td class="px-6 py-4 text-gray-600">{{ $campusUser->id_number }}</td>
                         <td class="px-6 py-4"><code>{{ $campusUser->plate_number ?? '—' }}</code></td>
-                        <td class="px-6 py-4">{{ $campusUser->role?->role_name }}</td>
+                        <td class="px-6 py-4">{{ $campusUser->displayRoleLabel() }}</td>
                         <td class="px-6 py-4">
                             @php
                                 $gateAccess = $campusUser->Gate_access ?: '';

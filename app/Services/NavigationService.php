@@ -126,7 +126,7 @@ class NavigationService
 
     public static function navActiveClassForRole(?string $roleName): string
     {
-        // Shared CSPC navy active state; role portals keep identity via profile accent.
-        return 'portal-nav-item--active bg-[var(--cspc-navy-soft)] text-[var(--cspc-navy)] shadow-sm';
+        // Shared active pill: medium blue (#5D9FD1) with white text.
+        return 'portal-nav-item--active';
     }
 }

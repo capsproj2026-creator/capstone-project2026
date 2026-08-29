@@ -106,7 +106,7 @@ class CapstoneSystemPassTest extends TestCase
         $pending->delete();
     }
 
-    public function test_declined_registration_allows_empty_remarks(): void
+    public function test_declined_registration_requires_remarks(): void
     {
         $pending = User::query()->create([
             'id' => (int) (microtime(true) * 1000) % 2000000000,
@@ -122,11 +122,15 @@ class CapstoneSystemPassTest extends TestCase
         ]);
 
         $this->actingAs($this->admin)
-            ->post(route('admin.registrations.decline', ['id' => $pending->id]))
-            ->assertRedirect();
+            ->from(route('admin.registrations'))
+            ->post(route('admin.registrations.decline', ['id' => $pending->id]), [
+                'remarks' => '  ',
+            ])
+            ->assertRedirect(route('admin.registrations'))
+            ->assertSessionHasErrors('remarks');
 
         $pending->refresh();
-        $this->assertSame(User::STATUS_DENIED, $pending->status);
+        $this->assertSame(User::STATUS_PENDING, $pending->status);
         $this->assertNull($pending->decline_remarks);
 
         $pending->delete();
@@ -139,7 +143,8 @@ class CapstoneSystemPassTest extends TestCase
             ->assertOk()
             ->assertSee('decline-modal', false)
             ->assertSee('Confirm Decline', false)
-            ->assertSee('Reason / remarks (optional)', false);
+            ->assertSee('Reason / remarks', false)
+            ->assertDontSee('Reason / remarks (optional)', false);
     }
 
     public function test_admin_can_update_slot_status(): void

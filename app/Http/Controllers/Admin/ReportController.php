@@ -116,7 +116,7 @@ class ReportController extends Controller
                     fputcsv($out, [
                         $user->fullname,
                         $user->email,
-                        $user->role?->role_name ?? '',
+                        $user->displayRoleLabel(),
                         $user->id_number,
                         $user->isLocked() ? 'Locked' : $user->status,
                         $user->strike_count,

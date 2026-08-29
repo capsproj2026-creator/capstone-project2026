@@ -20,6 +20,12 @@
             {{ session('error') }}
         </div>
     @endif
+    @error('remarks')
+        <div class="mb-4 flex gap-2 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
+            <i data-lucide="alert-circle" class="h-4 w-4 shrink-0"></i>
+            {{ $message }}
+        </div>
+    @enderror
 
     @php
         $statusCards = [
@@ -104,7 +110,7 @@
                     <col class="w-[7rem]">
                     <col class="w-[9rem]">
                     <col class="w-[16rem]">
-                    <col class="w-[8rem]">
+                    <col class="w-[10rem]">
                     <col class="w-[7rem]">
                     <col class="w-[12rem]">
                 </colgroup>
@@ -123,16 +129,19 @@
                     @forelse ($requests as $row)
                         @php
                             $isIncompleteTemp = $row->isTemporaryAccount();
-                            $roleLabel = $isIncompleteTemp ? $row->gateRoleLabel() : ($row->role?->role_name ?: $row->roleName());
-                            $isStudent = strcasecmp((string) $roleLabel, 'Student') === 0 || str_contains((string) $roleLabel, 'Student');
-                            $isStaff = strcasecmp((string) $roleLabel, 'Staff') === 0 || str_contains((string) $roleLabel, 'Faculty');
-                            $email = $row->email ?: '—';
+                            $isUnregistered = $row->isUnregisteredStudentFaculty();
+                            $roleLabel = $row->displayRoleLabel();
+                            $isStudent = ! $isUnregistered && (strcasecmp((string) $roleLabel, 'Student') === 0);
+                            $isStaff = ! $isUnregistered && strcasecmp((string) $roleLabel, 'Staff') === 0;
+                            $email = $row->displayEmail();
                             if ($isIncompleteTemp || str_ends_with(strtolower((string) $email), '.invalid')) {
                                 $email = '—';
                             }
                             $idNumber = $row->id_number ?: '—';
                             $plate = $row->plate_number ?: '';
-                            $registeredAt = $row->created_at ? $row->created_at->format('M j, Y') : '—';
+                            $registeredAt = $row->created_at ? ph_datetime($row->created_at, 'M j, Y g:i A') : '—';
+                            $registeredDate = $row->created_at ? ph_date($row->created_at, 'M j, Y') : '—';
+                            $registeredTime = $row->created_at ? ph_time($row->created_at, 'g:i A') : '';
                             $searchBlob = strtolower(trim(implode(' ', [
                                 $row->fullname,
                                 $email,
@@ -153,7 +162,8 @@
                                     'inline-flex rounded-md px-2 py-0.5 text-xs font-medium',
                                     'bg-blue-50 text-blue-700' => $isStudent,
                                     'bg-violet-50 text-violet-700' => $isStaff,
-                                    'bg-gray-100 text-gray-600' => ! $isStudent && ! $isStaff,
+                                    'bg-sky-50 text-sky-800' => $isUnregistered,
+                                    'bg-gray-100 text-gray-600' => ! $isStudent && ! $isStaff && ! $isUnregistered,
                                 ])>{{ $roleLabel }}</span>
                             </td>
                             <td class="px-3 py-3">
@@ -162,7 +172,14 @@
                             <td class="min-w-0 px-3 py-3">
                                 <p class="truncate text-gray-600" title="{{ $email }}">{{ $email }}</p>
                             </td>
-                            <td class="px-3 py-3 text-gray-600">{{ $registeredAt }}</td>
+                            <td class="px-3 py-3 text-gray-600" title="{{ $registeredAt }}">
+                                @if ($registeredTime !== '')
+                                    <p class="whitespace-nowrap font-medium text-gray-800">{{ $registeredDate }}</p>
+                                    <p class="mt-0.5 whitespace-nowrap text-xs text-gray-500">{{ $registeredTime }}</p>
+                                @else
+                                    —
+                                @endif
+                            </td>
                             <td class="px-3 py-3">
                                 @if ($isIncompleteTemp)
                                     <span class="inline-flex rounded-full bg-amber-50 px-2.5 py-0.5 text-xs font-semibold text-amber-700">Not registered yet</span>
@@ -227,9 +244,21 @@
         <form id="decline-form" method="POST" action="" class="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
             @csrf
             <h3 id="decline-modal-title" class="text-lg font-bold text-gray-900">Decline registration</h3>
-            <p id="decline-modal-subtitle" class="mt-1 text-sm text-gray-500">Optional remarks are included in the email and in-app notice.</p>
-            <label class="mt-4 block text-sm font-medium text-gray-700" for="decline-remarks">Reason / remarks (optional)</label>
-            <textarea id="decline-remarks" name="remarks" rows="3" maxlength="500" class="mt-1 w-full rounded-xl border border-gray-200 px-3 py-2 text-sm" placeholder="e.g. Unreadable OR/CR, name mismatch"></textarea>
+            <p id="decline-modal-subtitle" class="mt-1 text-sm text-gray-500">A reason is required and will be included in the email and in-app notice.</p>
+            <label class="mt-4 block text-sm font-medium text-gray-700" for="decline-remarks">
+                Reason / remarks <span class="text-rose-600">*</span>
+            </label>
+            <textarea
+                id="decline-remarks"
+                name="remarks"
+                rows="3"
+                minlength="3"
+                maxlength="500"
+                required
+                class="mt-1 w-full rounded-xl border border-gray-200 px-3 py-2 text-sm"
+                placeholder="e.g. Unreadable OR/CR, name mismatch"
+            ></textarea>
+            <p id="decline-remarks-error" class="mt-1 hidden text-sm text-rose-600">Please enter a reason (at least 3 characters) before declining.</p>
             <div class="mt-5 flex justify-end gap-2">
                 <button type="button" id="decline-cancel" class="rounded-xl border border-gray-200 px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50">Cancel</button>
                 <button type="submit" class="rounded-xl bg-rose-600 px-4 py-2 text-sm font-semibold text-white hover:bg-rose-700">Confirm Decline</button>
@@ -261,10 +290,17 @@
         const form = document.getElementById('decline-form');
         const subtitle = document.getElementById('decline-modal-subtitle');
         const remarks = document.getElementById('decline-remarks');
+        const remarksError = document.getElementById('decline-remarks-error');
+        const setRemarksError = (show) => {
+            remarksError?.classList.toggle('hidden', !show);
+            remarks?.classList.toggle('border-rose-400', show);
+            remarks?.setAttribute('aria-invalid', show ? 'true' : 'false');
+        };
         const closeModal = () => {
             modal?.classList.add('hidden');
             modal?.classList.remove('flex');
             if (remarks) remarks.value = '';
+            setRemarksError(false);
         };
         document.querySelectorAll('.js-open-decline').forEach((button) => {
             button.addEventListener('click', () => {
@@ -272,12 +308,27 @@
                 form.action = button.dataset.declineUrl || '';
                 if (subtitle) {
                     const name = button.dataset.declineName || 'this applicant';
-                    subtitle.textContent = `Decline ${name}? Remarks are optional and will be included in the email and in-app notice.`;
+                    subtitle.textContent = `Decline ${name}? A reason is required and will be included in the email and in-app notice.`;
                 }
+                setRemarksError(false);
                 modal?.classList.remove('hidden');
                 modal?.classList.add('flex');
                 remarks?.focus();
             });
+        });
+        form?.addEventListener('submit', (event) => {
+            const value = (remarks?.value || '').trim();
+            if (value.length < 3) {
+                event.preventDefault();
+                if (remarks) remarks.value = value;
+                setRemarksError(true);
+                remarks?.focus();
+            }
+        });
+        remarks?.addEventListener('input', () => {
+            if ((remarks.value || '').trim().length >= 3) {
+                setRemarksError(false);
+            }
         });
         document.getElementById('decline-cancel')?.addEventListener('click', closeModal);
         modal?.addEventListener('click', (event) => {

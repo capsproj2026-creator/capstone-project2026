@@ -14,43 +14,70 @@
 
 @layer base {
     :root {
-        --cspc-navy: #1e3a8a;
-        --cspc-navy-deep: #0f274f;
-        --cspc-navy-soft: rgba(30, 58, 138, 0.1);
+        --cspc-navy: #1A365D;
+        --cspc-navy-deep: #122844;
+        --cspc-navy-soft: rgba(93, 159, 209, 0.16);
         --cspc-gold: #c9a227;
         --cspc-gold-soft: rgba(201, 162, 39, 0.18);
+        --cspc-action: #5D9FD1;
+        --cspc-action-hover: #4A8FC4;
+        --cspc-mint: #6EE7B7;
+        --cspc-alert: #F87171;
+        --cspc-pie-1: #93C5FD;
+        --cspc-pie-2: #BFDBFE;
         --portal-header-h: 4rem;
         --portal-sidebar-w: 17.5rem;
 
         /* Light theme surfaces */
-        --portal-bg: #f8fafc;
-        --portal-bg-subtle: #f1f5f9;
-        --portal-surface: #ffffff;
-        --portal-surface-elevated: #ffffff;
-        --portal-text: #0f172a;
-        --portal-text-muted: #64748b;
-        --portal-text-subtle: #94a3b8;
-        --portal-border: rgba(148, 163, 184, 0.35);
-        --portal-border-strong: #e2e8f0;
-        --portal-header-bg: rgba(255, 255, 255, 0.95);
-        --portal-sidebar-bg: #ffffff;
-        --portal-accent-gradient: linear-gradient(90deg, #3b82f6 0%, #8b5cf6 100%);
-        --portal-accent-glow: 0 0 24px rgba(59, 130, 246, 0.2);
-        --portal-nav-active-bg: rgba(30, 58, 138, 0.1);
-        --portal-nav-active-text: #1e3a8a;
-        --portal-nav-icon-bg: #f1f5f9;
-        --portal-nav-icon-text: #64748b;
-        --portal-overlay-bg: rgba(15, 39, 79, 0.45);
+        --portal-bg: #F9FAFB;
+        --portal-bg-subtle: #eef4f8;
+        --portal-surface: #FFFFFF;
+        --portal-surface-elevated: #FFFFFF;
+        --portal-text: #2D3748;
+        --portal-text-muted: #4A5568;
+        --portal-text-subtle: #718096;
+        --portal-border: rgba(45, 55, 72, 0.12);
+        --portal-border-strong: #E2E8F0;
+        --portal-header-bg: #1A365D;
+        --portal-header-text: #ffffff;
+        --portal-header-muted: rgba(255, 255, 255, 0.78);
+        --portal-sidebar-bg: #E8F4FC;
+        --portal-accent-gradient: linear-gradient(90deg, #5D9FD1 0%, #4A8FC4 100%);
+        --portal-accent-glow: 0 1px 2px rgba(26, 54, 93, 0.12);
+        --portal-nav-active-bg: #5D9FD1;
+        --portal-nav-active-text: #ffffff;
+        --portal-nav-icon-bg: rgba(255, 255, 255, 0.72);
+        --portal-nav-icon-text: #2D3748;
+        --portal-overlay-bg: rgba(26, 54, 93, 0.45);
+
+        --portal-success-bg: rgba(110, 231, 183, 0.22);
+        --portal-success-border: rgba(110, 231, 183, 0.45);
+        --portal-success-text: #6EE7B7;
+        --portal-error-bg: rgba(248, 113, 113, 0.14);
+        --portal-error-border: rgba(248, 113, 113, 0.35);
+        --portal-error-text: #F87171;
+        --portal-warning-bg: rgba(248, 113, 113, 0.1);
+        --portal-warning-border: rgba(248, 113, 113, 0.28);
+        --portal-warning-text: #F87171;
+        --portal-info-bg: rgba(93, 159, 209, 0.12);
+        --portal-info-border: rgba(93, 159, 209, 0.3);
+        --portal-info-text: #5D9FD1;
     }
 
     html.dark {
         color-scheme: dark;
 
-        --cspc-navy: #7cb3ff;
+        --cspc-navy: #93C5FD;
         --cspc-navy-deep: #0a0e17;
-        --cspc-navy-soft: rgba(124, 179, 255, 0.1);
+        --cspc-navy-soft: rgba(93, 159, 209, 0.18);
         --cspc-gold: #d4b84a;
         --cspc-gold-soft: rgba(212, 184, 74, 0.12);
+        --cspc-action: #5D9FD1;
+        --cspc-action-hover: #4A8FC4;
+        --cspc-mint: #6EE7B7;
+        --cspc-alert: #F87171;
+        --cspc-pie-1: #93C5FD;
+        --cspc-pie-2: #BFDBFE;
 
         /* Softer surfaces — easier on the eyes than pure white on deep navy */
         --portal-bg: #0e1219;
@@ -62,12 +89,14 @@
         --portal-text-subtle: #6b7789;
         --portal-border: rgba(148, 163, 184, 0.14);
         --portal-border-strong: rgba(100, 116, 139, 0.35);
-        --portal-header-bg: rgba(14, 18, 25, 0.92);
+        --portal-header-bg: #1A365D;
+        --portal-header-text: #ffffff;
+        --portal-header-muted: rgba(255, 255, 255, 0.78);
         --portal-sidebar-bg: linear-gradient(180deg, #121820 0%, #0e1219 100%);
-        --portal-accent-gradient: linear-gradient(90deg, #4d8ef7 0%, #9b7cf6 100%);
-        --portal-accent-glow: 0 0 20px rgba(77, 142, 247, 0.18);
-        --portal-nav-active-bg: rgba(77, 142, 247, 0.14);
-        --portal-nav-active-text: #f1f5f9;
+        --portal-accent-gradient: linear-gradient(90deg, #5D9FD1 0%, #4A8FC4 100%);
+        --portal-accent-glow: 0 0 16px rgba(93, 159, 209, 0.22);
+        --portal-nav-active-bg: #5D9FD1;
+        --portal-nav-active-text: #ffffff;
         --portal-nav-icon-bg: rgba(30, 41, 59, 0.55);
         --portal-nav-icon-text: #94a3b8;
         --portal-overlay-bg: rgba(2, 6, 14, 0.65);
@@ -191,9 +220,55 @@
     }
 
     .portal-header-bar {
-        border-color: var(--portal-border);
+        border-color: transparent;
         background: var(--portal-header-bg);
-        backdrop-filter: blur(12px);
+        color: var(--portal-header-text);
+        box-shadow: 0 1px 3px rgba(15, 23, 42, 0.28);
+    }
+
+    .portal-header-bar h1,
+    .portal-header-bar [data-ph-clock-time],
+    .portal-header-bar #portal-profile-btn > div > p:first-child {
+        color: var(--portal-header-text) !important;
+    }
+
+    .portal-header-bar .portal-muted,
+    .portal-header-bar [data-ph-clock-date],
+    .portal-header-bar #portal-profile-btn .portal-muted,
+    .portal-header-bar #portal-profile-btn > div > p:last-child {
+        color: var(--portal-header-muted) !important;
+    }
+
+    .portal-header-bar #portal-menu-btn,
+    .portal-header-bar #portal-theme-toggle,
+    .portal-header-bar [data-notification-bell],
+    .portal-header-bar #portal-profile-btn [data-lucide],
+    .portal-header-bar [data-ph-clock] i {
+        color: var(--portal-header-text);
+    }
+
+    .portal-header-bar #portal-menu-btn:hover,
+    .portal-header-bar [data-notification-bell]:hover,
+    .portal-header-bar #portal-profile-btn:hover {
+        background: rgba(255, 255, 255, 0.1);
+        color: #fff;
+        border-color: transparent;
+    }
+
+    .portal-header-bar .portal-theme-toggle {
+        border-color: rgba(255, 255, 255, 0.22);
+        background: rgba(255, 255, 255, 0.1);
+        color: #fff;
+    }
+
+    .portal-header-bar .portal-theme-toggle:hover {
+        background: rgba(255, 255, 255, 0.18);
+        color: #fff;
+    }
+
+    .portal-header-cspc {
+        background: rgba(255, 255, 255, 0.16);
+        color: #fff;
     }
 
     .portal-sidebar-panel {
@@ -238,28 +313,28 @@
     }
 
     .portal-stat-icon--blue {
-        background: rgba(59, 130, 246, 0.12);
-        color: #60a5fa;
+        background: rgba(93, 159, 209, 0.16);
+        color: #5D9FD1;
     }
 
     .portal-stat-icon--red {
-        background: rgba(239, 68, 68, 0.12);
-        color: #f87171;
+        background: rgba(248, 113, 113, 0.16);
+        color: #F87171;
     }
 
     .portal-stat-icon--violet {
-        background: rgba(139, 92, 246, 0.12);
-        color: #a78bfa;
+        background: rgba(147, 197, 253, 0.28);
+        color: #5D9FD1;
     }
 
     .portal-stat-icon--emerald {
-        background: rgba(16, 185, 129, 0.12);
-        color: #34d399;
+        background: rgba(110, 231, 183, 0.28);
+        color: #059669;
     }
 
     .portal-stat-icon--rose {
-        background: rgba(244, 63, 94, 0.12);
-        color: #fb7185;
+        background: rgba(248, 113, 113, 0.16);
+        color: #F87171;
     }
 
     .portal-stat-icon--slate {
@@ -359,7 +434,7 @@
         border-radius: 0.75rem;
         border: 1px solid var(--portal-border-strong);
         background: var(--portal-surface);
-        box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+        box-shadow: 0 1px 3px rgba(26, 54, 93, 0.06);
     }
 
     html.dark .portal-card {
@@ -396,10 +471,33 @@
         letter-spacing: -0.02em;
     }
 
+    .portal-stat-value--success {
+        color: var(--cspc-mint);
+    }
+
+    .portal-stat-value--alert {
+        color: var(--cspc-alert);
+    }
+
+    .portal-text-success {
+        color: var(--cspc-mint);
+    }
+
+    .portal-text-alert {
+        color: var(--cspc-alert);
+    }
+
     /* Navigation — dark active pill with gradient glow */
     .portal-nav-item--active {
         background: var(--portal-nav-active-bg) !important;
         color: var(--portal-nav-active-text) !important;
+        box-shadow: 0 1px 2px rgba(26, 54, 93, 0.12);
+    }
+
+    .portal-nav-item--active .portal-nav-icon-wrap {
+        background: rgba(255, 255, 255, 0.22) !important;
+        color: #fff !important;
+        box-shadow: none;
     }
 
     html.dark .portal-nav-item--active {
@@ -407,8 +505,14 @@
         box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
     }
 
+    html.dark .portal-header-bar .portal-theme-toggle {
+        border-color: rgba(255, 255, 255, 0.22);
+        background: rgba(255, 255, 255, 0.1);
+        color: #fff;
+    }
+
     html.dark .portal-header-bar {
-        box-shadow: 0 1px 0 var(--portal-border);
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
     }
 
     html.dark .text-emerald-600 { color: #6ee7b7 !important; }
@@ -432,9 +536,9 @@
     }
 
     html.dark .portal-nav-item--active .portal-nav-icon-wrap {
-        background: var(--portal-accent-gradient) !important;
+        background: rgba(255, 255, 255, 0.22) !important;
         color: #fff !important;
-        box-shadow: var(--portal-accent-glow);
+        box-shadow: none;
     }
 
     html.dark .portal-nav-item:not(.portal-nav-item--active) .portal-nav-icon-wrap {
@@ -442,17 +546,40 @@
         color: var(--portal-nav-icon-text);
     }
 
-    /* Primary gradient button (Quick Actions) */
+    /* Map existing Tailwind blues to the dashboard palette inside the portal */
+    html:not(.dark) .portal-shell .bg-blue-600 {
+        background-color: var(--cspc-action) !important;
+    }
+
+    html:not(.dark) .portal-shell .hover\:bg-blue-700:hover {
+        background-color: var(--cspc-action-hover) !important;
+    }
+
+    html:not(.dark) .portal-shell .text-blue-600,
+    html:not(.dark) .portal-shell .text-blue-700 {
+        color: var(--cspc-navy) !important;
+    }
+
+    html:not(.dark) .portal-shell .border-blue-600 {
+        border-color: var(--cspc-action) !important;
+    }
+
+    html:not(.dark) .portal-shell .peer:checked ~ .peer-checked\:bg-blue-600 {
+        background-color: var(--cspc-action) !important;
+        border-color: var(--cspc-action) !important;
+        color: #fff !important;
+    }
     .portal-btn-gradient {
-        background: var(--portal-accent-gradient);
+        background: var(--cspc-action);
         color: #fff;
         border: none;
-        box-shadow: var(--portal-accent-glow);
-        transition: filter 0.2s, transform 0.15s;
+        box-shadow: 0 1px 2px rgba(26, 54, 93, 0.16);
+        transition: background-color 0.15s, transform 0.15s;
     }
 
     .portal-btn-gradient:hover {
-        filter: brightness(1.08);
+        background: var(--cspc-action-hover);
+        color: #fff;
         transform: translateY(-1px);
     }
 

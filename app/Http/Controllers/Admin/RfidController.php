@@ -57,10 +57,15 @@ class RfidController extends Controller
 
     private function eligibleQuery(): Builder
     {
-        return User::query()->whereIn('user_role_id', [
-            NavigationService::ROLE_STUDENT,
-            NavigationService::ROLE_STAFF,
-        ]);
+        return User::query()
+            ->whereIn('user_role_id', [
+                NavigationService::ROLE_STUDENT,
+                NavigationService::ROLE_STAFF,
+            ])
+            ->where(function (Builder $q) {
+                $q->whereNull('account_type')
+                    ->orWhere('account_type', '!=', TemporaryRfidService::ACCOUNT_TEMPORARY);
+            });
     }
 
     /**
@@ -130,6 +135,12 @@ class RfidController extends Controller
 
         $user = User::query()->findOrFail($id);
         $uid = $rfid->normalizeUid($validated['rfid_uid']);
+
+        if ($user->isTemporaryAccount()) {
+            return redirect()
+                ->route('admin.rfid', ['tab' => self::TAB_PENDING])
+                ->with('error', 'This unregistered student/faculty must complete vehicle registration before RFID can be approved.');
+        }
 
         if (strlen($uid) < 4) {
             return redirect()
@@ -201,6 +212,12 @@ class RfidController extends Controller
 
         $user = User::query()->findOrFail($validated['user_id']);
         $tab = $this->normalizeTab((string) ($validated['tab'] ?? self::TAB_ALL));
+
+        if ($user->isTemporaryAccount()) {
+            return redirect()
+                ->route('admin.rfid', ['tab' => $tab])
+                ->with('error', 'This unregistered student/faculty must complete vehicle registration before RFID can be updated.');
+        }
 
         if (! in_array((int) $user->user_role_id, [NavigationService::ROLE_STUDENT, NavigationService::ROLE_STAFF], true)) {
             return redirect()

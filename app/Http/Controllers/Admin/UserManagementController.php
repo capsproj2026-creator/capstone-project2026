@@ -73,7 +73,13 @@ class UserManagementController extends Controller
             'direction' => $direction,
             'search' => $search,
             'totalUsers' => User::query()->whereHas('role', fn ($q) => $q->where('role_name', '!=', 'Admin'))->count(),
-            'studentCount' => User::query()->whereHas('role', fn ($q) => $q->where('role_name', 'Student'))->count(),
+            'studentCount' => User::query()
+                ->whereHas('role', fn ($q) => $q->where('role_name', 'Student'))
+                ->where(function ($q) {
+                    $q->whereNull('account_type')
+                        ->orWhere('account_type', '!=', \App\Services\TemporaryRfidService::ACCOUNT_TEMPORARY);
+                })
+                ->count(),
             'staffCount' => User::query()->whereHas('role', fn ($q) => $q->where('role_name', 'Staff'))->count(),
             'guardCount' => User::query()->whereHas('role', fn ($q) => $q->where('role_name', 'Guard'))->count(),
         ]);

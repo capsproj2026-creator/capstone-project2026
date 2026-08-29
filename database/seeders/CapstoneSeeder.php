@@ -264,7 +264,7 @@ class CapstoneSeeder extends Seeder
         User::query()->updateOrCreate(
             ['id' => 2],
             array_merge($defaults, [
-                'fullname' => 'Test Guard',
+                'fullname' => 'Campus Guard',
                 'email' => 'guard@my.cspc.edu.ph',
                 'user_role_id' => 2,
                 'id_number' => 'GUARD-001',

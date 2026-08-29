@@ -128,7 +128,7 @@
             <tbody id="access-records-body" class="divide-y divide-gray-100">
                 @forelse ($logs as $log)
                     @php
-                        $role = $log->user?->roleName() ?? '—';
+                        $role = $log->user?->displayRoleLabel() ?? '—';
                         $granted = $log->accessGranted();
                         $isEntry = ($log->action ?? '') === 'Entry';
                     @endphp
@@ -149,6 +149,8 @@
                                 <span class="inline-flex rounded-full bg-purple-50 px-2.5 py-1 text-xs font-semibold text-purple-700">Staff</span>
                             @elseif ($role === 'Visitor')
                                 <span class="inline-flex rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700">Visitor</span>
+                            @elseif ($role === 'Student / Faculty')
+                                <span class="inline-flex rounded-full bg-sky-50 px-2.5 py-1 text-xs font-semibold text-sky-800">Student / Faculty</span>
                             @else
                                 <span class="inline-flex rounded-full bg-gray-100 px-2.5 py-1 text-xs font-semibold text-gray-600">{{ $role }}</span>
                             @endif
@@ -256,6 +258,7 @@
             if (r === 'Student') return '<span class="inline-flex rounded-full bg-blue-50 px-2.5 py-1 text-xs font-semibold text-blue-700">Student</span>';
             if (r === 'Staff') return '<span class="inline-flex rounded-full bg-purple-50 px-2.5 py-1 text-xs font-semibold text-purple-700">Staff</span>';
             if (r === 'Visitor') return '<span class="inline-flex rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700">Visitor</span>';
+            if (r === 'Student / Faculty') return '<span class="inline-flex rounded-full bg-sky-50 px-2.5 py-1 text-xs font-semibold text-sky-800">Student / Faculty</span>';
             return `<span class="inline-flex rounded-full bg-gray-100 px-2.5 py-1 text-xs font-semibold text-gray-600">${esc(r) || '—'}</span>`;
         };
 

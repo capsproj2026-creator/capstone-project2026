@@ -44,7 +44,7 @@
                     <x-portal.avatar :user="$user" size="xl" class="ring-2 ring-white shadow-sm" />
                     <div class="min-w-0">
                         <h2 class="truncate text-lg font-semibold text-gray-900 sm:text-xl">{{ $user->fullname }}</h2>
-                        <p class="mt-0.5 text-sm text-gray-500">{{ $user->role?->role_name ?? 'Campus User' }} · ID {{ $user->id_number ?: '—' }}</p>
+                        <p class="mt-0.5 text-sm text-gray-500">{{ $user->displayRoleLabel() }} · ID {{ $user->id_number ?: '—' }}</p>
                         <p class="mt-1 truncate text-sm text-gray-500">{{ $user->email }}</p>
                     </div>
                 </div>

@@ -290,6 +290,7 @@ class TemporaryRfidAccessTest extends TestCase
             ->assertOk()
             ->assertSee('Not registered yet', false)
             ->assertSee(TemporaryRfidService::PLACEHOLDER_NAME, false)
+            ->assertSee('Student / Faculty', false)
             ->assertDontSee('@temp.smartcampus.invalid', false);
 
         $this->actingAs($admin)
@@ -297,8 +298,23 @@ class TemporaryRfidAccessTest extends TestCase
             ->assertRedirect()
             ->assertSessionHas('error');
 
+        $this->actingAs($admin)
+            ->post(route('admin.rfid.update'), [
+                'user_id' => $temp->id,
+                'action' => 'grant',
+                'rfid_uid' => $uid,
+            ])
+            ->assertRedirect()
+            ->assertSessionHas('error');
+
+        $this->actingAs($admin)
+            ->get(route('admin.users'))
+            ->assertOk()
+            ->assertSee('Student / Faculty', false);
+
         $temp->refresh();
         $this->assertTrue($temp->isTemporaryAccount());
+        $this->assertSame('Student / Faculty', $temp->displayRoleLabel());
         $this->assertSame(User::STATUS_PENDING, $temp->status);
         $this->assertSame(User::GATE_ACCESS_GRANTED, $temp->Gate_access);
     }

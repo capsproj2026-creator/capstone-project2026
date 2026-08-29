@@ -20,7 +20,7 @@
                     @foreach ($usersWithSecondStrike as $atRisk)
                         <li>
                             • {{ $atRisk->name }} ({{ $atRisk->id_number }})
-                            — {{ strtolower($atRisk->roleName()) }}
+                            — {{ strtolower($atRisk->displayRoleLabel()) }}
                         </li>
                     @endforeach
                 </ul>
@@ -35,11 +35,11 @@
                 <p class="text-sm font-medium portal-muted">Total Users</p>
                 <span class="portal-stat-icon portal-stat-icon--blue"><i data-lucide="users" class="h-4 w-4"></i></span>
             </div>
-            <p class="portal-stat-value text-3xl font-bold tracking-tight">{{ number_format($totalUsers) }}</p>
+            <p class="portal-stat-value portal-stat-value--success text-3xl font-bold tracking-tight">{{ number_format($totalUsers) }}</p>
             <p class="mt-2 text-sm">
-                <span class="font-medium text-emerald-600 dark:text-emerald-400">{{ number_format($activeUsers) }} active</span>
+                <span class="font-medium portal-text-success">{{ number_format($activeUsers) }} active</span>
                 <span class="text-gray-400 dark:text-slate-600"> • </span>
-                <span class="font-medium text-red-600 dark:text-red-400">{{ number_format($suspendedUsers) }} suspended</span>
+                <span @class(['font-medium', 'portal-text-alert' => ($suspendedUsers ?? 0) > 0, 'portal-muted' => ($suspendedUsers ?? 0) == 0])>{{ number_format($suspendedUsers) }} suspended</span>
             </p>
         </div>
 
@@ -48,8 +48,12 @@
                 <p class="text-sm font-medium portal-muted">Active Violations</p>
                 <span class="portal-stat-icon portal-stat-icon--red"><i data-lucide="triangle-alert" class="h-4 w-4"></i></span>
             </div>
-            <p class="portal-stat-value text-3xl font-bold tracking-tight">{{ number_format($activeViolations) }}</p>
-            <p class="mt-2 text-sm font-medium text-red-600 dark:text-red-400">3-Strike System</p>
+            <p @class([
+                'text-3xl font-bold tracking-tight',
+                'portal-stat-value--success' => ($activeViolations ?? 0) == 0,
+                'portal-stat-value--alert' => ($activeViolations ?? 0) > 0,
+            ])>{{ number_format($activeViolations) }}</p>
+            <p class="mt-2 text-sm font-medium portal-muted">3-Strike System</p>
         </div>
 
         <div class="portal-card p-5">
@@ -57,15 +61,15 @@
                 <p class="text-sm font-medium portal-muted">Today's Activity</p>
                 <span class="portal-stat-icon portal-stat-icon--violet"><i data-lucide="trending-up" class="h-4 w-4"></i></span>
             </div>
-            <p class="portal-stat-value text-3xl font-bold tracking-tight">{{ number_format($todayActivity) }}</p>
+            <p class="portal-stat-value portal-stat-value--success text-3xl font-bold tracking-tight">{{ number_format($todayActivity) }}</p>
             <p class="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm portal-muted">
                 <span class="inline-flex items-center gap-1">
-                    <i data-lucide="log-in" class="h-3.5 w-3.5 text-blue-600 dark:text-blue-400"></i>
+                    <i data-lucide="log-in" class="h-3.5 w-3.5 text-[var(--cspc-action)]"></i>
                     {{ number_format($todayEntries) }} entries
                 </span>
                 <span class="text-gray-300 dark:text-slate-600">•</span>
                 <span class="inline-flex items-center gap-1">
-                    <i data-lucide="log-out" class="h-3.5 w-3.5 text-purple-600 dark:text-violet-400"></i>
+                    <i data-lucide="log-out" class="h-3.5 w-3.5 text-[var(--cspc-pie-1)]"></i>
                     {{ number_format($todayExits) }} exits
                 </span>
             </p>
@@ -79,7 +83,7 @@
             <p class="portal-stat-value text-3xl font-bold tracking-tight">
                 {{ number_format($occupiedSlots) }}/{{ number_format($totalSlots) }}
             </p>
-            <p class="mt-2 text-sm font-medium text-blue-600 dark:text-blue-400">{{ $parkingAvailablePercent }}% available</p>
+            <p class="mt-2 text-sm font-medium portal-muted">{{ $parkingAvailablePercent }}% available</p>
         </div>
     </div>
 
@@ -96,7 +100,7 @@
                 <p class="text-sm font-medium portal-muted">Active Visitors</p>
                 <span class="portal-stat-icon portal-stat-icon--emerald"><i data-lucide="user-round-check" class="h-4 w-4"></i></span>
             </div>
-            <p class="text-3xl font-bold tracking-tight text-teal-700 dark:text-emerald-400">{{ number_format($activeVisitors ?? 0) }}</p>
+            <p class="portal-stat-value portal-stat-value--success text-3xl font-bold tracking-tight">{{ number_format($activeVisitors ?? 0) }}</p>
         </div>
         <div class="portal-card p-5">
             <div class="mb-3 flex items-start justify-between">
@@ -110,7 +114,11 @@
                 <p class="text-sm font-medium portal-muted">Expired Visitors</p>
                 <span class="portal-stat-icon portal-stat-icon--rose"><i data-lucide="clock" class="h-4 w-4"></i></span>
             </div>
-            <p class="text-3xl font-bold tracking-tight text-rose-700 dark:text-rose-400">{{ number_format($expiredVisitors ?? 0) }}</p>
+            <p @class([
+                'text-3xl font-bold tracking-tight',
+                'portal-stat-value' => ($expiredVisitors ?? 0) == 0,
+                'portal-stat-value--alert' => ($expiredVisitors ?? 0) > 0,
+            ])>{{ number_format($expiredVisitors ?? 0) }}</p>
         </div>
     </div>
 
@@ -120,8 +128,8 @@
             <div class="mb-4 flex shrink-0 items-center justify-between gap-3">
                 <h3 class="portal-heading text-base font-semibold">Weekly Entry/Exit Trends</h3>
                 <div class="hidden items-center gap-3 text-xs portal-muted sm:flex">
-                    <span class="inline-flex items-center gap-1.5"><span class="h-2.5 w-2.5 rounded-sm bg-blue-500"></span> Entries</span>
-                    <span class="inline-flex items-center gap-1.5"><span class="h-2.5 w-2.5 rounded-sm bg-violet-500"></span> Exits</span>
+                    <span class="inline-flex items-center gap-1.5"><span class="h-2.5 w-2.5 rounded-sm bg-[#6EE7B7]"></span> Entries</span>
+                    <span class="inline-flex items-center gap-1.5"><span class="h-2.5 w-2.5 rounded-sm bg-[#93C5FD]"></span> Exits</span>
                 </div>
             </div>
             <div class="relative min-h-0 flex-1">
@@ -151,7 +159,7 @@
                 <h3 class="portal-heading text-base font-semibold">Recent Violations</h3>
                 <a
                     href="{{ route('admin.violations') }}"
-                    class="portal-btn-outline rounded-lg px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:text-slate-300"
+                    class="portal-btn-outline rounded-lg px-3 py-1.5 text-sm font-medium text-[var(--portal-text)] hover:bg-[var(--portal-bg-subtle)]"
                 >
                     View All
                 </a>
@@ -170,7 +178,7 @@
                         <div class="min-w-0 flex-1">
                             <div class="flex flex-wrap items-center gap-2">
                                 <p class="font-semibold text-gray-900">{{ $violation->violator_name }}</p>
-                                <span class="inline-flex rounded-full bg-red-50 px-2.5 py-0.5 text-xs font-semibold lowercase text-red-700">
+                                <span class="inline-flex rounded-full bg-[rgba(248,113,113,0.14)] px-2.5 py-0.5 text-xs font-semibold lowercase text-[#F87171]">
                                     {{ $typeLabel }}
                                 </span>
                             </div>
@@ -197,8 +205,8 @@
                     </div>
                 @empty
                     <div class="flex flex-col items-center justify-center px-5 py-16 text-center sm:px-6">
-                        <div class="mb-5 flex h-20 w-20 items-center justify-center rounded-2xl border border-blue-500/20 bg-gradient-to-br from-blue-500/10 to-violet-600/15 shadow-[0_0_40px_rgba(59,130,246,0.15)]">
-                            <i data-lucide="clipboard-list" class="h-10 w-10 text-blue-400"></i>
+                        <div class="mb-5 flex h-20 w-20 items-center justify-center rounded-2xl border border-[var(--cspc-action)]/20 bg-[rgba(93,159,209,0.1)]">
+                            <i data-lucide="clipboard-list" class="h-10 w-10 text-[var(--cspc-action)]"></i>
                         </div>
                         <p class="text-sm font-medium portal-muted">No violations recorded yet.</p>
                     </div>
@@ -218,23 +226,23 @@
                 </a>
                 <a
                     href="{{ route('admin.violations') }}"
-                    class="portal-btn-outline flex items-center justify-center gap-2 rounded-xl border border-gray-200 px-4 py-3.5 text-sm font-semibold text-gray-800 transition hover:bg-gray-50 dark:text-slate-200"
+                    class="portal-btn-gradient flex items-center justify-center gap-2 rounded-xl px-4 py-3.5 text-sm font-semibold"
                 >
-                    <i data-lucide="triangle-alert" class="h-4 w-4 text-gray-500 dark:text-red-400"></i>
+                    <i data-lucide="triangle-alert" class="h-4 w-4"></i>
                     Log Violation
                 </a>
                 <a
                     href="{{ route('admin.reports') }}"
-                    class="portal-btn-outline flex items-center justify-center gap-2 rounded-xl border border-gray-200 px-4 py-3.5 text-sm font-semibold text-gray-800 transition hover:bg-gray-50 dark:text-slate-200"
+                    class="portal-btn-gradient flex items-center justify-center gap-2 rounded-xl px-4 py-3.5 text-sm font-semibold"
                 >
-                    <i data-lucide="bar-chart-3" class="h-4 w-4 text-gray-500 dark:text-blue-300"></i>
+                    <i data-lucide="bar-chart-3" class="h-4 w-4"></i>
                     Generate Report
                 </a>
                 <a
                     href="{{ route('admin.parking') }}"
-                    class="portal-btn-outline flex items-center justify-center gap-2 rounded-xl border border-gray-200 px-4 py-3.5 text-sm font-semibold text-gray-800 transition hover:bg-gray-50 dark:text-slate-200"
+                    class="portal-btn-gradient flex items-center justify-center gap-2 rounded-xl px-4 py-3.5 text-sm font-semibold"
                 >
-                    <i data-lucide="parking-square" class="h-4 w-4 text-gray-500 dark:text-violet-300"></i>
+                    <i data-lucide="parking-square" class="h-4 w-4"></i>
                     View Parking Map
                 </a>
             </div>
@@ -302,7 +310,7 @@
                         {
                             label: 'Entries',
                             data: entries,
-                            backgroundColor: isDark() ? 'rgba(77, 142, 247, 0.85)' : '#6366f1',
+                            backgroundColor: isDark() ? 'rgba(110, 231, 183, 0.85)' : '#6EE7B7',
                             borderRadius: 3,
                             borderSkipped: false,
                             maxBarThickness: 22,
@@ -310,7 +318,7 @@
                         {
                             label: 'Exits',
                             data: exits,
-                            backgroundColor: isDark() ? 'rgba(155, 124, 246, 0.85)' : '#a855f7',
+                            backgroundColor: isDark() ? 'rgba(147, 197, 253, 0.85)' : '#93C5FD',
                             borderRadius: 3,
                             borderSkipped: false,
                             maxBarThickness: 22,

@@ -127,9 +127,10 @@
                     @forelse ($users as $u)
                         @php
                             /** @var \App\Models\User $u */
-                            $roleLabel = $u->roleName();
-                            $isStudent = strcasecmp($roleLabel, 'Student') === 0;
-                            $isStaff = strcasecmp($roleLabel, 'Staff') === 0;
+                            $roleLabel = $u->displayRoleLabel();
+                            $isUnregistered = $u->isUnregisteredStudentFaculty();
+                            $isStudent = ! $isUnregistered && strcasecmp($roleLabel, 'Student') === 0;
+                            $isStaff = ! $isUnregistered && strcasecmp($roleLabel, 'Staff') === 0;
                             $hasRfid = filled($u->rfid_uid);
                             $gate = $u->Gate_access ?: \App\Models\User::GATE_ACCESS_PENDING;
                             $isDenied = $gate === \App\Models\User::GATE_ACCESS_DENIED || $u->status === \App\Models\User::STATUS_DENIED;
@@ -138,7 +139,7 @@
                             $plate = $u->plate_number ?: '—';
                             $phone = $u->phone_number ?: '—';
                             $idNumber = $u->id_number ?: '—';
-                            $email = $u->email ?: '—';
+                            $email = $u->displayEmail();
                             $searchBlob = strtolower(trim(implode(' ', [
                                 $u->displayName(),
                                 $email,
@@ -168,7 +169,8 @@
                                     'mt-1 inline-flex rounded-md px-2 py-0.5 text-xs font-medium',
                                     'bg-blue-50 text-blue-700' => $isStudent,
                                     'bg-violet-50 text-violet-700' => $isStaff,
-                                    'bg-gray-100 text-gray-600' => ! $isStudent && ! $isStaff,
+                                    'bg-sky-50 text-sky-800' => $isUnregistered,
+                                    'bg-gray-100 text-gray-600' => ! $isStudent && ! $isStaff && ! $isUnregistered,
                                 ])>{{ $roleLabel }}</span>
                             </td>
 
