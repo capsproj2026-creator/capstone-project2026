@@ -259,17 +259,17 @@
             {{-- Main content --}}
             <main id="portal-main" class="portal-main portal-main-area min-w-0 flex-1 p-4 sm:p-6 lg:p-8">
                 @if (session('success'))
-                    <div class="mb-4 rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800">
+                    <div class="portal-alert portal-alert--success mb-4">
                         {{ session('success') }}
                     </div>
                 @endif
                 @if (session('error'))
-                    <div class="mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
+                    <div class="portal-alert portal-alert--error mb-4">
                         {{ session('error') }}
                     </div>
                 @endif
                 @if ($errors->any())
-                    <div class="mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
+                    <div class="portal-alert portal-alert--error mb-4">
                         <p class="font-semibold">Please fix the following:</p>
                         <ul class="mt-1 list-disc pl-5">
                             @foreach ($errors->all() as $error)

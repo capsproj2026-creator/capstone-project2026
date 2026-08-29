@@ -1,8 +1,4 @@
 {
     "admin": 1,
-    "guard": 2,
-    "student": 3,
-    "staff": 4,
-    "pending_student": 5,
-    "pending_staff": 11
+    "guard": 2
 }

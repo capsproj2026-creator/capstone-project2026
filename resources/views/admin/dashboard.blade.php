@@ -257,10 +257,10 @@
     if (window.ChartDataLabels) Chart.register(ChartDataLabels);
 
     const isDark = () => document.documentElement.classList.contains('dark');
-    const chartGrid = () => (isDark() ? 'rgba(148, 163, 184, 0.12)' : '#E5E7EB');
-    const chartTick = () => (isDark() ? '#94a3b8' : '#6B7280');
-    const chartBorder = () => (isDark() ? 'rgba(71, 85, 105, 0.5)' : '#D1D5DB');
-    const pieBorder = () => (isDark() ? '#121a2e' : '#ffffff');
+    const chartGrid = () => (isDark() ? 'rgba(148, 163, 184, 0.1)' : '#E5E7EB');
+    const chartTick = () => (isDark() ? '#9ca8b9' : '#6B7280');
+    const chartBorder = () => (isDark() ? 'rgba(100, 116, 139, 0.35)' : '#D1D5DB');
+    const pieBorder = () => (isDark() ? '#171d28' : '#ffffff');
 
     const weekly = @json($weeklyTrends);
     const distribution = @json($violationTypeDistribution);
@@ -302,7 +302,7 @@
                         {
                             label: 'Entries',
                             data: entries,
-                            backgroundColor: isDark() ? '#3b82f6' : '#6366f1',
+                            backgroundColor: isDark() ? 'rgba(77, 142, 247, 0.85)' : '#6366f1',
                             borderRadius: 3,
                             borderSkipped: false,
                             maxBarThickness: 22,
@@ -310,7 +310,7 @@
                         {
                             label: 'Exits',
                             data: exits,
-                            backgroundColor: isDark() ? '#8b5cf6' : '#a855f7',
+                            backgroundColor: isDark() ? 'rgba(155, 124, 246, 0.85)' : '#a855f7',
                             borderRadius: 3,
                             borderSkipped: false,
                             maxBarThickness: 22,
