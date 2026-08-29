@@ -248,10 +248,10 @@
             {{-- Sidebar: overlay drawer on all breakpoints (does not shift main content) --}}
             <aside
                 id="portal-sidebar"
-                class="portal-sidebar portal-sidebar-panel fixed z-30 flex flex-col overflow-y-auto overscroll-contain border-r shadow-[4px_0_24px_-12px_rgba(15,39,79,0.18)]"
+                class="portal-sidebar portal-sidebar-panel fixed z-30 flex flex-col overflow-hidden border-r shadow-[4px_0_24px_-12px_rgba(15,39,79,0.18)]"
                 aria-label="Primary navigation"
             >
-                <nav id="portal-sidebar-nav" class="flex min-h-full flex-1 flex-col p-3 sm:p-4" aria-label="Primary">
+                <nav id="portal-sidebar-nav" class="flex h-full min-h-0 flex-1 flex-col p-3 sm:p-4" aria-label="Primary">
                     @yield('navigation')
                 </nav>
             </aside>

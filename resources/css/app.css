@@ -332,7 +332,22 @@
     }
 
     .portal-sidebar-footer {
-        margin-top: auto;
+        position: relative;
+        z-index: 2;
+        background: inherit;
+    }
+
+    .portal-sidebar-nav-scroll {
+        -webkit-overflow-scrolling: touch;
+    }
+
+    html.dark .portal-sidebar-nav-scroll::-webkit-scrollbar {
+        width: 6px;
+    }
+
+    html.dark .portal-sidebar-nav-scroll::-webkit-scrollbar-thumb {
+        background: rgba(100, 116, 139, 0.35);
+        border-radius: 9999px;
     }
 
     html:not(.dark) .portal-sidebar-gate-art {
