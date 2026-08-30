@@ -50,6 +50,10 @@ class RfidAccessService
             ->first();
 
         if ($user) {
+            if ($user->isRemedialDeclined() && app(RemedialRfidService::class)->canUseGate($user)) {
+                return $this->processRemedialUser($user, $uid, $gateId, $direction);
+            }
+
             if ($user->isTemporaryAccount()) {
                 return $this->processTemporaryUser($user, $uid, $gateId, $direction);
             }
@@ -95,6 +99,82 @@ class RfidAccessService
         }
 
         return $this->processTemporaryUser($user->fresh(['role', 'vehicleType']) ?? $user, $uid, $gateId, $direction);
+    }
+
+    private function processRemedialUser(User $user, string $uid, string $gateId, string $direction): array
+    {
+        $remedial = app(RemedialRfidService::class);
+
+        if ($user->remedialAccessExpired()) {
+            $reason = RemedialRfidService::EXPIRED_MESSAGE;
+            $log = $this->logDeniedAttempt($user->fresh() ?? $user, null, $uid, $gateId, $direction, self::STATUS_DENIED, $reason);
+
+            return $this->response(self::STATUS_DENIED, 'access_denied', false, $direction, $gateId, $reason, $this->userPayload($user), $log->id);
+        }
+
+        if (! $remedial->canUseGate($user)) {
+            $reason = RemedialRfidService::GATE_DISABLED_MESSAGE;
+            $log = $this->logDeniedAttempt($user, null, $uid, $gateId, $direction, self::STATUS_DENIED, $reason);
+
+            return $this->response(self::STATUS_DENIED, 'access_denied', false, $direction, $gateId, $reason, $this->userPayload($user), $log->id);
+        }
+
+        if ($user->isLocked()) {
+            $reason = $user->loginBlockedReason() ?? 'Account is not active.';
+            $log = $this->logDeniedAttempt($user, null, $uid, $gateId, $direction, self::STATUS_DENIED, $reason);
+
+            return $this->response(self::STATUS_DENIED, 'access_denied', false, $direction, $gateId, $reason, $this->userPayload($user), $log->id);
+        }
+
+        $lastAction = $this->lastActionForUser($user);
+
+        if ($direction === 'Entry' && $lastAction === 'Entry') {
+            $log = $this->logDeniedAttempt($user, null, $uid, $gateId, $direction, self::STATUS_ALREADY_INSIDE, 'Vehicle is already inside campus.');
+
+            return $this->response(self::STATUS_ALREADY_INSIDE, 'already_inside', false, $direction, $gateId, 'Vehicle is already inside campus.', $this->userPayload($user), $log->id);
+        }
+
+        if ($remedial->oneEntryOnly() && $direction === 'Entry' && $lastAction === 'Exit') {
+            $reason = RemedialRfidService::ONE_TIME_MESSAGE;
+            $log = $this->logDeniedAttempt($user, null, $uid, $gateId, $direction, self::STATUS_DENIED, $reason);
+
+            return $this->response(self::STATUS_DENIED, 'access_denied', false, $direction, $gateId, $reason, $this->userPayload($user), $log->id);
+        }
+
+        if ($direction === 'Exit' && ($lastAction === null || $lastAction === 'Exit')) {
+            $reason = RemedialRfidService::EXIT_ONLY_AFTER_ENTRY;
+            $log = $this->logDeniedAttempt($user, null, $uid, $gateId, $direction, self::STATUS_ALREADY_OUTSIDE, $reason);
+
+            return $this->response(self::STATUS_ALREADY_OUTSIDE, 'already_outside', false, $direction, $gateId, $reason, $this->userPayload($user), $log->id);
+        }
+
+        $reason = RemedialRfidService::GRANT_REASON;
+        $log = GateLog::query()->create([
+            'user_id' => $user->id,
+            'visitor_id' => null,
+            'action' => $direction,
+            'gate_id' => $gateId,
+            'rfid_uid' => $uid,
+            'result' => self::STATUS_GRANTED,
+            'reason' => $reason,
+            'timestamp' => now(),
+        ]);
+
+        $this->syncUserParkingOccupancy($user, $direction);
+        GateScanProcessed::dispatchFromLog($log);
+        $sharedQueued = app(GateHardwareService::class)->notifySharedBoomAfterGrant($gateId, $direction);
+
+        return $this->response(
+            self::STATUS_GRANTED,
+            'access_granted',
+            true,
+            $direction,
+            $gateId,
+            $reason,
+            $this->userPayload($user),
+            $log->id,
+            $sharedQueued
+        );
     }
 
     private function processTemporaryUser(User $user, string $uid, string $gateId, string $direction): array
@@ -518,6 +598,7 @@ class RfidAccessService
     {
         $temps = app(TemporaryRfidService::class);
         $isTemporary = $user->isTemporaryAccount();
+        $isRemedial = $user->isRemedialDeclined();
 
         return [
             'id' => $user->id,
@@ -527,8 +608,11 @@ class RfidAccessService
             'role' => $isTemporary ? $user->gateRoleLabel() : $user->roleName(),
             'is_visitor' => false,
             'is_temporary' => $isTemporary,
+            'is_remedial' => $isRemedial,
             'temporary_expires_at' => $isTemporary ? $user->temporary_expires_at?->toIso8601String() : null,
+            'remedial_expires_at' => $isRemedial ? $user->remedial_expires_at?->toIso8601String() : null,
             'register_url' => $isTemporary ? $temps->registrationUrl($user) : null,
+            'fix_documents_url' => $isRemedial ? route('user.registration.fix') : null,
         ];
     }
 

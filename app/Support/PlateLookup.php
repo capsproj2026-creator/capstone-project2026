@@ -20,6 +20,81 @@ class PlateLookup
     }
 
     /**
+     * Fix common OCR confusions (O/0, I/1, B/8) using PH plate letter/digit slots.
+     *
+     * @return list<string>
+     */
+    public static function ocrCorrectionVariants(?string $plate): array
+    {
+        $normalized = self::normalize($plate);
+        if ($normalized === '') {
+            return [];
+        }
+
+        $variants = [$normalized];
+
+        if (preg_match('/^[A-Z0-9]{10,12}$/', $normalized) && preg_match('/[OILBSZG]/', $normalized)) {
+            $digits = strtr($normalized, [
+                'O' => '0', 'Q' => '0', 'D' => '0',
+                'I' => '1', 'L' => '1',
+                'Z' => '2', 'S' => '5', 'B' => '8', 'G' => '6',
+            ]);
+            if ($digits !== $normalized) {
+                $variants[] = $digits;
+            }
+        }
+
+        if (preg_match('/^\d{11}$/', $normalized)) {
+            $digits = strtr($normalized, [
+                'O' => '0', 'Q' => '0', 'D' => '0',
+                'I' => '1', 'L' => '1',
+                'Z' => '2', 'S' => '5', 'B' => '8', 'G' => '6',
+            ]);
+            $variants[] = $digits;
+        } elseif (preg_match('/^([A-Z]{2,3})(\d{3,4})$/', $normalized, $m)) {
+            $letters = strtr($m[1], ['0' => 'O', '1' => 'I', '2' => 'Z', '5' => 'S', '6' => 'G', '8' => 'B']);
+            $digits = strtr($m[2], ['O' => '0', 'I' => '1', 'L' => '1', 'Z' => '2', 'S' => '5', 'B' => '8', 'G' => '6']);
+            $variants[] = $letters.$digits;
+        }
+
+        $confusable = [
+            '0' => 'O', 'O' => '0',
+            '1' => 'I', 'I' => '1',
+            '8' => 'B', 'B' => '8',
+            '5' => 'S', 'S' => '5',
+            '2' => 'Z', 'Z' => '2',
+        ];
+        for ($i = 0; $i < strlen($normalized); $i++) {
+            $ch = $normalized[$i];
+            if (! isset($confusable[$ch])) {
+                continue;
+            }
+            $alt = $confusable[$ch];
+            $variants[] = substr($normalized, 0, $i).$alt.substr($normalized, $i + 1);
+        }
+
+        return array_values(array_unique(array_filter($variants)));
+    }
+
+    /**
+     * All normalized keys to try when resolving an OCR read.
+     *
+     * @return list<string>
+     */
+    public static function searchKeys(?string $plate): array
+    {
+        $keys = [];
+        foreach (self::ocrCorrectionVariants($plate) as $variant) {
+            $normalized = self::normalize($variant);
+            if ($normalized !== '') {
+                $keys[] = $normalized;
+            }
+        }
+
+        return array_values(array_unique($keys));
+    }
+
+    /**
      * Candidate spellings used for exact DB lookups (OCR often drops hyphens/spaces).
      *
      * @return list<string>
@@ -54,57 +129,100 @@ class PlateLookup
 
     public static function findUser(?string $plate): ?User
     {
-        $candidates = self::candidates($plate);
-        if ($candidates === []) {
-            return null;
+        foreach (self::searchKeys($plate) as $normalized) {
+            $candidates = self::candidates($normalized);
+            if ($candidates === []) {
+                continue;
+            }
+
+            $user = User::query()
+                ->with(['role', 'vehicleType', 'department'])
+                ->whereIn('plate_number', $candidates)
+                ->first();
+
+            if ($user) {
+                return $user;
+            }
+
+            $index = self::normalizedIndex();
+            $userId = $index[$normalized] ?? null;
+            if ($userId !== null) {
+                return User::query()->with(['role', 'vehicleType', 'department'])->where('id', $userId)->first();
+            }
         }
 
-        $user = User::query()
-            ->with(['role', 'vehicleType', 'department'])
-            ->whereIn('plate_number', $candidates)
-            ->first();
+        return self::findUserFuzzy($plate);
+    }
 
-        if ($user) {
-            return $user;
-        }
-
+    /**
+     * Last-resort match when OCR is off by one character.
+     */
+    public static function findUserFuzzy(?string $plate, int $maxDistance = 1): ?User
+    {
         $normalized = self::normalize($plate);
-        $index = self::normalizedIndex();
-
-        $userId = $index[$normalized] ?? null;
-        if ($userId === null) {
+        if ($normalized === '' || strlen($normalized) < 6) {
             return null;
         }
 
-        return User::query()->with(['role', 'vehicleType', 'department'])->where('id', $userId)->first();
+        if (! preg_match('/^([A-Z]{2,3}\d{3,4}|\d{11})$/', $normalized)) {
+            return null;
+        }
+
+        $index = self::normalizedIndex();
+        $bestId = null;
+        $bestDistance = $maxDistance + 1;
+
+        foreach ($index as $registered => $userId) {
+            if (abs(strlen($registered) - strlen($normalized)) > $maxDistance) {
+                continue;
+            }
+            $distance = levenshtein($normalized, $registered);
+            if ($distance <= $maxDistance && $distance < $bestDistance) {
+                $bestDistance = $distance;
+                $bestId = $userId;
+            }
+        }
+
+        if ($bestId === null) {
+            return null;
+        }
+
+        return User::query()->with(['role', 'vehicleType', 'department'])->where('id', $bestId)->first();
     }
 
     public static function findVisitor(?string $plate): ?Visitor
     {
-        $normalized = self::normalize($plate);
-        if ($normalized === '') {
-            return null;
+        foreach (self::searchKeys($plate) as $normalized) {
+            if ($normalized === '') {
+                continue;
+            }
+
+            $candidates = self::candidates($normalized);
+
+            $visitor = Visitor::query()
+                ->with('vehicleType')
+                ->whereIn('status', Visitor::ACTIVE_STATUSES)
+                ->whereIn('plate_number', $candidates)
+                ->orderByDesc('id')
+                ->first();
+
+            if ($visitor) {
+                return $visitor;
+            }
+
+            $visitor = Visitor::query()
+                ->with('vehicleType')
+                ->whereIn('status', Visitor::ACTIVE_STATUSES)
+                ->orderByDesc('id')
+                ->get()
+                ->first(fn (Visitor $v) => self::normalize((string) $v->plate_number) === $normalized);
+
+            if ($visitor) {
+                return $visitor;
+            }
         }
 
-        $candidates = self::candidates($plate);
-
-        $visitor = Visitor::query()
-            ->with('vehicleType')
-            ->whereIn('status', Visitor::ACTIVE_STATUSES)
-            ->whereIn('plate_number', $candidates)
-            ->orderByDesc('id')
-            ->first();
-
-        if ($visitor) {
-            return $visitor;
-        }
-
-        return Visitor::query()
-            ->with('vehicleType')
-            ->whereIn('status', Visitor::ACTIVE_STATUSES)
-            ->orderByDesc('id')
-            ->get()
-            ->first(fn (Visitor $v) => self::normalize((string) $v->plate_number) === $normalized);
+        return null;
     }
 
     /**
@@ -130,6 +248,7 @@ class PlateLookup
         $user = $normalized !== '' ? self::findUser($plate) : null;
 
         if ($user !== null) {
+            $resolvedPlate = self::normalize((string) $user->plate_number) ?: $normalized;
             $department = $user->department?->departmentname
                 ?? (filled($user->department_code) ? (string) $user->department_code : null);
 
@@ -137,11 +256,11 @@ class PlateLookup
                 ? 'Registered'
                 : (string) ($user->status ?: 'Registered');
 
-            $vehicleDetails = self::vehicleDetailsForUserPlate($user, $normalized)
+            $vehicleDetails = self::vehicleDetailsForUserPlate($user, $resolvedPlate)
                 ?? $user->vehicleType?->vehicle_name;
 
             return [
-                'plate' => $normalized !== '' ? $normalized : strtoupper(trim((string) $plate)),
+                'plate' => $resolvedPlate !== '' ? $resolvedPlate : strtoupper(trim((string) $plate)),
                 'user_id' => $user->id,
                 'visitor_id' => null,
                 'owner_name' => $user->displayName(),

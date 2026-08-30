@@ -183,6 +183,7 @@ class TemporaryRfidService
         $payload['status'] = User::STATUS_PENDING;
         $payload['Gate_access'] = User::GATE_ACCESS_PENDING;
         $payload['declined_at'] = null;
+        $payload['registration_state'] = User::REGISTRATION_PENDING;
         $payload['decline_remarks'] = null;
 
         $roleId = (int) ($payload['user_role_id'] ?? $user->user_role_id ?? NavigationService::ROLE_STUDENT);

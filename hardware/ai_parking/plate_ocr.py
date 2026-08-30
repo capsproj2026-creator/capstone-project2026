@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import os
 import queue
-import re
 import threading
 import time
 from dataclasses import dataclass
@@ -13,26 +12,27 @@ from typing import TYPE_CHECKING, Optional
 import cv2
 import numpy as np
 
+from plate_text import (
+    best_from_results,
+    is_known_ph_format,
+)
+
 if TYPE_CHECKING:
     from parking_rules import ParkingIntelligence
 
 OCR_ENABLED = os.getenv("AI_PARKING_OCR_ENABLED", "0") == "1"
 OCR_EVERY_SEC = float(os.getenv("AI_PARKING_OCR_EVERY_SEC", "3"))
-OCR_MIN_CONF = float(os.getenv("AI_PARKING_OCR_MIN_CONF", "0.30"))
-# Below this, treat a read as noise even if something was decoded.
-OCR_UNREADABLE_BELOW = float(os.getenv("AI_PARKING_OCR_UNREADABLE_BELOW", "0.22"))
-OCR_QUEUE_SIZE = int(os.getenv("AI_PARKING_OCR_QUEUE_SIZE", "2"))
-OCR_UPSCALE_MIN_WIDTH = int(os.getenv("AI_PARKING_OCR_UPSCALE_MIN_WIDTH", "400"))
-OCR_UPSCALE_FACTOR = float(os.getenv("AI_PARKING_OCR_UPSCALE_FACTOR", "3"))
+OCR_MIN_CONF = float(os.getenv("AI_PARKING_OCR_MIN_CONF", "0.28"))
+OCR_UNREADABLE_BELOW = float(os.getenv("AI_PARKING_OCR_UNREADABLE_BELOW", "0.20"))
+OCR_QUEUE_SIZE = int(os.getenv("AI_PARKING_OCR_QUEUE_SIZE", "4"))
+OCR_UPSCALE_MIN_WIDTH = int(os.getenv("AI_PARKING_OCR_UPSCALE_MIN_WIDTH", "500"))
+OCR_UPSCALE_FACTOR = float(os.getenv("AI_PARKING_OCR_UPSCALE_FACTOR", "6"))
+OCR_GPU = os.getenv("AI_PARKING_OCR_GPU", "0") == "1"
+OCR_HIGH_CONF_LOCK = float(os.getenv("AI_PARKING_OCR_HIGH_CONF_LOCK", "0.68"))
 
 # COCO class id for motorcycle (tighter rear-plate crop).
 MOTORCYCLE_CLS_ID = 3
 
-_PLATE_RE = re.compile(r"^[A-Z0-9]{5,12}$")
-# PH private car plates after strip: ABC1234 / AB1234
-_PH_CAR_RE = re.compile(r"^[A-Z]{2,3}\d{3,4}$")
-# PH LTO motorcycle plates after strip: 05010401328 (4 + 7 digits)
-_PH_MC_RE = re.compile(r"^\d{4}\d{7}$")
 _OCR_ALLOWLIST = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ-"
 
 
@@ -44,26 +44,6 @@ class PlateRead:
     confidence: float = 0.0
     # ok | unreadable | empty
     status: str = "empty"
-
-
-def _parse_plate_candidate(text: str) -> tuple[Optional[str], bool]:
-    """Return (normalized_plate, is_known_ph_format)."""
-    raw = str(text).upper().strip()
-    compact = re.sub(r"\s+", "", raw)
-    mc_hyphen = re.match(r"^(\d{4})-(\d{7})$", compact)
-    if mc_hyphen:
-        return mc_hyphen.group(1) + mc_hyphen.group(2), True
-
-    cleaned = re.sub(r"[^A-Z0-9]", "", raw)
-    if len(cleaned) < 4 or len(cleaned) > 12:
-        return None, False
-    if _PH_MC_RE.fullmatch(cleaned):
-        return cleaned, True
-    if _PH_CAR_RE.fullmatch(cleaned):
-        return cleaned, True
-    if _PLATE_RE.fullmatch(cleaned):
-        return cleaned, False
-    return None, False
 
 
 class PlateOCR:
@@ -80,8 +60,8 @@ class PlateOCR:
         try:
             import easyocr
 
-            print("Loading EasyOCR (first run may download models)...")
-            self._reader = easyocr.Reader(["en"], gpu=False, verbose=False)
+            print(f"Loading EasyOCR (gpu={OCR_GPU}, first run may download models)...")
+            self._reader = easyocr.Reader(["en"], gpu=OCR_GPU, verbose=False)
             print("EasyOCR ready.")
         except Exception as e:
             print(f"OCR disabled — EasyOCR unavailable: {e}")
@@ -102,11 +82,11 @@ class PlateOCR:
 
         if cls_id == MOTORCYCLE_CLS_ID:
             # Motorcycle plates sit mid-rear; bottom crop often catches tire/mudguard only.
-            y1p = y1 + int(box_h * 0.22)
-            y2p = y1 + int(box_h * 0.72)
+            y1p = y1 + int(box_h * 0.18)
+            y2p = y1 + int(box_h * 0.74)
             x_pad = int(box_w * 0.02)
         else:
-            y1p = y1 + int(box_h * 0.55)
+            y1p = y1 + int(box_h * 0.52)
             y2p = y2
             x_pad = int(box_w * 0.04)
         x1 = max(0, x1 + x_pad)
@@ -122,7 +102,7 @@ class PlateOCR:
         try:
             from plate_detector import detect_plate_crop
 
-            tighter = detect_plate_crop(crop)
+            tighter = detect_plate_crop(crop, cls_id=cls_id)
             if tighter is not None:
                 return tighter
         except Exception:
@@ -139,38 +119,45 @@ class PlateOCR:
         return cv2.resize(crop, None, fx=scale, fy=scale, interpolation=cv2.INTER_CUBIC)
 
     @staticmethod
+    def _sharpen(gray):
+        kernel = np.array([[0, -1, 0], [-1, 5, -1], [0, -1, 0]], dtype=np.float32)
+        return cv2.filter2D(gray, -1, kernel)
+
+    @staticmethod
     def _ocr_variants(crop, quick: bool = False):
         crop = PlateOCR._upscale_crop(crop)
         gray = cv2.cvtColor(crop, cv2.COLOR_BGR2GRAY)
         gray = cv2.bilateralFilter(gray, 5, 50, 50)
         clahe_img = gray
         try:
-            clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+            clahe = cv2.createCLAHE(clipLimit=2.5, tileGridSize=(8, 8))
             clahe_img = clahe.apply(gray)
         except Exception:
             pass
-        variants = [("color", crop), ("gray", gray)]
+
+        variants = [("color", crop), ("gray", gray), ("clahe", clahe_img)]
         if not quick:
-            otsu_img = clahe_img
+            sharpen = PlateOCR._sharpen(clahe_img)
+            variants.append(("sharp", sharpen))
             try:
-                _, otsu_img = cv2.threshold(clahe_img, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+                _, otsu = cv2.threshold(clahe_img, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+                variants.append(("otsu", otsu))
+                variants.append(("inv_otsu", cv2.bitwise_not(otsu)))
             except Exception:
                 pass
-            variants.extend([("clahe", clahe_img), ("otsu", otsu_img)])
+            try:
+                adaptive = cv2.adaptiveThreshold(
+                    clahe_img,
+                    255,
+                    cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
+                    cv2.THRESH_BINARY,
+                    31,
+                    8,
+                )
+                variants.append(("adaptive", adaptive))
+            except Exception:
+                pass
         return variants
-
-    @staticmethod
-    def _score_candidate(parsed: str, known_format: bool, conf_f: float) -> float:
-        score = conf_f
-        if _PH_MC_RE.fullmatch(parsed):
-            score += 0.40
-        elif _PH_CAR_RE.fullmatch(parsed):
-            score += 0.15
-        elif known_format:
-            score += 0.08
-        elif parsed.isdigit() and len(parsed) < 11:
-            score *= 0.82
-        return score
 
     def _scan_variants(self, crop, quick: bool = False) -> tuple[Optional[str], float, float]:
         best: Optional[str] = None
@@ -184,23 +171,25 @@ class PlateOCR:
                 continue
             if not results:
                 continue
-            for _bbox, text, conf in results:
-                conf_f = float(conf)
-                best_any_score = max(best_any_score, conf_f)
-                parsed, known_format = _parse_plate_candidate(text)
-                if parsed is None:
-                    continue
-                score = self._score_candidate(parsed, known_format, conf_f)
-                if conf_f < OCR_MIN_CONF and not known_format:
-                    continue
-                if score > best_score:
-                    best_score = score
-                    best = parsed
+            b, s, any_s = best_from_results(results, OCR_MIN_CONF)
+            best_any_score = max(best_any_score, any_s)
+            if s > best_score:
+                best_score = s
+                best = b
         return best, best_score, best_any_score
 
     def _readtext(self, img):
         with self._lock:
-            return self._reader.readtext(img, allowlist=_OCR_ALLOWLIST)
+            return self._reader.readtext(
+                img,
+                allowlist=_OCR_ALLOWLIST,
+                paragraph=False,
+                min_size=8,
+                contrast_ths=0.08,
+                adjust_contrast=0.6,
+                text_threshold=0.55,
+                low_text=0.25,
+            )
 
     def read_plate(
         self,
@@ -217,11 +206,17 @@ class PlateOCR:
         return self.read_crop(crop)
 
     @staticmethod
-    def _sub_crops(crop):
+    def _sub_crops(crop, cls_id: int | None = None):
         """Try full frame plus tighter bands where plates usually appear."""
         ch, cw = crop.shape[:2]
         out = [crop]
-        if ch >= 24:
+        if cls_id == MOTORCYCLE_CLS_ID and ch >= 24:
+            mid_y1 = max(0, int(ch * 0.12))
+            mid_y2 = min(ch, int(ch * 0.68))
+            mid = crop[mid_y1:mid_y2, :]
+            if mid.size > 0 and mid.shape[0] >= 12:
+                out.insert(0, mid)
+        elif ch >= 24:
             top = crop[0 : max(12, int(ch * 0.52)), :]
             if top.size > 0 and top.shape[0] >= 12:
                 out.insert(0, top)
@@ -233,7 +228,7 @@ class PlateOCR:
                 out.append(mid)
         return out
 
-    def read_crop(self, crop) -> PlateRead:
+    def read_crop(self, crop, cls_id: int | None = None) -> PlateRead:
         if not self.enabled:
             return PlateRead(status="empty")
         self._ensure_reader()
@@ -247,12 +242,10 @@ class PlateOCR:
         best_any_score = 0.0
 
         try:
-            subs = self._sub_crops(crop)
+            subs = self._sub_crops(crop, cls_id=cls_id)
             quick_crop = subs[0]
             best, best_score, best_any_score = self._scan_variants(quick_crop, quick=True)
-            if best and best_score >= OCR_MIN_CONF and (
-                _PH_MC_RE.fullmatch(best) or _PH_CAR_RE.fullmatch(best)
-            ):
+            if best and best_score >= OCR_HIGH_CONF_LOCK and is_known_ph_format(best):
                 return PlateRead(
                     plate=best,
                     confidence=round(min(best_score, 1.0), 3),
@@ -325,18 +318,19 @@ class AsyncPlateQueue:
 
         if mem is not None:
             mem.last_ocr_at = now
+            mem.cls_id = cls_id
 
         try:
-            self._q.put_nowait((key, crop, intelligence, int(track_id)))
+            self._q.put_nowait((key, crop, intelligence, int(track_id), cls_id))
         except queue.Full:
             with self._lock:
                 self._inflight.discard(key)
 
     def _loop(self):
         while True:
-            key, crop, intelligence, track_id = self._q.get()
+            key, crop, intelligence, track_id, cls_id = self._q.get()
             try:
-                read = self.ocr.read_crop(crop)
+                read = self.ocr.read_crop(crop, cls_id=cls_id)
                 mem = intelligence.tracks.get(track_id)
                 if mem is not None:
                     mem.apply_ocr_vote(read.plate, read.status, read.confidence)

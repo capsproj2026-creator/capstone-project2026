@@ -65,6 +65,12 @@ return [
         'temp_access_max' => max(1, (int) env('RFID_TEMP_ACCESS_MAX', 3)),
     ],
 
+    'registration' => [
+        'remedial_gate_enabled' => filter_var(env('REGISTRATION_REMEDIAL_GATE_ENABLED', true), FILTER_VALIDATE_BOOLEAN),
+        'remedial_hours' => max(0, (int) env('REGISTRATION_REMEDIAL_HOURS', 5)),
+        'remedial_one_entry' => filter_var(env('REGISTRATION_REMEDIAL_ONE_ENTRY', true), FILTER_VALIDATE_BOOLEAN),
+    ],
+
     'ai_parking' => [
         'api_token' => env('AI_PARKING_API_TOKEN'),
         // Legacy single-stream keys (CAM-AI-1 / primary)

@@ -23,6 +23,7 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->alias([
             'role' => \App\Http\Middleware\EnsureRole::class,
             'granted' => \App\Http\Middleware\EnsureGranted::class,
+            'portal' => \App\Http\Middleware\EnsurePortalAccess::class,
             'no.cache' => \App\Http\Middleware\PreventPageCache::class,
             'permission' => \App\Http\Middleware\EnsurePermission::class,
         ]);

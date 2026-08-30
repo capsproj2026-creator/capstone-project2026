@@ -7,9 +7,11 @@ use App\Mail\RegistrationStatusMail;
 use App\Models\Notification;
 use App\Models\User;
 use App\Services\NavigationService;
+use App\Services\RemedialRfidService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Mail;
+use Illuminate\Validation\Rule;
 use Illuminate\View\View;
 
 class RegistrationController extends Controller
@@ -78,7 +80,16 @@ class RegistrationController extends Controller
                 ->with('error', 'This registration is no longer pending.');
         }
 
-        $updates = ['status' => User::STATUS_GRANTED];
+        $updates = [
+            'status' => User::STATUS_GRANTED,
+            'registration_state' => User::REGISTRATION_GRANTED,
+            'declined_at' => null,
+            'decline_remarks' => null,
+            'decline_category' => null,
+            'last_decline_remarks' => null,
+            'remedial_expires_at' => null,
+            'remedial_gate_enabled' => false,
+        ];
 
         /*
          * TODO: Enable payment-gated approval later (do not ship a payment product yet).
@@ -135,15 +146,21 @@ class RegistrationController extends Controller
 
         $validated = $request->validate([
             'remarks' => ['required', 'string', 'min:3', 'max:500'],
+            'decline_type' => ['required', 'in:remedial,final'],
+            'decline_category' => ['nullable', 'string', Rule::in(User::DECLINE_CATEGORIES)],
+            'allow_temp_gate' => ['nullable', 'boolean'],
         ], [
             'remarks.required' => 'Please enter a reason before declining this registration.',
             'remarks.min' => 'Please enter a reason of at least 3 characters before declining.',
+            'decline_type.required' => 'Please choose a decline type.',
         ]);
 
         $user = User::query()->with('role')->findOrFail($id);
 
         $wasTemporary = $user->isTemporaryAccount();
-        if ($wasTemporary) {
+        $isRemedial = $validated['decline_type'] === 'remedial';
+
+        if ($wasTemporary && ! $isRemedial) {
             app(\App\Services\TemporaryRfidService::class)->expireAndUnbind($user);
         }
 
@@ -153,11 +170,64 @@ class RegistrationController extends Controller
                 ->with('error', 'This registration is no longer pending.');
         }
 
+        $remarks = trim((string) $validated['remarks']);
+        $category = $validated['decline_category'] ?? User::DECLINE_CATEGORY_OTHER;
+
+        if ($isRemedial) {
+            $remedial = app(RemedialRfidService::class);
+            $allowGate = $request->boolean('allow_temp_gate') && $remedial->enabled() && ! $wasTemporary;
+
+            $updates = [
+                'status' => User::STATUS_DENIED,
+                'registration_state' => User::REGISTRATION_DECLINED_REMEDIAL,
+                'decline_category' => $category,
+                'decline_remarks' => $remarks,
+                'declined_at' => now(),
+                'remedial_expires_at' => $remedial->expiresAtForNewDecline(),
+                'remedial_gate_enabled' => $allowGate,
+                'Gate_access' => $allowGate ? User::GATE_ACCESS_REMEDIAL : User::GATE_ACCESS_DENIED,
+            ];
+
+            if ($wasTemporary) {
+                $updates['account_type'] = \App\Services\TemporaryRfidService::ACCOUNT_FULL;
+                $updates['temp_conversion_token'] = null;
+            }
+
+            $user->update($updates);
+
+            $roleName = $user->role?->role_name ?? 'User';
+            $hours = $remedial->hours();
+            $message = "Your registration as {$roleName} needs document correction. Reason: {$remarks}. "
+                .($allowGate
+                    ? "You may enter campus temporarily (up to {$hours} hours) while you fix and resubmit your documents in the portal."
+                    : 'Sign in to the portal to upload corrected documents and resubmit for review.');
+
+            $this->updateRegistrationStatus($user, 'Needs Correction', $remarks);
+
+            Notification::query()->create([
+                'user_id' => $user->id,
+                'sender_id' => auth()->id(),
+                'title' => 'Registration Needs Correction',
+                'message' => $message,
+                'type' => 'System',
+                'is_read' => false,
+                'created_at' => now(),
+            ]);
+
+            return redirect()
+                ->route('admin.registrations', ['status' => 'All'])
+                ->with('success', 'Registration declined with remedial access. User can fix documents in the portal.');
+        }
+
         $updates = [
             'status' => User::STATUS_DENIED,
+            'registration_state' => User::REGISTRATION_DENIED_FINAL,
+            'decline_category' => $category,
             'Gate_access' => User::GATE_ACCESS_DENIED,
             'declined_at' => now(),
-            'decline_remarks' => trim((string) $validated['remarks']),
+            'decline_remarks' => $remarks,
+            'remedial_expires_at' => null,
+            'remedial_gate_enabled' => false,
         ];
 
         if ($wasTemporary) {
@@ -168,7 +238,6 @@ class RegistrationController extends Controller
         $user->update($updates);
 
         $roleName = $user->role?->role_name ?? 'User';
-        $remarks = trim((string) $validated['remarks']);
         $message = "Your registration as {$roleName} has been declined. You may submit a new registration after 3 days. Reason: {$remarks}";
 
         // Notify the vehicle owner by email (Declined), including the required admin remarks.

@@ -36,6 +36,32 @@ class User extends Authenticatable implements MustVerifyEmail
     /** @deprecated Legacy value; treat the same as GRANTED in hasGateAccess() */
     public const GATE_ACCESS_LEGACY = 'Access';
 
+    public const GATE_ACCESS_REMEDIAL = 'Remedial';
+
+    public const REGISTRATION_PENDING = 'pending';
+
+    public const REGISTRATION_GRANTED = 'granted';
+
+    public const REGISTRATION_DECLINED_REMEDIAL = 'declined_remedial';
+
+    public const REGISTRATION_DENIED_FINAL = 'denied_final';
+
+    public const DECLINE_CATEGORY_DOCUMENTS_ILLEGIBLE = 'documents_illegible';
+
+    public const DECLINE_CATEGORY_LICENSE_EXPIRED = 'license_expired';
+
+    public const DECLINE_CATEGORY_OR_CR_INVALID = 'or_cr_invalid';
+
+    public const DECLINE_CATEGORY_OTHER = 'other';
+
+    /** @var list<string> */
+    public const DECLINE_CATEGORIES = [
+        self::DECLINE_CATEGORY_DOCUMENTS_ILLEGIBLE,
+        self::DECLINE_CATEGORY_LICENSE_EXPIRED,
+        self::DECLINE_CATEGORY_OR_CR_INVALID,
+        self::DECLINE_CATEGORY_OTHER,
+    ];
+
     protected $connection = 'mongodb';
 
     protected $collection = 'users';
@@ -90,6 +116,13 @@ class User extends Authenticatable implements MustVerifyEmail
         'id_document',
         'declined_at',
         'decline_remarks',
+        'last_decline_remarks',
+        'registration_state',
+        'decline_category',
+        'remedial_expires_at',
+        'remedial_gate_enabled',
+        'resubmitted_at',
+        'document_resubmit_count',
         'account_type',
         'temporary_expires_at',
         'temporary_sequence',
@@ -114,6 +147,10 @@ class User extends Authenticatable implements MustVerifyEmail
             'created_at' => 'datetime',
             'application_date' => 'datetime',
             'declined_at' => 'datetime',
+            'remedial_expires_at' => 'datetime',
+            'resubmitted_at' => 'datetime',
+            'remedial_gate_enabled' => 'boolean',
+            'document_resubmit_count' => 'integer',
             'temporary_expires_at' => 'datetime',
             'temporary_sequence' => 'integer',
             'paid_at' => 'datetime',
@@ -266,9 +303,91 @@ class User extends Authenticatable implements MustVerifyEmail
         return $autoLock && $this->strike_count >= self::MAX_STRIKES;
     }
 
+    public function registrationState(): string
+    {
+        $state = trim((string) ($this->registration_state ?? ''));
+        if ($state !== '') {
+            return $state;
+        }
+
+        if ($this->isGranted()) {
+            return self::REGISTRATION_GRANTED;
+        }
+
+        if ($this->status === self::STATUS_DENIED) {
+            return self::REGISTRATION_DENIED_FINAL;
+        }
+
+        return self::REGISTRATION_PENDING;
+    }
+
+    public function isRemedialDeclined(): bool
+    {
+        return $this->registrationState() === self::REGISTRATION_DECLINED_REMEDIAL;
+    }
+
+    public function isFinalDenied(): bool
+    {
+        return $this->registrationState() === self::REGISTRATION_DENIED_FINAL;
+    }
+
+    public function remedialAccessExpired(): bool
+    {
+        if (! $this->isRemedialDeclined()) {
+            return false;
+        }
+
+        $expires = $this->remedial_expires_at;
+
+        return $expires !== null && $expires->lte(now());
+    }
+
+    public function hasPendingResubmission(): bool
+    {
+        return $this->status === self::STATUS_PENDING
+            && $this->resubmitted_at !== null
+            && filled($this->last_decline_remarks ?? null);
+    }
+
+    public function canAccessRemedialPortal(): bool
+    {
+        if (! $this->isRemedialDeclined() || $this->isLocked()) {
+            return false;
+        }
+
+        if ($this->remedialAccessExpired()) {
+            return false;
+        }
+
+        return $this->hasVerifiedEmail();
+    }
+
     public function canAccessPortal(): bool
     {
-        return $this->isGranted() && ! $this->isLocked();
+        if ($this->isLocked()) {
+            return false;
+        }
+
+        if ($this->isGranted()) {
+            return true;
+        }
+
+        if ($this->hasPendingResubmission()) {
+            return $this->hasVerifiedEmail();
+        }
+
+        return $this->canAccessRemedialPortal();
+    }
+
+    public function declineCategoryLabel(): ?string
+    {
+        return match ($this->decline_category) {
+            self::DECLINE_CATEGORY_DOCUMENTS_ILLEGIBLE => 'Documents not readable',
+            self::DECLINE_CATEGORY_LICENSE_EXPIRED => 'Driver\'s license expired',
+            self::DECLINE_CATEGORY_OR_CR_INVALID => 'OR/CR invalid or expired',
+            self::DECLINE_CATEGORY_OTHER => 'Other',
+            default => null,
+        };
     }
 
     public function hasGateAccess(): bool
@@ -310,12 +429,28 @@ class User extends Authenticatable implements MustVerifyEmail
             return 'This is an unregistered student/faculty gate pass. Complete vehicle registration to keep campus access.';
         }
 
-        if ($this->status === self::STATUS_DENIED) {
+        if ($this->isRemedialDeclined()) {
+            if ($this->remedialAccessExpired()) {
+                return \App\Services\RemedialRfidService::EXPIRED_MESSAGE;
+            }
+
+            if ($this->canAccessRemedialPortal()) {
+                return null;
+            }
+
+            return \App\Services\RemedialRfidService::GATE_DISABLED_MESSAGE;
+        }
+
+        if ($this->isFinalDenied() || ($this->status === self::STATUS_DENIED && ! $this->isRemedialDeclined())) {
             $remarks = trim((string) ($this->decline_remarks ?? ''));
 
             return $remarks !== ''
                 ? 'Your registration was declined: '.$remarks
                 : 'Your registration was declined.';
+        }
+
+        if ($this->hasPendingResubmission()) {
+            return null;
         }
 
         if ($this->status === self::STATUS_PENDING) {

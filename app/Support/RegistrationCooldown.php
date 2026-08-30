@@ -19,11 +19,32 @@ class RegistrationCooldown
             })
             ->orderByDesc('declined_at')
             ->orderByDesc('id')
-            ->first();
+            ->get()
+            ->first(function (User $user) {
+                if ($user->isRemedialDeclined()) {
+                    return true;
+                }
+
+                return $user->isFinalDenied() || $user->registrationState() === User::REGISTRATION_DENIED_FINAL;
+            });
+    }
+
+    public static function findActiveRemedialUser(string $email, string $idNumber): ?User
+    {
+        return User::query()
+            ->where(function ($q) use ($email, $idNumber) {
+                $q->where('email', $email)->orWhere('id_number', $idNumber);
+            })
+            ->get()
+            ->first(fn (User $user) => $user->isRemedialDeclined() && ! $user->remedialAccessExpired());
     }
 
     public static function cooldownEndsAt(User $user): ?CarbonInterface
     {
+        if ($user->isRemedialDeclined()) {
+            return null;
+        }
+
         $declinedAt = $user->declined_at;
         if (! $declinedAt) {
             return null;
@@ -34,9 +55,12 @@ class RegistrationCooldown
 
     public static function isWithinCooldown(User $user): bool
     {
+        if ($user->isRemedialDeclined()) {
+            return true;
+        }
+
         $ends = self::cooldownEndsAt($user);
         if (! $ends) {
-            // Legacy denied rows without declined_at can re-register immediately once purged.
             return false;
         }
 
@@ -45,6 +69,10 @@ class RegistrationCooldown
 
     public static function remainingMessage(User $user): string
     {
+        if ($user->isRemedialDeclined()) {
+            return 'Your registration needs document correction. Sign in with your existing account to upload corrected documents and resubmit for review.';
+        }
+
         $ends = self::cooldownEndsAt($user);
         if (! $ends) {
             return 'Your previous registration was declined. Please wait '.self::DAYS.' days before registering again.';
@@ -61,7 +89,7 @@ class RegistrationCooldown
     }
 
     /**
-     * Remove expired denied accounts that collide on email/id so a new registration can proceed.
+     * Remove expired final-denied accounts that collide on email/id so a new registration can proceed.
      *
      * @return list<User>
      */
@@ -76,9 +104,14 @@ class RegistrationCooldown
 
         $purged = [];
         foreach ($denied as $user) {
+            if ($user->isRemedialDeclined()) {
+                continue;
+            }
+
             if (self::isWithinCooldown($user)) {
                 continue;
             }
+
             $purged[] = $user;
             $user->delete();
         }

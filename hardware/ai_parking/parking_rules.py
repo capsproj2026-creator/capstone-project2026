@@ -17,6 +17,7 @@ IOU_THRESHOLD = float(os.getenv("AI_PARKING_ZONE_IOU", "0.12"))
 TRACK_HOLD_SEC = float(os.getenv("AI_PARKING_TRACK_HOLD_SEC", "3.0"))
 # Require this many matching OCR reads before locking a plate on a track.
 PLATE_VOTE_NEEDED = int(os.getenv("AI_PARKING_PLATE_VOTE_NEEDED", "1"))
+OCR_HIGH_CONF_LOCK = float(os.getenv("AI_PARKING_OCR_HIGH_CONF_LOCK", "0.68"))
 TRACK_MATCH_IOU = float(os.getenv("AI_PARKING_TRACK_MATCH_IOU", "0.25"))
 # Normalized center movement (px/sec ÷ bbox diagonal). Below = parked, above = moving.
 MOTION_SPEED_THRESH = float(os.getenv("AI_PARKING_MOTION_SPEED_THRESH", "0.12"))
@@ -225,9 +226,10 @@ class TrackMemory:
         """Stabilize plate text across frames; avoid locking on a single bad read."""
         self.ocr_confidence = max(self.ocr_confidence, float(confidence or 0.0))
         if status == "ok" and plate:
-            self.plate_votes[plate] = self.plate_votes.get(plate, 0) + 1
+            weight = max(1, int(round(float(confidence or 0.0) * 3)))
+            self.plate_votes[plate] = self.plate_votes.get(plate, 0) + weight
             votes = self.plate_votes[plate]
-            if votes >= PLATE_VOTE_NEEDED or (votes >= 1 and confidence >= 0.75):
+            if votes >= PLATE_VOTE_NEEDED or (votes >= 1 and confidence >= OCR_HIGH_CONF_LOCK):
                 if self.plate != plate:
                     self.clear_owner()
                 self.plate = plate

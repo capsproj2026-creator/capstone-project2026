@@ -58,11 +58,14 @@ class CapstoneSystemPassTest extends TestCase
         $this->actingAs($this->admin)
             ->post(route('admin.registrations.decline', ['id' => $pending->id]), [
                 'remarks' => 'Incomplete documents',
+                'decline_type' => 'final',
+                'decline_category' => 'documents_illegible',
             ])
             ->assertRedirect();
 
         $pending->refresh();
         $this->assertSame(User::STATUS_DENIED, $pending->status);
+        $this->assertSame(User::REGISTRATION_DENIED_FINAL, $pending->registrationState());
         $this->assertSame(User::GATE_ACCESS_DENIED, $pending->Gate_access);
         $this->assertNotNull($pending->declined_at);
         $this->assertSame('Incomplete documents', $pending->decline_remarks);
@@ -125,6 +128,7 @@ class CapstoneSystemPassTest extends TestCase
             ->from(route('admin.registrations'))
             ->post(route('admin.registrations.decline', ['id' => $pending->id]), [
                 'remarks' => '  ',
+                'decline_type' => 'final',
             ])
             ->assertRedirect(route('admin.registrations'))
             ->assertSessionHasErrors('remarks');
@@ -144,7 +148,8 @@ class CapstoneSystemPassTest extends TestCase
             ->assertSee('decline-modal', false)
             ->assertSee('Confirm Decline', false)
             ->assertSee('Reason / remarks', false)
-            ->assertDontSee('Reason / remarks (optional)', false);
+            ->assertSee('Decline type', false)
+            ->assertSee('Remedial', false);
     }
 
     public function test_admin_can_update_slot_status(): void

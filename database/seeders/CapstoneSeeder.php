@@ -45,6 +45,26 @@ class CapstoneSeeder extends Seeder
             ParkingArea::class,
             ParkingSlot::class,
         ]);
+        $this->backfillRegistrationStates();
+    }
+
+    private function backfillRegistrationStates(): void
+    {
+        User::query()
+            ->where(function ($query) {
+                $query->whereNull('registration_state')
+                    ->orWhere('registration_state', '');
+            })
+            ->get()
+            ->each(function (User $user) {
+                $state = match ($user->status) {
+                    User::STATUS_GRANTED => User::REGISTRATION_GRANTED,
+                    User::STATUS_PENDING => User::REGISTRATION_PENDING,
+                    User::STATUS_DENIED => User::REGISTRATION_DENIED_FINAL,
+                    default => User::REGISTRATION_PENDING,
+                };
+                $user->update(['registration_state' => $state]);
+            });
     }
 
     private function seedRoles(): void

@@ -7,10 +7,12 @@
         $vehicleType = $user->vehicleType->vehicle_name ?? null;
         $hasVehicle = filled($user->plate_number);
         $strikeRatio = $maxStrikes > 0 ? min(1, $strikeCount / $maxStrikes) : 0;
-        $gateLabel = $gateAccess ?: 'Pending';
+        $gateLabel = $user->isRemedialDeclined()
+            ? (($user->remedial_gate_enabled && ! $user->remedialAccessExpired()) ? 'Temporary (Remedial)' : 'Not Approved')
+            : ($gateAccess ?: 'Pending');
         $gateTone = match (strtolower(trim((string) $gateLabel))) {
             'granted', 'allow', 'allowed' => 'emerald',
-            'denied', 'blocked', 'revoked' => 'rose',
+            'denied', 'blocked', 'revoked', 'not approved' => 'rose',
             default => 'amber',
         };
     @endphp
@@ -19,6 +21,34 @@
         'title' => 'Dashboard',
         'subtitle' => 'Welcome back, '.$user->fullname,
     ])
+
+    @if ($user->hasPendingResubmission())
+        <div class="mb-6 rounded-2xl border border-blue-200 bg-blue-50 px-5 py-4 text-sm text-blue-950">
+            <p class="font-semibold">Documents resubmitted — awaiting admin review</p>
+            <p class="mt-1 text-blue-800">Gate access stays paused until your registration is approved.</p>
+        </div>
+    @elseif ($user->isRemedialDeclined())
+        <div class="mb-6 rounded-2xl border border-orange-200 bg-orange-50 px-5 py-4 text-sm text-orange-950">
+            <p class="font-semibold">Registration needs document correction</p>
+            @if ($user->declineCategoryLabel())
+                <p class="mt-1 text-orange-800">Issue: {{ $user->declineCategoryLabel() }}</p>
+            @endif
+            @if (filled($user->decline_remarks))
+                <p class="mt-1 text-orange-800">{{ $user->decline_remarks }}</p>
+            @endif
+            @if ($user->remedial_expires_at && ! $user->remedialAccessExpired() && $user->remedial_gate_enabled)
+                <p class="mt-2 text-xs text-orange-700">
+                    Temporary gate access until {{ $user->remedial_expires_at->timezone(config('app.timezone'))->format('M j, Y g:i A') }}.
+                    Full campus access is not approved yet.
+                </p>
+            @else
+                <p class="mt-2 text-xs text-orange-700">Upload corrected documents and resubmit for admin review.</p>
+            @endif
+            <a href="{{ route('user.registration.fix') }}" class="mt-3 inline-flex items-center gap-2 rounded-lg bg-orange-700 px-3 py-2 text-xs font-semibold text-white hover:bg-orange-800">
+                Fix Documents &amp; Resubmit
+            </a>
+        </div>
+    @endif
 
     @if ($user->isTemporaryAccount())
         <div class="mb-6 rounded-2xl border border-amber-200 bg-amber-50 px-5 py-4 text-sm text-amber-950">
@@ -48,10 +78,17 @@
                         <p class="mt-1 truncate text-sm text-gray-500">{{ $user->email }}</p>
                     </div>
                 </div>
-                <a href="{{ route('profile.edit') }}" class="inline-flex items-center justify-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50">
-                    <i data-lucide="settings" class="h-4 w-4"></i>
-                    Account Settings
-                </a>
+                @if ($user->isRemedialDeclined())
+                    <a href="{{ route('user.registration.fix') }}" class="inline-flex items-center justify-center gap-2 rounded-lg border border-orange-200 bg-orange-50 px-3 py-2 text-sm font-semibold text-orange-900 hover:bg-orange-100">
+                        <i data-lucide="file-warning" class="h-4 w-4"></i>
+                        Fix Documents
+                    </a>
+                @else
+                    <a href="{{ route('profile.edit') }}" class="inline-flex items-center justify-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50">
+                        <i data-lucide="settings" class="h-4 w-4"></i>
+                        Account Settings
+                    </a>
+                @endif
             </div>
         </div>
 

@@ -258,6 +258,7 @@ class RegisterController extends Controller
             'lto_or_photo' => $orFilename,
             'lto_cr_photo' => $crFilename,
             'status' => User::STATUS_PENDING,
+            'registration_state' => User::REGISTRATION_PENDING,
             'strike_count' => 0,
             'Gate_access' => User::GATE_ACCESS_PENDING,
             'email_verified_at' => null,

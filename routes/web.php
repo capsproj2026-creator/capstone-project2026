@@ -244,8 +244,10 @@ Route::prefix('guard')->middleware(['auth', 'verified', 'granted', 'no.cache', '
     Route::post('/notifications/{action}', [GuardNotificationController::class, 'action'])->name('notifications.action');
 });
 
-Route::prefix('user')->middleware(['auth', 'verified', 'granted', 'no.cache', 'role:Student,Staff'])->name('user.')->group(function () {
+Route::prefix('user')->middleware(['auth', 'verified', 'portal', 'no.cache', 'role:Student,Staff'])->name('user.')->group(function () {
     Route::get('/', [UserDashboardController::class, 'index'])->name('dashboard');
+    Route::get('/registration/fix', [\App\Http\Controllers\User\RegistrationResubmitController::class, 'show'])->name('registration.fix');
+    Route::post('/registration/resubmit', [\App\Http\Controllers\User\RegistrationResubmitController::class, 'store'])->name('registration.resubmit');
     Route::get('/notifications', [NotificationController::class, 'index'])->name('notifications');
     Route::post('/notifications/{action}', [NotificationController::class, 'action'])->name('notifications.action');
     Route::get('/entry-exit', [EntryExitController::class, 'index'])->name('entry-exit');

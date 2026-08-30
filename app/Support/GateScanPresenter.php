@@ -34,13 +34,16 @@ class GateScanPresenter
         );
 
         $isTemporary = (bool) $user?->isTemporaryAccount();
+        $isRemedial = (bool) $user?->isRemedialDeclined();
 
         $statusLabel = $granted
             ? ($isVisitor
                 ? 'Visitor'
                 : ($isTemporary
                     ? 'Not registered yet'
-                    : ($strikes > 0 ? "{$strikes} Strike".($strikes === 1 ? '' : 's') : 'No Violations')))
+                    : ($isRemedial
+                        ? 'Remedial access'
+                        : ($strikes > 0 ? "{$strikes} Strike".($strikes === 1 ? '' : 's') : 'No Violations'))))
             : ($log->result ?: 'Access Denied');
 
         if (strcasecmp((string) $log->action, 'Override') === 0) {
@@ -59,13 +62,16 @@ class GateScanPresenter
             'role' => $isVisitor ? 'Visitor' : ($user?->gateRoleLabel() ?? 'Unknown'),
             'is_visitor' => $isVisitor,
             'is_temporary' => $isTemporary,
+            'is_remedial' => $isRemedial,
             'temporary_expires_at' => $isTemporary ? $user?->temporary_expires_at?->toIso8601String() : null,
+            'remedial_expires_at' => $isRemedial ? $user?->remedial_expires_at?->toIso8601String() : null,
             'temporary_message' => $isTemporary
                 ? app(\App\Services\TemporaryRfidService::class)->grantReason()
-                : null,
+                : ($isRemedial ? \App\Services\RemedialRfidService::GRANT_REASON : null),
             'register_url' => $isTemporary
                 ? app(\App\Services\TemporaryRfidService::class)->registrationUrl($user)
                 : null,
+            'fix_documents_url' => $isRemedial ? route('user.registration.fix') : null,
             'purpose' => $isVisitor ? ($visitor->purpose ?? null) : null,
             'id_number' => $user?->id_number,
             'plate_number' => $isVisitor ? $visitor->plate_number : $user?->plate_number,

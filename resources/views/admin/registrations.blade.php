@@ -183,10 +183,14 @@
                             <td class="px-3 py-3">
                                 @if ($isIncompleteTemp)
                                     <span class="inline-flex rounded-full bg-amber-50 px-2.5 py-0.5 text-xs font-semibold text-amber-700">Not registered yet</span>
+                                @elseif ($row->status === 'Pending' && $row->resubmitted_at)
+                                    <span class="inline-flex rounded-full bg-blue-50 px-2.5 py-0.5 text-xs font-semibold text-blue-700">Resubmitted</span>
                                 @elseif ($row->status === 'Pending')
                                     <span class="inline-flex rounded-full bg-amber-50 px-2.5 py-0.5 text-xs font-semibold text-amber-700">Pending</span>
                                 @elseif ($row->status === 'Granted')
                                     <span class="inline-flex rounded-full bg-emerald-50 px-2.5 py-0.5 text-xs font-semibold text-emerald-700">Approved</span>
+                                @elseif ($row->isRemedialDeclined())
+                                    <span class="inline-flex rounded-full bg-orange-50 px-2.5 py-0.5 text-xs font-semibold text-orange-700">Needs Correction</span>
                                 @else
                                     <span class="inline-flex rounded-full bg-rose-50 px-2.5 py-0.5 text-xs font-semibold text-rose-700">Declined</span>
                                 @endif
@@ -256,9 +260,38 @@
                 maxlength="500"
                 required
                 class="mt-1 w-full rounded-xl border border-gray-200 px-3 py-2 text-sm"
-                placeholder="e.g. Unreadable OR/CR, name mismatch"
+                placeholder="e.g. Unreadable OR/CR, expired license"
             ></textarea>
             <p id="decline-remarks-error" class="mt-1 hidden text-sm text-rose-600">Please enter a reason (at least 3 characters) before declining.</p>
+
+            <fieldset class="mt-4 space-y-2">
+                <legend class="text-sm font-medium text-gray-700">Decline type</legend>
+                <label class="flex items-start gap-2 text-sm text-gray-700">
+                    <input type="radio" name="decline_type" value="remedial" class="mt-1" checked>
+                    <span><span class="font-medium">Remedial</span> — user can sign in, fix documents, and may get temporary gate access</span>
+                </label>
+                <label class="flex items-start gap-2 text-sm text-gray-700">
+                    <input type="radio" name="decline_type" value="final" class="mt-1">
+                    <span><span class="font-medium">Final</span> — no portal or gate access (3-day re-register cooldown)</span>
+                </label>
+            </fieldset>
+
+            <div class="mt-4">
+                <label class="block text-sm font-medium text-gray-700" for="decline-category">Issue category</label>
+                <select id="decline-category" name="decline_category" class="mt-1 w-full rounded-xl border border-gray-200 px-3 py-2 text-sm">
+                    <option value="documents_illegible">Documents not readable</option>
+                    <option value="license_expired">Driver's license expired</option>
+                    <option value="or_cr_invalid">OR/CR invalid or expired</option>
+                    <option value="other">Other</option>
+                </select>
+            </div>
+
+            <label id="decline-temp-gate-wrap" class="mt-4 flex items-start gap-2 text-sm text-gray-700">
+                <input type="hidden" name="allow_temp_gate" value="0">
+                <input type="checkbox" id="decline-allow-temp-gate" name="allow_temp_gate" value="1" checked class="mt-1">
+                <span>Allow temporary campus access while correcting documents</span>
+            </label>
+
             <div class="mt-5 flex justify-end gap-2">
                 <button type="button" id="decline-cancel" class="rounded-xl border border-gray-200 px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50">Cancel</button>
                 <button type="submit" class="rounded-xl bg-rose-600 px-4 py-2 text-sm font-semibold text-white hover:bg-rose-700">Confirm Decline</button>
@@ -291,6 +324,22 @@
         const subtitle = document.getElementById('decline-modal-subtitle');
         const remarks = document.getElementById('decline-remarks');
         const remarksError = document.getElementById('decline-remarks-error');
+        const declineTypeRadios = Array.from(document.querySelectorAll('input[name="decline_type"]'));
+        const tempGateWrap = document.getElementById('decline-temp-gate-wrap');
+        const tempGateCheckbox = document.getElementById('decline-allow-temp-gate');
+        const categorySelect = document.getElementById('decline-category');
+
+        const syncDeclineTypeUi = () => {
+            const isFinal = declineTypeRadios.find((r) => r.checked)?.value === 'final';
+            tempGateWrap?.classList.toggle('hidden', isFinal);
+            categorySelect?.toggleAttribute('disabled', isFinal);
+            if (isFinal && tempGateCheckbox) {
+                tempGateCheckbox.checked = false;
+            }
+        };
+        declineTypeRadios.forEach((radio) => radio.addEventListener('change', syncDeclineTypeUi));
+        syncDeclineTypeUi();
+
         const setRemarksError = (show) => {
             remarksError?.classList.toggle('hidden', !show);
             remarks?.classList.toggle('border-rose-400', show);
