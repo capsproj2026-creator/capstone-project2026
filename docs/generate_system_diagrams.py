@@ -541,6 +541,10 @@ def fig_er_logical():
         ("FK", "user_role_id"), ("FK", "department_code"), ("FK", "vehicle_id"),
         ("A", "driver_license"), ("A", "or_cr_photo"),
     ])
+    uvehs = entity(d, 360, 520, 280, "user_vehicles", [
+        ("PK", "id"), ("FK", "user_id"), ("FK", "vehicle_id"),
+        ("A", "plate_number"), ("A", "vehicle_model"), ("A", "is_primary"),
+    ])
     vis = entity(d, 760, 110, 270, "visitors", [
         ("PK", "id"), ("A", "first_name / last_name"), ("A", "purpose"),
         ("A", "plate_number"), ("A", "status"), ("A", "time_in / time_out"),
@@ -552,7 +556,7 @@ def fig_er_logical():
         ("FK", "visitor_id"), ("FK", "created_by"),
         ("A", "assigned_at"), ("A", "returned_at"), ("A", "expires_at"),
     ])
-    logs = entity(d, 760, 520, 270, "gate_logs", [
+    logs = entity(d, 760, 680, 270, "gate_logs", [
         ("PK", "id"), ("FK", "user_id"), ("FK", "visitor_id"),
         ("A", "action  Entry|Exit"), ("A", "gate_id"), ("A", "rfid_uid"),
         ("A", "result"), ("A", "reason"), ("A", "timestamp"),
@@ -600,6 +604,8 @@ def fig_er_logical():
     relate(d, roles, "e", users, "w", "1", "N", "user_role_id")
     relate(d, depts, "e", users, "w", "1", "N", "department_code")
     relate(d, vehs, "e", users, "w", "1", "N", "vehicle_id")
+    relate(d, users, "s", uvehs, "n", "1", "N", "user_id", NAVY)
+    relate(d, vehs, "e", uvehs, "w", "1", "N", "vehicle_id", NAVY)
     relate(d, vehs, "e", vis, "w", "1", "N", "vehicle_id", TEAL)
     relate(d, users, "e", vis, "w", "1", "N", "registered_by", TEAL)
     relate(d, vis, "e", cards, "w", "1", "0..1", "card_id / visitor_id", TEAL)
@@ -745,6 +751,7 @@ def build_docx(images: dict[str, Path]) -> Path:
     add_heading(doc, "2.1 Collection catalog", 2)
     add_table(doc, ["Collection", "Model", "Role in the system"], [
         ["users", "User", "Admin, Guard, Student, Staff accounts; plate, RFID UID, strikes, Gate_access"],
+        ["user_vehicles", "UserVehicle", "Multiple vehicles per user (plate, model, primary flag)"],
         ["user_roles", "UserRole", "Admin, Guard, Student, Staff, Visitor role names"],
         ["departments", "Department", "College/office codes for staff/students"],
         ["vehicles", "Vehicle", "Lookup of vehicle types (car, motorcycle, …)"],
