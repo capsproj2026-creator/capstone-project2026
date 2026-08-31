@@ -91,6 +91,30 @@ Saving with any slot ≥3 points sets `"calibrated": true` in `zones.json`.
 
 Until calibrated, the service falls back to vehicle-count → first-N slots.
 
+## Plate OCR accuracy tuning
+
+Recent improvements: deskew/perspective correction, white/yellow plate localization, rotation sweep, multi-frame vote consensus, and stricter vehicle box filtering.
+
+Recommended `.env` for plate reading:
+
+```env
+AI_PARKING_OCR_ENABLED=1
+AI_PARKING_OCR_EVERY_SEC=2
+AI_PARKING_OCR_QUEUE_SIZE=8
+AI_PARKING_PLATE_VOTE_NEEDED=2
+AI_PARKING_INFER_MAX_WIDTH=2560
+AI_PARKING_IMG_SIZE=1280
+AI_PARKING_LONG_RANGE=1
+```
+
+Optional: place a dedicated plate YOLO model at `hardware/ai_parking/models/plate.pt` for best crop quality.
+
+Debug a camera frame:
+
+```powershell
+python probe_plate_ocr.py --camera CAM-AI-1
+```
+
 ## Run AI service
 
 ```powershell

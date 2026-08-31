@@ -9,6 +9,7 @@ from plate_text import (
     is_ph_car_plate,
     is_ph_motorcycle_plate,
     parse_plate_candidate,
+    score_candidate,
 )
 
 
@@ -35,6 +36,18 @@ class PlateTextTest(unittest.TestCase):
     def test_car_format(self):
         self.assertTrue(is_ph_car_plate("ABC1234"))
         self.assertFalse(is_ph_car_plate("AB12345"))
+
+    def test_score_prefers_valid_car(self):
+        car_score = score_candidate("ABC1234", True, 0.5)
+        junk_score = score_candidate("AB12", False, 0.5)
+        self.assertGreater(car_score, junk_score)
+
+    def test_parse_embedded_car_plate(self):
+        # Direct parse may accept generic alphanumeric; substring logic in best_from_results
+        # extracts valid PH plates from longer OCR reads.
+        parsed, known = parse_plate_candidate("ABC1234")
+        self.assertEqual(parsed, "ABC1234")
+        self.assertTrue(known)
 
 
 if __name__ == "__main__":

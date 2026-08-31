@@ -21,14 +21,19 @@ if TYPE_CHECKING:
     from parking_rules import ParkingIntelligence
 
 OCR_ENABLED = os.getenv("AI_PARKING_OCR_ENABLED", "0") == "1"
-OCR_EVERY_SEC = float(os.getenv("AI_PARKING_OCR_EVERY_SEC", "3"))
-OCR_MIN_CONF = float(os.getenv("AI_PARKING_OCR_MIN_CONF", "0.28"))
-OCR_UNREADABLE_BELOW = float(os.getenv("AI_PARKING_OCR_UNREADABLE_BELOW", "0.20"))
-OCR_QUEUE_SIZE = int(os.getenv("AI_PARKING_OCR_QUEUE_SIZE", "4"))
-OCR_UPSCALE_MIN_WIDTH = int(os.getenv("AI_PARKING_OCR_UPSCALE_MIN_WIDTH", "500"))
+OCR_EVERY_SEC = float(os.getenv("AI_PARKING_OCR_EVERY_SEC", "2.0"))
+OCR_MIN_CONF = float(os.getenv("AI_PARKING_OCR_MIN_CONF", "0.26"))
+OCR_UNREADABLE_BELOW = float(os.getenv("AI_PARKING_OCR_UNREADABLE_BELOW", "0.18"))
+OCR_QUEUE_SIZE = int(os.getenv("AI_PARKING_OCR_QUEUE_SIZE", "8"))
+OCR_UPSCALE_MIN_WIDTH = int(os.getenv("AI_PARKING_OCR_UPSCALE_MIN_WIDTH", "560"))
 OCR_UPSCALE_FACTOR = float(os.getenv("AI_PARKING_OCR_UPSCALE_FACTOR", "6"))
 OCR_GPU = os.getenv("AI_PARKING_OCR_GPU", "0") == "1"
-OCR_HIGH_CONF_LOCK = float(os.getenv("AI_PARKING_OCR_HIGH_CONF_LOCK", "0.68"))
+OCR_HIGH_CONF_LOCK = float(os.getenv("AI_PARKING_OCR_HIGH_CONF_LOCK", "0.65"))
+OCR_ROTATION_ANGLES = [
+    float(v.strip())
+    for v in os.getenv("AI_PARKING_OCR_ROTATION_ANGLES", "-6,-3,3,6").split(",")
+    if v.strip()
+]
 
 # COCO class id for motorcycle (tighter rear-plate crop).
 MOTORCYCLE_CLS_ID = 3
@@ -82,13 +87,13 @@ class PlateOCR:
 
         if cls_id == MOTORCYCLE_CLS_ID:
             # Motorcycle plates sit mid-rear; bottom crop often catches tire/mudguard only.
-            y1p = y1 + int(box_h * 0.18)
-            y2p = y1 + int(box_h * 0.74)
-            x_pad = int(box_w * 0.02)
+            y1p = y1 + int(box_h * 0.15)
+            y2p = y1 + int(box_h * 0.76)
+            x_pad = int(box_w * 0.03)
         else:
-            y1p = y1 + int(box_h * 0.52)
+            y1p = y1 + int(box_h * 0.48)
             y2p = y2
-            x_pad = int(box_w * 0.04)
+            x_pad = int(box_w * 0.05)
         x1 = max(0, x1 + x_pad)
         y1p = max(0, y1p)
         x2 = min(w, x2 - x_pad)
@@ -116,12 +121,40 @@ class PlateOCR:
         if cw >= target:
             return crop
         scale = target / max(cw, 1)
-        return cv2.resize(crop, None, fx=scale, fy=scale, interpolation=cv2.INTER_CUBIC)
+        return cv2.resize(crop, None, fx=scale, fy=scale, interpolation=cv2.INTER_LANCZOS4)
 
     @staticmethod
     def _sharpen(gray):
         kernel = np.array([[0, -1, 0], [-1, 5, -1], [0, -1, 0]], dtype=np.float32)
         return cv2.filter2D(gray, -1, kernel)
+
+    @staticmethod
+    def _gamma_correct(img, gamma: float = 1.25):
+        if gamma <= 0:
+            return img
+        inv = 1.0 / gamma
+        table = np.array([((i / 255.0) ** inv) * 255 for i in range(256)]).astype("uint8")
+        return cv2.LUT(img, table)
+
+    @staticmethod
+    def _unsharp_mask(gray, amount: float = 1.2):
+        blurred = cv2.GaussianBlur(gray, (0, 0), 1.2)
+        return cv2.addWeighted(gray, 1.0 + amount, blurred, -amount, 0)
+
+    @staticmethod
+    def _rotate_image(img, angle: float):
+        if abs(angle) < 0.01:
+            return img
+        h, w = img.shape[:2]
+        center = (w / 2.0, h / 2.0)
+        matrix = cv2.getRotationMatrix2D(center, angle, 1.0)
+        return cv2.warpAffine(
+            img,
+            matrix,
+            (w, h),
+            flags=cv2.INTER_CUBIC,
+            borderMode=cv2.BORDER_REPLICATE,
+        )
 
     @staticmethod
     def _ocr_variants(crop, quick: bool = False):
@@ -130,15 +163,29 @@ class PlateOCR:
         gray = cv2.bilateralFilter(gray, 5, 50, 50)
         clahe_img = gray
         try:
-            clahe = cv2.createCLAHE(clipLimit=2.5, tileGridSize=(8, 8))
+            clahe = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(8, 8))
             clahe_img = clahe.apply(gray)
         except Exception:
             pass
 
-        variants = [("color", crop), ("gray", gray), ("clahe", clahe_img)]
+        gamma = PlateOCR._gamma_correct(clahe_img, 1.2)
+        unsharp = PlateOCR._unsharp_mask(clahe_img)
+        variants = [
+            ("color", crop),
+            ("gray", gray),
+            ("clahe", clahe_img),
+            ("gamma", gamma),
+            ("unsharp", unsharp),
+        ]
         if not quick:
             sharpen = PlateOCR._sharpen(clahe_img)
             variants.append(("sharp", sharpen))
+            try:
+                kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3))
+                tophat = cv2.morphologyEx(clahe_img, cv2.MORPH_TOPHAT, kernel)
+                variants.append(("tophat", tophat))
+            except Exception:
+                pass
             try:
                 _, otsu = cv2.threshold(clahe_img, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
                 variants.append(("otsu", otsu))
@@ -157,6 +204,8 @@ class PlateOCR:
                 variants.append(("adaptive", adaptive))
             except Exception:
                 pass
+            for angle in OCR_ROTATION_ANGLES:
+                variants.append((f"rot_{angle}", PlateOCR._rotate_image(clahe_img, angle)))
         return variants
 
     def _scan_variants(self, crop, quick: bool = False) -> tuple[Optional[str], float, float]:
@@ -184,11 +233,13 @@ class PlateOCR:
                 img,
                 allowlist=_OCR_ALLOWLIST,
                 paragraph=False,
-                min_size=8,
-                contrast_ths=0.08,
-                adjust_contrast=0.6,
-                text_threshold=0.55,
-                low_text=0.25,
+                min_size=6,
+                contrast_ths=0.05,
+                adjust_contrast=0.7,
+                text_threshold=0.45,
+                low_text=0.20,
+                mag_ratio=1.5,
+                slope_ths=0.15,
             )
 
     def read_plate(
@@ -203,7 +254,7 @@ class PlateOCR:
         crop = self.crop_plate_region(frame, xyxy, cls_id=cls_id)
         if crop is None:
             return PlateRead(status="empty")
-        return self.read_crop(crop)
+        return self.read_crop(crop, cls_id=cls_id)
 
     @staticmethod
     def _sub_crops(crop, cls_id: int | None = None):
@@ -211,18 +262,18 @@ class PlateOCR:
         ch, cw = crop.shape[:2]
         out = [crop]
         if cls_id == MOTORCYCLE_CLS_ID and ch >= 24:
-            mid_y1 = max(0, int(ch * 0.12))
-            mid_y2 = min(ch, int(ch * 0.68))
+            mid_y1 = max(0, int(ch * 0.10))
+            mid_y2 = min(ch, int(ch * 0.70))
             mid = crop[mid_y1:mid_y2, :]
             if mid.size > 0 and mid.shape[0] >= 12:
                 out.insert(0, mid)
         elif ch >= 24:
-            top = crop[0 : max(12, int(ch * 0.52)), :]
+            top = crop[0 : max(12, int(ch * 0.50)), :]
             if top.size > 0 and top.shape[0] >= 12:
                 out.insert(0, top)
         if ch >= 48:
-            mid_y1 = max(0, int(ch * 0.18))
-            mid_y2 = min(ch, int(ch * 0.62))
+            mid_y1 = max(0, int(ch * 0.16))
+            mid_y2 = min(ch, int(ch * 0.64))
             mid = crop[mid_y1:mid_y2, :]
             if mid.size > 0 and mid.shape[0] >= 12:
                 out.append(mid)

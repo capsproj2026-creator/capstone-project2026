@@ -101,6 +101,10 @@ VEHICLE_CLASS_IDS = set(DETECT_CLASS_IDS)
 MOTORCYCLE_MIN_BOX_FRAC = float(os.getenv("AI_PARKING_MOTORCYCLE_MIN_BOX_AREA", "0.00008"))
 if os.getenv("AI_PARKING_LONG_RANGE", "0") == "1":
     MOTORCYCLE_MIN_BOX_FRAC = float(os.getenv("AI_PARKING_MOTORCYCLE_MIN_BOX_AREA", "0.00006"))
+# Reject implausible vehicle aspect ratios (poles, shadows, partial boxes).
+MIN_VEHICLE_ASPECT = float(os.getenv("AI_PARKING_MIN_VEHICLE_ASPECT", "0.28"))
+MAX_VEHICLE_ASPECT = float(os.getenv("AI_PARKING_MAX_VEHICLE_ASPECT", "4.5"))
+MIN_VEHICLE_SHORT_SIDE_PX = int(os.getenv("AI_PARKING_MIN_VEHICLE_SHORT_SIDE_PX", "18"))
 # Vehicles only — never detect/draw/post persons or other COCO objects.
 VEHICLES_ONLY = os.getenv("AI_PARKING_VEHICLES_ONLY", "1") == "1"
 if not VEHICLES_ONLY and os.getenv("AI_PARKING_DETECT_PERSONS", "0") == "1":
@@ -387,6 +391,24 @@ def _box_iou(a, b) -> float:
     return inter / union if union > 0 else 0.0
 
 
+def _vehicle_box_valid(x1: int, y1: int, x2: int, y2: int, cls_id: int) -> bool:
+    """Filter obvious false positives before tracking/OCR."""
+    bw = max(1, x2 - x1)
+    bh = max(1, y2 - y1)
+    aspect = bw / bh
+    if cls_id == MOTORCYCLE_CLS_ID:
+        if aspect < 0.45 or aspect > 3.2:
+            return False
+        if min(bw, bh) < max(12, MIN_VEHICLE_SHORT_SIDE_PX - 4):
+            return False
+        return True
+    if aspect < MIN_VEHICLE_ASPECT or aspect > MAX_VEHICLE_ASPECT:
+        return False
+    if min(bw, bh) < MIN_VEHICLE_SHORT_SIDE_PX:
+        return False
+    return True
+
+
 def _dedupe_vehicle_rows(rows: list[dict], iou_thresh: float = 0.65) -> list[dict]:
     """Keep highest-confidence box when two same-class vehicles heavily overlap."""
     if len(rows) <= 1:
@@ -530,6 +552,8 @@ def parse_tracks(
         box_area = max(0, x2 - x1) * max(0, y2 - y1)
         min_frac = MOTORCYCLE_MIN_BOX_FRAC if cls_id == MOTORCYCLE_CLS_ID else MIN_BOX_AREA_FRAC
         if box_area / frame_area < min_frac:
+            continue
+        if not _vehicle_box_valid(x1, y1, x2, y2, cls_id):
             continue
 
         raw_vehicles.append({
@@ -1368,12 +1392,12 @@ class CameraWorker:
         for tid, mem in list(self.intelligence.tracks.items()):
             if mem.plate_status == "ok" and mem.plate:
                 continue
-            if (now - mem.first_seen) < 1.5:
+            if (now - mem.first_seen) < 1.0:
                 continue
             if not getattr(mem, "last_ocr_xyxy", None):
                 continue
             last_sync = float(getattr(mem, "last_sync_ocr_at", 0.0) or 0.0)
-            if last_sync and (now - last_sync) < 4.0:
+            if last_sync and (now - last_sync) < 2.5:
                 continue
             mem.last_sync_ocr_at = now
             read = ocr.read_plate(frame, mem.last_ocr_xyxy, cls_id=getattr(mem, "cls_id", None))

@@ -16,8 +16,9 @@ IOU_THRESHOLD = float(os.getenv("AI_PARKING_ZONE_IOU", "0.12"))
 # Keep lost tracks briefly so ByteTrack ID flicker does not wipe plate memory / re-OCR.
 TRACK_HOLD_SEC = float(os.getenv("AI_PARKING_TRACK_HOLD_SEC", "3.0"))
 # Require this many matching OCR reads before locking a plate on a track.
-PLATE_VOTE_NEEDED = int(os.getenv("AI_PARKING_PLATE_VOTE_NEEDED", "1"))
-OCR_HIGH_CONF_LOCK = float(os.getenv("AI_PARKING_OCR_HIGH_CONF_LOCK", "0.68"))
+PLATE_VOTE_NEEDED = int(os.getenv("AI_PARKING_PLATE_VOTE_NEEDED", "2"))
+OCR_HIGH_CONF_LOCK = float(os.getenv("AI_PARKING_OCR_HIGH_CONF_LOCK", "0.65"))
+PLATE_VOTE_CONSENSUS_RATIO = float(os.getenv("AI_PARKING_PLATE_VOTE_CONSENSUS_RATIO", "0.55"))
 TRACK_MATCH_IOU = float(os.getenv("AI_PARKING_TRACK_MATCH_IOU", "0.25"))
 # Normalized center movement (px/sec ÷ bbox diagonal). Below = parked, above = moving.
 MOTION_SPEED_THRESH = float(os.getenv("AI_PARKING_MOTION_SPEED_THRESH", "0.12"))
@@ -224,12 +225,28 @@ class TrackMemory:
 
     def apply_ocr_vote(self, plate: str | None, status: str, confidence: float) -> None:
         """Stabilize plate text across frames; avoid locking on a single bad read."""
+        from plate_text import is_known_ph_format
+
         self.ocr_confidence = max(self.ocr_confidence, float(confidence or 0.0))
         if status == "ok" and plate:
-            weight = max(1, int(round(float(confidence or 0.0) * 3)))
+            weight = max(1, int(round(float(confidence or 0.0) * 4)))
+            if is_known_ph_format(plate):
+                weight += 1
             self.plate_votes[plate] = self.plate_votes.get(plate, 0) + weight
             votes = self.plate_votes[plate]
-            if votes >= PLATE_VOTE_NEEDED or (votes >= 1 and confidence >= OCR_HIGH_CONF_LOCK):
+            total_votes = sum(self.plate_votes.values())
+            consensus = votes / max(total_votes, 1)
+
+            high_conf_lock = (
+                votes >= 1
+                and confidence >= OCR_HIGH_CONF_LOCK
+                and is_known_ph_format(plate)
+            )
+            consensus_lock = votes >= PLATE_VOTE_NEEDED and (
+                len(self.plate_votes) == 1 or consensus >= PLATE_VOTE_CONSENSUS_RATIO
+            )
+
+            if high_conf_lock or consensus_lock:
                 if self.plate != plate:
                     self.clear_owner()
                 self.plate = plate
@@ -240,7 +257,7 @@ class TrackMemory:
         if status == "unreadable":
             self.unreadable_votes += 1
             # Only mark unreadable once we have tried enough and never locked a plate.
-            if self.plate_status != "ok" and self.unreadable_votes >= PLATE_VOTE_NEEDED:
+            if self.plate_status != "ok" and self.unreadable_votes >= PLATE_VOTE_NEEDED + 1:
                 self.plate = None
                 self.plate_status = "unreadable"
                 self.clear_owner()

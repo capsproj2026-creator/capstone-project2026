@@ -157,13 +157,53 @@ def score_candidate(parsed: str, known_format: bool, conf: float) -> float:
     score = float(conf)
     if is_ph_motorcycle_plate(parsed):
         score += 0.40
+        # LTO motorcycle plates start with a 4-digit region code.
+        if parsed[:4].isdigit() and int(parsed[:4]) > 0:
+            score += 0.06
     elif is_ph_car_plate(parsed):
-        score += 0.15
+        score += 0.18
+        letters = sum(1 for ch in parsed if ch.isalpha())
+        digits = sum(1 for ch in parsed if ch.isdigit())
+        if 2 <= letters <= 3 and 3 <= digits <= 4:
+            score += 0.05
     elif known_format:
         score += 0.08
     elif parsed.isdigit() and len(parsed) < 11:
         score *= 0.82
     return score
+
+
+def _substring_candidates(text: str) -> list[str]:
+    """Try sliding windows for OCR that merges extra characters."""
+    compact = re.sub(r"[^A-Z0-9]", "", _clean_raw(text))
+    if len(compact) < 6:
+        return []
+
+    out: list[str] = []
+    seen: set[str] = set()
+
+    def add(value: str) -> None:
+        if value and value not in seen:
+            seen.add(value)
+            out.append(value)
+
+    add(compact)
+    if len(compact) == 11 and compact.isdigit():
+        add(compact)
+
+    # Car plates embedded in longer reads (e.g. ABC1234X).
+    for length in (7, 6):
+        if len(compact) < length:
+            continue
+        for start in range(0, len(compact) - length + 1):
+            add(compact[start : start + length])
+
+    # Motorcycle 11-digit windows.
+    if len(compact) >= 11:
+        for start in range(0, len(compact) - 10):
+            add(compact[start : start + 11])
+
+    return out[:16]
 
 
 def best_from_results(
@@ -179,25 +219,29 @@ def best_from_results(
         conf_f = float(conf)
         best_any = max(best_any, conf_f)
 
-        parsed, known = parse_plate_candidate(text)
-        if parsed is None:
-            for variant in correction_variants(text, max_variants=4):
-                parsed_v, known_v = parse_plate_candidate(variant)
-                if parsed_v is None:
-                    continue
-                score_v = score_candidate(parsed_v, known_v, conf_f * 0.95)
-                if conf_f < min_conf and not known_v:
-                    continue
-                if score_v > best_score:
-                    best_score = score_v
-                    best = parsed_v
-            continue
+        candidates = [text]
+        candidates.extend(_substring_candidates(text))
 
-        score = score_candidate(parsed, known, conf_f)
-        if conf_f < min_conf and not known:
-            continue
-        if score > best_score:
-            best_score = score
-            best = parsed
+        for candidate_text in candidates:
+            parsed, known = parse_plate_candidate(candidate_text)
+            if parsed is None:
+                for variant in correction_variants(candidate_text, max_variants=4):
+                    parsed_v, known_v = parse_plate_candidate(variant)
+                    if parsed_v is None:
+                        continue
+                    score_v = score_candidate(parsed_v, known_v, conf_f * 0.95)
+                    if conf_f < min_conf and not known_v:
+                        continue
+                    if score_v > best_score:
+                        best_score = score_v
+                        best = parsed_v
+                continue
+
+            score = score_candidate(parsed, known, conf_f)
+            if conf_f < min_conf and not known:
+                continue
+            if score > best_score:
+                best_score = score
+                best = parsed
 
     return best, best_score, best_any
