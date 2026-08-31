@@ -144,6 +144,13 @@ if (-not (Test-Path $model)) {
     python download_model.py --model $modelName
 }
 
+$plateModel = Join-Path $AiDir "models\plate.pt"
+if ($env:AI_PARKING_OCR_ENABLED -eq "1" -and -not (Test-Path $plateModel)) {
+    Write-Host "Downloading plate YOLO model (OCR enabled, plate.pt missing)..." -ForegroundColor Yellow
+    Set-Location $AiDir
+    python download_plate_model.py
+}
+
 $streamPort = if ($env:AI_STREAM_PORT) { [int]$env:AI_STREAM_PORT } else { 8090 }
 Stop-PortListeners -Port $streamPort
 

@@ -109,6 +109,13 @@ AI_PARKING_LONG_RANGE=1
 
 Optional: place a dedicated plate YOLO model at `hardware/ai_parking/models/plate.pt` for best crop quality.
 
+```powershell
+# From repo root — downloads pretrained YOLOv11 plate detector (~18 MB)
+.\scripts\setup-plate-model.ps1
+```
+
+Or it auto-downloads when you start AI parking with `AI_PARKING_OCR_ENABLED=1`.
+
 Debug a camera frame:
 
 ```powershell

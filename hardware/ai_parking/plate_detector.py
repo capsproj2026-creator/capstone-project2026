@@ -14,8 +14,10 @@ from typing import Optional
 import cv2
 import numpy as np
 
+from plate_models import default_plate_path
+
 BASE = Path(__file__).resolve().parent
-PLATE_MODEL_PATH = Path(os.getenv("AI_PARKING_PLATE_MODEL", str(BASE / "models" / "plate.pt")))
+PLATE_MODEL_PATH = default_plate_path()
 PLATE_YOLO_CONF = float(os.getenv("AI_PARKING_PLATE_YOLO_CONF", "0.22"))
 
 # COCO motorcycle class — yellow LTO plates are common.

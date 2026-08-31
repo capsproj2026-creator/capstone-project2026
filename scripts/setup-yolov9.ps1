@@ -45,5 +45,6 @@ Write-Host "  Set AI_PARKING_YOLO_MODEL=$Model in .env (optional if already yolo
 Write-Host ""
 Write-Host "Next steps:" -ForegroundColor Green
 Write-Host "  1. Configure AI_CAMERA_* and AI_PARKING_API_TOKEN in .env"
-Write-Host "  2. php artisan db:seed --class=AiTestLotSeeder"
-Write-Host "  3. powershell -ExecutionPolicy Bypass -File .\scripts\start-ai-parking.ps1"
+Write-Host "  2. Optional plate OCR boost: .\scripts\setup-plate-model.ps1"
+Write-Host "  3. php artisan db:seed --class=AiTestLotSeeder"
+Write-Host "  4. powershell -ExecutionPolicy Bypass -File .\scripts\start-ai-parking.ps1"
