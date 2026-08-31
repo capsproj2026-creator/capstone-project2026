@@ -31,7 +31,7 @@ import numpy as np
 from geometry import ZONE_COLORS, load_zones, save_zones
 
 BASE_DIR = Path(__file__).resolve().parent
-ZONES_PATH = BASE_DIR / "zones.json"
+DEFAULT_ZONES_PATH = BASE_DIR / "zones.json"
 
 CAMERA_IP = os.getenv("AI_CAMERA_IP", "192.168.1.108")
 CAMERA_USER = os.getenv("AI_CAMERA_USER", "admin")
@@ -41,9 +41,10 @@ RTSP_PATH = os.getenv("AI_CAMERA_RTSP_PATH", "/cam/realmonitor?channel=1&subtype
 
 
 class Calibrator:
-    def __init__(self, frame, zones_data):
+    def __init__(self, frame, zones_data, zones_path: Path):
         self.base = frame.copy()
         self.zones_data = zones_data
+        self.zones_path = zones_path
         self.zones = zones_data.setdefault("zones", [])
         if not self.zones:
             raise SystemExit("zones.json has no zones to calibrate.")
@@ -122,8 +123,11 @@ class Calibrator:
                     z.get("type") == "slot" and len(z.get("points") or []) >= 3 for z in self.zones
                 )
                 self.zones_data["calibrated"] = calibrated
-                save_zones(ZONES_PATH, self.zones_data)
-                print(f"Saved {ZONES_PATH} (calibrated={calibrated})")
+                save_zones(self.zones_path, self.zones_data)
+                print(f"Saved {self.zones_path} (calibrated={calibrated})")
+                if self.zones_path.name != "zones.json":
+                    save_zones(DEFAULT_ZONES_PATH, self.zones_data)
+                    print(f"Also updated {DEFAULT_ZONES_PATH.name}")
         cv2.destroyAllWindows()
 
 
@@ -159,11 +163,20 @@ def grab_frame(image_path: str | None):
 def main():
     parser = argparse.ArgumentParser(description="Calibrate AI parking zone polygons")
     parser.add_argument("--image", help="Use a still image instead of live camera")
+    parser.add_argument(
+        "--zones",
+        default="zones.json",
+        help="Zone file to edit (default: zones.json). Example: zones_acad1.json",
+    )
     args = parser.parse_args()
 
+    zones_path = Path(args.zones)
+    if not zones_path.is_absolute():
+        zones_path = BASE_DIR / zones_path
+
     frame = grab_frame(args.image)
-    zones = load_zones(ZONES_PATH)
-    Calibrator(frame, zones).run()
+    zones = load_zones(zones_path)
+    Calibrator(frame, zones, zones_path).run()
 
 
 if __name__ == "__main__":

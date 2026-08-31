@@ -1,0 +1,29 @@
+{
+  "order": ["acad1", "duran", "auditorium"],
+  "lots": {
+    "acad1": {
+      "area_id": 4,
+      "name": "ACAD 1 Building (Front)",
+      "prefix": "AC",
+      "capacity": 10,
+      "zones_file": "zones_acad1.json",
+      "env_location": "ACAD 1 Building (Front)"
+    },
+    "duran": {
+      "area_id": 3,
+      "name": "Duran Hall (Front)",
+      "prefix": "DU",
+      "capacity": 10,
+      "zones_file": "zones_duran.json",
+      "env_location": "Duran Hall (Front)"
+    },
+    "auditorium": {
+      "area_id": 8,
+      "name": "College Auditorium (Left/Right Wing)",
+      "prefix": "AU",
+      "capacity": 12,
+      "zones_file": "zones_auditorium.json",
+      "env_location": "College Auditorium"
+    }
+  }
+}

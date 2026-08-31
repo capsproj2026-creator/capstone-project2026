@@ -3,66 +3,66 @@
   "calibrated": false,
   "image_width": 0,
   "image_height": 0,
-  "notes": "Calibrate with: python calibrate_zones.py --zones zones_acad1.json  (or --image snapshot.jpg)",
+  "notes": "Calibrate with: python calibrate_zones.py --zones zones_duran.json  (or --image snapshot.jpg)",
   "zones": [
     {
-      "id": "AC-1",
+      "id": "DU-1",
       "type": "slot",
-      "label": "AC-1",
+      "label": "DU-1",
       "points": []
     },
     {
-      "id": "AC-2",
+      "id": "DU-2",
       "type": "slot",
-      "label": "AC-2",
+      "label": "DU-2",
       "points": []
     },
     {
-      "id": "AC-3",
+      "id": "DU-3",
       "type": "slot",
-      "label": "AC-3",
+      "label": "DU-3",
       "points": []
     },
     {
-      "id": "AC-4",
+      "id": "DU-4",
       "type": "slot",
-      "label": "AC-4",
+      "label": "DU-4",
       "points": []
     },
     {
-      "id": "AC-5",
+      "id": "DU-5",
       "type": "slot",
-      "label": "AC-5",
+      "label": "DU-5",
       "points": []
     },
     {
-      "id": "AC-6",
+      "id": "DU-6",
       "type": "slot",
-      "label": "AC-6",
+      "label": "DU-6",
       "points": []
     },
     {
-      "id": "AC-7",
+      "id": "DU-7",
       "type": "slot",
-      "label": "AC-7",
+      "label": "DU-7",
       "points": []
     },
     {
-      "id": "AC-8",
+      "id": "DU-8",
       "type": "slot",
-      "label": "AC-8",
+      "label": "DU-8",
       "points": []
     },
     {
-      "id": "AC-9",
+      "id": "DU-9",
       "type": "slot",
-      "label": "AC-9",
+      "label": "DU-9",
       "points": []
     },
     {
-      "id": "AC-10",
+      "id": "DU-10",
       "type": "slot",
-      "label": "AC-10",
+      "label": "DU-10",
       "points": []
     },
     {
