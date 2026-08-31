@@ -400,6 +400,7 @@ class AdminOverhaulTest extends TestCase
     {
         $prefix = 'ZX'.random_int(10, 99);
         $name = 'Test Lot '.$prefix;
+        $expectedId = app(\App\Services\ParkingLayoutService::class)->nextAreaId();
 
         $this->actingAs($this->admin)
             ->from(route('admin.parking.layout'))
@@ -416,6 +417,7 @@ class AdminOverhaulTest extends TestCase
 
         $area = \App\Models\ParkingArea::query()->where('area_name', $name)->first();
         $this->assertNotNull($area);
+        $this->assertSame($expectedId, (int) $area->id);
         $slots = \App\Models\ParkingSlot::query()->where('area_id', $area->id)->orderBy('slot_number')->get();
         $this->assertCount(2, $slots);
         $this->assertSame(2, (int) $area->capacity);

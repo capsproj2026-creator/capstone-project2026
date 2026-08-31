@@ -87,7 +87,10 @@
                     <div @class(['p-4', 'bg-blue-50/60' => $isSelected])>
                         <div class="flex items-start justify-between gap-2">
                             <a href="{{ route('admin.parking.layout', ['zone_id' => $zone->id]) }}" class="min-w-0">
-                                <p class="font-semibold text-gray-900">{{ $zone->area_name }}</p>
+                                <p class="font-semibold text-gray-900">
+                                    <span class="mr-1 text-xs font-semibold text-gray-400">#{{ $zone->id }}</span>
+                                    {{ $zone->area_name }}
+                                </p>
                                 <p class="mt-0.5 text-xs text-gray-500">
                                     Prefix {{ $prefix }} · {{ $zone->capacity ?? 0 }} spaces
                                     @if ($occupied > 0)

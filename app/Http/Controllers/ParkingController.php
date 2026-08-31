@@ -32,7 +32,7 @@ class ParkingController extends Controller
             }
         }
 
-        $slots = $slotsQuery->get();
+        $slots = ParkingSlot::sortNaturally($slotsQuery->get());
 
         $stats = (object) [
             'total' => $slots->count(),
@@ -78,10 +78,11 @@ class ParkingController extends Controller
             : $zones->first();
 
         $slots = $selectedZone
-            ? ParkingSlot::query()
-                ->where('area_id', $selectedZone->id)
-                ->orderBy('slot_number')
-                ->get()
+            ? ParkingSlot::sortNaturally(
+                ParkingSlot::query()
+                    ->where('area_id', $selectedZone->id)
+                    ->get()
+            )
             : collect();
 
         $occupiedByArea = ParkingSlot::query()

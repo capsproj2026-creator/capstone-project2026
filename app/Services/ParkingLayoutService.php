@@ -18,10 +18,34 @@ class ParkingLayoutService
      */
     public function protectedAreaIds(): array
     {
-        $ids = $this->cameras->monitoredAreaIds();
+        $ids = [];
 
         foreach (AiTestLotSeeder::LOTS as $lot) {
-            $ids[] = (int) ($lot['id'] ?? 0);
+            $id = (int) ($lot['id'] ?? 0);
+            if ($id < 1) {
+                continue;
+            }
+
+            $area = ParkingArea::query()->find($id);
+            if ($area && strcasecmp((string) $area->area_name, (string) ($lot['name'] ?? '')) === 0) {
+                $ids[] = $id;
+            }
+        }
+
+        foreach ($this->cameras->monitoredAreaIds() as $cameraAreaId) {
+            $area = ParkingArea::query()->find((int) $cameraAreaId);
+            if (! $area) {
+                continue;
+            }
+
+            $notes = strtolower((string) ($area->designation_notes ?? ''));
+            $isAiLot = str_contains($notes, 'yolov9')
+                || str_contains($notes, 'ai camera')
+                || str_starts_with(strtolower((string) $area->area_name), 'ai ');
+
+            if ($isAiLot) {
+                $ids[] = (int) $cameraAreaId;
+            }
         }
 
         return array_values(array_unique(array_filter($ids, fn (int $id) => $id > 0)));
@@ -45,6 +69,7 @@ class ParkingLayoutService
         $this->assertPrefixAvailable($prefix);
 
         $area = ParkingArea::query()->create([
+            'id' => $this->nextAreaId(),
             'area_name' => $name,
             'capacity' => $count,
             'designation_notes' => filled($data['designation_notes'] ?? null)
@@ -55,9 +80,22 @@ class ParkingLayoutService
             'slot_prefix' => $prefix,
         ]);
 
+        SequenceService::syncCountersForModels([ParkingArea::class]);
+
         $this->createSlotsForArea($area, $count, 1);
 
         return $area->fresh() ?? $area;
+    }
+
+    public function nextAreaId(): int
+    {
+        $max = 0;
+
+        ParkingArea::query()->get(['id'])->each(function (ParkingArea $area) use (&$max) {
+            $max = max($max, (int) $area->id);
+        });
+
+        return $max + 1;
     }
 
     public function addSlots(ParkingArea $area, int $count): int
@@ -124,7 +162,9 @@ class ParkingLayoutService
             return $stored;
         }
 
-        $sample = ParkingSlot::query()->where('area_id', $area->id)->orderBy('slot_number')->first();
+        $sample = ParkingSlot::sortNaturally(
+            ParkingSlot::query()->where('area_id', $area->id)->get()
+        )->first();
         $fromSlot = $this->prefixFromSlotNumber((string) ($sample?->slot_number ?? ''));
         if ($fromSlot !== '') {
             return $fromSlot;

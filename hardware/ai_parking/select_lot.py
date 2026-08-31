@@ -110,8 +110,13 @@ def main() -> int:
     print(f"  AI_CAMERA_1_ZONES={lot['zones_file']}")
     print()
     print("Calibrate (camera at this lot):")
-    print(f"  python calibrate_zones.py --zones {lot['zones_file']} --image snapshot.jpg")
-    print(f"  # or live: python calibrate_zones.py --zones {lot['zones_file']}")
+    snapshot = lot.get("snapshot")
+    if snapshot:
+        print(f"  python calibrate_zones.py --zones {lot['zones_file']}")
+        print(f"  # uses {snapshot}; add --live to grab from CAM-2 instead")
+    else:
+        print(f"  python calibrate_zones.py --zones {lot['zones_file']} --image snapshot.jpg")
+        print(f"  # or live: python calibrate_zones.py --zones {lot['zones_file']}")
     return 0
 
 

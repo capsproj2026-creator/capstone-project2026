@@ -11,6 +11,7 @@ class ParkingArea extends MongoModel
     public $timestamps = false;
 
     protected $fillable = [
+        'id',
         'area_name',
         'capacity',
         'designation_notes',

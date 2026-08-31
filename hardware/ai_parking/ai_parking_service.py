@@ -217,20 +217,28 @@ class LatestFrameReader:
         return True, frame
 
     def _loop(self):
-        fail_streak = 0
+        fail_since = None
+        open_failures = 0
         while self.running:
             if self.cap is None or not self.cap.isOpened():
                 if not self._open():
                     self.online = False
-                    time.sleep(max(RECONNECT_EVERY_SEC, 8.0))
+                    open_failures = min(open_failures + 1, 6)
+                    # Back off when the camera is on another LAN so it cannot
+                    # spam OPENCV_FFMPEG_CAPTURE_OPTIONS and break other cams.
+                    time.sleep(min(60.0, max(RECONNECT_EVERY_SEC, 8.0) * open_failures))
                     continue
                 print(f"[{self.label}] RTSP connected")
-                fail_streak = 0
+                fail_since = None
+                open_failures = 0
 
             ret, frame = self._read_newest()
             if not ret or frame is None:
-                fail_streak += 1
-                if fail_streak >= 30:
+                if fail_since is None:
+                    fail_since = time.monotonic()
+                # Tapo/Wi-Fi can miss a few packets; 150ms used to force a
+                # reconnect loop that never recovered.
+                if time.monotonic() - fail_since >= 3.0:
                     print(f"[{self.label}] RTSP stalled — reconnecting…")
                     self.online = False
                     try:
@@ -238,13 +246,13 @@ class LatestFrameReader:
                     except Exception:
                         pass
                     self.cap = None
-                    fail_streak = 0
+                    fail_since = None
                     time.sleep(RECONNECT_EVERY_SEC)
                 else:
-                    time.sleep(0.005)
+                    time.sleep(0.02)
                 continue
 
-            fail_streak = 0
+            fail_since = None
             self.online = True
             with self.lock:
                 self.frame = frame
@@ -282,8 +290,9 @@ class StreamState:
         self.jpeg_ai = None
         self.vehicle_count = 0
         self.detections = []
+        self.rtsp_online = False
 
-    def set_frame(self, raw_jpeg, ai_jpeg, vehicle_count, detections):
+    def set_frame(self, raw_jpeg, ai_jpeg, vehicle_count, detections, rtsp_online=None):
         with self.lock:
             if raw_jpeg is not None:
                 self.jpeg_raw = raw_jpeg
@@ -291,6 +300,8 @@ class StreamState:
                 self.jpeg_ai = ai_jpeg
             self.vehicle_count = vehicle_count
             self.detections = detections
+            if rtsp_online is not None:
+                self.rtsp_online = bool(rtsp_online)
 
     def get_jpeg(self, ai: bool = False):
         with self.lock:
@@ -347,18 +358,28 @@ def open_rtsp(
             try_path = "/" + try_path
         url = f"rtsp://{u}:{p}@{ip}:{port}{try_path}"
         print(f"[{label}] Trying RTSP ({transport}): rtsp://{user}:***@{ip}:{port}{try_path}")
+        # Hold the lock through the first frame. OPENCV_FFMPEG_CAPTURE_OPTIONS is
+        # process-global; another camera retrying UDP must not change it mid-open.
         with OPEN_LOCK:
-            # Per-open transport + low-delay hints (OpenCV FFmpeg option string).
-            os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = (
-                f"rtsp_transport;{transport}|fflags;nobuffer|flags;low_delay|max_delay;0"
-            )
+            if transport == "udp":
+                os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = (
+                    "rtsp_transport;udp|fflags;nobuffer|flags;low_delay|max_delay;0"
+                )
+            else:
+                # Tapo / Wi-Fi: max_delay;0 drops the first GOP and never recovers.
+                os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = (
+                    "rtsp_transport;tcp|stimeout;5000000"
+                )
             cap = cv2.VideoCapture(url, cv2.CAP_FFMPEG)
             cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
-        if not cap.isOpened():
+            opened = cap.isOpened()
+            ret, frame = (False, None)
+            if opened:
+                ret, frame = cap.read()
+        if not opened:
             cap.release()
             last_err = "open_failed"
             continue
-        ret, frame = cap.read()
         if not ret or frame is None:
             cap.release()
             last_err = "no_frame"
@@ -1092,7 +1113,19 @@ class MjpegHandler(BaseHTTPRequestHandler):
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
             self.end_headers()
-            body = json.dumps({"cameras": list(STREAM_STATES.keys()), "ok": True}).encode("utf-8")
+            cameras = {}
+            for cid, state in STREAM_STATES.items():
+                cameras[cid] = {
+                    "online": bool(getattr(state, "rtsp_online", False)),
+                    "has_frame": state.get_jpeg(False) is not None,
+                }
+            any_online = any(row["online"] for row in cameras.values()) if cameras else False
+            body = json.dumps({
+                "ok": True,
+                "cameras": list(cameras.keys()),
+                "camera_status": cameras,
+                "any_online": any_online,
+            }).encode("utf-8")
             self.wfile.write(body)
             return
 
@@ -1309,6 +1342,8 @@ class CameraWorker:
             elif self.preview_reader is not None and not getattr(self.preview_reader, "online", False):
                 offline_reason = f"{self.config.camera_id}: RTSP reconnecting"
 
+            live = bool(self.preview_reader and getattr(self.preview_reader, "online", False))
+
             if self.preview_reader is None:
                 frame = blank_frame(offline_reason)
                 src_shape = frame.shape
@@ -1316,6 +1351,10 @@ class CameraWorker:
             else:
                 ret, frame, last_seq = self.preview_reader.read_if_newer(last_seq)
                 if not ret:
+                    if self.state.get_jpeg(False) is not None:
+                        self.state.rtsp_online = False
+                        time.sleep(0.05)
+                        continue
                     frame = blank_frame(offline_reason)
                     src_shape = frame.shape
                     is_new = True
@@ -1378,7 +1417,13 @@ class CameraWorker:
             if ok_ai:
                 ai_jpeg = buf_ai.tobytes()
             if raw_jpeg or ai_jpeg:
-                self.state.set_frame(raw_jpeg, ai_jpeg, state["vehicle_count"], state["detections"])
+                self.state.set_frame(
+                    raw_jpeg,
+                    ai_jpeg,
+                    state["vehicle_count"],
+                    state["detections"],
+                    rtsp_online=live,
+                )
             elapsed = time.perf_counter() - started
             time.sleep(max(0.0, interval - elapsed))
 

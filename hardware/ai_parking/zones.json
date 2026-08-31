@@ -1,81 +1,310 @@
 {
   "version": 1,
-  "calibrated": false,
-  "image_width": 0,
-  "image_height": 0,
-  "notes": "Calibrate with: python calibrate_zones.py --zones zones_acad1.json  (or --image snapshot.jpg)",
+  "calibrated": true,
+  "image_width": 768,
+  "image_height": 1024,
+  "snapshot": "snapshot_acad1.jpg",
+  "notes": "CAM-2 snapshot. Calibrate with: python calibrate_zones.py --zones zones_acad1.json",
   "zones": [
     {
       "id": "AC-1",
       "type": "slot",
       "label": "AC-1",
-      "points": []
+      "points": [
+        [
+          159,
+          812
+        ],
+        [
+          392,
+          929
+        ],
+        [
+          435,
+          836
+        ],
+        [
+          230,
+          753
+        ]
+      ]
     },
     {
       "id": "AC-2",
       "type": "slot",
       "label": "AC-2",
-      "points": []
+      "points": [
+        [
+          230,
+          749
+        ],
+        [
+          436,
+          835
+        ],
+        [
+          468,
+          774
+        ],
+        [
+          286,
+          708
+        ]
+      ]
     },
     {
       "id": "AC-3",
       "type": "slot",
       "label": "AC-3",
-      "points": []
+      "points": [
+        [
+          287,
+          706
+        ],
+        [
+          468,
+          773
+        ],
+        [
+          498,
+          726
+        ],
+        [
+          334,
+          673
+        ]
+      ]
     },
     {
       "id": "AC-4",
       "type": "slot",
       "label": "AC-4",
-      "points": []
+      "points": [
+        [
+          335,
+          673
+        ],
+        [
+          501,
+          727
+        ],
+        [
+          524,
+          682
+        ],
+        [
+          374,
+          647
+        ]
+      ]
     },
     {
       "id": "AC-5",
       "type": "slot",
       "label": "AC-5",
-      "points": []
+      "points": [
+        [
+          374,
+          646
+        ],
+        [
+          526,
+          682
+        ],
+        [
+          540,
+          653
+        ],
+        [
+          405,
+          617
+        ]
+      ]
     },
     {
       "id": "AC-6",
       "type": "slot",
       "label": "AC-6",
-      "points": []
+      "points": [
+        [
+          406,
+          614
+        ],
+        [
+          540,
+          654
+        ],
+        [
+          558,
+          629
+        ],
+        [
+          430,
+          595
+        ]
+      ]
     },
     {
       "id": "AC-7",
       "type": "slot",
       "label": "AC-7",
-      "points": []
+      "points": [
+        [
+          432,
+          595
+        ],
+        [
+          566,
+          631
+        ],
+        [
+          580,
+          606
+        ],
+        [
+          452,
+          580
+        ]
+      ]
     },
     {
       "id": "AC-8",
       "type": "slot",
       "label": "AC-8",
-      "points": []
+      "points": [
+        [
+          454,
+          579
+        ],
+        [
+          586,
+          608
+        ],
+        [
+          595,
+          585
+        ],
+        [
+          470,
+          566
+        ]
+      ]
     },
     {
       "id": "AC-9",
       "type": "slot",
       "label": "AC-9",
-      "points": []
+      "points": [
+        [
+          470,
+          566
+        ],
+        [
+          595,
+          585
+        ],
+        [
+          631,
+          568
+        ],
+        [
+          521,
+          549
+        ]
+      ]
     },
     {
       "id": "AC-10",
       "type": "slot",
       "label": "AC-10",
-      "points": []
+      "points": [
+        [
+          521,
+          547
+        ],
+        [
+          631,
+          571
+        ],
+        [
+          654,
+          557
+        ],
+        [
+          552,
+          520
+        ]
+      ]
     },
     {
       "id": "no-park-1",
       "type": "no_parking",
       "label": "No Parking",
-      "points": []
+      "points": [
+        [
+          158,
+          813
+        ],
+        [
+          6,
+          789
+        ],
+        [
+          4,
+          944
+        ],
+        [
+          180,
+          940
+        ],
+        [
+          328,
+          940
+        ],
+        [
+          385,
+          939
+        ]
+      ]
     },
     {
       "id": "aisle-1",
       "type": "aisle",
       "label": "Drive Lane / Aisle",
-      "points": []
+      "points": [
+        [
+          660,
+          521
+        ],
+        [
+          662,
+          559
+        ],
+        [
+          652,
+          567
+        ],
+        [
+          602,
+          631
+        ],
+        [
+          544,
+          783
+        ],
+        [
+          491,
+          922
+        ],
+        [
+          730,
+          923
+        ],
+        [
+          751,
+          524
+        ]
+      ]
     }
   ]
 }

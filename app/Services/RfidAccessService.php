@@ -510,15 +510,16 @@ class RfidAccessService
                     || in_array('Visitors', $area->getAllowedRoles(), true));
 
             foreach ($visitorAreas as $area) {
-                $available = ParkingSlot::query()
-                    ->where('area_id', $area->id)
-                    ->where('status', 'Available')
-                    ->whereNull('parked_user_id')
-                    ->where(function ($q) {
-                        $q->whereNull('parked_visitor_id')->orWhere('parked_visitor_id', 0);
-                    })
-                    ->orderBy('slot_number')
-                    ->first();
+                $available = ParkingSlot::sortNaturally(
+                    ParkingSlot::query()
+                        ->where('area_id', $area->id)
+                        ->where('status', 'Available')
+                        ->whereNull('parked_user_id')
+                        ->where(function ($q) {
+                            $q->whereNull('parked_visitor_id')->orWhere('parked_visitor_id', 0);
+                        })
+                        ->get()
+                )->first();
 
                 if ($available) {
                     $available->update([

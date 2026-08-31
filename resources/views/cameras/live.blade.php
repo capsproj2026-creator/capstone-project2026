@@ -222,12 +222,20 @@
         document.querySelectorAll('[data-stream-img]').forEach((img) => {
             const base = img.getAttribute('src');
             if (!base) return;
+            let retryTimer = null;
             const reload = () => {
                 const url = new URL(base, window.location.origin);
                 url.searchParams.set('t', String(Date.now()));
+                img.classList.remove('hidden');
                 img.src = url.toString();
             };
-            window.setInterval(reload, 60000);
+            img.addEventListener('error', () => {
+                if (retryTimer) return;
+                retryTimer = window.setTimeout(() => {
+                    retryTimer = null;
+                    reload();
+                }, 5000);
+            });
         });
     })();
 </script>

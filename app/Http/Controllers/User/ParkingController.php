@@ -26,11 +26,11 @@ class ParkingController extends Controller
             ->filter(fn (ParkingArea $area) => in_array($roleName, $area->getAllowedRoles(), true))
             ->map(function (ParkingArea $area) use ($ai) {
                 $hidden = ! $area->isVisibleToUsers();
-                $slots = ParkingSlot::query()
-                    ->where('area_id', $area->id)
-                    ->orderBy('slot_number')
-                    ->get(['id', 'slot_number', 'status'])
-                    ->map(function (ParkingSlot $slot) use ($hidden) {
+                $slots = ParkingSlot::sortNaturally(
+                    ParkingSlot::query()
+                        ->where('area_id', $area->id)
+                        ->get(['id', 'area_id', 'slot_number', 'status'])
+                )->map(function (ParkingSlot $slot) use ($hidden) {
                         if ($hidden) {
                             $slot->status = 'Maintenance';
                         }

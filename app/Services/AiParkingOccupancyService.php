@@ -159,10 +159,11 @@ class AiParkingOccupancyService
      */
     private function applySlotStatuses(int $areaId, array $slots): array
     {
-        $dbSlots = ParkingSlot::query()
-            ->where('area_id', $areaId)
-            ->orderBy('slot_number')
-            ->get();
+        $dbSlots = ParkingSlot::sortNaturally(
+            ParkingSlot::query()
+                ->where('area_id', $areaId)
+                ->get()
+        );
 
         $byNumber = [];
         foreach ($slots as $row) {
@@ -239,10 +240,11 @@ class AiParkingOccupancyService
      */
     private function applyVehicleCountInternal(int $areaId, int $vehicleCount): array
     {
-        $slots = ParkingSlot::query()
-            ->where('area_id', $areaId)
-            ->orderBy('slot_number')
-            ->get();
+        $slots = ParkingSlot::sortNaturally(
+            ParkingSlot::query()
+                ->where('area_id', $areaId)
+                ->get()
+        );
 
         $updatable = $slots->reject(
             fn (ParkingSlot $slot) => in_array($slot->status ?? '', ['Maintenance', 'Reserved'], true)
@@ -673,7 +675,7 @@ class AiParkingOccupancyService
             ->orderBy('area_id')
             ->orderBy('slot_number');
 
-        $allSlots = $slotsQuery->get();
+        $allSlots = ParkingSlot::sortNaturally($slotsQuery->get());
         $slots = ($zoneFilter && $zoneFilter > 0)
             ? $allSlots->where('area_id', $zoneFilter)->values()
             : $allSlots;
