@@ -207,9 +207,6 @@ class CapstoneSeeder extends Seeder
             ['id' => 16, 'area_name' => 'ACAD Building 3 (CTDE)', 'capacity' => 12, 'prefix' => 'A3', 'designation_notes' => 'Car'],
             ['id' => 17, 'area_name' => 'ACAD Building 4 (CCS)', 'capacity' => 48, 'prefix' => 'A4', 'designation_notes' => '18 Car / 30 Employees Motorcycle'],
             ['id' => 18, 'area_name' => 'Supply Building (Right Wing)', 'capacity' => 25, 'prefix' => 'SU', 'designation_notes' => 'Employees Motorcycle'],
-            ['id' => 19, 'area_name' => 'AI Test Lot', 'capacity' => 20, 'prefix' => 'AI', 'designation_notes' => 'YOLOv9 CAM-AI-1 (wired) Student/Staff'],
-            ['id' => 20, 'area_name' => 'AI Lot B', 'capacity' => 20, 'prefix' => 'AIB', 'designation_notes' => 'YOLOv9 CAM-AI-2 (Tapo) Student/Staff'],
-            ['id' => 21, 'area_name' => 'AI Lot C', 'capacity' => 20, 'prefix' => 'AIC', 'designation_notes' => 'YOLOv9 CAM-AI-3 (Tapo) Student/Staff'],
         ];
 
         $slotId = 1;
@@ -224,9 +221,7 @@ class CapstoneSeeder extends Seeder
             ParkingArea::query()->updateOrCreate(['id' => $area['id']], $area);
 
             for ($i = 1; $i <= $area['capacity']; $i++) {
-                $slotNumber = in_array($prefix, ['AI', 'AIB', 'AIC'], true)
-                    ? $prefix.'-'.str_pad((string) $i, 2, '0', STR_PAD_LEFT)
-                    : $prefix.'-'.$i;
+                $slotNumber = $prefix.'-'.$i;
 
                 ParkingSlot::query()->updateOrCreate(
                     ['id' => $slotId],

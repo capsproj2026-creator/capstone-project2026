@@ -35,7 +35,7 @@ class AiParkingCheckCommand extends Command
             $this->line("=== {$camera['id']} — {$camera['name']} ===");
             $area = ParkingArea::query()->find($camera['area_id']);
             if (! $area) {
-                $this->warn("Parking area {$camera['area_id']} missing — run: php artisan db:seed --class=AiTestLotSeeder");
+                $this->warn("Parking area {$camera['area_id']} missing — pick a valid area_id in .env (see parking areas in admin).");
             } else {
                 $this->line("Area: [{$area->id}] {$area->area_name}");
             }

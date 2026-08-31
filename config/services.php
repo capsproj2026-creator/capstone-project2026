@@ -77,7 +77,7 @@ return [
         'stream_url' => env('AI_PARKING_STREAM_URL', 'http://127.0.0.1:8090/stream.mjpg'),
         'stream_browser_url' => env('AI_PARKING_STREAM_BROWSER_URL'),
         'stream_base' => env('AI_PARKING_STREAM_BASE', 'http://127.0.0.1:8090'),
-        'area_id' => (int) env('AI_PARKING_AREA_ID', env('AI_CAMERA_1_AREA_ID', 19)),
+        'area_id' => (int) env('AI_PARKING_AREA_ID', env('AI_CAMERA_1_AREA_ID', 10)),
         'camera_ip' => env('AI_CAMERA_IP', env('AI_CAMERA_1_IP', '192.168.1.108')),
         'overtime_minutes' => (int) env('AI_PARKING_OVERTIME_MINUTES', 30),
         'violation_debounce_minutes' => (int) env('AI_PARKING_VIOLATION_DEBOUNCE_MINUTES', 10),

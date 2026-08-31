@@ -7,8 +7,9 @@ use App\Models\ParkingSlot;
 use Illuminate\Database\Seeder;
 
 /**
- * Idempotent upsert for YOLOv9 AI parking lots (areas 19–21).
+ * Optional dev/demo AI parking lots (areas 19–21). Not included in CapstoneSeeder.
  * Run: php artisan db:seed --class=AiTestLotSeeder
+ * Remove: php artisan ai-parking:remove-test-lots
  */
 class AiTestLotSeeder extends Seeder
 {
