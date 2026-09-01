@@ -14,7 +14,7 @@ class CampusIdPythonResolver
             return self::$resolvedBinary;
         }
 
-        $configured = trim((string) env('CAMPUS_ID_OCR_PYTHON', ''));
+        $configured = trim((string) config('services.campus_id.ocr_python', ''));
         if ($configured !== '') {
             return self::$resolvedBinary = $configured;
         }

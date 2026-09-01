@@ -108,12 +108,12 @@ class CapstoneSeeder extends Seeder
     private function seedGeneralInformation(): void
     {
         $items = [
-            'The CSPC-designated parking areas are on a "first come, first served" basis. Having a parking stickers does not guaranted a parking space but provides the privilege to park in any vacant and designated parking space.',
+            'The CSPC-designated parking areas are on a "first come, first served" basis. Having parking stickers does not guarantee a parking space but provides the privilege to park in any vacant and designated parking space.',
             'Parking is authorized only in the designated parking areas.',
-            'Drivers of vehicle parked on CSPC-assigned parking spaces shall beer their own risk. The College shall not be liable for any loss or damage to any vehicle or other property or any damage or injury to any person arising from or for the prevention of ingress to egress from the parking spaces caused by the use or attempted use by any person of the parking spaces or any parking spaces thereof, except in the case of negligence of the part of the CSPC, its employees and students.',
+            'Drivers of vehicles parked on CSPC-assigned parking spaces shall bear their own risk. The College shall not be liable for any loss or damage to any vehicle or other property or any damage or injury to any person arising from or for the prevention of ingress to egress from the parking spaces caused by the use or attempted use by any person of the parking spaces or any parking spaces thereof, except in the case of negligence on the part of the CSPC, its employees and students.',
             'Vehicle must be properly parked at the designated parking spaces.',
-            'Overnight parking (10pm - 5am) is prohibited. In the event an employee needs to leave his/her vehicle in a parking area ovrnight or for an extended period due to work-related travel or other extenuating circumstances, the employee shall notify and seek approval from the GSU.',
-            'All parking users are enjoiend to maintain a clean and safe parking area.',
+            'Overnight parking (10pm - 5am) is prohibited. In the event an employee needs to leave his/her vehicle in a parking area overnight or for an extended period due to work-related travel or other extenuating circumstances, the employee shall notify and seek approval from the GSU.',
+            'All parking users are enjoined to maintain a clean and safe parking area.',
             'Strictly no idling while parked on the premises of the College.',
         ];
 
@@ -128,11 +128,11 @@ class CapstoneSeeder extends Seeder
     private function seedParkingRules(): void
     {
         $rules = [
-            'Drivers are required to observed speed restrictions of 1kph within the compound and give right-of-way to pedestrians.',
+            'Drivers are required to observe speed restrictions of 15 kph within the compound and give right-of-way to pedestrians.',
             'No littering.',
-            'Drivers must respect others property.',
-            'Drivers must not turn carelessly or drive irresponsibly',
-            'Employees and students must not conduct maintenance or repair jobs to thier cars while they are parked in our lot, except in emergency cases, e.g., jump start of vehicle or related cases.',
+            'Drivers must respect others\' property.',
+            'Drivers must not turn carelessly or drive irresponsibly.',
+            'Employees and students must not conduct maintenance or repair jobs to their cars while they are parked in our lot, except in emergency cases, e.g., jump start of vehicle or related cases.',
             'Lack of available space in a desired area is not a valid excuse for violating parking regulations.',
         ];
 
@@ -178,7 +178,7 @@ class CapstoneSeeder extends Seeder
     {
         $items = [
             'Stalled vehicle owners must notify GSU, through the security officers immediately, with their name, the vehicles license plate number, and parking location.',
-            'A grace period of up to 12 hours may be allowed. No extensions will be granted. A lost/broken vehicle key is considered a stalled vehicle and falls under this policy. If 12 hours is not sufficient time to remove the vehicle, the owner is requiered to contact a towing company through any means to have the vehicle removed at their expense within 3 hours.',
+            'A grace period of up to 12 hours may be allowed. No extensions will be granted. A lost/broken vehicle key is considered a stalled vehicle and falls under this policy. If 12 hours is not sufficient time to remove the vehicle, the owner is required to contact a towing company through any means to have the vehicle removed at their expense within 3 hours.',
         ];
 
         foreach ($items as $index => $description) {

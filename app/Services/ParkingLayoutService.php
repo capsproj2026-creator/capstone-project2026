@@ -4,7 +4,6 @@ namespace App\Services;
 
 use App\Models\ParkingArea;
 use App\Models\ParkingSlot;
-use Database\Seeders\AiTestLotSeeder;
 use Illuminate\Validation\ValidationException;
 
 class ParkingLayoutService
@@ -20,30 +19,9 @@ class ParkingLayoutService
     {
         $ids = [];
 
-        foreach (AiTestLotSeeder::LOTS as $lot) {
-            $id = (int) ($lot['id'] ?? 0);
-            if ($id < 1) {
-                continue;
-            }
-
-            $area = ParkingArea::query()->find($id);
-            if ($area && strcasecmp((string) $area->area_name, (string) ($lot['name'] ?? '')) === 0) {
-                $ids[] = $id;
-            }
-        }
-
         foreach ($this->cameras->monitoredAreaIds() as $cameraAreaId) {
             $area = ParkingArea::query()->find((int) $cameraAreaId);
-            if (! $area) {
-                continue;
-            }
-
-            $notes = strtolower((string) ($area->designation_notes ?? ''));
-            $isAiLot = str_contains($notes, 'yolov9')
-                || str_contains($notes, 'ai camera')
-                || str_starts_with(strtolower((string) $area->area_name), 'ai ');
-
-            if ($isAiLot) {
+            if ($area) {
                 $ids[] = (int) $cameraAreaId;
             }
         }

@@ -54,7 +54,7 @@
             type="search"
             name="q"
             value="{{ $search }}"
-            placeholder="Search by name, Student/Staff, RFID, or gate..."
+            placeholder="Search by name, Student/Faculty, RFID, or gate..."
             class="w-full rounded-lg border border-gray-200 bg-gray-50 py-2.5 pl-10 pr-3 text-sm text-gray-900 placeholder:text-gray-400 focus:border-blue-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20"
         >
     </div>
@@ -66,7 +66,7 @@
         >
             <option value="all" @selected($typeFilter === 'all')>All Types</option>
             <option value="Student" @selected($typeFilter === 'Student')>Student</option>
-            <option value="Staff" @selected($typeFilter === 'Staff')>Staff</option>
+            <option value="Staff" @selected($typeFilter === 'Staff')>Faculty</option>
             <option value="Visitor" @selected($typeFilter === 'Visitor')>Visitor</option>
         </select>
 
@@ -145,8 +145,8 @@
                         <td class="px-5 py-4 sm:px-6">
                             @if ($role === 'Student')
                                 <span class="inline-flex rounded-full bg-blue-50 px-2.5 py-1 text-xs font-semibold text-blue-700">Student</span>
-                            @elseif ($role === 'Staff')
-                                <span class="inline-flex rounded-full bg-purple-50 px-2.5 py-1 text-xs font-semibold text-purple-700">Staff</span>
+                            @elseif (in_array($role, ['Staff', 'Faculty'], true))
+                                <span class="inline-flex rounded-full bg-purple-50 px-2.5 py-1 text-xs font-semibold text-purple-700">Faculty</span>
                             @elseif ($role === 'Visitor')
                                 <span class="inline-flex rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700">Visitor</span>
                             @elseif ($role === 'Student / Faculty')
@@ -256,7 +256,7 @@
         const roleBadge = (role) => {
             const r = String(role || '');
             if (r === 'Student') return '<span class="inline-flex rounded-full bg-blue-50 px-2.5 py-1 text-xs font-semibold text-blue-700">Student</span>';
-            if (r === 'Staff') return '<span class="inline-flex rounded-full bg-purple-50 px-2.5 py-1 text-xs font-semibold text-purple-700">Staff</span>';
+            if (r === 'Staff' || r === 'Faculty') return '<span class="inline-flex rounded-full bg-purple-50 px-2.5 py-1 text-xs font-semibold text-purple-700">Faculty</span>';
             if (r === 'Visitor') return '<span class="inline-flex rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700">Visitor</span>';
             if (r === 'Student / Faculty') return '<span class="inline-flex rounded-full bg-sky-50 px-2.5 py-1 text-xs font-semibold text-sky-800">Student / Faculty</span>';
             return `<span class="inline-flex rounded-full bg-gray-100 px-2.5 py-1 text-xs font-semibold text-gray-600">${esc(r) || '—'}</span>`;

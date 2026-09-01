@@ -1,7 +1,7 @@
 @php
     $ai = $ai ?? null;
     $showDetections = $showDetections ?? false;
-    $areaName = $areaName ?? ($ai['area_name'] ?? 'AI Test Lot');
+    $areaName = $areaName ?? ($ai['area_name'] ?? 'Parking area');
 @endphp
 
 <div class="mb-6 grid grid-cols-2 gap-4 md:grid-cols-5">
@@ -11,11 +11,11 @@
         <p id="ai-mode" class="mt-1 text-xs text-gray-400">Mode: {{ $ai['mode'] ?? 'count' }}</p>
     </div>
     <div class="rounded-xl border border-green-200 bg-green-50 p-5">
-        <p class="text-sm text-green-700">Available (AI Lot)</p>
+        <p class="text-sm text-green-700">Available</p>
         <p id="ai-available" class="mt-1 text-3xl font-bold text-green-800">{{ $ai['available'] ?? '—' }}</p>
     </div>
     <div class="rounded-xl border border-red-200 bg-red-50 p-5">
-        <p class="text-sm text-red-700">Occupied (AI Lot)</p>
+        <p class="text-sm text-red-700">Occupied</p>
         <p id="ai-occupied" class="mt-1 text-3xl font-bold text-red-800">{{ $ai['occupied'] ?? '—' }}</p>
     </div>
     <div class="rounded-xl border border-amber-200 bg-amber-50 p-5">

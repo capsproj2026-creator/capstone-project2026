@@ -70,7 +70,7 @@ class AiParkingCheckCommand extends Command
 
         $this->warn('AI parking is not fully connected yet.');
         $this->line('1. Set AI_CAMERA_1/2/3_* in .env (IPs, RTSP paths, passwords)');
-        $this->line('2. php artisan db:seed --class=AiTestLotSeeder');
+        $this->line('2. php artisan db:seed  (real lots: ACAD 1=4, Duran=3, Auditorium=8)');
         $this->line('3. php artisan serve --host=0.0.0.0 --port=8000');
         $this->line('4. powershell -ExecutionPolicy Bypass -File .\\scripts\\start-ai-parking.ps1');
 

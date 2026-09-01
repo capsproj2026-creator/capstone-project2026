@@ -79,7 +79,7 @@ class LiveCameraController extends Controller
             'aiHealth' => $aiHealth,
             'aiCamerasHealth' => $health->statusAll($isGuard, false),
             'aiAreaId' => $areaId,
-            'aiAreaName' => $area?->area_name ?? 'AI Test Lot',
+            'aiAreaName' => $area?->area_name ?? 'Parking area',
             'cameras' => $cameras,
             'cameraStats' => [
                 'total' => $total,
@@ -113,7 +113,7 @@ class LiveCameraController extends Controller
             'aiCamerasHealth' => $health->statusAll(true, false),
             'registryCameras' => $registry->cameras(),
             'aiAreaId' => $areaId,
-            'aiAreaName' => $area?->area_name ?? 'AI Test Lot',
+            'aiAreaName' => $area?->area_name ?? 'Parking area',
             'statusUrl' => route('guard.parking.status'),
             'correctPlateUrl' => route('guard.ai-parking.correct-plate'),
             'parkingUrl' => route('guard.parking', ['zone_id' => $areaId]),

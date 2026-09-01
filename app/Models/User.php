@@ -186,7 +186,9 @@ class User extends Authenticatable implements MustVerifyEmail
             return 'Student / Faculty';
         }
 
-        return $this->roleName();
+        $name = $this->roleName();
+
+        return strcasecmp($name, 'Staff') === 0 ? 'Faculty' : $name;
     }
 
     public function displayEmail(): string
@@ -408,11 +410,9 @@ class User extends Authenticatable implements MustVerifyEmail
 
     public function gateRoleLabel(): string
     {
-        if ($this->isUnregisteredStudentFaculty()) {
-            return 'Student / Faculty';
-        }
+        $label = $this->displayRoleLabel();
 
-        return $this->roleName() ?: 'Unknown';
+        return $label !== '' ? $label : 'Unknown';
     }
 
     public function loginBlockedReason(): ?string

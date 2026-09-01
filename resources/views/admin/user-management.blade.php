@@ -11,7 +11,7 @@
     @php
         $statCards = [
             ['label' => 'Students', 'value' => $studentCount, 'icon' => 'graduation-cap', 'text' => 'text-blue-600', 'iconBg' => 'bg-blue-50 text-blue-600'],
-            ['label' => 'Staff', 'value' => $staffCount, 'icon' => 'briefcase', 'text' => 'text-violet-600', 'iconBg' => 'bg-violet-50 text-violet-600'],
+            ['label' => 'Faculty', 'value' => $staffCount, 'icon' => 'briefcase', 'text' => 'text-violet-600', 'iconBg' => 'bg-violet-50 text-violet-600'],
             ['label' => 'Guards', 'value' => $guardCount, 'icon' => 'shield', 'text' => 'text-slate-700', 'iconBg' => 'bg-slate-100 text-slate-700'],
             ['label' => 'Total users', 'value' => $totalUsers, 'icon' => 'users', 'text' => 'text-gray-900', 'iconBg' => 'bg-gray-100 text-gray-700'],
         ];
@@ -40,7 +40,7 @@
             </div>
             <select name="type" class="rounded-lg border border-gray-200 px-3 py-2.5 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20">
                 @foreach (['All', 'Student', 'Staff', 'Guard'] as $type)
-                    <option value="{{ $type }}" @selected($typeFilter === $type)>{{ $type === 'All' ? 'All roles' : $type }}</option>
+                    <option value="{{ $type }}" @selected($typeFilter === $type)>{{ $type === 'All' ? 'All roles' : ($type === 'Staff' ? 'Faculty' : $type) }}</option>
                 @endforeach
             </select>
             <select name="status" class="rounded-lg border border-gray-200 px-3 py-2.5 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20">
@@ -102,7 +102,7 @@
                             $roleLabel = $u->displayRoleLabel();
                             $isUnregistered = $u->isUnregisteredStudentFaculty();
                             $isStudent = ! $isUnregistered && strcasecmp((string) $roleLabel, 'Student') === 0;
-                            $isStaff = ! $isUnregistered && strcasecmp((string) $roleLabel, 'Staff') === 0;
+                            $isStaff = ! $isUnregistered && in_array($roleLabel, ['Staff', 'Faculty'], true);
                             $isGuard = strcasecmp((string) $roleLabel, 'Guard') === 0;
                             $email = $u->displayEmail();
                             $idNumber = $u->id_number ?: '—';

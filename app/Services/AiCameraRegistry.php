@@ -2,13 +2,14 @@
 
 namespace App\Services;
 
-use Database\Seeders\AiTestLotSeeder;
-
 /**
  * Server-side registry of AI CCTV cameras (credentials never leave config/.env).
  */
 class AiCameraRegistry
 {
+    /** ACAD 1 — CapstoneSeeder parking area id. Used when camera area_id is missing. */
+    public const DEFAULT_AREA_ID = 4;
+
     /**
      * @return list<array{
      *   id: string,
@@ -30,12 +31,12 @@ class AiCameraRegistry
             ));
         }
 
-        // Backward-compatible single camera from legacy env keys.
+        // Backward-compatible single camera from legacy config keys.
         $legacy = $this->normalizeCamera([
-            'id' => env('AI_CAMERA_ID', 'CAM-AI-1'),
-            'name' => 'AI Test Lot',
-            'location' => 'Parking Lot A',
-            'area_id' => (int) config('services.ai_parking.area_id', AiTestLotSeeder::AREA_ID),
+            'id' => (string) config('services.ai_parking.cameras.0.id', 'CAM-AI-1'),
+            'name' => (string) config('services.ai_parking.cameras.0.name', 'ACAD 1 Building (Front)'),
+            'location' => (string) config('services.ai_parking.cameras.0.location', 'ACAD 1 Building (Front)'),
+            'area_id' => (int) config('services.ai_parking.area_id', self::DEFAULT_AREA_ID),
             'stream_path' => '/stream.mjpg',
             'stream_url' => config('services.ai_parking.stream_browser_url')
                 ?: config('services.ai_parking.stream_url'),
@@ -73,7 +74,7 @@ class AiCameraRegistry
         }
 
         // Legacy posts without a registered camera_id: pin to primary lot.
-        return (int) config('services.ai_parking.area_id', AiTestLotSeeder::AREA_ID);
+        return (int) config('services.ai_parking.area_id', self::DEFAULT_AREA_ID);
     }
 
     /**
@@ -147,7 +148,7 @@ class AiCameraRegistry
             'id' => $id,
             'name' => trim((string) ($row['name'] ?? $id)) ?: $id,
             'location' => trim((string) ($row['location'] ?? 'Campus')) ?: 'Campus',
-            'area_id' => (int) ($row['area_id'] ?? AiTestLotSeeder::AREA_ID),
+            'area_id' => (int) ($row['area_id'] ?? self::DEFAULT_AREA_ID),
             'stream_path' => $path,
             'stream_url' => $streamUrl,
             'ai_stream_path' => $aiPath,

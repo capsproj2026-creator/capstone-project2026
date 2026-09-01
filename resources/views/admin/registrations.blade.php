@@ -132,7 +132,7 @@
                             $isUnregistered = $row->isUnregisteredStudentFaculty();
                             $roleLabel = $row->displayRoleLabel();
                             $isStudent = ! $isUnregistered && (strcasecmp((string) $roleLabel, 'Student') === 0);
-                            $isStaff = ! $isUnregistered && strcasecmp((string) $roleLabel, 'Staff') === 0;
+                            $isStaff = ! $isUnregistered && in_array($roleLabel, ['Staff', 'Faculty'], true);
                             $email = $row->displayEmail();
                             if ($isIncompleteTemp || str_ends_with(strtolower((string) $email), '.invalid')) {
                                 $email = '—';

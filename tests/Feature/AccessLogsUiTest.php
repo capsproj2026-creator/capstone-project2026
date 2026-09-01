@@ -36,7 +36,7 @@ class AccessLogsUiTest extends TestCase
             ->assertSee('Entries Granted')
             ->assertSee('Exits Granted')
             ->assertSee('Access Denied')
-            ->assertSee('Search by name, Student/Staff, RFID, or gate...')
+            ->assertSee('Search by name, Student/Faculty, RFID, or gate...')
             ->assertSee('All Types')
             ->assertSee('All Directions')
             ->assertSee('All Results')

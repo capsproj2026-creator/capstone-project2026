@@ -5,7 +5,6 @@ namespace App\Services;
 use App\Models\ParkingArea;
 use App\Models\ParkingSlot;
 use App\Support\PlateLookup;
-use Database\Seeders\AiTestLotSeeder;
 use Illuminate\Support\Facades\Cache;
 
 class AiParkingOccupancyService
@@ -668,7 +667,7 @@ class AiParkingOccupancyService
 
     public function monitoredAreaId(): int
     {
-        return (int) config('services.ai_parking.area_id', AiTestLotSeeder::AREA_ID);
+        return (int) config('services.ai_parking.area_id', AiCameraRegistry::DEFAULT_AREA_ID);
     }
 
     /**

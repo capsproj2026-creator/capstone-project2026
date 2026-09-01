@@ -77,8 +77,9 @@ return [
         'stream_url' => env('AI_PARKING_STREAM_URL', 'http://127.0.0.1:8090/stream.mjpg'),
         'stream_browser_url' => env('AI_PARKING_STREAM_BROWSER_URL'),
         'stream_base' => env('AI_PARKING_STREAM_BASE', 'http://127.0.0.1:8090'),
-        'area_id' => (int) env('AI_PARKING_AREA_ID', env('AI_CAMERA_1_AREA_ID', 10)),
-        'camera_ip' => env('AI_CAMERA_IP', env('AI_CAMERA_1_IP', '192.168.1.108')),
+        // ACAD 1 (CapstoneSeeder id 4). Do not fall back to removed AI test lots 19–21.
+        'area_id' => (int) env('AI_PARKING_AREA_ID', env('AI_CAMERA_1_AREA_ID', 4)),
+        'camera_ip' => env('AI_CAMERA_IP', env('AI_CAMERA_1_IP')),
         'overtime_minutes' => (int) env('AI_PARKING_OVERTIME_MINUTES', 30),
         'violation_debounce_minutes' => (int) env('AI_PARKING_VIOLATION_DEBOUNCE_MINUTES', 10),
         'ingest_stale_seconds' => (int) env('AI_PARKING_INGEST_STALE_SECONDS', 45),
@@ -91,9 +92,9 @@ return [
         'cameras' => array_values(array_filter([
             [
                 'id' => env('AI_CAMERA_1_ID', env('AI_CAMERA_ID', 'CAM-AI-1')),
-                'name' => env('AI_CAMERA_1_NAME', 'AI Test Lot'),
-                'location' => env('AI_CAMERA_1_LOCATION', 'Parking Lot A'),
-                'area_id' => (int) env('AI_CAMERA_1_AREA_ID', env('AI_PARKING_AREA_ID', 19)),
+                'name' => env('AI_CAMERA_1_NAME', 'ACAD 1 Building (Front)'),
+                'location' => env('AI_CAMERA_1_LOCATION', 'ACAD 1 Building (Front)'),
+                'area_id' => (int) env('AI_CAMERA_1_AREA_ID', env('AI_PARKING_AREA_ID', 4)),
                 'stream_path' => env('AI_CAMERA_1_STREAM_PATH', '/stream.mjpg'),
                 'stream_url' => env('AI_CAMERA_1_STREAM_URL', env('AI_PARKING_STREAM_BROWSER_URL', env('AI_PARKING_STREAM_URL'))),
                 'ai_stream_path' => env('AI_CAMERA_1_AI_STREAM_PATH'),
@@ -102,9 +103,9 @@ return [
             ],
             [
                 'id' => env('AI_CAMERA_2_ID', 'CAM-AI-2'),
-                'name' => env('AI_CAMERA_2_NAME', 'AI Lot B'),
+                'name' => env('AI_CAMERA_2_NAME', 'Campus Camera 2'),
                 'location' => env('AI_CAMERA_2_LOCATION', 'Parking Lot B'),
-                'area_id' => (int) env('AI_CAMERA_2_AREA_ID', 20),
+                'area_id' => (int) env('AI_CAMERA_2_AREA_ID', 15),
                 'stream_path' => env('AI_CAMERA_2_STREAM_PATH'),
                 'stream_url' => env('AI_CAMERA_2_STREAM_URL'),
                 'ai_stream_path' => env('AI_CAMERA_2_AI_STREAM_PATH'),
@@ -114,9 +115,9 @@ return [
             ],
             [
                 'id' => env('AI_CAMERA_3_ID', 'CAM-AI-3'),
-                'name' => env('AI_CAMERA_3_NAME', 'AI Lot C'),
+                'name' => env('AI_CAMERA_3_NAME', 'Campus Camera 3'),
                 'location' => env('AI_CAMERA_3_LOCATION', 'Visitor Parking'),
-                'area_id' => (int) env('AI_CAMERA_3_AREA_ID', 21),
+                'area_id' => (int) env('AI_CAMERA_3_AREA_ID', 9),
                 'stream_path' => env('AI_CAMERA_3_STREAM_PATH'),
                 'stream_url' => env('AI_CAMERA_3_STREAM_URL'),
                 'ai_stream_path' => env('AI_CAMERA_3_AI_STREAM_PATH'),
@@ -126,6 +127,10 @@ return [
                     && filled(env('AI_CAMERA_3_IP')),
             ],
         ])),
+    ],
+
+    'campus_id' => [
+        'ocr_python' => env('CAMPUS_ID_OCR_PYTHON'),
     ],
 
 ];

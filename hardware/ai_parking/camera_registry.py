@@ -91,9 +91,9 @@ def load_cameras(base_dir: Path | None = None) -> List[CameraConfig]:
     defaults = {
         1: {
             "id": "CAM-AI-1",
-            "name": "AI Test Lot",
-            "location": "Parking Lot A",
-            "area_id": "19",
+            "name": "ACAD 1 Building (Front)",
+            "location": "ACAD 1 Building (Front)",
+            "area_id": "4",
             "ip": _env("AI_CAMERA_IP", "192.168.1.108"),
             "user": _env("AI_CAMERA_USER", "admin"),
             "password": _env("AI_CAMERA_PASS", ""),
@@ -113,9 +113,9 @@ def load_cameras(base_dir: Path | None = None) -> List[CameraConfig]:
         },
         2: {
             "id": "CAM-AI-2",
-            "name": "AI Lot B",
+            "name": "Campus Camera 2",
             "location": "Parking Lot B",
-            "area_id": "20",
+            "area_id": "15",
             "ip": "",
             "user": "",
             "password": "",
@@ -135,9 +135,9 @@ def load_cameras(base_dir: Path | None = None) -> List[CameraConfig]:
         },
         3: {
             "id": "CAM-AI-3",
-            "name": "AI Lot C",
+            "name": "Campus Camera 3",
             "location": "Visitor Parking",
-            "area_id": "21",
+            "area_id": "9",
             "ip": "",
             "user": "",
             "password": "",

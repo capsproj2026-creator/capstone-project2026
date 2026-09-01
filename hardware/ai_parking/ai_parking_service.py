@@ -10,7 +10,7 @@ Calibrate slots first (recommended):
 
 Requires Laravel:
   php artisan serve --host=0.0.0.0 --port=8000
-  php artisan db:seed --class=AiTestLotSeeder
+  php artisan db:seed
 """
 
 from __future__ import annotations

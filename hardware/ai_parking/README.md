@@ -28,9 +28,9 @@ Configure each camera in `.env` (`AI_CAMERA_1_*` … `AI_CAMERA_3_*`).
 
 | Camera | Typical RTSP path | Parking area |
 |--------|-------------------|--------------|
-| CAM-AI-1 (wired Dahua) | `/cam/realmonitor?channel=1&subtype=0` | 19 AI Test Lot |
-| CAM-AI-2 (Tapo C310) | `/stream1` | 20 AI Lot B |
-| CAM-AI-3 (Tapo C310) | `/stream1` | 21 AI Lot C |
+| CAM-AI-1 (wired Dahua) | `/cam/realmonitor?channel=1&subtype=0` | 4 ACAD 1 |
+| CAM-AI-2 (Tapo C310) | `/stream1` | mapped in `.env` (`AI_CAMERA_2_AREA_ID`) |
+| CAM-AI-3 (Tapo C310) | `/stream1` | mapped in `.env` (`AI_CAMERA_3_AREA_ID`) |
 
 Python starts one worker thread pair per camera (preview + YOLO). Shared model lock; RTSP reconnect is isolated. MJPEG paths:
 
@@ -38,10 +38,10 @@ Python starts one worker thread pair per camera (preview + YOLO). Shared model l
 - `http://127.0.0.1:8090/CAM-AI-2/stream.mjpg`
 - `http://127.0.0.1:8090/CAM-AI-3/stream.mjpg`
 
-Seed lots:
+Seed campus lots (not the old AI test lots):
 
 ```powershell
-php artisan db:seed --class=AiTestLotSeeder
+php artisan db:seed
 ```
 
 ## Quick connect (Windows)
@@ -52,7 +52,7 @@ php artisan db:seed --class=AiTestLotSeeder
 copy .env.example .env
 # Edit .env: AI_PARKING_API_TOKEN, AI_CAMERA_IP, AI_CAMERA_PASS
 
-php artisan db:seed --class=AiTestLotSeeder
+php artisan db:seed
 php artisan serve --host=0.0.0.0 --port=8000
 
 # Second terminal
@@ -72,7 +72,7 @@ pip install -r requirements.txt
 Laravel:
 
 ```powershell
-php artisan db:seed --class=AiTestLotSeeder
+php artisan db:seed
 # optional: refresh violation type names including Overtime / Unauthorized
 php artisan db:seed --class=CapstoneSeeder
 php artisan serve --host=0.0.0.0 --port=8000
@@ -127,8 +127,8 @@ python probe_plate_ocr.py --camera CAM-AI-1
 ```powershell
 cd hardware\ai_parking
 $env:AI_LARAVEL_API_BASE="http://127.0.0.1:8000"
-$env:AI_PARKING_API_TOKEN="capstone-ai-parking-dev-token-change-me"
-$env:AI_PARKING_AREA_ID="19"
+$env:AI_PARKING_API_TOKEN="your-ai-parking-token"
+$env:AI_PARKING_AREA_ID="4"
 $env:AI_PARKING_OVERTIME_MINUTES="30"
 python -u ai_parking_service.py
 ```
@@ -141,8 +141,8 @@ UI: `/admin/live-cameras`, `/guard/live-cameras`, `/guard/ai-parking`
 | Var | Default | Meaning |
 |-----|---------|---------|
 | `AI_LARAVEL_API_BASE` | `http://127.0.0.1:8000` | Laravel base URL |
-| `AI_PARKING_API_TOKEN` | (dev token) | `X-AI-TOKEN` |
-| `AI_PARKING_AREA_ID` | `19` | AI Test Lot |
+| `AI_PARKING_API_TOKEN` | (required) | `X-AI-TOKEN` |
+| `AI_PARKING_AREA_ID` | `4` | ACAD 1 (primary lot) |
 | `AI_PARKING_OVERTIME_MINUTES` | `30` | Slot dwell before overtime |
 | `AI_PARKING_VIOLATION_DEBOUNCE_MINUTES` | `10` | Python + Laravel debounce |
 | `AI_PARKING_OCR_ENABLED` | `0` in code / set `1` in `.env` | EasyOCR on/off (enable for plate → owner names) |

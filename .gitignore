@@ -29,6 +29,7 @@ Thumbs.db
 **/__pycache__/
 *.pyc
 .venv-campus-id-ocr/
+scripts/test_user_ids.json
 
 # YOLO / AI parking weights (large binary files)
 *.pt

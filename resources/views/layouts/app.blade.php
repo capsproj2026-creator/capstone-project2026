@@ -1,7 +1,7 @@
 @php
     $authUser = auth()->user();
     $profileName = trim($__env->yieldContent('profile_name')) ?: ($authUser?->fullname ?? 'Portal User');
-    $profileRole = trim($__env->yieldContent('profile_role')) ?: ($authUser?->roleName() ?? 'Member');
+    $profileRole = trim($__env->yieldContent('profile_role')) ?: ($authUser?->displayRoleLabel() ?? 'Member');
     $profileEmail = trim($__env->yieldContent('profile_email')) ?: ($authUser?->email ?? 'user@campus.edu');
     $profilePhoneRaw = trim($__env->yieldContent('profile_phone'));
     $profilePhone = $profilePhoneRaw !== '' ? $profilePhoneRaw : ($authUser?->phone_number ?? null);

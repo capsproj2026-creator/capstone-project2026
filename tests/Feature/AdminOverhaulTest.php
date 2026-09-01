@@ -455,12 +455,13 @@ class AdminOverhaulTest extends TestCase
         $this->assertSame(0, \App\Models\ParkingSlot::query()->where('area_id', $area->id)->count());
     }
 
-    public function test_admin_cannot_delete_ai_parking_area(): void
+    public function test_admin_cannot_delete_ai_monitored_parking_area(): void
     {
-        $aiId = \Database\Seeders\AiTestLotSeeder::AREA_ID;
-        $area = \App\Models\ParkingArea::query()->find($aiId);
+        $ids = app(\App\Services\AiCameraRegistry::class)->monitoredAreaIds();
+        $aiId = $ids[0] ?? null;
+        $area = $aiId ? \App\Models\ParkingArea::query()->find($aiId) : null;
         if (! $area) {
-            $this->markTestSkipped('AI parking area not seeded.');
+            $this->markTestSkipped('No AI-monitored parking area found.');
         }
 
         $this->actingAs($this->admin)

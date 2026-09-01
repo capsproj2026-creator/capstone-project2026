@@ -207,14 +207,14 @@ If Serial shows `HTTP error -1`, run `allow-laravel-firewall.bat` once as Admin.
 
 ## AI parking cameras
 
-Configure `AI_CAMERA_1_*` / `AI_CAMERA_2_*` in `.env` (IP, user, pass, `ENABLED=true`). Setup:
+Configure `AI_CAMERA_1_*` / `AI_CAMERA_2_*` in `.env` (IP, user, pass, `ENABLED=true`). Map each camera to a real parking area id (rollout: ACAD 1 = **4**, Duran = **3**, Auditorium = **8**). Setup:
 
 ```powershell
 .\scripts\setup-yolov9.ps1
-php artisan db:seed --class=AiTestLotSeeder
+php artisan db:seed
 ```
 
-See [`hardware/ai_parking/README.md`](hardware/ai_parking/README.md).
+See [`hardware/ai_parking/README.md`](hardware/ai_parking/README.md) and [`hardware/ai_parking/CALIBRATION_ROLLOUT.md`](hardware/ai_parking/CALIBRATION_ROLLOUT.md).
 
 ---
 
@@ -242,7 +242,11 @@ start.ps1 / start.bat
 
 ## Production notes
 
-- Change all default passwords and API tokens
+- Copy `.env.example` → `.env`, generate `APP_KEY`, then set `APP_ENV=production` and keep `APP_DEBUG=false`
+- Change all default passwords (`admin123` / `password123`) and set unique `RFID_API_TOKEN` and `AI_PARKING_API_TOKEN` (empty tokens disable those APIs)
 - Do not commit `.env` or `rfid_gate_config.h`
+- This app uses **MongoDB seeders**, not `php artisan migrate`, for campus data. Fresh machine: `php artisan db:seed`
+- Build frontend assets (`npm run build`) and run `php artisan storage:link` before serving
+- `php artisan config:cache` is safe; keep `GITHUB_AUTO_SYNC=false` on the live PC
 - Serve HTTPS in production; ESP32↔Laravel is plain HTTP on LAN by design for the demo
 - Turn off `MONGODB_TLS_ALLOW_INVALID` when using proper TLS
