@@ -98,6 +98,23 @@ class AiParkingOccupancyTest extends TestCase
         $this->assertSame(17, $slots->where('status', 'Available')->count());
     }
 
+    public function test_occupancy_treats_tricycle_as_a_vehicle(): void
+    {
+        $this->withHeaders(['X-AI-TOKEN' => self::TOKEN])
+            ->postJson('/api/ai-parking/occupancy', [
+                'camera_id' => 'CAM-AI-1',
+                'area_id' => AiTestLotSeeder::AREA_ID,
+                'vehicle_count' => 1,
+                'detections' => [
+                    ['class' => 'tricycle', 'confidence' => 0.9],
+                    ['class' => 'person', 'confidence' => 0.9],
+                ],
+            ])
+            ->assertOk()
+            ->assertJsonPath('data.vehicle_count', 1)
+            ->assertJsonPath('data.occupied', 1);
+    }
+
     public function test_occupancy_ignores_client_area_id_override(): void
     {
         $other = ParkingArea::query()->where('id', '!=', AiTestLotSeeder::AREA_ID)->whereNotIn('id', [20, 21])->first();

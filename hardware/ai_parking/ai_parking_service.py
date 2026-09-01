@@ -121,7 +121,8 @@ COCO_NAMES = {
 }
 ALLOWED_VEHICLE_NAMES = frozenset(COCO_NAMES.get(i, "") for i in VEHICLE_CLASS_IDS if i in COCO_NAMES)
 # BGR colors — stable per vehicle type across all cameras (not overridden by motion).
-# COCO YOLOv9 detects car/motorcycle/bus/truck; SUV/Van share "car" unless refined by registry.
+# COCO YOLOv9 detects car/motorcycle/bus/truck.
+# Tricycles have no COCO class — treat as motorcycle. SUV/Van share "car" unless refined by registry.
 CLASS_COLORS = {
     "person": (0, 165, 255),       # orange
     "car": (40, 180, 40),          # green
@@ -146,7 +147,7 @@ def _normalize_vehicle_type_key(raw: str | None) -> str | None:
     if not raw:
         return None
     key = str(raw).strip().lower().replace("-", " ").replace("_", " ")
-    if "motor" in key or key in {"mc", "bike"}:
+    if "motor" in key or "tricycle" in key or "trike" in key or "sidecar" in key or key in {"mc", "bike"}:
         return "motorcycle"
     if "suv" in key:
         return "suv"
@@ -162,7 +163,7 @@ def _normalize_vehicle_type_key(raw: str | None) -> str | None:
 
 
 def _overlay_type_key(yolo_name: str, vehicle_details: str | None = None) -> str:
-    """Prefer registered vehicle type (SUV/Van/…) when known; else YOLO class."""
+    """Prefer registered vehicle type (SUV/Van/Tricycle→motorcycle) when known; else YOLO class."""
     registered = _normalize_vehicle_type_key(vehicle_details)
     if registered:
         return registered

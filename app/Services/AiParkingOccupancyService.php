@@ -16,6 +16,16 @@ class AiParkingOccupancyService
     /** COCO vehicle classes only — no persons or other objects. */
     private const VEHICLE_TYPES = ['car', 'motorcycle', 'bus', 'truck'];
 
+    /** Labels that YOLO/registry may send which still count as a COCO vehicle. */
+    private const VEHICLE_TYPE_ALIASES = [
+        'tricycle' => 'motorcycle',
+        'trike' => 'motorcycle',
+        'sidecar' => 'motorcycle',
+        'suv' => 'car',
+        'van' => 'car',
+        'sedan' => 'car',
+    ];
+
     public function cacheKeyForCamera(string $cameraId): string
     {
         return 'ai_parking:last:'.strtoupper(trim($cameraId));
@@ -602,6 +612,7 @@ class AiParkingOccupancyService
     {
         return array_values(array_filter($detections, function (array $det): bool {
             $class = strtolower(trim((string) ($det['class'] ?? $det['vehicle_type'] ?? '')));
+            $class = self::VEHICLE_TYPE_ALIASES[$class] ?? $class;
 
             return in_array($class, self::VEHICLE_TYPES, true);
         }));
