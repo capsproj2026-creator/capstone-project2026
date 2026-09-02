@@ -635,6 +635,165 @@ def fig_er_logical():
     return save(img, "fig12_er_logical.png")
 
 
+def fig_use_case():
+    img, d = new_canvas(1600, 1100, "Figure 13. Use Case Diagram — Smart Campus VMS")
+    # System boundary
+    d.rounded_rectangle((280, 100, 1540, 980), radius=16, outline=NAVY, width=3)
+    d.text((300, 112), "Smart Campus VMS", fill=NAVY, font=font(16, True))
+
+    def uc(x, y, w, h, text, fill=NAVY_SOFT):
+        rounded(d, (x, y, x + w, y + h), fill, NAVY, r=10)
+        fnt = font(12, True)
+        lines = wrap(d, text, fnt, w - 16)
+        th = len(lines) * 16
+        ty = y + (h - th) // 2
+        for i, line in enumerate(lines):
+            tw = d.textlength(line, font=fnt)
+            d.text((x + (w - tw) / 2, ty + i * 16), line, fill=NAVY, font=fnt)
+
+    def actor(x, y, label):
+        d.ellipse((x, y, x + 36, y + 36), outline=NAVY, width=2)
+        d.line((x + 18, y + 36, x + 18, y + 70), fill=NAVY, width=2)
+        d.line((x + 18, y + 48, x, y + 62), fill=NAVY, width=2)
+        d.line((x + 18, y + 48, x + 36, y + 62), fill=NAVY, width=2)
+        d.line((x + 18, y + 70, x, y + 90), fill=NAVY, width=2)
+        d.line((x + 18, y + 70, x + 36, y + 90), fill=NAVY, width=2)
+        fnt = font(13, True)
+        tw = d.textlength(label, font=fnt)
+        d.text((x + 18 - tw / 2, y + 96), label, fill=NAVY, font=fnt)
+
+    # Actors
+    actor(60, 180, "Admin")
+    actor(60, 420, "Guard")
+    actor(60, 660, "Student/Staff")
+    actor(60, 860, "Visitor")
+    actor(1480, 300, "ESP32 Gate")
+    actor(1480, 620, "AI Camera")
+
+    # Admin use cases
+    uc(340, 150, 200, 44, "Approve Registration")
+    uc(560, 150, 200, 44, "Assign RFID")
+    uc(780, 150, 200, 44, "Manage Users")
+    uc(1000, 150, 200, 44, "Manage Parking")
+    uc(1220, 150, 200, 44, "Generate Reports")
+    uc(340, 210, 200, 44, "Configure Settings")
+    uc(560, 210, 200, 44, "View Violations")
+    uc(780, 210, 200, 44, "View Access Logs")
+
+    # Guard use cases
+    uc(340, 380, 200, 44, "Monitor Live Gate")
+    uc(560, 380, 200, 44, "Register Visitor")
+    uc(780, 380, 200, 44, "Assign Visitor RFID")
+    uc(1000, 380, 200, 44, "Log Violation")
+    uc(1220, 380, 200, 44, "Plate Lookup")
+    uc(340, 440, 200, 44, "AI Parking Monitor")
+    uc(560, 440, 200, 44, "View Access Logs")
+    uc(780, 440, 200, 44, "Emergency Gate Open")
+
+    # Student/Staff use cases
+    uc(340, 620, 200, 44, "Register Vehicle")
+    uc(560, 620, 200, 44, "View Dashboard")
+    uc(780, 620, 200, 44, "View Violations")
+    uc(1000, 620, 200, 44, "Entry/Exit History")
+    uc(1220, 620, 200, 44, "View Parking")
+    uc(340, 680, 200, 44, "View Notifications")
+
+    # Visitor use cases
+    uc(340, 860, 200, 44, "Pre-register Online")
+    uc(560, 860, 200, 44, "Receive Reference Code")
+
+    # Hardware use cases
+    uc(1000, 860, 200, 44, "Tap RFID at Gate")
+    uc(1220, 860, 200, 44, "Return Visitor RFID")
+
+    # Sample associations (Admin → approve)
+    for ax, uy in [(96, 172), (96, 412), (96, 652), (96, 852)]:
+        d.line((ax + 36, uy + 18, 280, uy + 18), fill=GRAY, width=1)
+    d.line((1498, 318, 1540, 400), fill=GRAY, width=1)
+    d.line((1498, 638, 1540, 860), fill=GRAY, width=1)
+
+    d.text((40, 1040), "Actors interact with the web portal (Admin, Guard, Student/Staff, Visitor) or hardware/API layer (ESP32, AI Camera).", fill=GRAY, font=font(14))
+    return save(img, "fig13_use_case.png")
+
+
+def fig_context():
+    img, d = new_canvas(1400, 900, "Figure 14. Context Diagram — Smart Campus VMS")
+    cx, cy = 700, 450
+    rounded(d, (520, 360, 880, 540), (219, 234, 254), NAVY, r=20)
+    d.text((560, 430), "Smart Campus VMS", fill=NAVY, font=font(22, True))
+    d.text((560, 470), "Laravel 12 + MongoDB", fill=GRAY, font=font(14))
+
+    entities = [
+        (700, 120, "Admin", NAVY_SOFT),
+        (200, 300, "Guard", (204, 251, 241)),
+        (1200, 300, "Student / Staff", (237, 233, 254)),
+        (700, 780, "Visitor", (254, 243, 199)),
+        (200, 620, "ESP32 RFID Gate", (254, 226, 226)),
+        (1200, 620, "AI Camera / YOLO", PURPLE),
+        (80, 120, "Google OAuth", GRAY),
+        (1320, 120, "Email Service", GRAY),
+    ]
+    for ex, ey, label, fill in entities:
+        box(d, ex - 100, ey - 30, 200, 60, label, fill, NAVY)
+        # line to center
+        arrow(d, ex, ey + 30 if ey < cy else ey - 30, cx if ex != 700 else cx, 360 if ey < cy else 540)
+
+    d.text((40, 850), "The system sits at the center; external actors and services exchange data through web UI and REST APIs.", fill=GRAY, font=font(14))
+    return save(img, "fig14_context.png")
+
+
+def fig_dfd_level0():
+    img, d = new_canvas(1500, 1000, "Figure 15. Data Flow Diagram (Level 0) — Smart Campus VMS")
+    # Central process
+    rounded(d, (580, 380, 920, 520), (255, 247, 237), ORANGE, r=16)
+    d.text((620, 430), "P0", fill=ORANGE, font=font(14, True))
+    d.text((660, 430), "Smart Campus VMS", fill=NAVY, font=font(18, True))
+    d.text((620, 470), "Process gate access, visitors,", fill=GRAY, font=font(13))
+    d.text((620, 492), "violations, parking, reports", fill=GRAY, font=font(13))
+
+    def store(x, y, label):
+        d.line([(x, y), (x + 160, y)], fill=NAVY, width=2)
+        d.line([(x, y + 50), (x + 160, y + 50)], fill=NAVY, width=2)
+        d.line([(x, y), (x, y + 50)], fill=NAVY, width=2)
+        d.line([(x + 160, y), (x + 160, y + 50)], fill=NAVY, width=2)
+        fnt = font(12, True)
+        tw = d.textlength(label, font=fnt)
+        d.text((x + 80 - tw / 2, y + 16), label, fill=NAVY, font=fnt)
+
+    def entity_box(x, y, label, fill=NAVY_SOFT):
+        rounded(d, (x, y, x + 140, y + 50), fill, NAVY, r=8)
+        fnt = font(12, True)
+        tw = d.textlength(label, font=fnt)
+        d.text((x + 70 - tw / 2, y + 16), label, fill=NAVY, font=fnt)
+
+    # External entities
+    entity_box(40, 200, "Admin", NAVY_SOFT)
+    entity_box(40, 420, "Guard", (204, 251, 241))
+    entity_box(40, 640, "Student/Staff", (237, 233, 254))
+    entity_box(1320, 200, "Visitor", (254, 243, 199))
+    entity_box(1320, 420, "ESP32 Gate", (254, 226, 226))
+    entity_box(1320, 640, "AI Camera", PURPLE)
+
+    # Data stores
+    store(200, 820, "D1 Users")
+    store(420, 820, "D2 Gate Logs")
+    store(640, 820, "D3 Visitors")
+    store(860, 820, "D4 Violations")
+    store(1080, 820, "D5 Parking")
+
+    # Flows
+    arrow(d, 180, 225, 580, 440, NAVY, "approvals")
+    arrow(d, 180, 445, 580, 460, TEAL, "visitor/violation")
+    arrow(d, 180, 665, 580, 480, PURPLE, "registration")
+    arrow(d, 1320, 225, 920, 440, ORANGE, "pre-register")
+    arrow(d, 1320, 445, 920, 460, RED, "RFID scan")
+    arrow(d, 1320, 665, 920, 480, PURPLE, "occupancy")
+    arrow(d, 750, 520, 750, 820, NAVY, "read/write")
+
+    d.text((40, 940), "Level 0 DFD: one central process exchanges data with external entities and MongoDB collections (D1–D5).", fill=GRAY, font=font(14))
+    return save(img, "fig15_dfd_level0.png")
+
+
 def set_run_font(run, size=11, bold=False, color=None, name="Calibri"):
     run.font.name = name
     run.font.size = Pt(size)
@@ -858,6 +1017,9 @@ def main() -> None:
         "user": fig_user_map(),
         "er_c": fig_er_conceptual(),
         "er_l": fig_er_logical(),
+        "use_case": fig_use_case(),
+        "context": fig_context(),
+        "dfd": fig_dfd_level0(),
     }
     path = build_docx(images)
     print(f"Wrote {path}")
