@@ -46,6 +46,9 @@
             No parking areas are currently available for {{ strtolower($roleLabel) }} accounts.
         </div>
     @else
+        @php
+            $lotSnapshots = collect(\App\Services\ParkingZoneSnapshot::fromApp()->all())->keyBy('area_id');
+        @endphp
         <div id="user-zone-maps" class="space-y-5">
             @foreach ($zoneStats as $zone)
                 <div class="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm" data-zone-id="{{ $zone['area']->id }}">
@@ -68,6 +71,14 @@
                             <span class="text-gray-500"><span class="zone-total">{{ $zone['total'] }}</span> total</span>
                         </div>
                     </div>
+                    @php
+                        $lotSnapshot = $lotSnapshots->get((int) $zone['area']->id);
+                    @endphp
+                    @if ($lotSnapshot)
+                        <div class="border-b border-gray-100 p-4">
+                            @include('partials.parking-zone-snapshot', ['snapshot' => $lotSnapshot, 'compact' => true])
+                        </div>
+                    @endif
                     <div class="zone-slot-grid grid grid-cols-3 gap-2 p-4 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8">
                         @foreach ($zone['slots'] as $slot)
                             @php

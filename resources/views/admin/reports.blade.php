@@ -237,8 +237,30 @@
 (() => {
     const chartData = @json($chartPayload);
 
-    const gridColor = '#E5E7EB';
-    const tickColor = '#9CA3AF';
+    const isDark = () => document.documentElement.classList.contains('dark');
+    const gridColor = () => (isDark() ? 'rgba(148, 163, 184, 0.1)' : '#E5E7EB');
+    const tickColor = () => (isDark() ? '#9ca8b9' : '#9CA3AF');
+    const legendColor = () => (isDark() ? '#cbd5e1' : '#6B7280');
+    const pieEmpty = () => (isDark() ? 'rgba(51, 65, 85, 0.55)' : '#E5E7EB');
+    const reportCharts = [];
+
+    const applyChartTheme = () => {
+        reportCharts.forEach((chart) => {
+            const scales = chart.options?.scales || {};
+            if (scales.x?.grid) scales.x.grid.color = gridColor();
+            if (scales.y?.grid) scales.y.grid.color = gridColor();
+            if (scales.x?.ticks) scales.x.ticks.color = tickColor();
+            if (scales.y?.ticks) scales.y.ticks.color = tickColor();
+            const legend = chart.options?.plugins?.legend?.labels;
+            if (legend && !legend.generateLabels) legend.color = legendColor();
+            if (legend?.generateLabels) legend.color = legendColor();
+            const pieColors = chart.data?.datasets?.[0]?.backgroundColor;
+            if (Array.isArray(pieColors) && pieColors.length === 1 && (pieColors[0] === '#E5E7EB' || pieColors[0] === pieEmpty() || String(pieColors[0]).includes('51, 65, 85'))) {
+                chart.data.datasets[0].backgroundColor = [pieEmpty()];
+            }
+            chart.update('none');
+        });
+    };
 
     const baseOptions = {
         responsive: true,
@@ -261,7 +283,7 @@
     };
 
     const monthly = chartData.monthlyAccess || { labels: [], entries: [], exits: [] };
-    new Chart(document.getElementById('chart-monthly-access'), {
+    reportCharts.push(new Chart(document.getElementById('chart-monthly-access'), {
         type: 'line',
         data: {
             labels: monthly.labels,
@@ -290,7 +312,7 @@
             ...baseOptions,
             plugins: {
                 ...baseOptions.plugins,
-                legend: { display: true, position: 'bottom', labels: { boxWidth: 12, color: '#6B7280' } },
+                legend: { display: true, position: 'bottom', labels: { boxWidth: 12, color: legendColor() } } },
             },
             scales: {
                 ...baseOptions.scales,
@@ -301,13 +323,13 @@
 
     const dist = chartData.userDistribution || { labels: [], values: [], colors: [] };
     const distTotal = (dist.values || []).reduce((a, b) => a + b, 0);
-    new Chart(document.getElementById('chart-user-distribution'), {
+    reportCharts.push(new Chart(document.getElementById('chart-user-distribution'), {
         type: 'pie',
         data: {
             labels: dist.labels,
             datasets: [{
                 data: distTotal > 0 ? dist.values : [1],
-                backgroundColor: distTotal > 0 ? dist.colors : ['#E5E7EB'],
+                backgroundColor: distTotal > 0 ? dist.colors : [pieEmpty()],
                 borderWidth: 0,
             }],
         },
@@ -319,7 +341,7 @@
                     display: true,
                     position: 'right',
                     labels: {
-                        color: '#374151',
+                        color: legendColor(),
                         generateLabels(chart) {
                             const data = chart.data;
                             return (data.labels || []).map((label, i) => {
@@ -351,7 +373,7 @@
     });
 
     const parking = chartData.parkingDaily || { labels: [], values: [], capacity: 0 };
-    new Chart(document.getElementById('chart-parking-daily'), {
+    reportCharts.push(new Chart(document.getElementById('chart-parking-daily'), {
         type: 'line',
         data: {
             labels: parking.labels,
@@ -378,7 +400,7 @@
     });
 
     const byLoc = chartData.violationsLocation || { labels: [], values: [] };
-    new Chart(document.getElementById('chart-violations-location'), {
+    reportCharts.push(new Chart(document.getElementById('chart-violations-location'), {
         type: 'bar',
         data: {
             labels: byLoc.labels.length ? byLoc.labels : ['No data'],
@@ -393,7 +415,7 @@
     });
 
     const trends = chartData.violationTrends || { labels: [], series: [] };
-    new Chart(document.getElementById('chart-violation-trends'), {
+    reportCharts.push(new Chart(document.getElementById('chart-violation-trends'), {
         type: 'line',
         data: {
             labels: trends.labels,
@@ -411,13 +433,13 @@
             ...baseOptions,
             plugins: {
                 ...baseOptions.plugins,
-                legend: { display: true, position: 'bottom', labels: { boxWidth: 12, color: '#6B7280' } },
+                legend: { display: true, position: 'bottom', labels: { boxWidth: 12, color: legendColor() } } },
             },
         },
     });
 
     const peak = chartData.peakHours || { labels: [], values: [] };
-    new Chart(document.getElementById('chart-peak-hours'), {
+    reportCharts.push(new Chart(document.getElementById('chart-peak-hours'), {
         type: 'bar',
         data: {
             labels: peak.labels,
@@ -439,6 +461,8 @@
             },
         },
     });
+
+    window.addEventListener('portal:theme-change', applyChartTheme);
 
     if (window.lucide) window.lucide.createIcons();
 

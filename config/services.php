@@ -103,9 +103,9 @@ return [
             ],
             [
                 'id' => env('AI_CAMERA_2_ID', 'CAM-AI-2'),
-                'name' => env('AI_CAMERA_2_NAME', 'Campus Camera 2'),
-                'location' => env('AI_CAMERA_2_LOCATION', 'Parking Lot B'),
-                'area_id' => (int) env('AI_CAMERA_2_AREA_ID', 15),
+                'name' => env('AI_CAMERA_2_NAME', 'Duran Hall (Front)'),
+                'location' => env('AI_CAMERA_2_LOCATION', 'Duran Hall (Front)'),
+                'area_id' => (int) env('AI_CAMERA_2_AREA_ID', 3),
                 'stream_path' => env('AI_CAMERA_2_STREAM_PATH'),
                 'stream_url' => env('AI_CAMERA_2_STREAM_URL'),
                 'ai_stream_path' => env('AI_CAMERA_2_AI_STREAM_PATH'),

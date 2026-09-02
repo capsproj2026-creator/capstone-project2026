@@ -95,7 +95,7 @@
                                 <span class="absolute left-0.5 top-0.5 h-6 w-6 rounded-full bg-white shadow transition-transform peer-checked:translate-x-5"></span>
                             </label>
                         </div>
-                        <div class="rounded-lg border border-white/80 bg-white p-3">
+                        <div class="zone-role-panel">
                             <p class="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-500">Who can see this zone?</p>
                             <div class="flex flex-wrap gap-2">
                                 <label class="cursor-pointer">
@@ -127,7 +127,7 @@
                     </div>
                 @endforeach
             </div>
-            <div class="sticky bottom-0 z-10 flex flex-col gap-3 border-t border-gray-200 bg-white/95 px-5 py-4 backdrop-blur sm:flex-row sm:items-center sm:justify-between sm:px-6">
+            <div class="zone-access-savebar sticky bottom-0 z-10 flex flex-col gap-3 border-t border-gray-200 px-5 py-4 backdrop-blur sm:flex-row sm:items-center sm:justify-between sm:px-6">
                 <p class="text-sm text-gray-500">Changes apply after you save. Hidden zones remain visible to admins only.</p>
                 <button type="submit" class="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-blue-700 sm:w-auto">
                     <i data-lucide="save" class="h-4 w-4"></i>

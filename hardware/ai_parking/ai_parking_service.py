@@ -37,6 +37,7 @@ load_project_env()
 
 from parking_rules import ParkingIntelligence, SimpleIoUTracker
 from plate_ocr import OCR_EVERY_SEC, AsyncPlateQueue, PlateOCR
+from monitor_scan import encode_crop_jpeg_bytes, enhance_monitor_frame, scan_visible_region
 from yolo_models import ensure_model, resolve_model_name, resolve_model_path
 
 # Default; open_rtsp() may override per-camera under OPEN_LOCK.
@@ -75,7 +76,10 @@ PREVIEW_MAX_WIDTH = int(os.getenv("AI_PARKING_PREVIEW_MAX_WIDTH", "960"))
 # Max width for AI overlay MJPEG (browser). Raise for distant plate viewing (e.g. 2560).
 AI_STREAM_MAX_WIDTH = int(os.getenv("AI_PARKING_AI_STREAM_MAX_WIDTH", "1920"))
 STREAM_TARGET_FPS = float(os.getenv("AI_PARKING_STREAM_FPS", "20"))
-STREAM_JPEG_QUALITY = int(os.getenv("AI_PARKING_STREAM_JPEG_QUALITY", "65"))
+STREAM_JPEG_QUALITY = int(os.getenv("AI_PARKING_STREAM_JPEG_QUALITY", "88"))
+# AI overlay stream (monitor). Higher than live preview so ~20 m plates stay readable.
+AI_STREAM_JPEG_QUALITY = int(os.getenv("AI_PARKING_AI_STREAM_JPEG_QUALITY", "90"))
+MONITOR_SHARPEN = os.getenv("AI_PARKING_MONITOR_SHARPEN", "1") == "1"
 RECONNECT_EVERY_SEC = float(os.getenv("AI_CAMERA_RECONNECT_SEC", "5"))
 OPEN_LOCK = threading.Lock()
 
@@ -292,6 +296,7 @@ class StreamState:
         self.vehicle_count = 0
         self.detections = []
         self.rtsp_online = False
+        self.plate_crops: dict[int, bytes] = {}
 
     def set_frame(self, raw_jpeg, ai_jpeg, vehicle_count, detections, rtsp_online=None):
         with self.lock:
@@ -304,6 +309,14 @@ class StreamState:
             if rtsp_online is not None:
                 self.rtsp_online = bool(rtsp_online)
 
+    def set_plate_crops(self, crops: dict[int, bytes]):
+        with self.lock:
+            self.plate_crops = dict(crops)
+
+    def get_plate_crop(self, track_id: int):
+        with self.lock:
+            return self.plate_crops.get(int(track_id))
+
     def get_jpeg(self, ai: bool = False):
         with self.lock:
             if ai:
@@ -313,6 +326,8 @@ class StreamState:
 
 # camera_id -> StreamState (multi-camera MJPEG)
 STREAM_STATES: dict[str, StreamState] = {}
+# camera_id -> CameraWorker (for view-only test-scan)
+CAMERA_WORKERS: dict[str, "CameraWorker"] = {}
 # path -> (camera_id, ai_overlay)
 STREAM_PATH_INDEX: dict[str, tuple[str, bool]] = {}
 
@@ -672,10 +687,18 @@ def parse_tracks(
         }
         if plate:
             det["plate"] = plate
+            det["ocr_text"] = plate
+            det["plate_text"] = plate
         if ocr_confidence > 0:
             det["ocr_confidence"] = round(float(ocr_confidence), 3)
         if plate_status == "unreadable":
             det["plate"] = None
+            det["ocr_text"] = None
+            det["plate_text"] = None
+        if track_id is not None:
+            mem_crop = intelligence.tracks.get(int(track_id))
+            if mem_crop is not None and getattr(mem_crop, "last_plate_crop", None) is not None:
+                det["has_plate_crop"] = True
         if owner_name:
             det["owner_name"] = owner_name
         if owner_label:
@@ -1094,6 +1117,62 @@ class MjpegHandler(BaseHTTPRequestHandler):
                 return (cam, False)
         return (None, False)
 
+    def _ai_authorized(self) -> bool:
+        expected = (AI_API_TOKEN or "").strip()
+        if not expected:
+            return True
+        got = (self.headers.get("X-AI-TOKEN") or "").strip()
+        return got == expected
+
+    def _send_json(self, code: int, payload: dict) -> None:
+        body = json.dumps(payload).encode("utf-8")
+        self.send_response(code)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def _read_json_body(self, max_bytes: int = 32768):
+        try:
+            length = int(self.headers.get("Content-Length") or 0)
+        except ValueError:
+            return None
+        if length <= 0 or length > max_bytes:
+            return None
+        raw = self.rfile.read(length)
+        try:
+            data = json.loads(raw.decode("utf-8"))
+        except Exception:
+            return None
+        return data if isinstance(data, dict) else None
+
+    def _handle_plate_crop(self, path: str) -> bool:
+        parts = [p for p in path.split("/") if p]
+        if len(parts) < 3 or parts[1] != "plate-crop":
+            return False
+        camera_id = parts[0]
+        track_raw = parts[2]
+        if track_raw.lower().endswith(".jpg"):
+            track_raw = track_raw[:-4]
+        try:
+            track_id = int(track_raw)
+        except ValueError:
+            self.send_error(404)
+            return True
+        state = STREAM_STATES.get(camera_id)
+        jpeg = state.get_plate_crop(track_id) if state else None
+        if not jpeg:
+            self.send_error(404)
+            return True
+        self.send_response(200)
+        self.send_header("Content-Type", "image/jpeg")
+        self.send_header("Cache-Control", "no-store, private")
+        self.send_header("Content-Length", str(len(jpeg)))
+        self.end_headers()
+        self.wfile.write(jpeg)
+        return True
+
     def do_GET(self):
         path = self.path.split("?", 1)[0]
         if path == "/":
@@ -1130,6 +1209,9 @@ class MjpegHandler(BaseHTTPRequestHandler):
             self.wfile.write(body)
             return
 
+        if self._handle_plate_crop(path):
+            return
+
         camera_id, ai_overlay = self._resolve_stream()
         if camera_id is None or camera_id not in STREAM_STATES:
             self.send_error(404)
@@ -1161,6 +1243,35 @@ class MjpegHandler(BaseHTTPRequestHandler):
                 self.wfile.write(b"\r\n")
         except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError):
             return
+
+    def do_POST(self):
+        path = self.path.split("?", 1)[0]
+        if path != "/test-scan":
+            self.send_error(404)
+            return
+        if not self._ai_authorized():
+            self._send_json(403, {"ok": False, "saved": False, "message": "Unauthorized."})
+            return
+        payload = self._read_json_body() or {}
+        camera_id = str(payload.get("camera_id") or "").strip()
+        view = payload.get("view") if isinstance(payload.get("view"), dict) else {}
+        worker = CAMERA_WORKERS.get(camera_id)
+        if worker is None:
+            want = camera_id.upper()
+            for cid, candidate in CAMERA_WORKERS.items():
+                if str(cid).upper() == want:
+                    worker = candidate
+                    break
+        if worker is None and len(CAMERA_WORKERS) == 1:
+            worker = next(iter(CAMERA_WORKERS.values()))
+        if worker is None:
+            self._send_json(404, {"ok": False, "saved": False, "message": "Unknown camera."})
+            return
+        result = worker.test_scan_view(view)
+        result["saved"] = False
+        result["camera_id"] = worker.config.camera_id
+        code = 200 if result.get("ok") else 503
+        self._send_json(code, result)
 
 
 def start_stream_server():
@@ -1232,10 +1343,12 @@ class CameraWorker:
         self.ai_stream_max_width = cam_ai_cap if cam_ai_cap > 0 else AI_STREAM_MAX_WIDTH
         self.stream_fps = float(config.stream_fps or STREAM_TARGET_FPS)
         self.jpeg_quality = int(config.jpeg_quality or STREAM_JPEG_QUALITY)
+        self.ai_jpeg_quality = max(int(AI_STREAM_JPEG_QUALITY or 0), self.jpeg_quality)
         self.lite_preview = bool(config.lite_preview)
 
     def start(self):
         STREAM_STATES[self.config.camera_id] = self.state
+        CAMERA_WORKERS[self.config.camera_id] = self
         raw_path = self.config.stream_path or f"/{self.config.camera_id}/stream.mjpg"
         ai_path = f"/{self.config.camera_id}/ai/stream.mjpg"
         STREAM_PATH_INDEX[raw_path] = (self.config.camera_id, False)
@@ -1325,6 +1438,7 @@ class CameraWorker:
 
     def stop(self):
         self.running.clear()
+        CAMERA_WORKERS.pop(self.config.camera_id, None)
         if self.preview_reader:
             self.preview_reader.stop()
         if self.infer_reader and not self._shared_reader:
@@ -1333,6 +1447,7 @@ class CameraWorker:
     def _preview_loop(self):
         interval = 1.0 / max(1.0, self.stream_fps)
         encode_params = [int(cv2.IMWRITE_JPEG_QUALITY), self.jpeg_quality]
+        ai_encode_params = [int(cv2.IMWRITE_JPEG_QUALITY), int(self.ai_jpeg_quality)]
         last_seq = -1
         while self.running.is_set():
             started = time.perf_counter()
@@ -1409,12 +1524,14 @@ class CameraWorker:
                 2,
                 cv2.LINE_AA,
             )
+            if MONITOR_SHARPEN:
+                annotated = enhance_monitor_frame(annotated)
             raw_jpeg = None
             ai_jpeg = None
             ok_raw, buf_raw = cv2.imencode(".jpg", display_raw, encode_params)
             if ok_raw:
                 raw_jpeg = buf_raw.tobytes()
-            ok_ai, buf_ai = cv2.imencode(".jpg", annotated, encode_params)
+            ok_ai, buf_ai = cv2.imencode(".jpg", annotated, ai_encode_params)
             if ok_ai:
                 ai_jpeg = buf_ai.tobytes()
             if raw_jpeg or ai_jpeg:
@@ -1427,6 +1544,25 @@ class CameraWorker:
                 )
             elapsed = time.perf_counter() - started
             time.sleep(max(0.0, interval - elapsed))
+
+    def _publish_plate_crops(self) -> None:
+        crops: dict[int, bytes] = {}
+        for tid, mem in list(self.intelligence.tracks.items()):
+            raw = getattr(mem, "last_plate_crop", None)
+            encoded = encode_crop_jpeg_bytes(raw, quality=90, max_side=360)
+            if encoded:
+                crops[int(tid)] = encoded
+        self.state.set_plate_crops(crops)
+
+    def test_scan_view(self, view: dict | None) -> dict:
+        """OCR the zoomed monitor region. Does not post occupancy or write Laravel DB."""
+        if self.infer_reader is None:
+            return {"ok": False, "saved": False, "message": "Camera is not running.", "plate": None}
+        ret, frame = self.infer_reader.read()
+        if not ret or frame is None:
+            return {"ok": False, "saved": False, "message": "No live frame.", "plate": None}
+        ocr = self.plate_queue.ocr if self.plate_queue else None
+        return scan_visible_region(frame, view, ocr, self.intelligence.tracks)
 
     def _try_sync_plate_ocr(self, frame, now: float) -> None:
         """Run one blocking OCR read per stalled track so plates appear without waiting on the async queue."""
@@ -1447,6 +1583,9 @@ class CameraWorker:
                 continue
             mem.last_sync_ocr_at = now
             read = ocr.read_plate(frame, mem.last_ocr_xyxy, cls_id=getattr(mem, "cls_id", None))
+            crop = PlateOCR.crop_plate_region(frame, mem.last_ocr_xyxy, cls_id=getattr(mem, "cls_id", None))
+            if crop is not None:
+                mem.last_plate_crop = crop
             mem.apply_ocr_vote(read.plate, read.status, read.confidence)
             if mem.needs_owner_lookup():
                 lookup_plate_async(mem)
@@ -1606,6 +1745,7 @@ class CameraWorker:
                 events=events,
                 source_shape=frame.shape,
             )
+            self._publish_plate_crops()
             last_infer = time.time()
 
             if now - last_post >= POST_EVERY_SEC:

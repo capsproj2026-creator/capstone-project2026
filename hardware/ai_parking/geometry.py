@@ -49,6 +49,46 @@ def usable_zones(zones_data: dict[str, Any]) -> list[dict[str, Any]]:
     return out
 
 
+def calibration_size(zones_data: dict[str, Any]) -> tuple[int, int] | None:
+    """Snapshot size the polygons were drawn on, if recorded."""
+    w = int(zones_data.get("image_width") or 0)
+    h = int(zones_data.get("image_height") or 0)
+    if w > 0 and h > 0:
+        return w, h
+    return None
+
+
+def scale_points_to_frame(
+    points: list[list[float]],
+    src_wh: tuple[int, int],
+    dst_wh: tuple[int, int],
+) -> list[list[int]]:
+    """Map snapshot-pixel polygons onto a live frame without cropping (stretch to fill)."""
+    sw, sh = src_wh
+    dw, dh = dst_wh
+    if sw <= 0 or sh <= 0 or (sw == dw and sh == dh):
+        return [[int(round(p[0])), int(round(p[1]))] for p in points]
+    sx, sy = dw / sw, dh / sh
+    return [[int(round(p[0] * sx)), int(round(p[1] * sy))] for p in points]
+
+
+def usable_zones_for_frame(zones_data: dict[str, Any], frame_shape: tuple[int, int]) -> list[dict[str, Any]]:
+    """Calibrated polygons scaled to the current frame (full frame, no zoom-crop)."""
+    zones = usable_zones(zones_data)
+    src = calibration_size(zones_data)
+    if not src:
+        return zones
+    dh, dw = frame_shape[:2]
+    if src == (dw, dh):
+        return zones
+    out = []
+    for z in zones:
+        z2 = dict(z)
+        z2["points"] = scale_points_to_frame(z.get("points") or [], src, (dw, dh))
+        out.append(z2)
+    return out
+
+
 def has_calibrated_slots(zones_data: dict[str, Any]) -> bool:
     if not zones_data.get("calibrated"):
         return False
@@ -111,7 +151,7 @@ def assign_zones_for_box(
 def draw_zones(frame, zones_data: dict[str, Any], occupied_slot_ids: set[str] | None = None):
     occupied_slot_ids = occupied_slot_ids or set()
     annotated = frame
-    for z in usable_zones(zones_data):
+    for z in usable_zones_for_frame(zones_data, frame.shape):
         pts = np.array(z["points"], dtype=np.int32)
         ztype = z.get("type", "slot")
         color = ZONE_COLORS.get(ztype, (200, 200, 200))

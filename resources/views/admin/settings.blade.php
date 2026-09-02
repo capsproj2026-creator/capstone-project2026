@@ -14,21 +14,21 @@
     @endphp
 
     <div class="mx-auto w-full max-w-6xl pb-10">
-        @include('partials.shell.page-header', [
-            'title' => 'System Settings',
-            'subtitle' => 'Configure system preferences and access rules',
-        ])
+        <div class="settings-sticky-header sticky z-10">
+            @include('partials.shell.page-header', [
+                'title' => 'System Settings',
+                'subtitle' => 'Configure system preferences and access rules',
+            ])
 
-        {{-- Segmented settings sub-navbar --}}
-        <div class="mb-6 w-full rounded-full bg-gray-100 p-1.5">
-            <nav class="flex w-full items-center gap-1 overflow-x-auto sm:overflow-visible [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+            {{-- Segmented settings sub-navbar --}}
+            <div class="settings-subnav">
+            <nav class="settings-subnav__track">
                 @foreach ($tabs as $key => $tab)
                     <a
                         href="{{ route('admin.settings', ['section' => $key]) }}"
                         @class([
-                            'inline-flex flex-1 items-center justify-center gap-2 whitespace-nowrap rounded-full px-3 py-2.5 text-sm font-medium transition max-sm:min-w-[9rem] max-sm:flex-none',
-                            'bg-white text-gray-900 shadow-sm' => $section === $key,
-                            'bg-transparent text-gray-700 hover:text-gray-900' => $section !== $key,
+                            'settings-subnav__tab',
+                            'settings-subnav__tab--active' => $section === $key,
                         ])
                     >
                         <i data-lucide="{{ $tab['icon'] }}" class="h-4 w-4 shrink-0"></i>
@@ -36,6 +36,7 @@
                     </a>
                 @endforeach
             </nav>
+        </div>
         </div>
 
         @if ($section === 'general')

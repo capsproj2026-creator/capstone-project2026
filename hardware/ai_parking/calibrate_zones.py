@@ -161,9 +161,11 @@ class Calibrator:
                 self.zones_data["calibrated"] = calibrated
                 save_zones(self.zones_path, self.zones_data)
                 print(f"Saved {self.zones_path} (calibrated={calibrated})")
-                if self.zones_path.name != "zones.json":
-                    save_zones(DEFAULT_ZONES_PATH, self.zones_data)
-                    print(f"Also updated {DEFAULT_ZONES_PATH.name}")
+                if self.zones_path.name != "zones.json" and DEFAULT_ZONES_PATH.is_file():
+                    active = load_zones(DEFAULT_ZONES_PATH)
+                    if active.get("snapshot") and active.get("snapshot") == self.zones_data.get("snapshot"):
+                        save_zones(DEFAULT_ZONES_PATH, self.zones_data)
+                        print(f"Also updated {DEFAULT_ZONES_PATH.name} (same snapshot)")
         cv2.destroyAllWindows()
 
 

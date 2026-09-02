@@ -8,7 +8,8 @@
       "capacity": 10,
       "zones_file": "zones_acad1.json",
       "snapshot": "snapshot_acad1.jpg",
-      "env_location": "ACAD 1 Building (Front)"
+      "env_location": "ACAD 1 Building (Front)",
+      "camera": 1
     },
     "duran": {
       "area_id": 3,
@@ -16,7 +17,9 @@
       "prefix": "DU",
       "capacity": 10,
       "zones_file": "zones_duran.json",
-      "env_location": "Duran Hall (Front)"
+      "snapshot": "snapshot_duran.jpg",
+      "env_location": "Duran Hall (Front)",
+      "camera": 2
     },
     "auditorium": {
       "area_id": 8,
@@ -24,7 +27,8 @@
       "prefix": "AU",
       "capacity": 12,
       "zones_file": "zones_auditorium.json",
-      "env_location": "College Auditorium"
+      "env_location": "College Auditorium",
+      "camera": 3
     }
   }
 }

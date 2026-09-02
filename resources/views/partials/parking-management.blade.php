@@ -3,6 +3,9 @@
     $parkingRoute = str_contains($routeName, 'guard.') ? 'guard.parking' : 'admin.parking';
     $isAdminParking = str_starts_with($routeName, 'admin.parking');
     $statsScope = $selectedZone?->area_name ?? 'All Campus';
+    $zoneSnapshot = $selectedZone
+        ? \App\Services\ParkingZoneSnapshot::fromApp()->forAreaId((int) $selectedZone->id)
+        : null;
 @endphp
 
 @include('partials.shell.page-header', [
@@ -136,6 +139,12 @@
             {{ $slots->count() }} slot{{ $slots->count() === 1 ? '' : 's' }}
         </span>
     </div>
+
+    @if ($zoneSnapshot)
+        <div class="border-b border-gray-100 p-4">
+            @include('partials.parking-zone-snapshot', ['snapshot' => $zoneSnapshot])
+        </div>
+    @endif
 
     @if (! empty($aiSnapshot) && isset($aiAreaId) && ((string) $zoneFilter === (string) $aiAreaId || $zoneFilter === 'All'))
         <div class="border-b border-blue-100 bg-blue-50 px-5 py-3 text-sm text-blue-800">

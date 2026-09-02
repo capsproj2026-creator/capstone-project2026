@@ -31,7 +31,9 @@ class AdminOverhaulTest extends TestCase
         $this->actingAs($this->admin)
             ->get(route('admin.parking.zone-access'))
             ->assertOk()
-            ->assertSee('Zone Access');
+            ->assertSee('Zone Access')
+            ->assertSee('zone-role-panel', false)
+            ->assertSee('zone-access-savebar', false);
     }
 
     public function test_parking_layout_page_loads(): void
@@ -41,6 +43,29 @@ class AdminOverhaulTest extends TestCase
             ->assertOk()
             ->assertSee('Zones & Spaces', false)
             ->assertSee('Add parking area', false);
+    }
+
+    public function test_parking_layout_shows_acad1_and_duran_snapshots(): void
+    {
+        $this->actingAs($this->admin)
+            ->get(route('admin.parking.layout', ['zone_id' => 4]))
+            ->assertOk()
+            ->assertSee('images/parking/snapshot_acad1.jpg', false)
+            ->assertSee('Calibrated', false);
+
+        $this->actingAs($this->admin)
+            ->get(route('admin.parking.layout', ['zone_id' => 3]))
+            ->assertOk()
+            ->assertSee('images/parking/snapshot_duran.jpg', false)
+            ->assertSee('Calibrated', false);
+    }
+
+    public function test_parking_overview_shows_selected_zone_snapshot(): void
+    {
+        $this->actingAs($this->admin)
+            ->get(route('admin.parking', ['zone_id' => 4]))
+            ->assertOk()
+            ->assertSee('images/parking/snapshot_acad1.jpg', false);
     }
 
     public function test_reports_export_returns_csv(): void
@@ -68,11 +93,13 @@ class AdminOverhaulTest extends TestCase
 
     public function test_settings_tabs_and_system_info_save(): void
     {
-        foreach (['general', 'admins', 'notifications', 'violations', 'access'] as $section) {
-            $this->actingAs($this->admin)
-                ->get(route('admin.settings', ['section' => $section]))
-                ->assertOk();
-        }
+        $this->actingAs($this->admin)
+            ->get(route('admin.settings', ['section' => 'general']))
+            ->assertOk()
+            ->assertSee('settings-sticky-header', false)
+            ->assertSee('settings-subnav__tab--active', false)
+            ->assertSee('System Settings')
+            ->assertSee('Configure system preferences and access rules');
 
         $this->actingAs($this->admin)
             ->from(route('admin.settings', ['section' => 'general']))

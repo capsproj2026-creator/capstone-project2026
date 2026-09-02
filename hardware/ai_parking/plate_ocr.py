@@ -25,8 +25,8 @@ OCR_EVERY_SEC = float(os.getenv("AI_PARKING_OCR_EVERY_SEC", "2.0"))
 OCR_MIN_CONF = float(os.getenv("AI_PARKING_OCR_MIN_CONF", "0.26"))
 OCR_UNREADABLE_BELOW = float(os.getenv("AI_PARKING_OCR_UNREADABLE_BELOW", "0.18"))
 OCR_QUEUE_SIZE = int(os.getenv("AI_PARKING_OCR_QUEUE_SIZE", "8"))
-OCR_UPSCALE_MIN_WIDTH = int(os.getenv("AI_PARKING_OCR_UPSCALE_MIN_WIDTH", "560"))
-OCR_UPSCALE_FACTOR = float(os.getenv("AI_PARKING_OCR_UPSCALE_FACTOR", "6"))
+OCR_UPSCALE_MIN_WIDTH = int(os.getenv("AI_PARKING_OCR_UPSCALE_MIN_WIDTH", "720"))
+OCR_UPSCALE_FACTOR = float(os.getenv("AI_PARKING_OCR_UPSCALE_FACTOR", "8"))
 OCR_GPU = os.getenv("AI_PARKING_OCR_GPU", "0") == "1"
 OCR_HIGH_CONF_LOCK = float(os.getenv("AI_PARKING_OCR_HIGH_CONF_LOCK", "0.65"))
 OCR_ROTATION_ANGLES = [
@@ -85,11 +85,17 @@ class PlateOCR:
         box_h = max(1, y2 - y1)
         box_w = max(1, x2 - x1)
 
+        # Distant vehicles (~20 m): keep most of the box so plate-YOLO can still find the plate.
+        distant = box_h < 110 or box_w < 140
         if cls_id == MOTORCYCLE_CLS_ID:
             # Motorcycle plates sit mid-rear; bottom crop often catches tire/mudguard only.
-            y1p = y1 + int(box_h * 0.15)
-            y2p = y1 + int(box_h * 0.76)
-            x_pad = int(box_w * 0.03)
+            y1p = y1 + int(box_h * (0.08 if distant else 0.15))
+            y2p = y1 + int(box_h * (0.88 if distant else 0.76))
+            x_pad = int(box_w * (0.01 if distant else 0.03))
+        elif distant:
+            y1p = y1 + int(box_h * 0.18)
+            y2p = y2 - int(box_h * 0.02)
+            x_pad = int(box_w * 0.02)
         else:
             y1p = y1 + int(box_h * 0.48)
             y2p = y2
@@ -116,8 +122,13 @@ class PlateOCR:
 
     @staticmethod
     def _upscale_crop(crop):
-        ch, cw = crop.shape[:2]
-        target = max(OCR_UPSCALE_MIN_WIDTH, int(cw * OCR_UPSCALE_FACTOR))
+        _ch, cw = crop.shape[:2]
+        factor = OCR_UPSCALE_FACTOR
+        min_w = OCR_UPSCALE_MIN_WIDTH
+        if cw < 64:
+            factor = max(factor, 10.0)
+            min_w = max(min_w, 800)
+        target = max(min_w, int(cw * factor))
         if cw >= target:
             return crop
         scale = target / max(cw, 1)
@@ -228,17 +239,18 @@ class PlateOCR:
         return best, best_score, best_any_score
 
     def _readtext(self, img):
+        mag = 2.0 if min(img.shape[:2]) < 80 else 1.6
         with self._lock:
             return self._reader.readtext(
                 img,
                 allowlist=_OCR_ALLOWLIST,
                 paragraph=False,
-                min_size=6,
+                min_size=4,
                 contrast_ths=0.05,
                 adjust_contrast=0.7,
-                text_threshold=0.45,
-                low_text=0.20,
-                mag_ratio=1.5,
+                text_threshold=0.42,
+                low_text=0.18,
+                mag_ratio=mag,
                 slope_ths=0.15,
             )
 
@@ -370,6 +382,7 @@ class AsyncPlateQueue:
         if mem is not None:
             mem.last_ocr_at = now
             mem.cls_id = cls_id
+            mem.last_plate_crop = crop
 
         try:
             self._q.put_nowait((key, crop, intelligence, int(track_id), cls_id))
@@ -384,6 +397,7 @@ class AsyncPlateQueue:
                 read = self.ocr.read_crop(crop, cls_id=cls_id)
                 mem = intelligence.tracks.get(track_id)
                 if mem is not None:
+                    mem.last_plate_crop = crop
                     mem.apply_ocr_vote(read.plate, read.status, read.confidence)
                     if mem.needs_owner_lookup():
                         from plate_owner_lookup import lookup_plate_async

@@ -8,7 +8,7 @@ from collections import defaultdict
 from dataclasses import dataclass, field
 from typing import Any
 
-from geometry import assign_zones_for_box, has_calibrated_slots, usable_zones
+from geometry import assign_zones_for_box, has_calibrated_slots, usable_zones_for_frame
 
 OVERTIME_MINUTES = float(os.getenv("AI_PARKING_OVERTIME_MINUTES", "30"))
 DEBOUNCE_MINUTES = float(os.getenv("AI_PARKING_VIOLATION_DEBOUNCE_MINUTES", "10"))
@@ -98,6 +98,7 @@ class TrackMemory:
     unreadable_votes: int = 0
     last_ocr_at: float = 0.0
     last_ocr_xyxy: tuple[int, int, int, int] | None = None
+    last_plate_crop: Any = None
     cls_id: int | None = None
     sync_ocr_attempted: bool = False
     last_sync_ocr_at: float = 0.0
@@ -320,7 +321,7 @@ class ParkingIntelligence:
         vehicles: [{xyxy, track_id, class, confidence, plate?}]
         Returns: (slot_statuses, new_events, occupied_slot_ids, used_polygons)
         """
-        zones = usable_zones(zones_data)
+        zones = usable_zones_for_frame(zones_data, frame_shape)
         use_poly = has_calibrated_slots(zones_data)
         now = time.time()
         events: list[dict[str, Any]] = []

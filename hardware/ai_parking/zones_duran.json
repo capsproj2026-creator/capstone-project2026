@@ -1,81 +1,366 @@
 {
   "version": 1,
-  "calibrated": false,
-  "image_width": 0,
-  "image_height": 0,
-  "notes": "Calibrate with: python calibrate_zones.py --zones zones_duran.json  (or --image snapshot.jpg)",
+  "calibrated": true,
+  "image_width": 767,
+  "image_height": 1024,
+  "snapshot": "snapshot_duran.jpg",
+  "notes": "Duran Hall calibrated on the full snapshot_duran.jpg frame (no crop). DU-1 is nearest the camera; zebra crossing is no-parking between DU-6 and DU-7.",
   "zones": [
     {
       "id": "DU-1",
       "type": "slot",
       "label": "DU-1",
-      "points": []
+      "points": [
+        [
+          118,
+          988
+        ],
+        [
+          498,
+          1020
+        ],
+        [
+          529,
+          953
+        ],
+        [
+          156,
+          915
+        ]
+      ]
     },
     {
       "id": "DU-2",
       "type": "slot",
       "label": "DU-2",
-      "points": []
+      "points": [
+        [
+          156,
+          915
+        ],
+        [
+          529,
+          953
+        ],
+        [
+          560,
+          887
+        ],
+        [
+          194,
+          843
+        ]
+      ]
     },
     {
       "id": "DU-3",
       "type": "slot",
       "label": "DU-3",
-      "points": []
+      "points": [
+        [
+          194,
+          843
+        ],
+        [
+          560,
+          887
+        ],
+        [
+          590,
+          822
+        ],
+        [
+          230,
+          772
+        ]
+      ]
     },
     {
       "id": "DU-4",
       "type": "slot",
       "label": "DU-4",
-      "points": []
+      "points": [
+        [
+          230,
+          772
+        ],
+        [
+          590,
+          822
+        ],
+        [
+          619,
+          759
+        ],
+        [
+          266,
+          704
+        ]
+      ]
     },
     {
       "id": "DU-5",
       "type": "slot",
       "label": "DU-5",
-      "points": []
+      "points": [
+        [
+          266,
+          704
+        ],
+        [
+          619,
+          759
+        ],
+        [
+          648,
+          697
+        ],
+        [
+          302,
+          636
+        ]
+      ]
     },
     {
       "id": "DU-6",
       "type": "slot",
       "label": "DU-6",
-      "points": []
+      "points": [
+        [
+          302,
+          636
+        ],
+        [
+          648,
+          697
+        ],
+        [
+          676,
+          636
+        ],
+        [
+          336,
+          570
+        ]
+      ]
     },
     {
       "id": "DU-7",
       "type": "slot",
       "label": "DU-7",
-      "points": []
+      "points": [
+        [
+          356,
+          496
+        ],
+        [
+          686,
+          550
+        ],
+        [
+          697,
+          510
+        ],
+        [
+          393,
+          460
+        ]
+      ]
     },
     {
       "id": "DU-8",
       "type": "slot",
       "label": "DU-8",
-      "points": []
+      "points": [
+        [
+          393,
+          460
+        ],
+        [
+          697,
+          510
+        ],
+        [
+          706,
+          475
+        ],
+        [
+          424,
+          429
+        ]
+      ]
     },
     {
       "id": "DU-9",
       "type": "slot",
       "label": "DU-9",
-      "points": []
+      "points": [
+        [
+          424,
+          429
+        ],
+        [
+          706,
+          475
+        ],
+        [
+          713,
+          446
+        ],
+        [
+          451,
+          403
+        ]
+      ]
     },
     {
       "id": "DU-10",
       "type": "slot",
       "label": "DU-10",
-      "points": []
+      "points": [
+        [
+          451,
+          403
+        ],
+        [
+          713,
+          446
+        ],
+        [
+          720,
+          420
+        ],
+        [
+          475,
+          380
+        ]
+      ]
     },
     {
       "id": "no-park-1",
       "type": "no_parking",
       "label": "No Parking",
-      "points": []
+      "points": [
+        [
+          336,
+          570
+        ],
+        [
+          676,
+          636
+        ],
+        [
+          686,
+          550
+        ],
+        [
+          356,
+          496
+        ]
+      ]
     },
     {
       "id": "aisle-1",
       "type": "aisle",
       "label": "Drive Lane / Aisle",
-      "points": []
+      "points": [
+        [
+          498,
+          1020
+        ],
+        [
+          529,
+          953
+        ],
+        [
+          560,
+          887
+        ],
+        [
+          590,
+          822
+        ],
+        [
+          619,
+          759
+        ],
+        [
+          648,
+          697
+        ],
+        [
+          676,
+          636
+        ],
+        [
+          686,
+          550
+        ],
+        [
+          697,
+          510
+        ],
+        [
+          706,
+          475
+        ],
+        [
+          713,
+          446
+        ],
+        [
+          720,
+          420
+        ],
+        [
+          766,
+          420
+        ],
+        [
+          766,
+          446
+        ],
+        [
+          766,
+          475
+        ],
+        [
+          766,
+          510
+        ],
+        [
+          756,
+          550
+        ],
+        [
+          746,
+          636
+        ],
+        [
+          718,
+          697
+        ],
+        [
+          689,
+          759
+        ],
+        [
+          660,
+          822
+        ],
+        [
+          630,
+          887
+        ],
+        [
+          599,
+          953
+        ],
+        [
+          568,
+          1020
+        ]
+      ]
     }
   ]
 }

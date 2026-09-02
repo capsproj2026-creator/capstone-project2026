@@ -516,6 +516,12 @@ class AiParkingOccupancyService
 
             $status = strtolower(trim((string) ($row['plate_status'] ?? '')));
             $plate = trim((string) ($row['plate'] ?? ''));
+            if ($plate !== '' && empty($row['ocr_text'])) {
+                $row['ocr_text'] = $plate;
+            }
+            if ($plate !== '' && empty($row['plate_text'])) {
+                $row['plate_text'] = $plate;
+            }
 
             if ($status === 'unreadable' || strcasecmp($plate, 'UNREADABLE') === 0) {
                 $row['plate'] = null;
@@ -530,6 +536,8 @@ class AiParkingOccupancyService
                 $row['vehicle_details'] = null;
                 $row['department'] = null;
                 $row['registration_status'] = null;
+                $row['ocr_text'] = null;
+                $row['plate_text'] = null;
 
                 return $row;
             }

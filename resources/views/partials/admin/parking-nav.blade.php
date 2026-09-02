@@ -1,7 +1,7 @@
 @php
     $current = $active ?? '';
 @endphp
-<nav class="mb-6 flex flex-wrap gap-2 border-b border-gray-200 pb-4">
+<nav class="parking-subnav mb-6 flex flex-wrap gap-2 border-b border-gray-200 pb-4">
     <a href="{{ route('admin.parking.zone-access') }}"
        @class([
            'inline-flex items-center gap-1.5 rounded-lg px-4 py-2 text-sm font-medium transition-colors',

@@ -25,14 +25,14 @@ def load_profiles() -> dict:
         return json.load(f)
 
 
-def build_zones_template(prefix: str, capacity: int, lot_name: str) -> dict:
+def build_zones_template(prefix: str, capacity: int, lot_name: str, snapshot: str | None = None) -> dict:
     zones = []
     for i in range(1, capacity + 1):
         slot_id = f"{prefix}-{i}"
         zones.append({"id": slot_id, "type": "slot", "label": slot_id, "points": []})
     zones.append({"id": "no-park-1", "type": "no_parking", "label": "No Parking", "points": []})
     zones.append({"id": "aisle-1", "type": "aisle", "label": "Drive Lane / Aisle", "points": []})
-    return {
+    data = {
         "version": 1,
         "calibrated": False,
         "image_width": 0,
@@ -40,12 +40,16 @@ def build_zones_template(prefix: str, capacity: int, lot_name: str) -> dict:
         "notes": f"Calibrate with: python calibrate_zones.py --zones {lot_name}  (or --image snapshot.jpg)",
         "zones": zones,
     }
+    if snapshot:
+        data["snapshot"] = snapshot
+        data["notes"] = f"Calibrate with: python calibrate_zones.py --zones {lot_name}"
+    return data
 
 
 def ensure_zones_file(path: Path, lot: dict) -> None:
     if path.is_file():
         return
-    data = build_zones_template(lot["prefix"], lot["capacity"], path.name)
+    data = build_zones_template(lot["prefix"], lot["capacity"], path.name, lot.get("snapshot"))
     path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
     print(f"Created template: {path.name}")
 
@@ -85,7 +89,7 @@ def main() -> int:
                 for k in order
                 if (BASE / lots[k]["zones_file"]).is_file()
             ) else ""
-            print(f"  {key:12} area_id={lot['area_id']:2}  {lot['name'][:40]:40}  [{status}]{marker}")
+            print(f"  {key:12} area_id={lot['area_id']:2}  cam={int(lot.get('camera') or 1)}  {lot['name'][:36]:36}  [{status}]{marker}")
         if not args.lot:
             print("\nRun: python select_lot.py acad1")
         return 0
@@ -99,15 +103,17 @@ def main() -> int:
     src = BASE / lot["zones_file"]
     ensure_zones_file(src, lot)
     shutil.copy2(src, ACTIVE_ZONES)
+    cam_n = int(lot.get("camera") or 1)
     print(f"Active lot: {lot['name']} (area_id={lot['area_id']})")
     print(f"Copied {src.name} -> zones.json")
     print()
     print("Update .env:")
-    print(f"  AI_PARKING_AREA_ID={lot['area_id']}")
-    print(f"  AI_CAMERA_1_AREA_ID={lot['area_id']}")
-    print(f'  AI_CAMERA_1_NAME="{lot["name"]}"')
-    print(f'  AI_CAMERA_1_LOCATION="{lot["env_location"]}"')
-    print(f"  AI_CAMERA_1_ZONES={lot['zones_file']}")
+    if cam_n == 1:
+        print(f"  AI_PARKING_AREA_ID={lot['area_id']}")
+    print(f"  AI_CAMERA_{cam_n}_AREA_ID={lot['area_id']}")
+    print(f'  AI_CAMERA_{cam_n}_NAME="{lot["name"]}"')
+    print(f'  AI_CAMERA_{cam_n}_LOCATION="{lot["env_location"]}"')
+    print(f"  AI_CAMERA_{cam_n}_ZONES={lot['zones_file']}")
     print()
     print("Calibrate (camera at this lot):")
     snapshot = lot.get("snapshot")

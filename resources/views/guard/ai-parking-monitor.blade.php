@@ -2,6 +2,12 @@
 
 @section('title', 'AI Parking Monitor')
 
+@push('styles')
+<style>
+    #camera-expand-body img { transform-origin: center center; will-change: transform; user-select: none; }
+</style>
+@endpush
+
 @section('content')
     @include('partials.shell.page-header', [
         'title' => 'AI Parking Monitor',
@@ -126,8 +132,20 @@
                 </div>
                 <ul id="ai-detections" class="max-h-[32rem] divide-y divide-gray-100 overflow-y-auto text-sm">
                     @forelse (($primaryAi['detections'] ?? []) as $det)
+                        @php
+                            $detCam = $det['_camera'] ?? ($primaryAi['camera_id'] ?? '');
+                            $ocrText = $det['ocr_text'] ?? $det['plate_text'] ?? $det['plate'] ?? null;
+                        @endphp
                         <li class="flex items-center justify-between gap-3 px-4 py-3">
-                            <div class="min-w-0">
+                            @if (! empty($det['track_id']) && $detCam !== '')
+                                <img
+                                    src="{{ route('guard.ai-parking.plate-crop', ['camera' => $detCam, 'track' => $det['track_id']]) }}"
+                                    alt="Plate crop"
+                                    class="h-12 w-24 shrink-0 rounded border border-gray-200 bg-slate-50 object-contain"
+                                    onerror="this.classList.add('hidden')"
+                                >
+                            @endif
+                            <div class="min-w-0 flex-1">
                                 <p class="font-medium text-gray-800">
                                     @if (! empty($det['track_id']))
                                         <span class="text-xs text-gray-400">#{{ $det['track_id'] }}</span>
@@ -158,10 +176,13 @@
                                         <span class="ml-1 rounded bg-indigo-100 px-1.5 py-0.5 text-xs font-bold tracking-wide text-indigo-800">{{ $det['plate'] }}</span>
                                     @endif
                                 </p>
+                                @if (! empty($ocrText) && ($det['plate_status'] ?? '') !== 'unreadable')
+                                    <p class="mt-0.5 font-mono text-xs text-indigo-800">OCR {{ $ocrText }}</p>
+                                @endif
                                 @if (($det['plate_status'] ?? '') === 'unreadable')
                                     <p class="mt-0.5 text-xs text-slate-500">Plate Unreadable</p>
                                 @elseif (! empty($det['registered']) && ! empty($det['owner_name']))
-                                    <p class="mt-0.5 truncate text-xs text-emerald-700">{{ $det['owner_name'] }}</p>
+                                    <p class="mt-0.5 truncate text-xs text-emerald-700">Registered · {{ $det['owner_name'] }}</p>
                                 @elseif (! empty($det['plate']))
                                     <p class="mt-0.5 text-xs text-amber-700">Unknown Vehicle · Plate Not Registered</p>
                                 @else
@@ -212,16 +233,27 @@
             </div>
         </div>
 
-        {{-- Full-screen expand (same pattern as Live Cameras) --}}
+        {{-- Full-screen expand with zoom (test plate scan, not saved) --}}
         <div id="camera-expand-modal" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/80 p-2 sm:p-4" role="dialog" aria-modal="true">
             <div class="relative flex h-full w-full max-w-7xl flex-col overflow-hidden rounded-xl bg-black shadow-2xl">
-                <div class="flex shrink-0 items-center justify-between border-b border-white/10 px-4 py-3">
-                    <p id="camera-expand-title" class="font-semibold text-white">Camera</p>
-                    <button type="button" id="camera-expand-close" class="rounded-md p-1.5 text-white/80 hover:bg-white/10" aria-label="Close">
-                        <i data-lucide="x" class="h-5 w-5"></i>
-                    </button>
+                <div class="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b border-white/10 px-4 py-3">
+                    <div class="min-w-0">
+                        <p id="camera-expand-title" class="font-semibold text-white">Camera</p>
+                        <p class="text-[11px] text-white/50">Zoom to a plate, then Scan. Test only — not saved to the database.</p>
+                    </div>
+                    <div class="flex flex-wrap items-center gap-2">
+                        <button type="button" id="camera-zoom-out" class="rounded-md bg-white/10 px-2 py-1 text-sm font-bold text-white hover:bg-white/20" aria-label="Zoom out">−</button>
+                        <span id="camera-zoom-label" class="min-w-[3rem] text-center text-xs font-semibold tabular-nums text-white/80">1.0×</span>
+                        <button type="button" id="camera-zoom-in" class="rounded-md bg-white/10 px-2 py-1 text-sm font-bold text-white hover:bg-white/20" aria-label="Zoom in">+</button>
+                        <button type="button" id="camera-zoom-reset" class="rounded-md bg-white/10 px-2 py-1 text-xs font-semibold text-white hover:bg-white/20">Reset</button>
+                        <button type="button" id="camera-test-scan" class="rounded-md bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-indigo-500">Scan plate</button>
+                        <button type="button" id="camera-expand-close" class="rounded-md p-1.5 text-white/80 hover:bg-white/10" aria-label="Close">
+                            <i data-lucide="x" class="h-5 w-5"></i>
+                        </button>
+                    </div>
                 </div>
-                <div id="camera-expand-body" class="relative min-h-0 flex-1 bg-[#1a1d23]"></div>
+                <div id="camera-expand-body" class="relative min-h-0 flex-1 overflow-hidden bg-[#1a1d23]"></div>
+                <div id="camera-test-scan-panel" class="hidden shrink-0 border-t border-white/10 bg-black/80 px-4 py-3 text-sm text-white"></div>
             </div>
         </div>
     @endif
@@ -248,7 +280,14 @@
 (() => {
     const statusUrl = @json($statusUrl ?? null);
     const correctUrl = @json($correctPlateUrl ?? null);
+    const testScanUrl = @json($testScanUrl ?? null);
+    const plateCropBase = @json(url('/guard/ai-parking/plate-crop'));
     const csrf = document.querySelector('meta[name="csrf-token"]')?.content || '';
+
+    const cropUrlFor = (cam, track) => {
+        if (!plateCropBase || !cam || track == null || track === '') return '';
+        return `${plateCropBase}/${encodeURIComponent(cam)}/${encodeURIComponent(String(track))}`;
+    };
 
     const clocks = () => {
         const label = new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', second: '2-digit' });
@@ -261,11 +300,117 @@
     const modalTitle = document.getElementById('camera-expand-title');
     const modalBody = document.getElementById('camera-expand-body');
     const closeBtn = document.getElementById('camera-expand-close');
+    const zoomInBtn = document.getElementById('camera-zoom-in');
+    const zoomOutBtn = document.getElementById('camera-zoom-out');
+    const zoomResetBtn = document.getElementById('camera-zoom-reset');
+    const zoomLabel = document.getElementById('camera-zoom-label');
+    const testScanBtn = document.getElementById('camera-test-scan');
+    const testScanPanel = document.getElementById('camera-test-scan-panel');
+
+    const zoomState = {
+        cameraId: '',
+        scale: 1,
+        panX: 0,
+        panY: 0,
+        dragging: false,
+        lastX: 0,
+        lastY: 0,
+        img: null,
+    };
+
+    const applyZoom = () => {
+        if (!zoomState.img) return;
+        zoomState.img.style.transform = `translate(${zoomState.panX}px, ${zoomState.panY}px) scale(${zoomState.scale})`;
+        if (zoomLabel) zoomLabel.textContent = `${zoomState.scale.toFixed(1)}×`;
+    };
+
+    const setZoom = (next, cx = 0, cy = 0) => {
+        const prev = zoomState.scale;
+        const scale = Math.min(8, Math.max(1, next));
+        if (scale === 1) {
+            zoomState.scale = 1;
+            zoomState.panX = 0;
+            zoomState.panY = 0;
+            applyZoom();
+            return;
+        }
+        zoomState.panX = (zoomState.panX - cx) * (scale / prev) + cx;
+        zoomState.panY = (zoomState.panY - cy) * (scale / prev) + cy;
+        zoomState.scale = scale;
+        applyZoom();
+    };
+
+    const visibleView = () => {
+        if (!modalBody || !zoomState.img) return { x: 0, y: 0, w: 1, h: 1 };
+        const vr = modalBody.getBoundingClientRect();
+        const ir = zoomState.img.getBoundingClientRect();
+        const ix = Math.max(vr.left, ir.left);
+        const iy = Math.max(vr.top, ir.top);
+        const ix2 = Math.min(vr.right, ir.right);
+        const iy2 = Math.min(vr.bottom, ir.bottom);
+        if (ix2 <= ix || iy2 <= iy || ir.width < 1 || ir.height < 1) {
+            return { x: 0, y: 0, w: 1, h: 1 };
+        }
+        return {
+            x: Math.max(0, (ix - ir.left) / ir.width),
+            y: Math.max(0, (iy - ir.top) / ir.height),
+            w: Math.min(1, (ix2 - ix) / ir.width),
+            h: Math.min(1, (iy2 - iy) / ir.height),
+        };
+    };
 
     const closeModal = () => {
         modal?.classList.add('hidden');
         modal?.classList.remove('flex');
         if (modalBody) modalBody.replaceChildren();
+        zoomState.img = null;
+        zoomState.cameraId = '';
+        zoomState.scale = 1;
+        zoomState.panX = 0;
+        zoomState.panY = 0;
+        if (testScanPanel) {
+            testScanPanel.classList.add('hidden');
+            testScanPanel.replaceChildren();
+        }
+        if (zoomLabel) zoomLabel.textContent = '1.0×';
+    };
+
+    const renderScanPanel = (data) => {
+        if (!testScanPanel) return;
+        testScanPanel.classList.remove('hidden');
+        testScanPanel.replaceChildren();
+        const wrap = document.createElement('div');
+        wrap.className = 'flex items-start gap-3';
+        if (data.crop_jpeg_base64) {
+            const img = document.createElement('img');
+            img.alt = 'Plate crop';
+            img.className = 'h-16 w-28 rounded border border-white/20 bg-white object-contain';
+            img.src = `data:image/jpeg;base64,${data.crop_jpeg_base64}`;
+            wrap.append(img);
+        }
+        const text = document.createElement('div');
+        text.className = 'min-w-0';
+        const badge = document.createElement('p');
+        badge.className = 'text-[10px] font-semibold uppercase tracking-wide text-amber-300';
+        badge.textContent = 'Test scan · not saved';
+        const plate = document.createElement('p');
+        plate.className = 'mt-0.5 font-mono text-lg font-bold tracking-wide';
+        plate.textContent = data.ocr_text || data.plate || 'Plate Unreadable';
+        const owner = document.createElement('p');
+        owner.className = 'mt-0.5 text-sm';
+        if (data.registered && data.owner_name) {
+            owner.className += ' text-emerald-300';
+            owner.textContent = `Registered · ${data.owner_name}`;
+        } else if (data.ocr_text || data.plate) {
+            owner.className += ' text-amber-200';
+            owner.textContent = 'Unknown Vehicle · Plate Not Registered';
+        } else {
+            owner.className += ' text-white/60';
+            owner.textContent = data.message || 'Could not read a plate in this view.';
+        }
+        text.append(badge, plate, owner);
+        wrap.append(text);
+        testScanPanel.append(wrap);
     };
 
     document.querySelectorAll('[data-expand-camera]').forEach((btn) => {
@@ -275,15 +420,27 @@
             const card = btn.closest('article');
             const title = card?.querySelector('.font-semibold')?.textContent?.trim() || camId || 'Camera';
             const stream = tile?.querySelector('[data-stream-img]');
+            zoomState.cameraId = camId || '';
+            zoomState.scale = 1;
+            zoomState.panX = 0;
+            zoomState.panY = 0;
             if (modalTitle) modalTitle.textContent = title;
+            if (testScanPanel) {
+                testScanPanel.classList.add('hidden');
+                testScanPanel.replaceChildren();
+            }
             if (modalBody) {
                 modalBody.replaceChildren();
                 if (stream && !stream.classList.contains('hidden')) {
                     const clone = stream.cloneNode(true);
-                    clone.className = 'h-full w-full object-contain';
+                    clone.className = 'h-full w-full cursor-grab object-contain';
+                    clone.style.transformOrigin = 'center center';
                     clone.removeAttribute('loading');
                     modalBody.append(clone);
+                    zoomState.img = clone;
+                    applyZoom();
                 } else {
+                    zoomState.img = null;
                     const placeholder = document.createElement('div');
                     placeholder.className = 'flex h-full min-h-[50vh] items-center justify-center text-slate-400';
                     placeholder.textContent = 'No live stream available';
@@ -296,9 +453,85 @@
         });
     });
 
+    zoomInBtn?.addEventListener('click', () => setZoom(zoomState.scale + 0.5));
+    zoomOutBtn?.addEventListener('click', () => setZoom(zoomState.scale - 0.5));
+    zoomResetBtn?.addEventListener('click', () => setZoom(1));
+
+    modalBody?.addEventListener('wheel', (e) => {
+        if (!zoomState.img || modal?.classList.contains('hidden')) return;
+        e.preventDefault();
+        const rect = modalBody.getBoundingClientRect();
+        const cx = e.clientX - rect.left - rect.width / 2;
+        const cy = e.clientY - rect.top - rect.height / 2;
+        setZoom(zoomState.scale + (e.deltaY < 0 ? 0.35 : -0.35), cx, cy);
+    }, { passive: false });
+
+    modalBody?.addEventListener('pointerdown', (e) => {
+        if (!zoomState.img || zoomState.scale <= 1) return;
+        zoomState.dragging = true;
+        zoomState.lastX = e.clientX;
+        zoomState.lastY = e.clientY;
+        zoomState.img.classList.remove('cursor-grab');
+        zoomState.img.classList.add('cursor-grabbing');
+        modalBody.setPointerCapture?.(e.pointerId);
+    });
+    modalBody?.addEventListener('pointermove', (e) => {
+        if (!zoomState.dragging) return;
+        zoomState.panX += e.clientX - zoomState.lastX;
+        zoomState.panY += e.clientY - zoomState.lastY;
+        zoomState.lastX = e.clientX;
+        zoomState.lastY = e.clientY;
+        applyZoom();
+    });
+    const stopDrag = () => {
+        zoomState.dragging = false;
+        zoomState.img?.classList.remove('cursor-grabbing');
+        zoomState.img?.classList.add('cursor-grab');
+    };
+    modalBody?.addEventListener('pointerup', stopDrag);
+    modalBody?.addEventListener('pointercancel', stopDrag);
+
+    testScanBtn?.addEventListener('click', async () => {
+        if (!testScanUrl || !zoomState.cameraId) return;
+        testScanBtn.disabled = true;
+        testScanBtn.textContent = 'Scanning…';
+        try {
+            const response = await fetch(testScanUrl, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    Accept: 'application/json',
+                    'X-CSRF-TOKEN': csrf,
+                    'X-Requested-With': 'XMLHttpRequest',
+                },
+                credentials: 'same-origin',
+                body: JSON.stringify({
+                    camera_id: zoomState.cameraId,
+                    view: visibleView(),
+                }),
+            });
+            const data = await response.json().catch(() => ({}));
+            renderScanPanel(data);
+        } catch (err) {
+            renderScanPanel({
+                saved: false,
+                registered: false,
+                message: 'Scan failed. Is the AI parking service running?',
+            });
+        } finally {
+            testScanBtn.disabled = false;
+            testScanBtn.textContent = 'Scan plate';
+        }
+    });
+
     closeBtn?.addEventListener('click', closeModal);
     modal?.addEventListener('click', (e) => { if (e.target === modal) closeModal(); });
-    document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeModal(); });
+    document.addEventListener('keydown', (e) => {
+        if (modal?.classList.contains('hidden')) return;
+        if (e.key === 'Escape') closeModal();
+        if (e.key === '+' || e.key === '=') setZoom(zoomState.scale + 0.5);
+        if (e.key === '-' || e.key === '_') setZoom(zoomState.scale - 0.5);
+    });
 
     document.querySelectorAll('[data-stream-img]').forEach((img) => {
         img.addEventListener('error', () => {
@@ -407,8 +640,18 @@
                     allDets.forEach((det) => {
                         const li = document.createElement('li');
                         li.className = 'flex items-center justify-between gap-3 px-4 py-3';
+                        const camId = det._camera || (ai?.camera_id || '');
+                        const cropSrc = cropUrlFor(camId, det.track_id);
+                        if (cropSrc) {
+                            const crop = document.createElement('img');
+                            crop.alt = 'Plate crop';
+                            crop.className = 'h-12 w-24 shrink-0 rounded border border-gray-200 bg-slate-50 object-contain';
+                            crop.src = cropSrc;
+                            crop.addEventListener('error', () => crop.classList.add('hidden'));
+                            li.append(crop);
+                        }
                         const left = document.createElement('div');
-                        left.className = 'min-w-0';
+                        left.className = 'min-w-0 flex-1';
                         const name = document.createElement('p');
                         name.className = 'font-medium text-gray-800';
                         if (det.track_id != null) {
@@ -417,20 +660,20 @@
                             tid.textContent = `#${det.track_id} `;
                             name.append(tid);
                         }
-                            name.append(document.createTextNode(det.class || 'vehicle'));
-                            if (det.class === 'motorcycle') {
-                                const mc = document.createElement('span');
-                                mc.className = 'ml-1 rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-bold uppercase text-emerald-800';
-                                mc.textContent = 'MC';
-                                name.append(mc);
-                            }
-                            if (det._camera) {
-                                const camTag = document.createElement('span');
-                                camTag.className = 'ml-1 text-[10px] font-medium text-gray-400';
-                                camTag.textContent = `[${det._camera}]`;
-                                name.append(camTag);
-                            }
-                            const badge = motionBadge(det);
+                        name.append(document.createTextNode(det.class || 'vehicle'));
+                        if (det.class === 'motorcycle') {
+                            const mc = document.createElement('span');
+                            mc.className = 'ml-1 rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-bold uppercase text-emerald-800';
+                            mc.textContent = 'MC';
+                            name.append(mc);
+                        }
+                        if (det._camera) {
+                            const camTag = document.createElement('span');
+                            camTag.className = 'ml-1 text-[10px] font-medium text-gray-400';
+                            camTag.textContent = `[${det._camera}]`;
+                            name.append(camTag);
+                        }
+                        const badge = motionBadge(det);
                         if (badge) name.append(badge);
                         if (det.plate_status === 'unreadable') {
                             const plate = document.createElement('span');
@@ -444,6 +687,13 @@
                             name.append(plate);
                         }
                         left.append(name);
+                        const ocrShown = det.ocr_text || det.plate_text || det.plate;
+                        if (ocrShown && det.plate_status !== 'unreadable') {
+                            const ocrLine = document.createElement('p');
+                            ocrLine.className = 'mt-0.5 font-mono text-xs text-indigo-800';
+                            ocrLine.textContent = `OCR ${ocrShown}`;
+                            left.append(ocrLine);
+                        }
                         const sub = document.createElement('p');
                         sub.className = 'mt-0.5 text-xs';
                         if (det.plate_status === 'unreadable') {
@@ -451,7 +701,7 @@
                             sub.textContent = 'Plate Unreadable';
                         } else if (det.registered && det.owner_name) {
                             sub.className += ' text-emerald-700';
-                            sub.textContent = det.owner_name;
+                            sub.textContent = `Registered · ${det.owner_name}`;
                         } else if (det.plate) {
                             sub.className += ' text-amber-700';
                             sub.textContent = 'Unknown Vehicle · Plate Not Registered';
@@ -468,7 +718,7 @@
                             corr.className = 'rounded-lg border border-indigo-200 px-2 py-1 text-[11px] font-semibold text-indigo-700 hover:bg-indigo-50';
                             corr.textContent = 'Correct';
                             corr.dataset.correctPlate = '1';
-                            corr.dataset.camera = det._camera || (ai?.camera_id || '');
+                            corr.dataset.camera = camId;
                             corr.dataset.track = String(det.track_id);
                             corr.dataset.plate = det.plate || '';
                             right.append(corr);

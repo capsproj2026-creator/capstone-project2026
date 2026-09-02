@@ -347,6 +347,11 @@ class AiParkingOccupancyTest extends TestCase
         $this->assertStringNotContainsString('Your Parking', $html);
         $this->assertStringNotContainsString('No slot assigned', $html);
         $this->assertStringNotContainsString('Contact administration if you need a parking assignment', $html);
+
+        if ($user->roleName() === 'Staff') {
+            $this->assertStringContainsString('images/parking/snapshot_acad1.jpg', $html);
+            $this->assertStringContainsString('images/parking/snapshot_duran.jpg', $html);
+        }
     }
 
     public function test_occupancy_enriches_detection_with_registered_owner(): void
@@ -398,6 +403,7 @@ class AiParkingOccupancyTest extends TestCase
             $this->assertSame('Plate Owner Test', $det['owner_name']);
             $this->assertSame('Registered', $det['registration_status']);
             $this->assertSame('Plate Owner Test', $det['owner_label']);
+            $this->assertSame('ZZZ4321', $det['ocr_text']);
             $this->assertEquals($owner->id, $det['user_id']);
             $this->assertNotEmpty($det['department'] ?? $owner->department_code);
         } finally {
@@ -661,5 +667,174 @@ class AiParkingOccupancyTest extends TestCase
         $this->assertFalse((bool) $area->is_visible);
         $this->assertSame(20, (int) $area->capacity);
         $this->assertNull(ParkingArea::query()->find(19));
+    }
+
+    public function test_guard_test_scan_shows_registered_owner_without_writing_slots(): void
+    {
+        $guard = User::query()->where('email', 'guard@my.cspc.edu.ph')->first()
+            ?? User::query()->where('user_role_id', 2)->first();
+        if (! $guard) {
+            $this->markTestSkipped('Guard user not found.');
+        }
+        if (! $guard->hasVerifiedEmail()) {
+            $guard->update(['email_verified_at' => now()]);
+        }
+
+        PlateLookup::forgetIndex();
+        $owner = null;
+        $beforeSlots = ParkingSlot::query()->where('area_id', self::FIXTURE_A)->pluck('status', 'slot_number')->all();
+        $beforeViolations = ViolationLog::query()->count();
+
+        try {
+            $owner = User::query()->create([
+                'fullname' => 'Zoom Scan Owner',
+                'email' => 'zoom.scan.'.uniqid().'@my.cspc.edu.ph',
+                'password' => bcrypt('password123'),
+                'user_role_id' => 3,
+                'department_code' => 'CCS',
+                'vehicle_id' => 1,
+                'id_number' => 'ZOOM'.strtoupper(substr(uniqid(), -6)),
+                'plate_number' => 'QWE-4321',
+                'status' => User::STATUS_GRANTED,
+                'Gate_access' => User::GATE_ACCESS_GRANTED,
+                'strike_count' => 0,
+                'email_verified_at' => now(),
+                'created_at' => now(),
+            ]);
+        } catch (\Throwable $e) {
+            $this->markTestSkipped('Could not create test user: '.$e->getMessage());
+        }
+
+        Http::fake(function (\Illuminate\Http\Client\Request $request) {
+            if (str_contains($request->url(), '/test-scan')) {
+                return Http::response([
+                    'ok' => true,
+                    'saved' => false,
+                    'plate' => 'QWE4321',
+                    'ocr_text' => 'QWE4321',
+                    'plate_status' => 'ok',
+                    'ocr_confidence' => 0.93,
+                    'crop_jpeg_base64' => null,
+                ], 200);
+            }
+
+            return Http::response('offline', 503);
+        });
+
+        try {
+            $this->actingAs($guard)
+                ->postJson(route('guard.ai-parking.test-scan'), [
+                    'camera_id' => 'CAM-AI-1',
+                    'view' => ['x' => 0.2, 'y' => 0.2, 'w' => 0.4, 'h' => 0.4],
+                ])
+                ->assertOk()
+                ->assertJsonPath('saved', false)
+                ->assertJsonPath('registered', true)
+                ->assertJsonPath('owner_name', 'Zoom Scan Owner')
+                ->assertJsonPath('ocr_text', 'QWE4321')
+                ->assertJsonPath('registration_status', 'Registered');
+
+            $afterSlots = ParkingSlot::query()->where('area_id', self::FIXTURE_A)->pluck('status', 'slot_number')->all();
+            $this->assertSame($beforeSlots, $afterSlots);
+            $this->assertSame($beforeViolations, ViolationLog::query()->count());
+        } finally {
+            PlateLookup::forgetIndex();
+            if ($owner) {
+                $owner->delete();
+            }
+        }
+    }
+
+    public function test_guard_test_scan_marks_unregistered_plate_unknown(): void
+    {
+        $guard = User::query()->where('email', 'guard@my.cspc.edu.ph')->first()
+            ?? User::query()->where('user_role_id', 2)->first();
+        if (! $guard) {
+            $this->markTestSkipped('Guard user not found.');
+        }
+        if (! $guard->hasVerifiedEmail()) {
+            $guard->update(['email_verified_at' => now()]);
+        }
+
+        PlateLookup::forgetIndex();
+        $beforeSlots = ParkingSlot::query()->where('area_id', self::FIXTURE_A)->pluck('status', 'slot_number')->all();
+
+        Http::fake(function (\Illuminate\Http\Client\Request $request) {
+            if (str_contains($request->url(), '/test-scan')) {
+                return Http::response([
+                    'ok' => true,
+                    'saved' => false,
+                    'plate' => 'NOPE0001',
+                    'ocr_text' => 'NOPE0001',
+                    'plate_status' => 'ok',
+                    'ocr_confidence' => 0.81,
+                ], 200);
+            }
+
+            return Http::response('offline', 503);
+        });
+
+        $this->actingAs($guard)
+            ->postJson(route('guard.ai-parking.test-scan'), [
+                'camera_id' => 'CAM-AI-1',
+                'view' => ['x' => 0, 'y' => 0, 'w' => 1, 'h' => 1],
+            ])
+            ->assertOk()
+            ->assertJsonPath('saved', false)
+            ->assertJsonPath('registered', false)
+            ->assertJsonPath('owner_name', null)
+            ->assertJsonPath('owner_label', 'Unknown Vehicle')
+            ->assertJsonPath('registration_status', 'Plate Not Registered');
+
+        $afterSlots = ParkingSlot::query()->where('area_id', self::FIXTURE_A)->pluck('status', 'slot_number')->all();
+        $this->assertSame($beforeSlots, $afterSlots);
+    }
+
+    public function test_guard_ai_parking_monitor_includes_zoom_scan_controls(): void
+    {
+        $guard = User::query()->where('email', 'guard@my.cspc.edu.ph')->first()
+            ?? User::query()->where('user_role_id', 2)->first();
+        if (! $guard) {
+            $this->markTestSkipped('Guard user not found.');
+        }
+        if (! $guard->hasVerifiedEmail()) {
+            $guard->update(['email_verified_at' => now()]);
+        }
+
+        $html = $this->actingAs($guard)
+            ->get(route('guard.ai-parking'))
+            ->assertOk()
+            ->getContent();
+
+        $this->assertStringContainsString('Scan plate', $html);
+        $this->assertStringContainsString('not saved to the database', $html);
+        $this->assertStringContainsString('camera-zoom-in', $html);
+    }
+
+    public function test_guard_plate_crop_proxies_jpeg_without_saving(): void
+    {
+        $guard = User::query()->where('email', 'guard@my.cspc.edu.ph')->first()
+            ?? User::query()->where('user_role_id', 2)->first();
+        if (! $guard) {
+            $this->markTestSkipped('Guard user not found.');
+        }
+        if (! $guard->hasVerifiedEmail()) {
+            $guard->update(['email_verified_at' => now()]);
+        }
+
+        Http::fake(function (\Illuminate\Http\Client\Request $request) {
+            if (str_contains($request->url(), '/plate-crop/')) {
+                return Http::response('fake-jpeg', 200, ['Content-Type' => 'image/jpeg']);
+            }
+
+            return Http::response('offline', 404);
+        });
+
+        $response = $this->actingAs($guard)
+            ->get(route('guard.ai-parking.plate-crop', ['camera' => 'CAM-AI-1', 'track' => 12]))
+            ->assertOk();
+
+        $this->assertStringContainsString('image/jpeg', (string) $response->headers->get('Content-Type'));
+        $this->assertSame('fake-jpeg', $response->getContent());
     }
 }

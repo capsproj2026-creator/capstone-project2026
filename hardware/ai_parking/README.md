@@ -29,7 +29,7 @@ Configure each camera in `.env` (`AI_CAMERA_1_*` … `AI_CAMERA_3_*`).
 | Camera | Typical RTSP path | Parking area |
 |--------|-------------------|--------------|
 | CAM-AI-1 (wired Dahua) | `/cam/realmonitor?channel=1&subtype=0` | 4 ACAD 1 |
-| CAM-AI-2 (Tapo C310) | `/stream1` | mapped in `.env` (`AI_CAMERA_2_AREA_ID`) |
+| CAM-AI-2 (Tapo C310) | `/stream1` | 3 Duran Hall |
 | CAM-AI-3 (Tapo C310) | `/stream1` | mapped in `.env` (`AI_CAMERA_3_AREA_ID`) |
 
 Python starts one worker thread pair per camera (preview + YOLO). Shared model lock; RTSP reconnect is isolated. MJPEG paths:
@@ -95,17 +95,23 @@ Until calibrated, the service falls back to vehicle-count → first-N slots.
 
 Recent improvements: deskew/perspective correction, white/yellow plate localization, rotation sweep, multi-frame vote consensus, and stricter vehicle box filtering.
 
-Recommended `.env` for plate reading:
+Recommended `.env` for plate reading out to about 20 m:
 
 ```env
 AI_PARKING_OCR_ENABLED=1
 AI_PARKING_OCR_EVERY_SEC=2
 AI_PARKING_OCR_QUEUE_SIZE=8
+AI_PARKING_OCR_UPSCALE_FACTOR=8
+AI_PARKING_OCR_UPSCALE_MIN_WIDTH=720
 AI_PARKING_PLATE_VOTE_NEEDED=2
 AI_PARKING_INFER_MAX_WIDTH=2560
 AI_PARKING_IMG_SIZE=1280
 AI_PARKING_LONG_RANGE=1
+AI_PARKING_AI_STREAM_JPEG_QUALITY=90
+AI_PARKING_MONITOR_SHARPEN=1
 ```
+
+On **AI Parking Monitor**, latest detections show the cropped plate, OCR text, and **Registered · owner** or **Unknown Vehicle**. Full-screen a camera to zoom/pan, then **Scan plate** — that test read is display-only and is not saved.
 
 Optional: place a dedicated plate YOLO model at `hardware/ai_parking/models/plate.pt` for best crop quality.
 

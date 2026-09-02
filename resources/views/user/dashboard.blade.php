@@ -68,7 +68,7 @@
 
     {{-- Account overview --}}
     <section class="mb-6 overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
-        <div class="border-b border-gray-100 bg-gradient-to-r from-blue-50 via-white to-slate-50 px-5 py-5 sm:px-6">
+        <div class="account-overview-hero border-b border-gray-100 px-5 py-5 sm:px-6">
             <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
                 <div class="flex items-center gap-4">
                     <x-portal.avatar :user="$user" size="xl" class="ring-2 ring-white shadow-sm" />

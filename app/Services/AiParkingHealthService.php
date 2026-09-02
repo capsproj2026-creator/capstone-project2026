@@ -100,6 +100,25 @@ class AiParkingHealthService
         return rtrim($base, '/').'/health';
     }
 
+    /**
+     * Local Python MJPEG/OCR service origin (127.0.0.1 only).
+     */
+    public function pythonServiceBaseUrl(): ?string
+    {
+        $health = $this->serviceHealthUrl();
+        if ($health === null) {
+            return null;
+        }
+
+        $parts = parse_url($health);
+        $host = strtolower((string) ($parts['host'] ?? ''));
+        if (! in_array($host, ['127.0.0.1', 'localhost', '::1'], true)) {
+            return null;
+        }
+
+        return rtrim(str_replace('/health', '', $health), '/');
+    }
+
     public function isStreamReachable(?string $url = null): bool
     {
         // Prefer the lightweight /health JSON endpoint. Opening MJPEG with Http::get()

@@ -14,6 +14,8 @@
         $protectedAreaIds = $protectedAreaIds ?? [];
         $occupiedByArea = collect($occupiedByArea ?? []);
         $layoutService = $layoutService ?? app(\App\Services\ParkingLayoutService::class);
+        $lotSnapshots = collect(\App\Services\ParkingZoneSnapshot::fromApp()->all())->keyBy('area_id');
+        $zoneSnapshot = $selectedZone ? $lotSnapshots->get((int) $selectedZone->id) : null;
     @endphp
 
     <div class="mb-6 rounded-xl border border-gray-200 bg-white p-4 sm:p-5">
@@ -100,6 +102,9 @@
                                 @if ($isProtected)
                                     <span class="mt-1 inline-flex rounded-full bg-indigo-50 px-2 py-0.5 text-[11px] font-semibold text-indigo-700">AI monitored</span>
                                 @endif
+                                @if ($lotSnapshots->has((int) $zone->id))
+                                    <img src="{{ asset($lotSnapshots->get((int) $zone->id)['path']) }}" alt="" class="parking-zone-thumb mt-2 h-16 w-full rounded-md object-contain">
+                                @endif
                             </a>
                             @if ($isProtected)
                                 <span class="shrink-0 text-[11px] font-medium text-gray-400">Locked</span>
@@ -143,6 +148,12 @@
                     </form>
                 @endif
             </div>
+
+            @if ($zoneSnapshot)
+                <div class="border-b border-gray-100 p-4">
+                    @include('partials.parking-zone-snapshot', ['snapshot' => $zoneSnapshot])
+                </div>
+            @endif
 
             @if (! $selectedZone)
                 <p class="px-4 py-12 text-center text-sm text-gray-500">Add a parking area to manage its spaces.</p>
