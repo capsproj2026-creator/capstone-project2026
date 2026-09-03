@@ -219,32 +219,7 @@
             @include('partials.admin.settings-violations')
 
         @else
-            <form method="POST" action="{{ route('admin.settings.parking') }}" class="mb-6">
-                @csrf
-                <div class="overflow-hidden rounded-xl border border-gray-200 bg-white p-5 shadow-sm sm:p-6">
-                    <h3 class="text-lg font-semibold text-gray-900">Parking Access Rules</h3>
-                    <p class="mt-1 mb-5 text-sm text-gray-500">Rules displayed to vehicle owners in the user portal</p>
-
-                    <div class="space-y-4">
-                        @forelse ($parkingRules as $rule)
-                            <div class="min-w-0">
-                                <label class="mb-1 block text-xs font-medium uppercase tracking-wide text-gray-500">Rule #{{ $rule->id }}</label>
-                                <textarea name="descriptions[{{ $rule->id }}]" rows="3"
-                                    class="w-full resize-y rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm focus:border-blue-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20">{{ old("descriptions.{$rule->id}", $rule->description) }}</textarea>
-                            </div>
-                        @empty
-                            <p class="text-sm text-gray-500">No parking rules configured yet.</p>
-                        @endforelse
-                    </div>
-
-                    @if ($parkingRules->isNotEmpty())
-                        <button type="submit" class="mt-5 inline-flex items-center gap-2 rounded-lg bg-gray-900 px-5 py-2.5 text-sm font-semibold text-white hover:bg-black">
-                            <i data-lucide="save" class="h-4 w-4"></i>
-                            Save Access Rules
-                        </button>
-                    @endif
-                </div>
-            </form>
+            @include('partials.admin.settings-parking-rules')
 
             <div class="pb-4">
                 @include('partials.admin.zone-access-settings', ['zones' => $zones])
@@ -313,10 +288,43 @@
         btn.addEventListener('click', () => openEditViolation(btn));
     });
 
+    const parkingRuleForm = document.getElementById('parking-rule-form');
+    const parkingRuleMethod = document.getElementById('parking-rule-form-method');
+    const parkingRuleTitle = document.getElementById('parking-rule-modal-title');
+    const parkingRuleDesc = document.getElementById('parking_rule_description');
+    const parkingStoreUrl = @json(route('admin.settings.parking.store'));
+    const parkingUpdateUrlTemplate = @json(route('admin.settings.parking.update', ['id' => '__ID__']));
+
+    const openAddParkingRule = () => {
+        if (!parkingRuleForm) return;
+        parkingRuleForm.action = parkingStoreUrl;
+        if (parkingRuleMethod) parkingRuleMethod.value = 'POST';
+        if (parkingRuleTitle) parkingRuleTitle.textContent = 'Add Parking Access Rule';
+        if (parkingRuleDesc) parkingRuleDesc.value = '';
+        openModal('parking-rule-modal');
+        parkingRuleDesc?.focus();
+    };
+
+    const openEditParkingRule = (btn) => {
+        if (!parkingRuleForm) return;
+        const id = btn.getAttribute('data-id');
+        parkingRuleForm.action = parkingUpdateUrlTemplate.replace('__ID__', encodeURIComponent(id));
+        if (parkingRuleMethod) parkingRuleMethod.value = 'PUT';
+        if (parkingRuleTitle) parkingRuleTitle.textContent = 'Edit Parking Access Rule';
+        if (parkingRuleDesc) parkingRuleDesc.value = btn.getAttribute('data-description') || '';
+        openModal('parking-rule-modal');
+        parkingRuleDesc?.focus();
+    };
+
+    document.getElementById('open-add-parking-rule')?.addEventListener('click', openAddParkingRule);
+    document.querySelectorAll('[data-edit-parking-rule]').forEach((btn) => {
+        btn.addEventListener('click', () => openEditParkingRule(btn));
+    });
+
     document.querySelectorAll('[data-close-modal]').forEach((btn) => {
         btn.addEventListener('click', () => closeModal(btn.getAttribute('data-close-modal')));
     });
-    ['create-admin-modal', 'create-guard-modal', 'violation-type-modal'].forEach((id) => {
+    ['create-admin-modal', 'create-guard-modal', 'violation-type-modal', 'parking-rule-modal'].forEach((id) => {
         document.getElementById(id)?.addEventListener('click', (e) => {
             if (e.target.id === id) closeModal(id);
         });
@@ -326,6 +334,7 @@
             closeModal('create-admin-modal');
             closeModal('create-guard-modal');
             closeModal('violation-type-modal');
+            closeModal('parking-rule-modal');
         }
     });
 })();

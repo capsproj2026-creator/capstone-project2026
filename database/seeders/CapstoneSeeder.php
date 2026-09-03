@@ -137,7 +137,10 @@ class CapstoneSeeder extends Seeder
         ];
 
         foreach ($rules as $index => $description) {
-            ParkingRule::query()->updateOrCreate(['id' => $index + 1], ['description' => $description]);
+            ParkingRule::query()->updateOrCreate(
+                ['id' => $index + 1],
+                ['description' => $description, 'status' => 'Active']
+            );
         }
     }
 

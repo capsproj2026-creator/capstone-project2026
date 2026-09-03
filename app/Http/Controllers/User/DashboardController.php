@@ -19,7 +19,11 @@ class DashboardController extends Controller
             $stats->userStats($user),
             [
                 'user' => $user,
-                'parkingRules' => ParkingRule::query()->orderBy('id')->get(),
+                'parkingRules' => ParkingRule::query()
+                    ->orderBy('id')
+                    ->get()
+                    ->filter(fn (ParkingRule $rule) => $rule->isActive())
+                    ->values(),
                 'generalInfo' => GeneralInformation::query()->orderBy('id')->get(),
             ]
         ));

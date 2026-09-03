@@ -43,6 +43,8 @@ class AdminDashboardUiTest extends TestCase
             ->assertSee('Registrations')
             ->assertSee('RFID Assignment')
             ->assertSee('User Management')
+            ->assertDontSee('Add New User')
+            ->assertDontSee('Log Violation')
             ->assertSee('Generate Report')
             ->assertSee('View Parking Map')
             ->assertSee('3-Strike System');

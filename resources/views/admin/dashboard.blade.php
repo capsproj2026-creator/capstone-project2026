@@ -218,18 +218,25 @@
             <h3 class="portal-heading mb-4 text-base font-semibold">Quick Actions</h3>
             <div class="space-y-3">
                 <a
-                    href="{{ route('admin.users') }}"
+                    href="{{ route('admin.registrations') }}"
                     class="portal-btn-gradient flex items-center justify-center gap-2 rounded-xl px-4 py-3.5 text-sm font-semibold"
                 >
                     <i data-lucide="user-plus" class="h-4 w-4"></i>
-                    Add New User
+                    Registrations
                 </a>
                 <a
-                    href="{{ route('admin.violations') }}"
+                    href="{{ route('admin.rfid') }}"
                     class="portal-btn-gradient flex items-center justify-center gap-2 rounded-xl px-4 py-3.5 text-sm font-semibold"
                 >
-                    <i data-lucide="triangle-alert" class="h-4 w-4"></i>
-                    Log Violation
+                    <i data-lucide="hash" class="h-4 w-4"></i>
+                    RFID Assignment
+                </a>
+                <a
+                    href="{{ route('admin.users') }}"
+                    class="portal-btn-gradient flex items-center justify-center gap-2 rounded-xl px-4 py-3.5 text-sm font-semibold"
+                >
+                    <i data-lucide="users" class="h-4 w-4"></i>
+                    User Management
                 </a>
                 <a
                     href="{{ route('admin.reports') }}"

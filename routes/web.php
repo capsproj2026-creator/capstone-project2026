@@ -167,9 +167,18 @@ Route::prefix('admin')->middleware(['auth', 'verified', 'granted', 'no.cache', '
     Route::delete('/settings/staff/{id}', [SettingsController::class, 'destroyStaffUser'])
         ->middleware('permission:manage_admins')
         ->name('settings.staff.destroy');
-    Route::post('/settings/parking', [SettingsController::class, 'updateParking'])
+    Route::post('/settings/parking/add', [SettingsController::class, 'storeParkingRule'])
         ->middleware('permission:system_settings')
-        ->name('settings.parking');
+        ->name('settings.parking.store');
+    Route::put('/settings/parking/{id}', [SettingsController::class, 'updateParkingRule'])
+        ->middleware('permission:system_settings')
+        ->name('settings.parking.update');
+    Route::post('/settings/parking/{id}/toggle', [SettingsController::class, 'toggleParkingRule'])
+        ->middleware('permission:system_settings')
+        ->name('settings.parking.toggle');
+    Route::delete('/settings/parking/{id}', [SettingsController::class, 'destroyParkingRule'])
+        ->middleware('permission:system_settings')
+        ->name('settings.parking.destroy');
     Route::post('/settings/violations/add', [SettingsController::class, 'storeViolationType'])
         ->middleware('permission:system_settings')
         ->name('settings.violations.store');

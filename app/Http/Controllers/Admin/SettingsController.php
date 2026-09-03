@@ -198,24 +198,61 @@ class SettingsController extends Controller
             ->with('success', 'User removed.');
     }
 
-    public function updateParking(Request $request): RedirectResponse
+    public function storeParkingRule(Request $request): RedirectResponse
     {
         $validated = $request->validate([
-            'descriptions' => ['required', 'array'],
-            'descriptions.*' => ['required', 'string', 'max:2000'],
+            'description' => ['required', 'string', 'max:2000'],
         ]);
 
-        foreach ($validated['descriptions'] as $id => $description) {
-            if (! is_numeric($id)) {
-                continue;
-            }
+        ParkingRule::query()->create([
+            'id' => SequenceService::next('parking_rules'),
+            'description' => $validated['description'],
+            'status' => 'Active',
+        ]);
 
-            ParkingRule::query()
-                ->where('id', (int) $id)
-                ->update(['description' => $description]);
-        }
+        return redirect()
+            ->route('admin.settings', ['section' => 'access'])
+            ->with('success', 'Parking access rule added.');
+    }
 
-        return back()->with('success', 'Access rules updated.');
+    public function updateParkingRule(Request $request, int $id): RedirectResponse
+    {
+        $rule = ParkingRule::query()->where('id', $id)->firstOrFail();
+
+        $validated = $request->validate([
+            'description' => ['required', 'string', 'max:2000'],
+        ]);
+
+        $rule->update([
+            'description' => $validated['description'],
+        ]);
+
+        return redirect()
+            ->route('admin.settings', ['section' => 'access'])
+            ->with('success', 'Parking access rule updated.');
+    }
+
+    public function toggleParkingRule(int $id): RedirectResponse
+    {
+        $rule = ParkingRule::query()->where('id', $id)->firstOrFail();
+
+        $rule->update([
+            'status' => $rule->isActive() ? 'Inactive' : 'Active',
+        ]);
+
+        return redirect()
+            ->route('admin.settings', ['section' => 'access'])
+            ->with('success', 'Parking access rule status updated.');
+    }
+
+    public function destroyParkingRule(int $id): RedirectResponse
+    {
+        $rule = ParkingRule::query()->where('id', $id)->firstOrFail();
+        $rule->delete();
+
+        return redirect()
+            ->route('admin.settings', ['section' => 'access'])
+            ->with('success', 'Parking access rule deleted.');
     }
 
     public function storeViolationType(Request $request): RedirectResponse
