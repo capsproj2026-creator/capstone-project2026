@@ -37,6 +37,7 @@ class AccessLogsUiTest extends TestCase
             ->assertSee('Exits Granted')
             ->assertSee('Access Denied')
             ->assertSee('Search by name, Student/Faculty, RFID, or gate...')
+            ->assertSee('id="access-logs-filter-form"', false)
             ->assertSee('All Types')
             ->assertSee('All Directions')
             ->assertSee('All Results')
@@ -105,6 +106,24 @@ class AccessLogsUiTest extends TestCase
         $this->actingAs($guard)
             ->get(route('guard.access-logs'))
             ->assertOk()
-            ->assertSee('Access Logs');
+            ->assertSee('Access Logs')
+            ->assertSee('id="access-logs-filter-form"', false)
+            ->assertSee(route('guard.access-logs'), false);
+    }
+
+    public function test_guard_access_logs_search_query_reloads_filtered_page(): void
+    {
+        $guard = User::query()->where('email', 'guard@my.cspc.edu.ph')->first()
+            ?? User::query()->where('user_role_id', 2)->first();
+
+        if (! $guard) {
+            $this->markTestSkipped('No guard user found.');
+        }
+
+        $this->actingAs($guard)
+            ->get(route('guard.access-logs', ['q' => 'GATE']))
+            ->assertOk()
+            ->assertSee('name="q"', false)
+            ->assertSee('value="GATE"', false);
     }
 }

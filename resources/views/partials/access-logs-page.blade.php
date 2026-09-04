@@ -46,8 +46,13 @@
     </div>
 </div>
 
-{{-- Search / filters --}}
-<form method="GET" class="mb-6 flex flex-col gap-3 lg:flex-row lg:items-center">
+{{-- Search / filters (native GET so Search always works even if AJAX fails) --}}
+<form
+    id="access-logs-filter-form"
+    method="GET"
+    action="{{ $clearRoute }}"
+    class="mb-6 flex flex-col gap-3 lg:flex-row lg:items-center"
+>
     <div class="relative min-w-0 flex-1">
         <i data-lucide="search" class="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400"></i>
         <input
@@ -248,7 +253,7 @@
         let busy = false;
         let searchTimer = null;
         let requestId = 0;
-        const form = document.querySelector('form[method="GET"]');
+        const form = document.getElementById('access-logs-filter-form');
         const searchInput = form?.querySelector('input[name="q"]');
 
         const esc = (value) => String(value ?? '')
@@ -276,13 +281,22 @@
             : `<span class="inline-flex items-center gap-1.5 font-medium text-purple-600"><i data-lucide="log-out" class="h-4 w-4"></i> ${esc(action || '—')}</span>`;
 
         const currentParams = () => {
-            const params = new URLSearchParams(new FormData(form));
-            [...params.entries()].forEach(([key, value]) => {
-                if (String(value).trim() === '') {
-                    params.delete(key);
+            const params = new URLSearchParams();
+            if (!form) return params;
+            new FormData(form).forEach((value, key) => {
+                const trimmed = String(value).trim();
+                if (trimmed !== '') {
+                    params.append(key, trimmed);
                 }
             });
             return params;
+        };
+
+        const navigateWithFilters = () => {
+            if (!form) return;
+            const params = currentParams();
+            const query = params.toString();
+            window.location.assign(query ? `${clearRoute}?${query}` : clearRoute);
         };
 
         const renderLogs = (logs) => {
@@ -362,9 +376,9 @@
             }
         };
 
-        const fetchResults = async ({ force = false } = {}) => {
-            if (!form) return;
-            if (busy && !force) return;
+        const fetchResults = async ({ force = false, fallbackNavigate = false } = {}) => {
+            if (!form) return false;
+            if (busy && !force) return false;
 
             const params = currentParams();
             const queryKey = params.toString();
@@ -376,8 +390,11 @@
                     headers: { Accept: 'application/json' },
                     cache: 'no-store',
                 });
-                if (!response.ok) return;
-                if (thisRequest !== requestId) return;
+                if (!response.ok) {
+                    if (fallbackNavigate) navigateWithFilters();
+                    return false;
+                }
+                if (thisRequest !== requestId) return false;
 
                 const data = await response.json();
                 lastId = data.newest_id || lastId;
@@ -387,8 +404,10 @@
 
                 const nextUrl = queryKey ? `${clearRoute}?${queryKey}` : clearRoute;
                 window.history.replaceState({}, '', nextUrl);
+                return true;
             } catch (e) {
-                // keep UI usable
+                if (fallbackNavigate) navigateWithFilters();
+                return false;
             } finally {
                 if (thisRequest === requestId) {
                     busy = false;
@@ -402,17 +421,19 @@
         };
 
         if (form) {
+            // Debounced typing / filter selects still use AJAX when available.
             if (searchInput) {
                 searchInput.addEventListener('input', scheduleSearch);
             }
             form.querySelectorAll('select[name="type"], select[name="direction"], select[name="result"]').forEach((select) => {
                 select.removeAttribute('onchange');
-                select.addEventListener('change', () => fetchResults({ force: true }));
+                select.addEventListener('change', () => fetchResults({ force: true, fallbackNavigate: true }));
             });
+            // Search button: always do a real GET so results persist and never go dead on AJAX errors.
             form.addEventListener('submit', (event) => {
                 event.preventDefault();
                 window.clearTimeout(searchTimer);
-                fetchResults({ force: true });
+                navigateWithFilters();
             });
         }
 
