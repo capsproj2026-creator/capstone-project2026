@@ -295,6 +295,38 @@ class SettingsController extends Controller
             ->with('success', 'Parking access rule status updated.');
     }
 
+    public function saveParkingRules(Request $request): RedirectResponse
+    {
+        $validated = $request->validate([
+            'active' => ['nullable', 'array'],
+            'active.*' => ['integer'],
+        ]);
+
+        $activeIds = collect($validated['active'] ?? [])
+            ->map(fn ($id) => (int) $id)
+            ->unique()
+            ->values()
+            ->all();
+
+        ParkingRule::query()
+            ->orderBy('id')
+            ->get()
+            ->each(function (ParkingRule $rule) use ($activeIds): void {
+                $shouldBeActive = in_array((int) $rule->id, $activeIds, true);
+                $nextStatus = $shouldBeActive ? 'Active' : 'Inactive';
+
+                if (($rule->isActive() && $shouldBeActive) || (! $rule->isActive() && ! $shouldBeActive)) {
+                    return;
+                }
+
+                $rule->update(['status' => $nextStatus]);
+            });
+
+        return redirect()
+            ->route('admin.settings', ['section' => 'access'])
+            ->with('success', 'Parking access rules saved.');
+    }
+
     public function destroyParkingRule(int $id): RedirectResponse
     {
         $rule = ParkingRule::query()->where('id', $id)->firstOrFail();

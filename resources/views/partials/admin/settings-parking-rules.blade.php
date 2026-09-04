@@ -4,17 +4,33 @@
             <h3 class="text-lg font-semibold text-gray-900">Parking Access Rules</h3>
             <p class="mt-1 text-sm text-gray-500">Rules shown to vehicle owners in the user portal. Disable a rule to hide it without deleting.</p>
         </div>
-        <button
-            type="button"
-            id="open-add-parking-rule"
-            class="inline-flex shrink-0 items-center justify-center gap-2 rounded-lg bg-gray-900 px-4 py-2.5 text-sm font-semibold text-white hover:bg-black"
-        >
-            <i data-lucide="plus" class="h-4 w-4"></i>
-            Add Rule
-        </button>
+        <div class="flex flex-wrap items-center gap-2">
+            <button
+                type="button"
+                id="open-add-parking-rule"
+                class="inline-flex shrink-0 items-center justify-center gap-2 rounded-lg border border-gray-200 bg-white px-4 py-2.5 text-sm font-semibold text-gray-800 hover:bg-gray-50"
+            >
+                <i data-lucide="plus" class="h-4 w-4"></i>
+                Add Rule
+            </button>
+            <button
+                type="submit"
+                form="parking-rules-save-form"
+                class="inline-flex shrink-0 items-center justify-center gap-2 rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-blue-700"
+            >
+                <i data-lucide="save" class="h-4 w-4"></i>
+                Save
+            </button>
+        </div>
     </div>
 
-    <div class="space-y-3">
+    <form
+        id="parking-rules-save-form"
+        method="POST"
+        action="{{ route('admin.settings.parking.save') }}"
+        class="space-y-3"
+    >
+        @csrf
         @forelse ($parkingRules as $rule)
             @php
                 $isActive = $rule->isActive();
@@ -34,19 +50,17 @@
                 </div>
 
                 <div class="flex shrink-0 items-center gap-2 sm:gap-3">
-                    <form method="POST" action="{{ route('admin.settings.parking.toggle', $rule->id) }}" class="inline-flex">
-                        @csrf
-                        <label class="relative inline-flex h-6 w-11 cursor-pointer items-center" title="{{ $isActive ? 'Enabled' : 'Disabled' }}">
-                            <input
-                                type="checkbox"
-                                class="peer sr-only"
-                                @checked($isActive)
-                                onchange="this.form.submit()"
-                            >
-                            <span class="absolute inset-0 rounded-full bg-gray-300 transition peer-checked:bg-green-500 peer-focus:ring-2 peer-focus:ring-green-500/30"></span>
-                            <span class="absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white shadow transition peer-checked:translate-x-5"></span>
-                        </label>
-                    </form>
+                    <label class="relative inline-flex h-6 w-11 cursor-pointer items-center" title="{{ $isActive ? 'Enabled' : 'Disabled' }}">
+                        <input
+                            type="checkbox"
+                            name="active[]"
+                            value="{{ $rule->id }}"
+                            class="peer sr-only"
+                            @checked($isActive)
+                        >
+                        <span class="absolute inset-0 rounded-full bg-gray-300 transition peer-checked:bg-green-500 peer-focus:ring-2 peer-focus:ring-green-500/30"></span>
+                        <span class="absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white shadow transition peer-checked:translate-x-5"></span>
+                    </label>
 
                     <button
                         type="button"
@@ -58,21 +72,15 @@
                         Edit
                     </button>
 
-                    <form
-                        method="POST"
-                        action="{{ route('admin.settings.parking.destroy', $rule->id) }}"
-                        onsubmit="return confirm('Delete this parking access rule? This cannot be undone.')"
+                    <button
+                        type="submit"
+                        form="parking-rule-delete-{{ $rule->id }}"
+                        class="rounded-lg border border-gray-200 bg-white p-2 text-gray-500 hover:border-red-200 hover:bg-red-50 hover:text-red-600"
+                        title="Delete"
+                        onclick="return confirm('Delete this parking access rule? This cannot be undone.')"
                     >
-                        @csrf
-                        @method('DELETE')
-                        <button
-                            type="submit"
-                            class="rounded-lg border border-gray-200 bg-white p-2 text-gray-500 hover:border-red-200 hover:bg-red-50 hover:text-red-600"
-                            title="Delete"
-                        >
-                            <i data-lucide="trash-2" class="h-4 w-4"></i>
-                        </button>
-                    </form>
+                        <i data-lucide="trash-2" class="h-4 w-4"></i>
+                    </button>
                 </div>
             </div>
         @empty
@@ -80,7 +88,19 @@
                 No parking rules yet. Use Add Rule to create one.
             </p>
         @endforelse
-    </div>
+    </form>
+
+    @foreach ($parkingRules as $rule)
+        <form
+            id="parking-rule-delete-{{ $rule->id }}"
+            method="POST"
+            action="{{ route('admin.settings.parking.destroy', $rule->id) }}"
+            class="hidden"
+        >
+            @csrf
+            @method('DELETE')
+        </form>
+    @endforeach
 </div>
 
 {{-- Add / Edit Parking Rule Modal --}}

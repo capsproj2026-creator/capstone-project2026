@@ -170,6 +170,9 @@ Route::prefix('admin')->middleware(['auth', 'verified', 'granted', 'no.cache', '
     Route::post('/settings/parking/add', [SettingsController::class, 'storeParkingRule'])
         ->middleware('permission:system_settings')
         ->name('settings.parking.store');
+    Route::post('/settings/parking/save', [SettingsController::class, 'saveParkingRules'])
+        ->middleware('permission:system_settings')
+        ->name('settings.parking.save');
     Route::put('/settings/parking/{id}', [SettingsController::class, 'updateParkingRule'])
         ->middleware('permission:system_settings')
         ->name('settings.parking.update');
