@@ -50,44 +50,42 @@
     {{-- Camera grid --}}
     <div class="grid grid-cols-1 gap-5 md:grid-cols-2 xl:grid-cols-3">
         @foreach ($cameras as $camera)
-            @php($isOnline = ! empty($camera['online']))
-            <article class="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
-                <div class="relative aspect-video bg-[#1a1d23]" data-camera-tile="{{ $camera['id'] }}">
+            @php
+                $isOnline = ! empty($camera['online']);
+                $hasStream = ! empty($camera['stream_url']);
+            @endphp
+            <article class="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm" data-camera-card>
+                <div class="relative aspect-video bg-[#1a1d23]" data-camera-tile="{{ $camera['id'] }}" data-online="{{ $isOnline ? '1' : '0' }}">
                     {{-- Timestamp --}}
                     <span class="camera-clock absolute left-3 top-3 z-10 rounded bg-black/45 px-2 py-0.5 text-xs font-medium text-white tabular-nums">
                         {{ ph_now()->format('g:i:s A') }}
                     </span>
 
                     {{-- Status badge --}}
-                    <span @class([
-                        'absolute right-3 top-3 z-10 rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wide',
-                        'bg-emerald-500 text-white' => $isOnline,
-                        'bg-red-500 text-white' => ! $isOnline,
-                    ])>
+                    <span
+                        data-status-badge
+                        @class([
+                            'absolute right-3 top-3 z-10 rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wide',
+                            'bg-emerald-500 text-white' => $isOnline,
+                            'bg-red-500 text-white' => ! $isOnline,
+                        ])
+                    >
                         {{ $isOnline ? 'Online' : 'Offline' }}
                     </span>
 
-                    @if (! empty($camera['stream_url']) && $isOnline)
+                    @if ($hasStream)
                         <img
                             src="{{ $camera['stream_url'] }}"
                             alt="{{ $camera['name'] }}"
-                            class="absolute inset-0 h-full w-full object-cover"
+                            class="absolute inset-0 h-full w-full object-cover {{ $isOnline ? '' : 'hidden' }}"
                             data-stream-img
-                            onload="this.closest('[data-camera-tile]').querySelector('[data-stream-fallback]')?.classList.add('hidden')"
-                            onerror="this.classList.add('hidden'); const fb=this.closest('[data-camera-tile]')?.querySelector('[data-stream-fallback]'); if(fb){ fb.classList.remove('hidden'); fb.querySelector('p').textContent='Stream offline'; }"
                         >
-                        <div data-stream-fallback class="hidden absolute inset-0 flex flex-col items-center justify-center gap-2 text-slate-400">
-                            <i data-lucide="camera" class="h-10 w-10 opacity-70"></i>
-                            <p class="text-sm font-medium text-slate-300">Connecting…</p>
-                        </div>
-                    @elseif ($isOnline)
-                        <div class="absolute inset-0 flex flex-col items-center justify-center gap-2 text-slate-400">
-                            <i data-lucide="camera" class="h-10 w-10 opacity-70"></i>
-                            <p class="text-sm font-medium text-slate-300">Live Feed Active</p>
-                            <span class="inline-flex items-center gap-1.5 text-xs font-semibold text-red-400">
-                                <span class="h-2 w-2 animate-pulse rounded-full bg-red-500"></span>
-                                LIVE
-                            </span>
+                        <div data-stream-fallback @class([
+                            'absolute inset-0 flex flex-col items-center justify-center gap-2 text-slate-400',
+                            'hidden' => $isOnline,
+                        ])>
+                            <i data-lucide="video-off" class="h-10 w-10 opacity-70"></i>
+                            <p class="text-sm font-medium text-slate-300">{{ $isOnline ? 'Connecting…' : 'Camera Offline' }}</p>
                         </div>
                     @else
                         <div class="absolute inset-0 flex flex-col items-center justify-center gap-2 text-slate-500">
@@ -116,9 +114,11 @@
                                 <span class="truncate">{{ $camera['location'] ?? $camera['subtitle'] ?? 'Campus' }}</span>
                             </p>
                         </div>
-                        @if ($isOnline)
-                            <span class="shrink-0 rounded bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-emerald-700">Live</span>
-                        @endif
+                        <span data-live-chip @class([
+                            'shrink-0 rounded px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide',
+                            'bg-emerald-50 text-emerald-700' => $isOnline,
+                            'bg-red-50 text-red-700' => ! $isOnline,
+                        ])>{{ $isOnline ? 'Live' : 'Offline' }}</span>
                     </div>
                     @if (! empty($camera['parking_url']))
                         <a href="{{ $camera['parking_url'] }}" class="mt-2 inline-block text-xs font-medium text-blue-600 hover:underline">
@@ -219,9 +219,50 @@
 
         if (window.lucide) window.lucide.createIcons();
 
+        const setCameraOnline = (tile, online) => {
+            if (!tile) return;
+            tile.dataset.online = online ? '1' : '0';
+            const badge = tile.querySelector('[data-status-badge]');
+            if (badge) {
+                badge.textContent = online ? 'Online' : 'Offline';
+                badge.className = 'absolute right-3 top-3 z-10 rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wide '
+                    + (online ? 'bg-emerald-500 text-white' : 'bg-red-500 text-white');
+            }
+            const chip = tile.closest('[data-camera-card]')?.querySelector('[data-live-chip]');
+            if (chip) {
+                chip.textContent = online ? 'Live' : 'Offline';
+                chip.className = 'shrink-0 rounded px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide '
+                    + (online ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-700');
+            }
+            const fb = tile.querySelector('[data-stream-fallback]');
+            const img = tile.querySelector('[data-stream-img]');
+            if (online) {
+                img?.classList.remove('hidden');
+                fb?.classList.add('hidden');
+            } else {
+                img?.classList.add('hidden');
+                if (fb) {
+                    fb.classList.remove('hidden');
+                    const label = fb.querySelector('p');
+                    if (label) label.textContent = 'Camera Offline';
+                }
+            }
+            const refreshCounts = () => {
+                const tiles = document.querySelectorAll('[data-camera-tile]');
+                let onlineCount = 0;
+                tiles.forEach((t) => { if (t.dataset.online === '1') onlineCount += 1; });
+                const onlineEl = document.getElementById('cam-online-count');
+                const offlineEl = document.getElementById('cam-offline-count');
+                if (onlineEl) onlineEl.textContent = String(onlineCount);
+                if (offlineEl) offlineEl.textContent = String(Math.max(0, tiles.length - onlineCount));
+            };
+            refreshCounts();
+        };
+
         document.querySelectorAll('[data-stream-img]').forEach((img) => {
             const base = img.getAttribute('src');
             if (!base) return;
+            const tile = img.closest('[data-camera-tile]');
             let retryTimer = null;
             const reload = () => {
                 const url = new URL(base, window.location.origin);
@@ -229,13 +270,19 @@
                 img.classList.remove('hidden');
                 img.src = url.toString();
             };
+            img.addEventListener('load', () => setCameraOnline(tile, true));
             img.addEventListener('error', () => {
+                setCameraOnline(tile, false);
                 if (retryTimer) return;
                 retryTimer = window.setTimeout(() => {
                     retryTimer = null;
                     reload();
                 }, 5000);
             });
+            // Attempt stream even when initially marked offline (URL configured).
+            if (tile?.dataset.online !== '1') {
+                reload();
+            }
         });
     })();
 </script>

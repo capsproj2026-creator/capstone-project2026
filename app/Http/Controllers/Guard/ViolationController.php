@@ -123,6 +123,11 @@ class ViolationController extends Controller
 
         $message = "Your vehicle ({$validated['plate_number']}) has been cited. Total strikes: {$newStrikes}/".User::MAX_STRIKES.'.';
 
+        $sanction = \App\Support\ViolationSanctionPresenter::labelForStrike($newStrikes);
+        if ($sanction) {
+            $message .= ' '.$sanction.'.';
+        }
+
         if ($autoLock && $newStrikes >= User::MAX_STRIKES) {
             $message .= ' Your account has been permanently locked.';
         }
@@ -176,6 +181,7 @@ class ViolationController extends Controller
             reportedBy: $guardName ?: 'Campus Security',
             evidencePaths: $log->evidencePaths(),
             remarks: filled($description) ? trim((string) $description) : null,
+            strikeCount: (int) ($user->strike_count ?? 0),
         ));
     }
 

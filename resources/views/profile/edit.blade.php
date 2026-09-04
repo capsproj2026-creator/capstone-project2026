@@ -5,7 +5,9 @@
 @section('content')
     @include('partials.shell.page-header', [
         'title' => 'Account Settings',
-        'subtitle' => 'Update your profile, vehicles, and password',
+        'subtitle' => ($canManageVehicles ?? false)
+            ? 'Update your profile, vehicles, and password'
+            : 'Update your profile and password',
     ])
 
     @if (session('success'))
@@ -30,7 +32,7 @@
         </div>
     @endif
 
-    <div class="mx-auto max-w-5xl space-y-6">
+    <div class="mx-auto w-full max-w-none space-y-6">
         <div class="rounded-xl border border-gray-200 bg-white p-6">
             <div class="flex flex-col gap-5 sm:flex-row sm:items-center">
                 <x-portal.avatar :user="$user" size="xl" />
@@ -108,7 +110,8 @@
             </div>
         </div>
 
-        {{-- Vehicles --}}
+        {{-- Vehicles (students/staff only) --}}
+        @if ($canManageVehicles ?? false)
         <div class="rounded-xl border border-gray-200 bg-white p-6">
             <div class="mb-5">
                 <h3 class="flex items-center gap-2 text-base font-semibold text-gray-900">
@@ -221,5 +224,6 @@
                 </form>
             </div>
         </div>
+        @endif
     </div>
 @endsection

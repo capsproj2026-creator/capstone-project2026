@@ -312,7 +312,7 @@
             ...baseOptions,
             plugins: {
                 ...baseOptions.plugins,
-                legend: { display: true, position: 'bottom', labels: { boxWidth: 12, color: legendColor() } } },
+                legend: { display: true, position: 'bottom', labels: { boxWidth: 12, color: legendColor() } },
             },
             scales: {
                 ...baseOptions.scales,
@@ -433,7 +433,7 @@
             ...baseOptions,
             plugins: {
                 ...baseOptions.plugins,
-                legend: { display: true, position: 'bottom', labels: { boxWidth: 12, color: legendColor() } } },
+                legend: { display: true, position: 'bottom', labels: { boxWidth: 12, color: legendColor() } },
             },
         },
     });

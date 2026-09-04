@@ -49,6 +49,11 @@
                         <i data-lucide="eye-off" class="h-3.5 w-3.5"></i>
                         Hide all
                     </button>
+                    <button type="submit" form="zone-access-form"
+                        class="inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-4 py-2 text-xs font-semibold text-white shadow-sm hover:bg-blue-700">
+                        <i data-lucide="save" class="h-3.5 w-3.5"></i>
+                        Save Zone Access
+                    </button>
                 </div>
             @endif
         </div>
@@ -64,6 +69,14 @@
     @else
         <form method="POST" action="{{ route('admin.parking.areas.update') }}" id="zone-access-form">
             @csrf
+            <div class="sticky top-0 z-10 flex items-center justify-between gap-3 border-b border-blue-100 bg-white/95 px-4 py-3 backdrop-blur sm:px-5">
+                <p class="text-sm text-gray-600">Edit zone visibility and roles, then save.</p>
+                <button type="submit"
+                    class="inline-flex shrink-0 items-center justify-center gap-2 rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-blue-700">
+                    <i data-lucide="save" class="h-4 w-4"></i>
+                    Save Zone Access
+                </button>
+            </div>
             <div class="grid gap-4 p-4 sm:p-5 lg:grid-cols-2">
                 @foreach ($zones as $zone)
                     @php

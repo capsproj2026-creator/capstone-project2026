@@ -670,9 +670,7 @@
     html.dark .portal-card {
         border-color: var(--portal-border);
         background: var(--portal-surface);
-        box-shadow:
-            0 0 0 1px rgba(255, 255, 255, 0.03),
-            0 8px 32px -12px rgba(0, 0, 0, 0.45);
+        box-shadow: 0 8px 32px -12px rgba(0, 0, 0, 0.45);
     }
 
     html.dark .portal-card:hover {
@@ -877,7 +875,11 @@
     }
 
     html.dark .shadow-sm {
-        box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.04), 0 4px 24px -6px rgba(0, 0, 0, 0.5) !important;
+        box-shadow: 0 4px 24px -6px rgba(0, 0, 0, 0.5) !important;
+    }
+
+    html.dark .portal-card {
+        box-shadow: none !important;
     }
 
     html.dark input:not([type='checkbox']):not([type='radio']),
@@ -1022,6 +1024,19 @@
     html.dark table thead {
         background-color: rgba(23, 29, 40, 0.95) !important;
         color: var(--portal-text-muted) !important;
+        border-bottom-color: rgba(51, 65, 85, 0.9) !important;
+        box-shadow: none !important;
+    }
+
+    html.dark table thead th,
+    html.dark table thead tr {
+        border-bottom-color: rgba(51, 65, 85, 0.9) !important;
+        box-shadow: none !important;
+    }
+
+    html.dark .overflow-hidden.rounded-xl.border table thead,
+    html.dark .rounded-xl.border table thead {
+        border-top: none !important;
     }
 
     html.dark table tbody tr:hover {

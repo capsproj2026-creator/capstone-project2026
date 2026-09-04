@@ -26,12 +26,15 @@ class ProfileController extends Controller
     public function edit(): View
     {
         $user = Auth::user();
-        $user?->load('vehicleType');
+        $user?->load('role');
+        $roleName = strtolower((string) ($user?->role?->role_name ?? ''));
+        $canManageVehicles = in_array($roleName, ['student', 'staff'], true);
 
         return view('profile.edit', [
             'user' => $user,
             'vehicles' => Vehicle::query()->orderBy('id')->get(),
-            'userVehicles' => $this->vehicles->listFor($user),
+            'userVehicles' => $canManageVehicles ? $this->vehicles->listFor($user) : collect(),
+            'canManageVehicles' => $canManageVehicles,
             'dashboardRoute' => NavigationService::dashboardRouteFor($user),
         ]);
     }
@@ -39,6 +42,18 @@ class ProfileController extends Controller
     public function update(Request $request): RedirectResponse
     {
         $user = Auth::user();
+        $user?->loadMissing('role');
+        $roleName = strtolower((string) ($user?->role?->role_name ?? ''));
+        $canManageVehicles = in_array($roleName, ['student', 'staff'], true);
+
+        if (! $canManageVehicles && (
+            $request->has('add_vehicle')
+            || $request->has('update_vehicle')
+            || $request->has('remove_vehicle')
+            || $request->has('make_primary_vehicle')
+        )) {
+            return back()->with('error', 'Vehicle registration is only available for students and staff.');
+        }
 
         if ($request->has('update_profile')) {
             $validated = $request->validate([

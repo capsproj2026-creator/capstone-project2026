@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Models\GeneralInformation;
+use App\Models\Notification;
 use App\Models\ParkingArea;
 use App\Models\ParkingRule;
 use App\Models\StalledVehicle;
@@ -99,14 +100,28 @@ class SettingsController extends Controller
             'descriptions.*' => ['required', 'string', 'max:2000'],
         ]);
 
+        $changed = [];
         foreach ($validated['descriptions'] as $id => $description) {
             if (! is_numeric($id)) {
                 continue;
             }
 
-            GeneralInformation::query()
-                ->where('id', (int) $id)
-                ->update(['description' => $description]);
+            $info = GeneralInformation::query()->where('id', (int) $id)->first();
+            if (! $info) {
+                continue;
+            }
+
+            $description = trim($description);
+            if ((string) $info->description === $description) {
+                continue;
+            }
+
+            $info->update(['description' => $description]);
+            $changed[] = $description;
+        }
+
+        foreach ($changed as $description) {
+            $this->fanOutCampusNotice('Campus Notice Updated', $description);
         }
 
         return back()->with('success', 'Campus notices updated.');
@@ -118,12 +133,47 @@ class SettingsController extends Controller
             'description' => ['required', 'string', 'max:2000'],
         ]);
 
+        $description = trim($validated['description']);
+
         GeneralInformation::query()->create([
             'id' => SequenceService::next('general_informations'),
-            'description' => $validated['description'],
+            'description' => $description,
         ]);
 
+        $this->fanOutCampusNotice('New Campus Notice', $description);
+
         return back()->with('success', 'New notice added.');
+    }
+
+    private function fanOutCampusNotice(string $title, string $message): void
+    {
+        $message = trim($message);
+        if ($message === '') {
+            return;
+        }
+
+        $userIds = User::query()
+            ->whereIn('user_role_id', [
+                NavigationService::ROLE_STUDENT,
+                NavigationService::ROLE_STAFF,
+            ])
+            ->where('status', User::STATUS_GRANTED)
+            ->pluck('id');
+
+        $senderId = auth()->id();
+        $now = now();
+
+        foreach ($userIds as $userId) {
+            Notification::query()->create([
+                'user_id' => (int) $userId,
+                'sender_id' => $senderId,
+                'title' => $title,
+                'message' => $message,
+                'type' => 'General',
+                'is_read' => false,
+                'created_at' => $now,
+            ]);
+        }
     }
 
     public function storeAdmin(Request $request): RedirectResponse

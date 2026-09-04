@@ -184,6 +184,12 @@
                             'text-amber-600' => $strikes === 1,
                             'text-gray-800' => $strikes < 1,
                         ])>{{ $strikes }}/3 Strikes</p>
+                        @if ($strikes >= 1)
+                            @php($sanctionLabel = \App\Support\ViolationSanctionPresenter::labelForStrike($strikes))
+                            @if ($sanctionLabel)
+                                <p class="mb-2 text-xs leading-relaxed text-gray-600">{{ $sanctionLabel }}</p>
+                            @endif
+                        @endif
                         <div class="flex gap-1.5">
                             @for ($i = 1; $i <= 3; $i++)
                                 <div
@@ -239,6 +245,10 @@
                                     {{ $strikes }}/3 Strikes
                                 </span>
                             </div>
+                            @php($overviewSanction = \App\Support\ViolationSanctionPresenter::descriptionForStrike($strikes))
+                            @if ($overviewSanction)
+                                <p class="mb-2 text-[11px] leading-relaxed text-gray-500">{{ $overviewSanction }}</p>
+                            @endif
                             <div class="flex gap-1">
                                 @for ($i = 1; $i <= 3; $i++)
                                     <div

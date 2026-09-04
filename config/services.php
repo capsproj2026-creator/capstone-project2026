@@ -88,6 +88,9 @@ return [
         | Multi-camera registry (add AI_CAMERA_N_* in .env to extend).
         | RTSP credentials stay in .env for the Python service only — Laravel
         | only needs public stream URLs + area mapping.
+        |
+        | Enable a camera with AI_CAMERA_N_ENABLED=true and any of:
+        | AI_CAMERA_N_IP, AI_CAMERA_N_STREAM_URL, or AI_CAMERA_N_AI_STREAM_URL.
         */
         'cameras' => array_values(array_filter([
             [
@@ -111,7 +114,9 @@ return [
                 'ai_stream_path' => env('AI_CAMERA_2_AI_STREAM_PATH'),
                 'ai_stream_url' => env('AI_CAMERA_2_AI_STREAM_URL'),
                 'enabled' => filter_var(env('AI_CAMERA_2_ENABLED', true), FILTER_VALIDATE_BOOLEAN)
-                    && filled(env('AI_CAMERA_2_IP')),
+                    && (filled(env('AI_CAMERA_2_IP'))
+                        || filled(env('AI_CAMERA_2_STREAM_URL'))
+                        || filled(env('AI_CAMERA_2_AI_STREAM_URL'))),
             ],
             [
                 'id' => env('AI_CAMERA_3_ID', 'CAM-AI-3'),
@@ -122,9 +127,25 @@ return [
                 'stream_url' => env('AI_CAMERA_3_STREAM_URL'),
                 'ai_stream_path' => env('AI_CAMERA_3_AI_STREAM_PATH'),
                 'ai_stream_url' => env('AI_CAMERA_3_AI_STREAM_URL'),
-                // Keep template in .env; only activate when ENABLED=true and IP is set.
+                // Enable with AI_CAMERA_3_ENABLED=true plus IP or a stream URL.
                 'enabled' => filter_var(env('AI_CAMERA_3_ENABLED', false), FILTER_VALIDATE_BOOLEAN)
-                    && filled(env('AI_CAMERA_3_IP')),
+                    && (filled(env('AI_CAMERA_3_IP'))
+                        || filled(env('AI_CAMERA_3_STREAM_URL'))
+                        || filled(env('AI_CAMERA_3_AI_STREAM_URL'))),
+            ],
+            [
+                'id' => env('AI_CAMERA_4_ID', 'CAM-AI-4'),
+                'name' => env('AI_CAMERA_4_NAME', 'Campus Camera 4'),
+                'location' => env('AI_CAMERA_4_LOCATION', 'Campus Camera 4'),
+                'area_id' => (int) env('AI_CAMERA_4_AREA_ID', 10),
+                'stream_path' => env('AI_CAMERA_4_STREAM_PATH'),
+                'stream_url' => env('AI_CAMERA_4_STREAM_URL'),
+                'ai_stream_path' => env('AI_CAMERA_4_AI_STREAM_PATH'),
+                'ai_stream_url' => env('AI_CAMERA_4_AI_STREAM_URL'),
+                'enabled' => filter_var(env('AI_CAMERA_4_ENABLED', false), FILTER_VALIDATE_BOOLEAN)
+                    && (filled(env('AI_CAMERA_4_IP'))
+                        || filled(env('AI_CAMERA_4_STREAM_URL'))
+                        || filled(env('AI_CAMERA_4_AI_STREAM_URL'))),
             ],
         ])),
     ],

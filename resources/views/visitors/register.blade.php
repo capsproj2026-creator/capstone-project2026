@@ -67,9 +67,13 @@
                         class="w-full rounded-lg border border-gray-200 px-3 py-2.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20">
                 </div>
                 <div class="sm:col-span-2">
-                    <label class="mb-1.5 block text-sm font-medium text-gray-700">Email</label>
-                    <input type="email" name="email" value="{{ old('email') }}"
-                        class="w-full rounded-lg border border-gray-200 px-3 py-2.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20">
+                    <label class="mb-1.5 block text-sm font-medium text-gray-700">Email <span class="text-red-500">*</span></label>
+                    <input type="email" name="email" value="{{ old('email') }}" required
+                        class="w-full rounded-lg border border-gray-200 px-3 py-2.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20 @error('email') border-red-400 @enderror">
+                    @error('email')
+                        <p class="mt-1 text-xs font-medium text-red-600">{{ $message }}</p>
+                    @enderror
+                    <p class="mt-1 text-xs text-gray-500">Required — used for visit confirmation and reference code delivery.</p>
                 </div>
             </div>
         </div>

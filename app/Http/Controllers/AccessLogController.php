@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\GateLog;
 use App\Models\User;
+use App\Models\Visitor;
 use App\Support\SearchHelper;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
@@ -67,13 +68,13 @@ class AccessLogController extends Controller
         ];
 
         $logs = (clone $baseStats)
-            ->with(['user.role'])
+            ->with(['user.role', 'visitor'])
             ->orderByDesc('timestamp')
             ->paginate(30)
             ->withQueryString();
 
         $recentDenied = GateLog::query()
-            ->with(['user.role'])
+            ->with(['user.role', 'visitor'])
             ->where($deniedScope)
             ->orderByDesc('timestamp')
             ->limit(5)
@@ -152,7 +153,7 @@ class AccessLogController extends Controller
         ];
 
         $logs = (clone $baseStats)
-            ->with(['user.role'])
+            ->with(['user.role', 'visitor'])
             ->orderByDesc('timestamp')
             ->limit(30)
             ->get()
@@ -162,7 +163,7 @@ class AccessLogController extends Controller
         $newest = $logs->first();
 
         $recentDenied = GateLog::query()
-            ->with(['user.role'])
+            ->with(['user.role', 'visitor'])
             ->where($deniedScope)
             ->orderByDesc('timestamp')
             ->limit(5)
@@ -186,14 +187,25 @@ class AccessLogController extends Controller
     private function serializeAccessLog(GateLog $log): array
     {
         $user = $log->user;
+        $visitor = $log->visitor;
         $granted = $log->accessGranted();
+
+        if ($visitor) {
+            $name = $visitor->displayName();
+            $idNumber = $visitor->plate_number ?: ('V-'.$visitor->id);
+            $role = 'Visitor';
+        } else {
+            $name = $user?->displayName() ?? 'Unknown';
+            $idNumber = $user?->id_number ?? ($user?->id ?? '—');
+            $role = $user?->displayRoleLabel() ?? '—';
+        }
 
         return [
             'id' => (string) $log->getKey(),
             'timestamp' => $log->timestamp ? ph_datetime($log->timestamp, 'n/j/Y, g:i:s A') : '—',
-            'name' => $user?->displayName() ?? 'Unknown',
-            'id_number' => $user?->id_number ?? ($user?->id ?? '—'),
-            'role' => $user?->displayRoleLabel() ?? '—',
+            'name' => $name,
+            'id_number' => $idNumber,
+            'role' => $role,
             'rfid_uid' => $log->displayRfid(),
             'action' => $log->action,
             'gate' => $log->displayGate(),
@@ -228,10 +240,13 @@ class AccessLogController extends Controller
                 ->whereNotIn('result', ['Access Granted', 'Granted']);
         }
 
-        if ($typeFilter !== 'all') {
-            $query->whereHas('user.role', function (Builder $q) use ($typeFilter) {
-                $q->where('role_name', $typeFilter);
-            });
+        if ($typeFilter === 'Visitor') {
+            $query->whereNotNull('visitor_id');
+        } elseif ($typeFilter !== 'all') {
+            $query->whereNull('visitor_id')
+                ->whereHas('user.role', function (Builder $q) use ($typeFilter) {
+                    $q->where('role_name', $typeFilter);
+                });
         }
 
         if ($search !== '') {
@@ -253,12 +268,30 @@ class AccessLogController extends Controller
                 ->pluck('id')
                 ->all();
 
-            $query->where(function (Builder $q) use ($term, $matchedUserIds) {
+            $matchedVisitorIds = Visitor::query()
+                ->where(function (Builder $visitorQuery) use ($term, $nameRegex) {
+                    $visitorQuery->where('first_name', 'regex', $nameRegex)
+                        ->orWhere('last_name', 'regex', $nameRegex)
+                        ->orWhere('middle_name', 'regex', $nameRegex)
+                        ->orWhere('plate_number', 'like', "%{$term}%")
+                        ->orWhere('rfid_uid', 'like', "%{$term}%")
+                        ->orWhere('confirmation_code', 'like', "%{$term}%")
+                        ->orWhere('email', 'like', "%{$term}%")
+                        ->orWhere('contact_number', 'like', "%{$term}%");
+                })
+                ->pluck('id')
+                ->all();
+
+            $query->where(function (Builder $q) use ($term, $matchedUserIds, $matchedVisitorIds) {
                 $q->where('rfid_uid', 'like', "%{$term}%")
                     ->orWhere('gate_id', 'like', "%{$term}%");
 
                 if ($matchedUserIds !== []) {
                     $q->orWhereIn('user_id', $matchedUserIds);
+                }
+
+                if ($matchedVisitorIds !== []) {
+                    $q->orWhereIn('visitor_id', $matchedVisitorIds);
                 }
 
                 $q->orWhereHas('user.role', function (Builder $roleQuery) use ($term) {

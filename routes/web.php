@@ -251,6 +251,7 @@ Route::prefix('guard')->middleware(['auth', 'verified', 'granted', 'no.cache', '
     Route::patch('/visitors/{id}', [VisitorController::class, 'update'])->name('visitors.update');
     Route::post('/visitors/{id}/assign-rfid', [VisitorController::class, 'assignRfid'])->name('visitors.assign-rfid');
     Route::post('/visitors/{id}/return-rfid', [VisitorController::class, 'returnRfid'])->name('visitors.return-rfid');
+    Route::post('/visitors/{id}/mark-exited', [VisitorController::class, 'markExited'])->name('visitors.mark-exited');
     Route::get('/gate', [GateMonitorController::class, 'index'])->name('gate');
     Route::get('/gate/status', [GateMonitorController::class, 'status'])->name('gate.status');
     Route::post('/gate/open', [GateMonitorController::class, 'open'])->middleware('throttle:20,1')->name('gate.open');

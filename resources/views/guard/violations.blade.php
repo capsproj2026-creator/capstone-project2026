@@ -44,6 +44,21 @@
         </button>
     </div>
 
+    <div class="mb-6 overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
+        <div class="border-b border-gray-100 bg-gray-50 px-6 py-4">
+            <h3 class="text-sm font-semibold text-gray-900">GSU Offense Levels</h3>
+            <p class="mt-1 text-xs text-gray-500">Official sanctions applied as strikes accumulate.</p>
+        </div>
+        <div class="grid grid-cols-1 gap-3 p-4 sm:grid-cols-3">
+            @foreach ([1, 2, 3] as $level)
+                <div class="rounded-xl border border-gray-100 bg-gray-50/80 px-4 py-3">
+                    <p class="text-xs font-semibold text-gray-800">{{ \App\Support\ViolationSanctionPresenter::nameForStrike($level) ?? ($level.' Offense') }}</p>
+                    <p class="mt-1 text-xs leading-relaxed text-gray-600">{{ \App\Support\ViolationSanctionPresenter::descriptionForStrike($level) ?? '—' }}</p>
+                </div>
+            @endforeach
+        </div>
+    </div>
+
     <div class="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
         <div class="overflow-x-auto">
             <table class="w-full text-left text-sm">

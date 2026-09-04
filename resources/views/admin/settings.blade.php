@@ -13,7 +13,7 @@
         ];
     @endphp
 
-    <div class="mx-auto w-full max-w-6xl pb-10">
+    <div class="mx-auto w-full max-w-none pb-10">
         <div class="settings-sticky-header sticky z-10">
             @include('partials.shell.page-header', [
                 'title' => 'System Settings',

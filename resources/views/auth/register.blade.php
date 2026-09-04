@@ -64,22 +64,34 @@
                 </div>
             @endif
 
-            <ol class="mb-6 hidden grid-cols-4 gap-2 sm:grid">
-                <li class="rounded-lg bg-blue-50 px-2 py-2 text-center">
-                    <p class="text-[10px] font-semibold uppercase tracking-wide text-blue-700">Step 1</p>
-                    <p class="text-xs font-medium text-gray-800">License</p>
+            <ol id="register-steps" class="mb-8 hidden grid-cols-4 gap-3 sm:grid">
+                <li>
+                    <button type="button" data-register-step="1" data-target="#register-step-1"
+                        class="register-step-btn w-full rounded-lg bg-blue-50 px-2 py-2.5 text-center transition hover:ring-2 hover:ring-blue-200">
+                        <p class="text-[10px] font-semibold uppercase tracking-wide text-blue-700">Step 1</p>
+                        <p class="text-xs font-medium text-gray-800">License</p>
+                    </button>
                 </li>
-                <li class="rounded-lg bg-slate-50 px-2 py-2 text-center">
-                    <p class="text-[10px] font-semibold uppercase tracking-wide text-slate-500">Step 2</p>
-                    <p class="text-xs font-medium text-gray-800">Your info</p>
+                <li>
+                    <button type="button" data-register-step="2" data-target="#register-step-2"
+                        class="register-step-btn w-full rounded-lg bg-slate-50 px-2 py-2.5 text-center transition hover:ring-2 hover:ring-blue-200">
+                        <p class="text-[10px] font-semibold uppercase tracking-wide text-slate-500">Step 2</p>
+                        <p class="text-xs font-medium text-gray-800">Your info</p>
+                    </button>
                 </li>
-                <li class="rounded-lg bg-slate-50 px-2 py-2 text-center">
-                    <p class="text-[10px] font-semibold uppercase tracking-wide text-slate-500">Step 3</p>
-                    <p class="text-xs font-medium text-gray-800">Vehicle</p>
+                <li>
+                    <button type="button" data-register-step="3" data-target="#register-step-3"
+                        class="register-step-btn w-full rounded-lg bg-slate-50 px-2 py-2.5 text-center transition hover:ring-2 hover:ring-blue-200">
+                        <p class="text-[10px] font-semibold uppercase tracking-wide text-slate-500">Step 3</p>
+                        <p class="text-xs font-medium text-gray-800">Vehicle</p>
+                    </button>
                 </li>
-                <li class="rounded-lg bg-slate-50 px-2 py-2 text-center">
-                    <p class="text-[10px] font-semibold uppercase tracking-wide text-slate-500">Step 4</p>
-                    <p class="text-xs font-medium text-gray-800">LTO files</p>
+                <li>
+                    <button type="button" data-register-step="4" data-target="#register-step-4"
+                        class="register-step-btn w-full rounded-lg bg-slate-50 px-2 py-2.5 text-center transition hover:ring-2 hover:ring-blue-200">
+                        <p class="text-[10px] font-semibold uppercase tracking-wide text-slate-500">Step 4</p>
+                        <p class="text-xs font-medium text-gray-800">LTO files</p>
+                    </button>
                 </li>
             </ol>
 
@@ -90,7 +102,7 @@
                     <input type="hidden" name="temp_token" value="{{ old('temp_token', $converting->temp_conversion_token) }}">
                 @endif
 
-                <section class="space-y-4 pb-8">
+                <section id="register-step-1" class="scroll-mt-24 space-y-4 pb-8">
                     <div class="flex items-start gap-3">
                         <span class="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-blue-600 text-xs font-bold text-white">1</span>
                         <div>
@@ -115,7 +127,7 @@
                     @enderror
                 </section>
 
-                <section class="space-y-4 py-8">
+                <section id="register-step-2" class="scroll-mt-24 space-y-4 py-8">
                     <div class="flex items-start gap-3">
                         <span class="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-blue-600 text-xs font-bold text-white">2</span>
                         <div>
@@ -274,7 +286,7 @@
                     </div>
                 </section>
 
-                <section id="vehicle-fields" class="space-y-4 py-8">
+                <section id="register-step-3" class="scroll-mt-24 space-y-4 py-8" data-vehicle-fields>
                     <div class="flex items-start gap-3">
                         <span class="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-blue-600 text-xs font-bold text-white">3</span>
                         <div>
@@ -315,7 +327,7 @@
                     @endif
                 </section>
 
-                <section class="space-y-4 py-8">
+                <section id="register-step-4" class="scroll-mt-24 space-y-4 py-8">
                     <div class="flex items-start gap-3">
                         <span class="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-blue-600 text-xs font-bold text-white">4</span>
                         <div>
@@ -605,6 +617,47 @@
                 };
                 tick();
                 window.setInterval(tick, 30000);
+            }
+
+            const stepButtons = Array.from(document.querySelectorAll('[data-register-step]'));
+            const stepSections = [1, 2, 3, 4]
+                .map((n) => document.getElementById(`register-step-${n}`))
+                .filter(Boolean);
+
+            const setActiveStep = (step) => {
+                stepButtons.forEach((btn) => {
+                    const active = Number(btn.dataset.registerStep) === Number(step);
+                    btn.classList.toggle('bg-blue-50', active);
+                    btn.classList.toggle('bg-slate-50', !active);
+                    const label = btn.querySelector('p');
+                    if (label) {
+                        label.className = active
+                            ? 'text-[10px] font-semibold uppercase tracking-wide text-blue-700'
+                            : 'text-[10px] font-semibold uppercase tracking-wide text-slate-500';
+                    }
+                });
+            };
+
+            stepButtons.forEach((btn) => {
+                btn.addEventListener('click', () => {
+                    const target = document.querySelector(btn.dataset.target || '');
+                    if (!target) return;
+                    target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                    setActiveStep(btn.dataset.registerStep);
+                });
+            });
+
+            if (stepSections.length) {
+                const onScroll = () => {
+                    const marker = window.scrollY + 120;
+                    let current = 1;
+                    stepSections.forEach((section, index) => {
+                        if (section.offsetTop <= marker) current = index + 1;
+                    });
+                    setActiveStep(current);
+                };
+                window.addEventListener('scroll', onScroll, { passive: true });
+                onScroll();
             }
         });
     </script>

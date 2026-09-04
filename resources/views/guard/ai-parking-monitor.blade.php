@@ -11,7 +11,7 @@
 @section('content')
     @include('partials.shell.page-header', [
         'title' => 'AI Parking Monitor',
-        'subtitle' => 'Live YOLOv9 · cars & motorcycles · parked / moving · plate scan',
+        'subtitle' => 'Live YOLOv9 · cars & motorcycles · parked vehicles · plate scan',
     ])
 
     @php
@@ -26,7 +26,7 @@
             No AI cameras are configured. Set AI_CAMERA_* values in .env and start the AI parking service.
         </div>
     @else
-        <div class="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+        <div class="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
             <div class="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
                 <p class="text-xs font-medium text-gray-500">Cameras</p>
                 <p class="mt-1 text-2xl font-bold text-gray-900">{{ $cameras->count() }}</p>
@@ -34,10 +34,6 @@
             <div class="rounded-xl border border-sky-200 bg-sky-50 p-4 shadow-sm">
                 <p class="text-xs font-medium text-sky-700">Parked</p>
                 <p id="ai-parked-count" class="mt-1 text-2xl font-bold text-sky-800">{{ $primaryAi['parked_count'] ?? 0 }}</p>
-            </div>
-            <div class="rounded-xl border border-orange-200 bg-orange-50 p-4 shadow-sm">
-                <p class="text-xs font-medium text-orange-700">Moving</p>
-                <p id="ai-moving-count" class="mt-1 text-2xl font-bold text-orange-800">{{ $primaryAi['moving_count'] ?? 0 }}</p>
             </div>
             <div class="rounded-xl border border-green-200 bg-green-50 p-4 shadow-sm">
                 <p class="text-xs font-medium text-green-700">Available (AI)</p>
@@ -60,32 +56,38 @@
                     $health = $healthById->get($camId, []);
                     $snap = $snaps[$camId] ?? [];
                     $browserUrl = $health['ai_stream_url'] ?? $health['stream_browser_url'] ?? ($cam['ai_stream_url'] ?? $cam['stream_url'] ?? null);
-                    $online = (bool) ($health['connected'] ?? $health['stream_reachable'] ?? ! empty($browserUrl));
+                    $online = (bool) ($health['ingest_active'] ?? false);
                     $topDet = data_get($snap, 'detections.0');
                     $plateLine = \App\Support\AiDetectionPresenter::plateLine(is_array($topDet) ? $topDet : null);
                 @endphp
                 <article class="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
-                    <div class="relative aspect-video bg-[#1a1d23]" data-camera-tile="{{ $camId }}">
+                    <div class="relative aspect-video bg-[#1a1d23]" data-camera-tile="{{ $camId }}" data-online="{{ $online ? '1' : '0' }}">
                         <span class="camera-clock absolute left-3 top-3 z-10 rounded bg-black/45 px-2 py-0.5 text-xs font-medium text-white tabular-nums">
                             {{ ph_now()->format('g:i:s A') }}
                         </span>
-                        <span @class([
-                            'absolute right-3 top-3 z-10 rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wide',
-                            'bg-emerald-500 text-white' => $online,
-                            'bg-red-500 text-white' => ! $online,
-                        ])>{{ $online ? 'Live' : 'Offline' }}</span>
+                        <span
+                            data-status-badge
+                            @class([
+                                'absolute right-3 top-3 z-10 rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wide',
+                                'bg-emerald-500 text-white' => $online,
+                                'bg-red-500 text-white' => ! $online,
+                            ])
+                        >{{ $online ? 'Live' : 'Offline' }}</span>
 
-                        @if ($browserUrl && $online)
+                        @if ($browserUrl)
                             <img
                                 src="{{ $browserUrl }}"
                                 alt="{{ $cam['name'] ?? $camId }}"
-                                class="absolute inset-0 h-full w-full object-cover"
+                                class="absolute inset-0 h-full w-full object-cover {{ $online ? '' : 'hidden' }}"
                                 data-stream-img
                                 data-camera-stream="{{ $camId }}"
                             >
-                            <div data-stream-fallback class="hidden absolute inset-0 flex flex-col items-center justify-center gap-2 text-slate-400">
-                                <i data-lucide="camera" class="h-10 w-10 opacity-70"></i>
-                                <p class="text-sm font-medium text-slate-300">Connecting…</p>
+                            <div data-stream-fallback @class([
+                                'absolute inset-0 flex flex-col items-center justify-center gap-2 text-slate-400',
+                                'hidden' => $online,
+                            ])>
+                                <i data-lucide="video-off" class="h-10 w-10 opacity-70"></i>
+                                <p class="text-sm font-medium text-slate-300">Camera Offline</p>
                             </div>
                         @else
                             <div class="absolute inset-0 flex flex-col items-center justify-center gap-2 text-slate-500">
@@ -155,19 +157,19 @@
                                         <span class="ml-1 rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-bold uppercase text-emerald-800">MC</span>
                                     @endif
                                     @php
-                                        $motionLabel = $det['motion_label'] ?? match ($det['motion_state'] ?? '') {
-                                            'moving' => 'Moving',
+                                        $motionLabel = match ($det['motion_state'] ?? '') {
                                             'parked' => 'Parked',
                                             'idle' => 'Settling',
-                                            default => null,
+                                            default => (($det['motion_label'] ?? null) && ! str_contains(strtolower((string) ($det['motion_label'] ?? '')), 'moving'))
+                                                ? $det['motion_label']
+                                                : null,
                                         };
                                     @endphp
                                     @if ($motionLabel)
                                         <span @class([
                                             'ml-1 rounded px-1.5 py-0.5 text-[10px] font-bold uppercase',
-                                            'bg-orange-100 text-orange-700' => ($det['motion_state'] ?? '') === 'moving',
                                             'bg-sky-100 text-sky-700' => ($det['motion_state'] ?? '') === 'parked',
-                                            'bg-gray-100 text-gray-600' => ($det['motion_state'] ?? '') === 'idle',
+                                            'bg-gray-100 text-gray-600' => ($det['motion_state'] ?? '') !== 'parked',
                                         ])>{{ $motionLabel }}</span>
                                     @endif
                                     @if (($det['plate_status'] ?? '') === 'unreadable')
@@ -534,11 +536,41 @@
     });
 
     document.querySelectorAll('[data-stream-img]').forEach((img) => {
-        img.addEventListener('error', () => {
-            img.classList.add('hidden');
-            const fb = img.closest('[data-camera-tile]')?.querySelector('[data-stream-fallback]');
-            if (fb) fb.classList.remove('hidden');
-        });
+        const tile = img.closest('[data-camera-tile]');
+        const setOnline = (online) => {
+            if (!tile) return;
+            tile.dataset.online = online ? '1' : '0';
+            const badge = tile.querySelector('[data-status-badge]');
+            if (badge) {
+                badge.textContent = online ? 'Live' : 'Offline';
+                badge.className = 'absolute right-3 top-3 z-10 rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wide '
+                    + (online ? 'bg-emerald-500 text-white' : 'bg-red-500 text-white');
+            }
+            const fb = tile.querySelector('[data-stream-fallback]');
+            if (online) {
+                img.classList.remove('hidden');
+                fb?.classList.add('hidden');
+            } else {
+                img.classList.add('hidden');
+                if (fb) {
+                    fb.classList.remove('hidden');
+                    const label = fb.querySelector('p');
+                    if (label) label.textContent = 'Camera Offline';
+                }
+            }
+        };
+        img.addEventListener('load', () => setOnline(true));
+        img.addEventListener('error', () => setOnline(false));
+        // Try stream even when initially offline (URL configured independently per camera).
+        if (tile?.dataset.online !== '1' && img.getAttribute('src')) {
+            const base = img.getAttribute('src');
+            try {
+                const url = new URL(base, window.location.origin);
+                url.searchParams.set('t', String(Date.now()));
+                img.classList.remove('hidden');
+                img.src = url.toString();
+            } catch (e) {}
+        }
     });
 
     if (window.lucide) window.lucide.createIcons();
@@ -547,7 +579,6 @@
     const available = document.getElementById('ai-available');
     const occupied = document.getElementById('ai-occupied');
     const parkedCount = document.getElementById('ai-parked-count');
-    const movingCount = document.getElementById('ai-moving-count');
     const updatedAt = document.getElementById('ai-updated-at');
     const detectionsList = document.getElementById('ai-detections');
     const detCount = document.getElementById('ai-det-count');
@@ -557,9 +588,7 @@
         if (!det) return '—';
         const bits = [];
         if (det.track_id != null) bits.push(`#${det.track_id}`);
-        if (det.motion_label) bits.push(det.motion_label);
-        else if (det.motion_state === 'moving') bits.push('Moving');
-        else if (det.motion_state === 'parked') bits.push('Parked');
+        if (det.motion_state === 'parked') bits.push('Parked');
         else if (det.motion_state === 'idle') bits.push('Settling');
         if (det.plate_status === 'unreadable') bits.push('Plate Unreadable');
         else if (det.registered && det.owner_name) bits.push([det.owner_name, det.plate].filter(Boolean).join(' · '));
@@ -569,10 +598,11 @@
     };
 
     const motionLabelFor = (det) => {
-        if (det?.motion_label) return det.motion_label;
-        if (det?.motion_state === 'moving') return 'Moving';
         if (det?.motion_state === 'parked') return 'Parked';
         if (det?.motion_state === 'idle') return 'Settling';
+        if (det?.motion_label && !String(det.motion_label).toLowerCase().includes('moving')) {
+            return det.motion_label;
+        }
         return null;
     };
 
@@ -580,11 +610,9 @@
         const label = motionLabelFor(det);
         if (!label) return null;
         const span = document.createElement('span');
-        span.className = det.motion_state === 'moving'
-            ? 'ml-1 rounded px-1.5 py-0.5 text-[10px] font-bold uppercase bg-orange-100 text-orange-700'
-            : det.motion_state === 'parked'
-                ? 'ml-1 rounded px-1.5 py-0.5 text-[10px] font-bold uppercase bg-sky-100 text-sky-700'
-                : 'ml-1 rounded px-1.5 py-0.5 text-[10px] font-bold uppercase bg-gray-100 text-gray-600';
+        span.className = det.motion_state === 'parked'
+            ? 'ml-1 rounded px-1.5 py-0.5 text-[10px] font-bold uppercase bg-sky-100 text-sky-700'
+            : 'ml-1 rounded px-1.5 py-0.5 text-[10px] font-bold uppercase bg-gray-100 text-gray-600';
         span.textContent = label;
         return span;
     };
@@ -608,7 +636,6 @@
                 if (plateLine) plateLine.textContent = formatDet((snap.detections || [])[0] || null);
                 if (id === (ai?.camera_id || '') || Object.keys(cams).length === 1) {
                     if (parkedCount) parkedCount.textContent = String(snap.parked_count ?? 0);
-                    if (movingCount) movingCount.textContent = String(snap.moving_count ?? 0);
                 }
             });
 
@@ -625,7 +652,6 @@
             if (available) available.textContent = ai.available ?? '—';
             if (occupied) occupied.textContent = ai.occupied ?? '—';
             if (parkedCount) parkedCount.textContent = String(ai.parked_count ?? 0);
-            if (movingCount) movingCount.textContent = String(ai.moving_count ?? 0);
             if (updatedAt) updatedAt.textContent = ai.updated_at_label || data.updated_at;
             if (detCount) detCount.textContent = String(allDets.length);
 

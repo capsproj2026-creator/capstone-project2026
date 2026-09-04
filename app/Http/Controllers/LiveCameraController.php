@@ -43,6 +43,8 @@ class LiveCameraController extends Controller
 
             $hasStream = filled($streamUrl);
             $ingestActive = $health->isIngestActive($cam['id']);
+            // Online only when ingest is fresh — URL alone is not enough.
+            $online = $ingestActive;
 
             $cameras[] = [
                 'id' => strtolower(str_replace('_', '-', $cam['id'])),
@@ -50,7 +52,8 @@ class LiveCameraController extends Controller
                 'name' => $area?->area_name ?? $cam['name'],
                 'location' => $cam['location'],
                 'stream_url' => $streamUrl,
-                'online' => $hasStream,
+                'has_stream' => $hasStream,
+                'online' => $online,
                 'ai_monitored' => false,
                 'parking_url' => $parkingUrl,
                 'vehicle_count' => $snap['vehicle_count'] ?? null,

@@ -5,6 +5,7 @@ namespace App\Http\Controllers\User;
 use App\Http\Controllers\Controller;
 use App\Models\GeneralInformation;
 use App\Models\ParkingRule;
+use App\Models\StalledVehicle;
 use App\Services\DashboardStatsService;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\View\View;
@@ -25,6 +26,7 @@ class DashboardController extends Controller
                     ->filter(fn (ParkingRule $rule) => $rule->isActive())
                     ->values(),
                 'generalInfo' => GeneralInformation::query()->orderBy('id')->get(),
+                'stalledVehicles' => StalledVehicle::query()->orderBy('id')->get(),
             ]
         ));
     }

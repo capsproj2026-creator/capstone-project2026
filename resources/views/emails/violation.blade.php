@@ -76,6 +76,16 @@
 
     <div style="padding:16px 18px;border-radius:12px;background:#fff7ed;border:1px solid #fed7aa;">
         <p style="margin:0 0 8px;font-size:14px;font-weight:700;color:#9a3412;">Important Reminder</p>
+        @php
+            $strikeHint = isset($strikeCount)
+                ? \App\Support\ViolationSanctionPresenter::labelForStrike((int) $strikeCount)
+                : null;
+        @endphp
+        @if ($strikeHint)
+            <p style="margin:0 0 10px;font-size:14px;line-height:1.6;color:#7c2d12;">
+                Current offense level: {{ $strikeHint }}
+            </p>
+        @endif
         <p style="margin:0;font-size:14px;line-height:1.6;color:#7c2d12;">
             Repeated violations may result in account strikes, loss of campus gate access,
             or towing of the vehicle in accordance with CSPC parking policies.

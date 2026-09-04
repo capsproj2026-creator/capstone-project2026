@@ -30,6 +30,7 @@ class VehicleViolationMail extends Mailable
         public ?string $reportedBy = null,
         public array $evidencePaths = [],
         public ?string $remarks = null,
+        public ?int $strikeCount = null,
     ) {
     }
 
@@ -67,6 +68,7 @@ class VehicleViolationMail extends Mailable
                 'hasEvidence' => $cidMap !== [],
                 'evidenceCids' => array_values($cidMap),
                 'evidencePublicUrls' => [],
+                'strikeCount' => $this->strikeCount,
             ],
         );
     }

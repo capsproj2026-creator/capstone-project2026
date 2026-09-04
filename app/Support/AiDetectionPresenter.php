@@ -25,10 +25,8 @@ class AiDetectionPresenter
             $bits[] = ucfirst((string) $det['class']);
         }
 
-        if (! empty($det['motion_label'])) {
+        if (! empty($det['motion_label']) && ! str_contains(strtolower((string) $det['motion_label']), 'moving')) {
             $bits[] = (string) $det['motion_label'];
-        } elseif (($det['motion_state'] ?? '') === 'moving') {
-            $bits[] = 'Moving';
         } elseif (($det['motion_state'] ?? '') === 'parked') {
             $bits[] = 'Parked';
         }

@@ -9,23 +9,69 @@
     ])
 
     @if ($usersWithSecondStrike->isNotEmpty())
-        <div class="mb-6 flex gap-3 rounded-xl border border-orange-200 bg-orange-50 p-4 sm:p-5">
+        <div id="second-strike-alert" class="mb-6 hidden gap-3 rounded-xl border border-orange-200 bg-orange-50 p-4 sm:p-5" data-second-strike-alert>
             <i data-lucide="triangle-alert" class="mt-0.5 h-5 w-5 shrink-0 text-orange-500"></i>
-            <div class="min-w-0">
-                <p class="font-semibold text-orange-900">Users with 2nd Strike Alert</p>
+            <div class="min-w-0 flex-1">
+                <div class="flex items-start justify-between gap-3">
+                    <p class="font-semibold text-orange-900">Users with 2nd Strike Alert</p>
+                    <button type="button" id="second-strike-dismiss" class="rounded-md px-2 py-1 text-xs font-medium text-orange-700 hover:bg-orange-100">Dismiss</button>
+                </div>
                 <p class="mt-1 text-sm text-orange-800">
-                    {{ $usersWithSecondStrike->count() }} user(s) currently have 2 violations. One more violation will result in suspension.
+                    <span id="second-strike-count">0</span> new second-strike user(s). One more violation will result in suspension.
                 </p>
-                <ul class="mt-3 space-y-1 text-sm text-orange-900">
-                    @foreach ($usersWithSecondStrike as $atRisk)
-                        <li>
-                            • {{ $atRisk->name }} ({{ $atRisk->id_number }})
-                            — {{ strtolower($atRisk->displayRoleLabel()) }}
-                        </li>
-                    @endforeach
-                </ul>
+                <ul id="second-strike-list" class="mt-3 space-y-1 text-sm text-orange-900"></ul>
             </div>
         </div>
+        @push('scripts')
+        <script>
+            (() => {
+                const STORAGE_KEY = 'admin_seen_second_strike_ids';
+                const users = @json($usersWithSecondStrike->map(fn ($u) => [
+                    'id' => (string) $u->id,
+                    'name' => $u->name,
+                    'id_number' => $u->id_number,
+                    'role' => strtolower($u->displayRoleLabel()),
+                    'updated_at' => optional($u->updated_at)?->toIso8601String(),
+                ])->values());
+                const alertEl = document.getElementById('second-strike-alert');
+                const listEl = document.getElementById('second-strike-list');
+                const countEl = document.getElementById('second-strike-count');
+                if (!alertEl || !listEl) return;
+
+                const readSeen = () => {
+                    try {
+                        const raw = sessionStorage.getItem(STORAGE_KEY);
+                        const parsed = raw ? JSON.parse(raw) : [];
+                        return Array.isArray(parsed) ? parsed.map(String) : [];
+                    } catch (e) {
+                        return [];
+                    }
+                };
+                const writeSeen = (ids) => {
+                    try { sessionStorage.setItem(STORAGE_KEY, JSON.stringify([...new Set(ids.map(String))])); } catch (e) {}
+                };
+
+                const seen = new Set(readSeen());
+                const fresh = users.filter((u) => !seen.has(String(u.id)));
+                if (!fresh.length) return;
+
+                countEl.textContent = String(fresh.length);
+                listEl.innerHTML = fresh.map((u) =>
+                    `<li>• ${u.name} (${u.id_number || '—'}) — ${u.role || 'user'}</li>`
+                ).join('');
+                alertEl.classList.remove('hidden');
+                alertEl.classList.add('flex');
+
+                const dismiss = () => {
+                    writeSeen([...seen, ...fresh.map((u) => u.id)]);
+                    alertEl.classList.add('hidden');
+                    alertEl.classList.remove('flex');
+                };
+                document.getElementById('second-strike-dismiss')?.addEventListener('click', dismiss);
+                window.setTimeout(dismiss, 10000);
+            })();
+        </script>
+        @endpush
     @endif
 
     {{-- Summary cards --}}

@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Models\GateLog;
 use App\Models\Notification;
 use App\Models\ParkingSlot;
 use App\Models\User;
@@ -318,11 +319,18 @@ class VisitorService
 
     public function completeOnExit(Visitor $visitor): void
     {
+        if ($visitor->status === Visitor::STATUS_COMPLETED) {
+            return;
+        }
+
         $usedUid = $visitor->rfid_uid;
+
+        $this->ensureExitGateLog($visitor, $usedUid);
+        $this->releaseVisitorParking($visitor);
 
         $visitor->update([
             'status' => Visitor::STATUS_COMPLETED,
-            'time_out' => now(),
+            'time_out' => $visitor->time_out ?? now(),
             'rfid_uid' => $usedUid,
         ]);
 
@@ -346,6 +354,41 @@ class VisitorService
             "{$visitor->displayName()} ({$visitor->plate_number}) exited campus. Visit moved to history.",
             $visitor
         );
+    }
+
+    private function ensureExitGateLog(Visitor $visitor, ?string $uid): void
+    {
+        $recentExit = GateLog::query()
+            ->where('visitor_id', $visitor->id)
+            ->where('action', 'Exit')
+            ->where('timestamp', '>=', now()->subMinute())
+            ->orderByDesc('timestamp')
+            ->first();
+
+        if ($recentExit) {
+            return;
+        }
+
+        GateLog::query()->create([
+            'user_id' => null,
+            'visitor_id' => $visitor->id,
+            'action' => 'Exit',
+            'gate_id' => strtoupper(trim((string) config('services.rfid.shared_boom_gate_id', 'GATE-IN-1'))),
+            'rfid_uid' => $uid,
+            'result' => RfidAccessService::STATUS_GRANTED,
+            'timestamp' => now(),
+        ]);
+    }
+
+    private function releaseVisitorParking(Visitor $visitor): void
+    {
+        ParkingSlot::query()
+            ->where('parked_visitor_id', $visitor->id)
+            ->update([
+                'status' => 'Available',
+                'parked_user_id' => null,
+                'parked_visitor_id' => null,
+            ]);
     }
 
     public function expireOverdue(): int

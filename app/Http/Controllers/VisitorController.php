@@ -34,7 +34,7 @@ class VisitorController extends Controller
             'last_name' => ['required', 'string', 'max:80'],
             'middle_name' => ['nullable', 'string', 'max:80'],
             'contact_number' => ['required', 'string', 'max:40'],
-            'email' => ['nullable', 'email', 'max:120'],
+            'email' => ['required', 'email', 'max:120'],
             'purpose' => ['required', 'string', 'max:255'],
             'office_to_visit' => ['required', 'string', 'max:255'],
             'expected_exit_at' => ['required', 'date', 'after:now'],
@@ -43,6 +43,9 @@ class VisitorController extends Controller
             'vehicle_color' => ['required', 'string', 'max:40'],
             'rfid_uid' => ['nullable', 'string', 'max:64'],
             'notes' => ['nullable', 'string', 'max:500'],
+        ], [
+            'email.required' => 'Email is required for visitor registration.',
+            'email.email' => 'Please enter a valid email address.',
         ]);
 
         $visitor = $visitors->register($validated, $request->user());
@@ -157,6 +160,19 @@ class VisitorController extends Controller
         $visitors->returnRfid($visitor, markCompleted: $visitor->status !== Visitor::STATUS_COMPLETED);
 
         return back()->with('success', 'Temporary RFID returned.');
+    }
+
+    public function markExited(Request $request, int $id, VisitorService $visitors): RedirectResponse
+    {
+        $visitor = Visitor::query()->findOrFail($id);
+
+        if ($visitor->status === Visitor::STATUS_COMPLETED) {
+            return back()->with('error', 'This visitor has already been marked as exited.');
+        }
+
+        $visitors->completeOnExit($visitor);
+
+        return back()->with('success', "Visitor {$visitor->displayName()} marked as exited. Visit moved to history.");
     }
 
     private function routePrefix(Request $request): string

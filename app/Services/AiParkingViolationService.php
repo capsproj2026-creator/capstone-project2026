@@ -173,6 +173,10 @@ class AiParkingViolationService
         $user->refresh();
 
         $message = "Your vehicle ({$plate}) was auto-cited by AI parking ({$violationType}). Strikes: {$newStrikes}/".User::MAX_STRIKES.'.';
+        $sanction = \App\Support\ViolationSanctionPresenter::labelForStrike($newStrikes);
+        if ($sanction) {
+            $message .= ' '.$sanction.'.';
+        }
 
         Notification::query()->create([
             'user_id' => $user->id,
@@ -195,6 +199,7 @@ class AiParkingViolationService
                 reportedBy: 'AI Parking Camera ('.$cameraId.')',
                 evidencePaths: $evidencePath ? [$evidencePath] : [],
                 remarks: $description,
+                strikeCount: $newStrikes,
             ));
         } catch (\Throwable $e) {
             Log::warning('AI parking violation email failed: '.$e->getMessage());

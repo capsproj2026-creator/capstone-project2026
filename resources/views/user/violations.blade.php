@@ -12,6 +12,10 @@
         <div class="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
             <p class="text-sm text-gray-500">Strike Count</p>
             <p class="mt-1 text-3xl font-bold text-gray-900">{{ $strikeCount }} / {{ $maxStrikes }}</p>
+            @php($userSanction = \App\Support\ViolationSanctionPresenter::labelForStrike((int) $strikeCount))
+            @if ($userSanction && (int) $strikeCount > 0)
+                <p class="mt-2 text-xs leading-relaxed text-gray-600">{{ $userSanction }}</p>
+            @endif
         </div>
         <div class="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
             <p class="text-sm text-gray-500">Total Citations</p>

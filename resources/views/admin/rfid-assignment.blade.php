@@ -209,7 +209,7 @@
                                     @if ($hasRfid)
                                         <div class="inline-flex w-full items-center justify-center gap-1.5 rounded-lg bg-emerald-50 px-2.5 py-2 text-emerald-700">
                                             <i data-lucide="check-circle" class="h-3.5 w-3.5 shrink-0"></i>
-                                            <span class="truncate font-mono text-[11px] font-semibold" title="{{ $u->rfid_uid }}">{{ $u->rfid_uid }}</span>
+                                            <span class="text-[11px] font-semibold">Tag linked</span>
                                         </div>
                                         @unless ($isLocked)
                                             <button
@@ -312,6 +312,9 @@
                     <label for="assign-rfid-uid" class="mb-1.5 block text-sm font-semibold text-gray-900">
                         RFID Tag Number <span class="text-red-500">*</span>
                     </label>
+                    <p id="assign-rfid-current" class="mb-2 hidden text-xs text-emerald-700">
+                        Currently linked — enter a new UID only if replacing the tag.
+                    </p>
                     <div class="relative">
                         <span class="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400">
                             <i data-lucide="hash" class="h-4 w-4"></i>
@@ -451,7 +454,11 @@
             document.getElementById('assign-rfid-vehicle').textContent = btn.dataset.vehicle || '—';
             document.getElementById('assign-rfid-plate').textContent = btn.dataset.plate || '—';
             if (form) form.action = approveTemplate.replace('__ID__', encodeURIComponent(id));
+            const currentHint = document.getElementById('assign-rfid-current');
+            const hasExisting = Boolean((btn.dataset.rfid || '').trim());
+            if (currentHint) currentHint.classList.toggle('hidden', !hasExisting);
             if (input) {
+                // Keep UID in the input for assignment/update, but do not echo it in the list UI.
                 input.value = btn.dataset.rfid || '';
                 input.focus();
             }

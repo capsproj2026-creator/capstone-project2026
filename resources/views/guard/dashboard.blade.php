@@ -106,42 +106,74 @@
         </div>
     </div>
 
-    <div class="rounded-xl border border-gray-200 bg-white">
-        <div class="border-b border-gray-200 p-6">
+    <div class="rounded-xl border border-gray-200 bg-white shadow-sm">
+        <div class="border-b border-gray-200 px-5 py-4 sm:px-6">
             <h3 class="font-semibold text-gray-900">Recent Access Activity</h3>
+            <p class="mt-0.5 text-sm text-gray-500">Latest gate entries and exits</p>
         </div>
-        <div class="divide-y divide-gray-200">
+        <div class="divide-y divide-gray-100">
             @forelse ($recentGateActivity as $log)
-                <div class="flex items-center justify-between p-4 hover:bg-gray-50">
-                    <div class="flex items-center gap-4">
-                        <div class="@class([
-                            'flex h-10 w-10 items-center justify-center rounded-lg',
-                            'bg-green-100' => $log->action === 'Entry',
-                            'bg-blue-100' => $log->action === 'Exit',
-                        ])">
-                            <i data-lucide="car" class="@class(['h-5 w-5', 'text-green-600' => $log->action === 'Entry', 'text-blue-600' => $log->action === 'Exit'])"></i>
+                @php
+                    $granted = method_exists($log, 'accessGranted') ? $log->accessGranted() : true;
+                    $isEntry = ($log->action ?? '') === 'Entry';
+                    $personName = $log->visitor?->displayName() ?? $log->user?->Name ?? 'Unknown';
+                    $plate = $log->visitor?->plate_number ?? $log->user?->plate_number ?? '—';
+                    $gate = method_exists($log, 'displayGate') ? $log->displayGate() : ($log->gate_id ?? null);
+                @endphp
+                <div class="flex flex-col gap-3 px-5 py-4 hover:bg-gray-50/80 sm:flex-row sm:items-center sm:justify-between sm:px-6">
+                    <div class="flex min-w-0 items-start gap-4">
+                        <div @class([
+                            'flex h-11 w-11 shrink-0 items-center justify-center rounded-xl',
+                            'bg-green-100' => $isEntry,
+                            'bg-blue-100' => ! $isEntry,
+                        ])>
+                            <i data-lucide="{{ $isEntry ? 'log-in' : 'log-out' }}" @class([
+                                'h-5 w-5',
+                                'text-green-600' => $isEntry,
+                                'text-blue-600' => ! $isEntry,
+                            ])></i>
                         </div>
-                        <div>
-                            <p class="font-medium text-gray-900">{{ $log->visitor?->plate_number ?? $log->user?->plate_number ?? '—' }}</p>
-                            <p class="text-sm text-gray-500">
-                                {{ $log->visitor?->displayName() ?? $log->user?->fullname ?? 'Unknown' }}
+                        <div class="min-w-0">
+                            <p class="truncate font-semibold text-gray-900">{{ $plate }}</p>
+                            <p class="mt-0.5 truncate text-sm text-gray-600">
+                                {{ $personName }}
                                 @if ($log->visitor)
-                                    <span class="ml-1 rounded bg-teal-50 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-teal-700">Visitor</span>
+                                    <span class="ml-1 inline-flex rounded bg-teal-50 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-teal-700">Visitor</span>
                                 @endif
                             </p>
+                            @if ($gate)
+                                <p class="mt-1 flex items-center gap-1 text-xs text-gray-500">
+                                    <i data-lucide="door-open" class="h-3.5 w-3.5"></i>
+                                    {{ $gate }}
+                                </p>
+                            @endif
                         </div>
                     </div>
-                    <div class="text-right">
-                        <span class="@class([
-                            'inline-flex rounded-full px-2.5 py-1 text-xs font-medium',
-                            'bg-green-100 text-green-700' => $log->action === 'Entry',
-                            'bg-blue-100 text-blue-700' => $log->action === 'Exit',
-                        ])">{{ $log->action }}</span>
-                        <p class="mt-1 text-sm text-gray-500">{{ $log->timestamp?->diffForHumans() }}</p>
+                    <div class="flex flex-wrap items-center gap-2 sm:flex-col sm:items-end sm:gap-1.5">
+                        <div class="flex flex-wrap items-center gap-2">
+                            <span @class([
+                                'inline-flex rounded-full px-2.5 py-1 text-xs font-semibold',
+                                'bg-green-100 text-green-700' => $isEntry,
+                                'bg-blue-100 text-blue-700' => ! $isEntry,
+                            ])>{{ $log->action ?: '—' }}</span>
+                            @if ($granted)
+                                <span class="inline-flex items-center gap-1 rounded-full bg-emerald-500 px-2.5 py-1 text-xs font-semibold text-white">
+                                    <i data-lucide="check" class="h-3 w-3"></i>
+                                    Granted
+                                </span>
+                            @else
+                                <span class="inline-flex items-center gap-1 rounded-full bg-red-500 px-2.5 py-1 text-xs font-semibold text-white">
+                                    <i data-lucide="x" class="h-3 w-3"></i>
+                                    Denied
+                                </span>
+                            @endif
+                        </div>
+                        <p class="text-sm font-medium text-gray-700">{{ ph_datetime($log->timestamp, 'M j, g:i A') }}</p>
+                        <p class="text-xs text-gray-500">{{ $log->timestamp?->diffForHumans() }}</p>
                     </div>
                 </div>
             @empty
-                <p class="p-6 text-center text-sm text-gray-500">No gate activity recorded yet.</p>
+                <p class="px-5 py-8 text-center text-sm text-gray-500 sm:px-6">No gate activity recorded yet.</p>
             @endforelse
         </div>
     </div>

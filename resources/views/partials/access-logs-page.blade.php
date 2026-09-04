@@ -128,7 +128,12 @@
             <tbody id="access-records-body" class="divide-y divide-gray-100">
                 @forelse ($logs as $log)
                     @php
-                        $role = $log->user?->displayRoleLabel() ?? '—';
+                        $visitor = $log->visitor;
+                        $role = $visitor ? 'Visitor' : ($log->user?->displayRoleLabel() ?? '—');
+                        $displayName = $visitor?->displayName() ?? $log->user?->displayName() ?? 'Unknown';
+                        $displayId = $visitor
+                            ? ($visitor->plate_number ?: ('V-'.$visitor->id))
+                            : ($log->user?->id_number ?? ($log->user?->id ?? '—'));
                         $granted = $log->accessGranted();
                         $isEntry = ($log->action ?? '') === 'Entry';
                     @endphp
@@ -138,8 +143,8 @@
                         </td>
                         <td class="px-5 py-4 sm:px-6">
                             <div class="min-w-0">
-                                <p class="truncate font-semibold text-gray-900">{{ $log->user?->displayName() ?? 'Unknown' }}</p>
-                                <p class="text-xs text-gray-400">{{ $log->user?->id_number ?? ($log->user?->id ?? '—') }}</p>
+                                <p class="truncate font-semibold text-gray-900">{{ $displayName }}</p>
+                                <p class="text-xs text-gray-400">{{ $displayId }}</p>
                             </div>
                         </td>
                         <td class="px-5 py-4 sm:px-6">
@@ -211,7 +216,7 @@
         @forelse ($recentDenied as $denied)
             <div class="flex flex-col gap-3 rounded-xl border border-red-100 bg-white p-4 sm:flex-row sm:items-center sm:justify-between">
                 <div class="min-w-0">
-                    <p class="font-semibold text-gray-900">{{ $denied->user?->displayName() ?? 'Unknown' }}</p>
+                    <p class="font-semibold text-gray-900">{{ $denied->visitor?->displayName() ?? $denied->user?->displayName() ?? 'Unknown' }}</p>
                     <p class="mt-0.5 text-sm text-red-600">{{ $denied->displayReason() }}</p>
                     <p class="mt-2 text-xs text-gray-500">
                         {{ ph_datetime($denied->timestamp, 'n/j/Y, g:i:s A') }}
