@@ -271,13 +271,13 @@
         },
         scales: {
             x: {
-                grid: { color: gridColor, borderDash: [4, 4] },
-                ticks: { color: tickColor, maxRotation: 0, autoSkip: true },
+                grid: { color: gridColor(), borderDash: [4, 4] },
+                ticks: { color: tickColor(), maxRotation: 0, autoSkip: true },
             },
             y: {
                 beginAtZero: true,
-                grid: { color: gridColor },
-                ticks: { color: tickColor, precision: 0 },
+                grid: { color: gridColor() },
+                ticks: { color: tickColor(), precision: 0 },
             },
         },
     };
@@ -319,7 +319,7 @@
                 y: { ...baseOptions.scales.y, stacked: false },
             },
         },
-    });
+    }));
 
     const dist = chartData.userDistribution || { labels: [], values: [], colors: [] };
     const distTotal = (dist.values || []).reduce((a, b) => a + b, 0);
@@ -370,7 +370,7 @@
                 },
             },
         },
-    });
+    }));
 
     const parking = chartData.parkingDaily || { labels: [], values: [], capacity: 0 };
     reportCharts.push(new Chart(document.getElementById('chart-parking-daily'), {
@@ -397,7 +397,7 @@
                 },
             },
         },
-    });
+    }));
 
     const byLoc = chartData.violationsLocation || { labels: [], values: [] };
     reportCharts.push(new Chart(document.getElementById('chart-violations-location'), {
@@ -412,7 +412,7 @@
             }],
         },
         options: baseOptions,
-    });
+    }));
 
     const trends = chartData.violationTrends || { labels: [], series: [] };
     reportCharts.push(new Chart(document.getElementById('chart-violation-trends'), {
@@ -436,7 +436,7 @@
                 legend: { display: true, position: 'bottom', labels: { boxWidth: 12, color: legendColor() } },
             },
         },
-    });
+    }));
 
     const peak = chartData.peakHours || { labels: [], values: [] };
     reportCharts.push(new Chart(document.getElementById('chart-peak-hours'), {
@@ -460,7 +460,7 @@
                 },
             },
         },
-    });
+    }));
 
     window.addEventListener('portal:theme-change', applyChartTheme);
 
