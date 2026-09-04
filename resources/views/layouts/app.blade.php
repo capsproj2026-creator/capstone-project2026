@@ -256,16 +256,6 @@
 
             {{-- Main content --}}
             <main id="portal-main" class="portal-main portal-main-area min-w-0 flex-1 p-4 sm:p-6 lg:p-8">
-                @if (session('success'))
-                    <div class="portal-alert portal-alert--success mb-4">
-                        {{ session('success') }}
-                    </div>
-                @endif
-                @if (session('error'))
-                    <div class="portal-alert portal-alert--error mb-4">
-                        {{ session('error') }}
-                    </div>
-                @endif
                 @if ($errors->any())
                     <div class="portal-alert portal-alert--error mb-4">
                         <p class="font-semibold">Please fix the following:</p>

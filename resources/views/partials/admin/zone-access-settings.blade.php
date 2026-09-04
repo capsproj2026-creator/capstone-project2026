@@ -3,13 +3,6 @@
     $hiddenZoneCount = $zones->count() - $visibleZoneCount;
 @endphp
 
-@if (session('success'))
-    <div class="mb-6 flex gap-2 rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800">
-        <i data-lucide="circle-check" class="h-4 w-4 shrink-0"></i>
-        {{ session('success') }}
-    </div>
-@endif
-
 <div class="rounded-xl border border-blue-200 bg-white shadow-sm">
     <div class="border-b border-blue-100 bg-blue-50/60 px-5 py-4 sm:px-6">
         <div class="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">

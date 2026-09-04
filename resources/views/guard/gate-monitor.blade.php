@@ -7,6 +7,7 @@
         @include('partials.shell.page-header', [
             'title' => 'Live Gate Monitor',
             'subtitle' => 'Displays user info when they pass through the gate',
+            'showFlash' => false,
         ])
         <button
             type="button"
@@ -20,12 +21,7 @@
         </button>
     </div>
 
-    @if (session('error'))
-        <div class="mb-5 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">{{ session('error') }}</div>
-    @endif
-    @if (session('success'))
-        <div class="mb-5 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">{{ session('success') }}</div>
-    @endif
+    @include('partials.shell.flash')
 
     {{-- Summary cards (normal view only — hidden in fullscreen) --}}
     <div id="gate-monitor-stats" class="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-3">

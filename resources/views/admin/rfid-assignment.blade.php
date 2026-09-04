@@ -19,18 +19,6 @@
         'subtitle' => 'Assign RFID tags to approved users',
     ])
 
-    @if (session('error'))
-        <div class="mb-5 flex items-start gap-3 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
-            <span class="mt-0.5 inline-block h-2 w-2 shrink-0 rounded-full bg-red-500"></span>
-            <span>{{ session('error') }}</span>
-        </div>
-    @endif
-    @if (session('success'))
-        <div class="mb-5 flex items-start gap-3 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
-            <span class="mt-0.5 inline-block h-2 w-2 shrink-0 rounded-full bg-emerald-500"></span>
-            <span>{{ session('success') }}</span>
-        </div>
-    @endif
     @if ($errors->any())
         <div class="mb-5 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
             <p class="font-semibold">RFID approval was not saved:</p>

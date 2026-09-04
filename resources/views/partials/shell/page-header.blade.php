@@ -4,3 +4,7 @@
         <p class="portal-muted mt-1 text-sm sm:text-base">{{ $subtitle }}</p>
     @endif
 </div>
+
+@if ($showFlash ?? true)
+    @include('partials.shell.flash')
+@endif

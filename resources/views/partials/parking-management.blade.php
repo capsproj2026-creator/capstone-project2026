@@ -19,13 +19,6 @@
     @include('partials.admin.parking-nav', ['active' => 'overview'])
 @endif
 
-    @if (session('success'))
-    <div class="mb-6 flex gap-2 rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800">
-        <i data-lucide="circle-check" class="h-4 w-4 shrink-0"></i>
-        {{ session('success') }}
-    </div>
-@endif
-
 <div class="mb-6 grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-3 xl:grid-cols-6">
     <div class="rounded-xl border border-gray-200 bg-white p-4">
         <div class="flex items-center justify-between pb-2">
