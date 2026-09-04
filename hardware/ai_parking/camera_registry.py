@@ -113,8 +113,8 @@ def load_cameras(base_dir: Path | None = None) -> List[CameraConfig]:
         },
         2: {
             "id": "CAM-AI-2",
-            "name": "Talipapa",
-            "location": "Talipapa",
+            "name": "Duran Hall Front",
+            "location": "Duran Hall Front",
             "area_id": "3",
             "ip": "",
             "user": "",
@@ -135,8 +135,8 @@ def load_cameras(base_dir: Path | None = None) -> List[CameraConfig]:
         },
         3: {
             "id": "CAM-AI-3",
-            "name": "Campus Camera 3",
-            "location": "Visitor Parking",
+            "name": "Talipapa",
+            "location": "Talipapa",
             "area_id": "9",
             "ip": "",
             "user": "",

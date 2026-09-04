@@ -13,12 +13,12 @@
     },
     "duran": {
       "area_id": 3,
-      "name": "Duran Hall (Front)",
+      "name": "Duran Hall Front",
       "prefix": "DU",
       "capacity": 10,
       "zones_file": "zones_duran.json",
       "snapshot": "snapshot_duran.jpg",
-      "env_location": "Duran Hall (Front)",
+      "env_location": "Duran Hall Front",
       "camera": 2
     },
     "auditorium": {
