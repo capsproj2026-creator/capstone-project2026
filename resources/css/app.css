@@ -1038,19 +1038,34 @@
     html.dark table thead {
         background-color: rgba(23, 29, 40, 0.95) !important;
         color: var(--portal-text-muted) !important;
-        border-bottom-color: rgba(51, 65, 85, 0.9) !important;
+        /* Drop the harsh header/body rule — it reads as a bright white separator */
+        border-bottom: none !important;
         box-shadow: none !important;
     }
 
     html.dark table thead th,
     html.dark table thead tr {
-        border-bottom-color: rgba(51, 65, 85, 0.9) !important;
+        border-bottom: none !important;
         box-shadow: none !important;
     }
 
     html.dark .overflow-hidden.rounded-xl.border table thead,
     html.dark .rounded-xl.border table thead {
         border-top: none !important;
+        border-bottom: none !important;
+    }
+
+    /* Table-level divide-y draws a top border on <tbody> (looks like a white rule under the header) */
+    html.dark table.divide-y > thead + tbody,
+    html.dark table.divide-y > :not([hidden]) ~ :not([hidden]):is(tbody) {
+        border-top: none !important;
+    }
+
+    /* Keep body row lines muted; never bright/near-white */
+    html.dark table tbody.divide-y > :not([hidden]) ~ :not([hidden]),
+    html.dark table tbody.divide-gray-100 > :not([hidden]) ~ :not([hidden]),
+    html.dark table tbody.divide-gray-200 > :not([hidden]) ~ :not([hidden]) {
+        border-top-color: rgba(51, 65, 85, 0.55) !important;
     }
 
     html.dark table tbody tr:hover {
