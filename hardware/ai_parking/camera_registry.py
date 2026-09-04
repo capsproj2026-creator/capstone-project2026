@@ -91,8 +91,8 @@ def load_cameras(base_dir: Path | None = None) -> List[CameraConfig]:
     defaults = {
         1: {
             "id": "CAM-AI-1",
-            "name": "ACAD 1 Building (Front)",
-            "location": "ACAD 1 Building (Front)",
+            "name": "Duran Hall Front",
+            "location": "Duran Hall Front",
             "area_id": "4",
             "ip": _env("AI_CAMERA_IP", "192.168.1.108"),
             "user": _env("AI_CAMERA_USER", "admin"),
@@ -113,8 +113,8 @@ def load_cameras(base_dir: Path | None = None) -> List[CameraConfig]:
         },
         2: {
             "id": "CAM-AI-2",
-            "name": "Duran Hall (Front)",
-            "location": "Duran Hall (Front)",
+            "name": "Talipapa",
+            "location": "Talipapa",
             "area_id": "3",
             "ip": "",
             "user": "",

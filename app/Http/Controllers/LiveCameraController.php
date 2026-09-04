@@ -49,7 +49,7 @@ class LiveCameraController extends Controller
             $cameras[] = [
                 'id' => strtolower(str_replace('_', '-', $cam['id'])),
                 'camera_id' => $cam['id'],
-                'name' => $area?->area_name ?? $cam['name'],
+                'name' => filled($cam['name'] ?? null) ? $cam['name'] : ($area?->area_name ?? 'Camera'),
                 'location' => $cam['location'],
                 'stream_url' => $streamUrl,
                 'has_stream' => $hasStream,

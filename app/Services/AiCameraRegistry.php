@@ -34,8 +34,8 @@ class AiCameraRegistry
         // Backward-compatible single camera from legacy config keys.
         $legacy = $this->normalizeCamera([
             'id' => (string) config('services.ai_parking.cameras.0.id', 'CAM-AI-1'),
-            'name' => (string) config('services.ai_parking.cameras.0.name', 'ACAD 1 Building (Front)'),
-            'location' => (string) config('services.ai_parking.cameras.0.location', 'ACAD 1 Building (Front)'),
+            'name' => (string) config('services.ai_parking.cameras.0.name', 'Duran Hall Front'),
+            'location' => (string) config('services.ai_parking.cameras.0.location', 'Duran Hall Front'),
             'area_id' => (int) config('services.ai_parking.area_id', self::DEFAULT_AREA_ID),
             'stream_path' => '/stream.mjpg',
             'stream_url' => config('services.ai_parking.stream_browser_url')

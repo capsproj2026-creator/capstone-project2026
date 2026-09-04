@@ -95,8 +95,8 @@ return [
         'cameras' => array_values(array_filter([
             [
                 'id' => env('AI_CAMERA_1_ID', env('AI_CAMERA_ID', 'CAM-AI-1')),
-                'name' => env('AI_CAMERA_1_NAME', 'ACAD 1 Building (Front)'),
-                'location' => env('AI_CAMERA_1_LOCATION', 'ACAD 1 Building (Front)'),
+                'name' => env('AI_CAMERA_1_NAME', 'Duran Hall Front'),
+                'location' => env('AI_CAMERA_1_LOCATION', 'Duran Hall Front'),
                 'area_id' => (int) env('AI_CAMERA_1_AREA_ID', env('AI_PARKING_AREA_ID', 4)),
                 'stream_path' => env('AI_CAMERA_1_STREAM_PATH', '/stream.mjpg'),
                 'stream_url' => env('AI_CAMERA_1_STREAM_URL', env('AI_PARKING_STREAM_BROWSER_URL', env('AI_PARKING_STREAM_URL'))),
@@ -106,8 +106,8 @@ return [
             ],
             [
                 'id' => env('AI_CAMERA_2_ID', 'CAM-AI-2'),
-                'name' => env('AI_CAMERA_2_NAME', 'Duran Hall (Front)'),
-                'location' => env('AI_CAMERA_2_LOCATION', 'Duran Hall (Front)'),
+                'name' => env('AI_CAMERA_2_NAME', 'Talipapa'),
+                'location' => env('AI_CAMERA_2_LOCATION', 'Talipapa'),
                 'area_id' => (int) env('AI_CAMERA_2_AREA_ID', 3),
                 'stream_path' => env('AI_CAMERA_2_STREAM_PATH'),
                 'stream_url' => env('AI_CAMERA_2_STREAM_URL'),
