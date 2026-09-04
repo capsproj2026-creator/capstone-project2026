@@ -120,10 +120,10 @@
                     $plate = $log->visitor?->plate_number ?? $log->user?->plate_number ?? '—';
                     $gate = method_exists($log, 'displayGate') ? $log->displayGate() : ($log->gate_id ?? null);
                 @endphp
-                <div class="flex flex-col gap-3 px-5 py-4 hover:bg-gray-50/80 sm:flex-row sm:items-center sm:justify-between sm:px-6">
-                    <div class="flex min-w-0 items-start gap-4">
+                <div class="flex flex-wrap items-center gap-x-6 gap-y-3 px-5 py-4 hover:bg-gray-50/80 sm:px-6">
+                    <div class="flex min-w-0 flex-[1_1_14rem] items-start gap-3">
                         <div @class([
-                            'flex h-11 w-11 shrink-0 items-center justify-center rounded-xl',
+                            'flex h-10 w-10 shrink-0 items-center justify-center rounded-lg',
                             'bg-green-100' => $isEntry,
                             'bg-blue-100' => ! $isEntry,
                         ])>
@@ -149,25 +149,27 @@
                             @endif
                         </div>
                     </div>
-                    <div class="flex flex-wrap items-center gap-2 sm:flex-col sm:items-end sm:gap-1.5">
-                        <div class="flex flex-wrap items-center gap-2">
-                            <span @class([
-                                'inline-flex rounded-full px-2.5 py-1 text-xs font-semibold',
-                                'bg-green-100 text-green-700' => $isEntry,
-                                'bg-blue-100 text-blue-700' => ! $isEntry,
-                            ])>{{ $log->action ?: '—' }}</span>
-                            @if ($granted)
-                                <span class="inline-flex items-center gap-1 rounded-full bg-emerald-500 px-2.5 py-1 text-xs font-semibold text-white">
-                                    <i data-lucide="check" class="h-3 w-3"></i>
-                                    Granted
-                                </span>
-                            @else
-                                <span class="inline-flex items-center gap-1 rounded-full bg-red-500 px-2.5 py-1 text-xs font-semibold text-white">
-                                    <i data-lucide="x" class="h-3 w-3"></i>
-                                    Denied
-                                </span>
-                            @endif
-                        </div>
+
+                    <div class="flex shrink-0 flex-wrap items-center gap-2">
+                        <span @class([
+                            'inline-flex rounded-full px-2.5 py-1 text-xs font-semibold',
+                            'bg-green-100 text-green-700' => $isEntry,
+                            'bg-blue-100 text-blue-700' => ! $isEntry,
+                        ])>{{ $log->action ?: '—' }}</span>
+                        @if ($granted)
+                            <span class="inline-flex items-center gap-1 rounded-full bg-emerald-500 px-2.5 py-1 text-xs font-semibold text-white">
+                                <i data-lucide="check" class="h-3 w-3"></i>
+                                Granted
+                            </span>
+                        @else
+                            <span class="inline-flex items-center gap-1 rounded-full bg-red-500 px-2.5 py-1 text-xs font-semibold text-white">
+                                <i data-lucide="x" class="h-3 w-3"></i>
+                                Denied
+                            </span>
+                        @endif
+                    </div>
+
+                    <div class="min-w-[7.5rem] shrink-0 sm:text-right">
                         <p class="text-sm font-medium text-gray-700">{{ ph_datetime($log->timestamp, 'M j, g:i A') }}</p>
                         <p class="text-xs text-gray-500">{{ $log->timestamp?->diffForHumans() }}</p>
                     </div>

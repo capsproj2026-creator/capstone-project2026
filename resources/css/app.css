@@ -87,8 +87,8 @@
         --portal-text: #e2e8f0;
         --portal-text-muted: #9ca8b9;
         --portal-text-subtle: #6b7789;
-        --portal-border: rgba(148, 163, 184, 0.14);
-        --portal-border-strong: rgba(100, 116, 139, 0.35);
+        --portal-border: rgba(51, 65, 85, 0.9);
+        --portal-border-strong: rgba(71, 85, 105, 0.95);
         --portal-header-bg: #1A365D;
         --portal-header-text: #ffffff;
         --portal-header-muted: rgba(255, 255, 255, 0.78);
@@ -865,12 +865,26 @@
     html.dark .border-gray-200,
     html.dark .border-gray-100,
     html.dark .border-slate-200,
-    html.dark .border-slate-100 {
+    html.dark .border-slate-100,
+    html.dark .border-b,
+    html.dark .border-t {
         border-color: var(--portal-border) !important;
     }
 
+    html.dark .divide-y > :not([hidden]) ~ :not([hidden]),
     html.dark .divide-gray-100 > :not([hidden]) ~ :not([hidden]),
-    html.dark .divide-slate-100 > :not([hidden]) ~ :not([hidden]) {
+    html.dark .divide-gray-200 > :not([hidden]) ~ :not([hidden]),
+    html.dark .divide-slate-100 > :not([hidden]) ~ :not([hidden]),
+    html.dark .divide-slate-200 > :not([hidden]) ~ :not([hidden]) {
+        border-color: var(--portal-border) !important;
+    }
+
+    html.dark table,
+    html.dark thead,
+    html.dark tbody,
+    html.dark tr,
+    html.dark th,
+    html.dark td {
         border-color: var(--portal-border) !important;
     }
 
@@ -1221,10 +1235,6 @@
     }
 
     html.dark .border-white\/60 {
-        border-color: var(--portal-border) !important;
-    }
-
-    html.dark .divide-gray-200 > :not([hidden]) ~ :not([hidden]) {
         border-color: var(--portal-border) !important;
     }
 
