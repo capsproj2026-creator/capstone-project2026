@@ -22,17 +22,22 @@
                 <ul id="second-strike-list" class="mt-3 space-y-1 text-sm text-orange-900"></ul>
             </div>
         </div>
-        @push('scripts')
-        <script>
-            (() => {
-                const STORAGE_KEY = 'admin_seen_second_strike_ids';
-                const users = @json($usersWithSecondStrike->map(fn ($u) => [
+        @php
+            $secondStrikeUsersPayload = $usersWithSecondStrike->map(static function ($u) {
+                return [
                     'id' => (string) $u->id,
                     'name' => $u->name,
                     'id_number' => $u->id_number,
                     'role' => strtolower($u->displayRoleLabel()),
                     'updated_at' => optional($u->updated_at)?->toIso8601String(),
-                ])->values());
+                ];
+            })->values();
+        @endphp
+        @push('scripts')
+        <script>
+            (() => {
+                const STORAGE_KEY = 'admin_seen_second_strike_ids';
+                const users = @json($secondStrikeUsersPayload);
                 const alertEl = document.getElementById('second-strike-alert');
                 const listEl = document.getElementById('second-strike-list');
                 const countEl = document.getElementById('second-strike-count');
