@@ -185,7 +185,9 @@
                             'text-gray-800' => $strikes < 1,
                         ])>{{ $strikes }}/3 Strikes</p>
                         @if ($strikes >= 1)
-                            @php($sanctionLabel = \App\Support\ViolationSanctionPresenter::labelForStrike($strikes))
+                            @php
+                                $sanctionLabel = \App\Support\ViolationSanctionPresenter::labelForStrike($strikes);
+                            @endphp
                             @if ($sanctionLabel)
                                 <p class="mb-2 text-xs leading-relaxed text-gray-600">{{ $sanctionLabel }}</p>
                             @endif
@@ -238,14 +240,16 @@
                                 ? 'bg-red-100 text-red-700'
                                 : ($strikes === 2 ? 'bg-orange-100 text-orange-700' : 'bg-amber-100 text-amber-800');
                         @endphp
-                        <a href="{{ route('admin.violations', ['q' => $user->fullname]) }}" class="block rounded-lg transition hover:bg-gray-50">
+                        <a href="{{ route('admin.violations', ['q' => $user->displayName()]) }}" class="block rounded-lg transition hover:bg-gray-50">
                             <div class="mb-2 flex items-center justify-between gap-2">
-                                <p class="truncate text-sm font-semibold text-gray-900">{{ $user->fullname }}</p>
+                                <p class="truncate text-sm font-semibold text-gray-900">{{ $user->displayName() }}</p>
                                 <span class="shrink-0 rounded-full px-2 py-0.5 text-[10px] font-bold {{ $badgeClass }}">
                                     {{ $strikes }}/3 Strikes
                                 </span>
                             </div>
-                            @php($overviewSanction = \App\Support\ViolationSanctionPresenter::descriptionForStrike($strikes))
+                            @php
+                                $overviewSanction = \App\Support\ViolationSanctionPresenter::descriptionForStrike($strikes);
+                            @endphp
                             @if ($overviewSanction)
                                 <p class="mb-2 text-[11px] leading-relaxed text-gray-500">{{ $overviewSanction }}</p>
                             @endif
@@ -277,7 +281,7 @@
                 </div>
             </div>
 
-            <div class="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+<div class="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
                 <h3 class="text-base font-semibold text-gray-900">Violation Types</h3>
                 <ul class="mt-4 space-y-3">
                     @forelse ($typeCounts as $typeName => $count)

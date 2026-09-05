@@ -7,9 +7,10 @@
         $tabs = [
             'general' => ['label' => 'General', 'icon' => 'settings'],
             'admins' => ['label' => 'Admin Users', 'icon' => 'shield'],
-            'notifications' => ['label' => 'Notifications', 'icon' => 'bell'],
+            'notifications' => ['label' => 'Notifications', 'icon' => 'info'],
             'violations' => ['label' => 'Violations', 'icon' => 'triangle-alert'],
             'access' => ['label' => 'Access Rules', 'icon' => 'key-round'],
+            'policy' => ['label' => 'Policy', 'icon' => 'book-open'],
         ];
     @endphp
 
@@ -161,65 +162,17 @@
             @include('partials.admin.settings-admins')
 
         @elseif ($section === 'notifications')
-            <form method="POST" action="{{ route('admin.settings.general') }}" class="mb-6">
-                @csrf
-                <div class="overflow-hidden rounded-xl border border-gray-200 bg-white p-5 shadow-sm sm:p-6">
-                    <h3 class="text-lg font-semibold text-gray-900">Campus Notices</h3>
-                    <p class="mt-1 mb-5 text-sm text-gray-500">Messages shown to users on their dashboard</p>
-
-                    <div class="space-y-4">
-                        @forelse ($generalInfo as $item)
-                            <div class="min-w-0">
-                                <label class="mb-1 block text-xs font-medium uppercase tracking-wide text-gray-500">Notice #{{ $item->id }}</label>
-                                <textarea name="descriptions[{{ $item->id }}]" rows="3"
-                                    class="w-full resize-y rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm focus:border-blue-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20">{{ old("descriptions.{$item->id}", $item->description) }}</textarea>
-                            </div>
-                        @empty
-                            <p class="text-sm text-gray-500">No campus notices yet.</p>
-                        @endforelse
-                    </div>
-
-                    @if ($generalInfo->isNotEmpty())
-                        <button type="submit" class="mt-5 inline-flex items-center gap-2 rounded-lg bg-gray-900 px-5 py-2.5 text-sm font-semibold text-white hover:bg-black">
-                            <i data-lucide="save" class="h-4 w-4"></i>
-                            Save Notices
-                        </button>
-                    @endif
-                </div>
-            </form>
-
-            <div class="mb-6 overflow-hidden rounded-xl border border-dashed border-gray-300 bg-white p-5 shadow-sm">
-                <h4 class="mb-3 text-sm font-semibold text-gray-900">Add Campus Notice</h4>
-                <form method="POST" action="{{ route('admin.settings.general.store') }}" class="flex flex-col gap-3 sm:flex-row sm:items-center">
-                    @csrf
-                    <input type="text" name="description" required placeholder="New policy or notice text..."
-                        class="min-w-0 w-full flex-1 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm">
-                    <button type="submit" class="shrink-0 rounded-lg bg-blue-600 px-5 py-2 text-sm font-semibold text-white hover:bg-blue-700">Add Notice</button>
-                </form>
-            </div>
-
-            @if ($stalledVehicles->isNotEmpty())
-                <div class="overflow-hidden rounded-xl border border-amber-200 bg-amber-50/40 p-5 shadow-sm sm:p-6">
-                    <h3 class="mb-3 flex items-center gap-2 text-base font-semibold text-gray-900">
-                        <i data-lucide="clock" class="h-4 w-4 shrink-0 text-amber-600"></i>
-                        Stalled Vehicle Thresholds
-                    </h3>
-                    <ul class="space-y-2 text-sm text-gray-700">
-                        @foreach ($stalledVehicles as $vehicle)
-                            <li class="break-words rounded-lg bg-white px-3 py-2">{{ $vehicle->description ?? 'Threshold #'.$vehicle->id }}</li>
-                        @endforeach
-                    </ul>
-                    <p class="mt-3 text-xs text-gray-500">
-                        Applied when “Enable Visitor Time Limits” is on in General preferences.
-                    </p>
-                </div>
-            @endif
+            @include('partials.admin.settings-notifications')
 
         @elseif ($section === 'violations')
             @include('partials.admin.settings-violations')
 
+        @elseif ($section === 'policy')
+            @include('partials.admin.settings-policy')
+
         @else
             @include('partials.admin.settings-parking-rules')
+            @include('partials.admin.settings-stalled-vehicles')
 
             <div class="pb-4">
                 @include('partials.admin.zone-access-settings', ['zones' => $zones])
@@ -321,10 +274,76 @@
         btn.addEventListener('click', () => openEditParkingRule(btn));
     });
 
+    const campusNoticeForm = document.getElementById('campus-notice-form');
+    const campusNoticeMethod = document.getElementById('campus-notice-form-method');
+    const campusNoticeTitle = document.getElementById('campus-notice-modal-title');
+    const campusNoticeDesc = document.getElementById('campus_notice_description');
+    const campusNoticeStoreUrl = @json(route('admin.settings.general.store'));
+    const campusNoticeUpdateUrlTemplate = @json(route('admin.settings.general.update', ['id' => '__ID__']));
+
+    const openAddCampusNotice = () => {
+        if (!campusNoticeForm) return;
+        campusNoticeForm.action = campusNoticeStoreUrl;
+        if (campusNoticeMethod) campusNoticeMethod.value = 'POST';
+        if (campusNoticeTitle) campusNoticeTitle.textContent = 'Add General Information';
+        if (campusNoticeDesc) campusNoticeDesc.value = '';
+        openModal('campus-notice-modal');
+        campusNoticeDesc?.focus();
+    };
+
+    const openEditCampusNotice = (btn) => {
+        if (!campusNoticeForm) return;
+        const id = btn.getAttribute('data-id');
+        campusNoticeForm.action = campusNoticeUpdateUrlTemplate.replace('__ID__', encodeURIComponent(id));
+        if (campusNoticeMethod) campusNoticeMethod.value = 'PUT';
+        if (campusNoticeTitle) campusNoticeTitle.textContent = 'Edit General Information';
+        if (campusNoticeDesc) campusNoticeDesc.value = btn.getAttribute('data-description') || '';
+        openModal('campus-notice-modal');
+        campusNoticeDesc?.focus();
+    };
+
+    document.getElementById('open-add-campus-notice')?.addEventListener('click', openAddCampusNotice);
+    document.querySelectorAll('[data-edit-campus-notice]').forEach((btn) => {
+        btn.addEventListener('click', () => openEditCampusNotice(btn));
+    });
+
+    const stalledForm = document.getElementById('stalled-vehicle-form');
+    const stalledMethod = document.getElementById('stalled-vehicle-form-method');
+    const stalledTitle = document.getElementById('stalled-vehicle-modal-title');
+    const stalledDesc = document.getElementById('stalled_vehicle_description');
+    const stalledStoreUrl = @json(route('admin.settings.stalled.store'));
+    const stalledUpdateUrlTemplate = @json(route('admin.settings.stalled.update', ['id' => '__ID__']));
+
+    const openAddStalledVehicle = () => {
+        if (!stalledForm) return;
+        stalledForm.action = stalledStoreUrl;
+        if (stalledMethod) stalledMethod.value = 'POST';
+        if (stalledTitle) stalledTitle.textContent = 'Add Stalled Vehicles Item';
+        if (stalledDesc) stalledDesc.value = '';
+        openModal('stalled-vehicle-modal');
+        stalledDesc?.focus();
+    };
+
+    const openEditStalledVehicle = (btn) => {
+        if (!stalledForm) return;
+        const id = btn.getAttribute('data-id');
+        stalledForm.action = stalledUpdateUrlTemplate.replace('__ID__', encodeURIComponent(id));
+        if (stalledMethod) stalledMethod.value = 'PUT';
+        if (stalledTitle) stalledTitle.textContent = 'Edit Stalled Vehicles Item';
+        if (stalledDesc) stalledDesc.value = btn.getAttribute('data-description') || '';
+        openModal('stalled-vehicle-modal');
+        stalledDesc?.focus();
+    };
+
+    document.getElementById('open-add-stalled-vehicle')?.addEventListener('click', openAddStalledVehicle);
+    document.querySelectorAll('[data-edit-stalled-vehicle]').forEach((btn) => {
+        btn.addEventListener('click', () => openEditStalledVehicle(btn));
+    });
+
     document.querySelectorAll('[data-close-modal]').forEach((btn) => {
         btn.addEventListener('click', () => closeModal(btn.getAttribute('data-close-modal')));
     });
-    ['create-admin-modal', 'create-guard-modal', 'violation-type-modal', 'parking-rule-modal'].forEach((id) => {
+    ['create-admin-modal', 'create-guard-modal', 'violation-type-modal', 'parking-rule-modal', 'campus-notice-modal', 'stalled-vehicle-modal'].forEach((id) => {
         document.getElementById(id)?.addEventListener('click', (e) => {
             if (e.target.id === id) closeModal(id);
         });
@@ -335,6 +354,8 @@
             closeModal('create-guard-modal');
             closeModal('violation-type-modal');
             closeModal('parking-rule-modal');
+            closeModal('campus-notice-modal');
+            closeModal('stalled-vehicle-modal');
         }
     });
 })();

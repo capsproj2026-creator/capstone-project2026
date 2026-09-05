@@ -282,14 +282,9 @@ class AiParkingOccupancyTest extends TestCase
             $this->markTestSkipped('Guard user not seeded.');
         }
 
-        // Fake upstream so this never hangs on a live MJPEG socket.
-        Http::fake([
-            '*' => Http::response('offline', 503),
-        ]);
-
         $this->actingAs($guard)
             ->get(route('guard.ai-parking.stream'))
-            ->assertStatus(503);
+            ->assertRedirect('http://127.0.0.1:8090/stream.mjpg');
     }
 
     public function test_status_payload_includes_ai_health(): void

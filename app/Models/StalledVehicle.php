@@ -8,5 +8,12 @@ class StalledVehicle extends MongoModel
 
     public $timestamps = false;
 
-    protected $fillable = ['description'];
+    protected $fillable = ['description', 'status'];
+
+    public function isActive(): bool
+    {
+        $status = trim((string) ($this->status ?? 'Active'));
+
+        return $status === '' || strcasecmp($status, 'Active') === 0;
+    }
 }

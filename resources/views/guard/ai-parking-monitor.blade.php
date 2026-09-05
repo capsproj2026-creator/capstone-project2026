@@ -81,6 +81,8 @@
                                 class="absolute inset-0 h-full w-full object-cover {{ $online ? '' : 'hidden' }}"
                                 data-stream-img
                                 data-camera-stream="{{ $camId }}"
+                                decoding="async"
+                                loading="eager"
                             >
                             <div data-stream-fallback @class([
                                 'absolute inset-0 flex flex-col items-center justify-center gap-2 text-slate-400',

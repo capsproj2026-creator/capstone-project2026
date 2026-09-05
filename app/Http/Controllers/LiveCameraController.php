@@ -8,11 +8,11 @@ use App\Services\AiParkingHealthService;
 use App\Services\AiParkingOccupancyService;
 use App\Support\PlateLookup;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 use Illuminate\Support\Facades\Http;
 use Illuminate\View\View;
-use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class LiveCameraController extends Controller
 {
@@ -126,7 +126,7 @@ class LiveCameraController extends Controller
         ]);
     }
 
-    public function stream(AiParkingHealthService $health, ?string $camera = null): StreamedResponse|Response
+    public function stream(AiParkingHealthService $health, ?string $camera = null): RedirectResponse|Response
     {
         $withAi = request()->boolean('ai', true);
         $upstream = $health->upstreamStreamUrl($camera, $withAi);
@@ -134,51 +134,15 @@ class LiveCameraController extends Controller
             abort(503, 'AI parking stream is not configured.');
         }
 
-        // SSRF guard: only proxy to the local AI parking MJPEG service.
+        // SSRF guard: only allow redirect to the local AI parking MJPEG service.
         $host = parse_url($upstream, PHP_URL_HOST);
         if (! in_array(strtolower((string) $host), ['127.0.0.1', 'localhost', '::1'], true)) {
             abort(503, 'AI parking stream host is not allowed.');
         }
 
-        try {
-            $response = Http::timeout(5)
-                ->withOptions(['stream' => true, 'read_timeout' => 300])
-                ->get($upstream);
-        } catch (\Throwable) {
-            abort(503, 'AI parking stream is unreachable.');
-        }
-
-        if (! $response->successful()) {
-            abort(503, 'AI parking stream returned an error.');
-        }
-
-        $contentType = $response->header('Content-Type') ?: 'multipart/x-mixed-replace; boundary=frame';
-
-        return response()->stream(function () use ($response) {
-            $body = $response->toPsrResponse()->getBody();
-
-            try {
-                while (! $body->eof()) {
-                    if (connection_aborted()) {
-                        break;
-                    }
-
-                    echo $body->read(8192);
-
-                    if (ob_get_level() > 0) {
-                        ob_flush();
-                    }
-
-                    flush();
-                }
-            } finally {
-                $body->close();
-            }
-        }, 200, [
-            'Content-Type' => $contentType,
-            'Cache-Control' => 'no-cache, private',
-            'Pragma' => 'no-cache',
-        ]);
+        // Never proxy endless MJPEG through `php artisan serve` — it is single-threaded
+        // and blocks occupancy POSTs / the whole site while a stream is open.
+        return redirect()->away($upstream);
     }
 
     public function status(AiParkingOccupancyService $ai): JsonResponse

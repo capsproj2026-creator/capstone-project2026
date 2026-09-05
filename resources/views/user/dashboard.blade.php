@@ -142,15 +142,15 @@
 
     {{-- Stacked accordions: each panel sizes on its own so opening one never stretches the other --}}
     <div class="mb-6 flex flex-col gap-4" data-dashboard-accordions>
-        <details class="dashboard-accordion group overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm transition-[box-shadow] duration-200 open:border-blue-200 open:shadow-md" open>
+        <details class="dashboard-accordion group overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm transition-[box-shadow] duration-200 open:border-blue-200 open:shadow-md">
             <summary class="flex cursor-pointer list-none items-center justify-between gap-3 px-5 py-4 select-none hover:bg-gray-50/80 sm:px-6 [&::-webkit-details-marker]:hidden">
                 <div class="flex min-w-0 items-center gap-3">
                     <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-blue-50 text-blue-700">
                         <i data-lucide="info" class="h-5 w-5"></i>
                     </div>
                     <div class="min-w-0">
-                        <h3 class="font-semibold text-gray-900">Rationale — Section 10.2</h3>
-                        <p class="text-xs text-gray-500">Campus parking rationale and general information</p>
+                        <h3 class="font-semibold text-gray-900">General Information</h3>
+                        <p class="text-xs text-gray-500">Campus parking general information</p>
                     </div>
                 </div>
                 <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gray-100 text-gray-500 transition-colors duration-200 group-open:bg-blue-50 group-open:text-blue-700">
@@ -176,7 +176,7 @@
                         <i data-lucide="clipboard-list" class="h-5 w-5"></i>
                     </div>
                     <div class="min-w-0">
-                        <h3 class="font-semibold text-gray-900">Section 11</h3>
+                        <h3 class="font-semibold text-gray-900">Stalled Vehicles</h3>
                         <p class="text-xs text-gray-500">Parking rules and stalled vehicle policy</p>
                     </div>
                 </div>

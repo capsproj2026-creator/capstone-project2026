@@ -120,7 +120,7 @@ class CapstoneSeeder extends Seeder
         foreach ($items as $index => $description) {
             GeneralInformation::query()->updateOrCreate(
                 ['id' => $index + 1],
-                ['description' => $description]
+                ['description' => $description, 'status' => 'Active']
             );
         }
     }
@@ -185,7 +185,10 @@ class CapstoneSeeder extends Seeder
         ];
 
         foreach ($items as $index => $description) {
-            StalledVehicle::query()->updateOrCreate(['id' => $index + 1], ['description' => $description]);
+            StalledVehicle::query()->updateOrCreate(
+                ['id' => $index + 1],
+                ['description' => $description, 'status' => 'Active']
+            );
         }
     }
 

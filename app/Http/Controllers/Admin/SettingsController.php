@@ -14,6 +14,7 @@ use App\Services\NavigationService;
 use App\Services\RolePermissionService;
 use App\Services\SequenceService;
 use App\Services\SystemSettingService;
+use App\Support\CampusParkingPolicy;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
@@ -23,7 +24,7 @@ use Illuminate\View\View;
 class SettingsController extends Controller
 {
     /** @var list<string> */
-    private const SECTIONS = ['general', 'admins', 'notifications', 'violations', 'access'];
+    private const SECTIONS = ['general', 'admins', 'notifications', 'violations', 'access', 'policy'];
 
     public function index(Request $request, SystemSettingService $settings, RolePermissionService $permissions): View
     {
@@ -45,6 +46,7 @@ class SettingsController extends Controller
             'parkingRules' => ParkingRule::query()->orderBy('id')->get(),
             'stalledVehicles' => StalledVehicle::query()->orderBy('id')->get(),
             'violationTypes' => ViolationType::query()->orderBy('id')->get(),
+            'policyStaticSections' => CampusParkingPolicy::staticSections(),
             'adminUsers' => User::query()
                 ->where('user_role_id', NavigationService::ROLE_ADMIN)
                 ->orderBy('name')
@@ -95,36 +97,39 @@ class SettingsController extends Controller
 
     public function updateGeneral(Request $request): RedirectResponse
     {
+        return $this->saveGeneralInfo($request);
+    }
+
+    public function saveGeneralInfo(Request $request): RedirectResponse
+    {
         $validated = $request->validate([
-            'descriptions' => ['required', 'array'],
-            'descriptions.*' => ['required', 'string', 'max:2000'],
+            'active' => ['nullable', 'array'],
+            'active.*' => ['integer'],
         ]);
 
-        $changed = [];
-        foreach ($validated['descriptions'] as $id => $description) {
-            if (! is_numeric($id)) {
-                continue;
-            }
+        $activeIds = collect($validated['active'] ?? [])
+            ->map(fn ($id) => (int) $id)
+            ->unique()
+            ->values()
+            ->all();
 
-            $info = GeneralInformation::query()->where('id', (int) $id)->first();
-            if (! $info) {
-                continue;
-            }
+        GeneralInformation::query()
+            ->orderBy('id')
+            ->get()
+            ->each(function (GeneralInformation $info) use ($activeIds): void {
+                $shouldBeActive = in_array((int) $info->id, $activeIds, true);
+                $nextStatus = $shouldBeActive ? 'Active' : 'Inactive';
 
-            $description = trim($description);
-            if ((string) $info->description === $description) {
-                continue;
-            }
+                if (($info->isActive() && $shouldBeActive) || (! $info->isActive() && ! $shouldBeActive)) {
+                    return;
+                }
 
-            $info->update(['description' => $description]);
-            $changed[] = $description;
-        }
+                $info->update(['status' => $nextStatus]);
+            });
 
-        foreach ($changed as $description) {
-            $this->fanOutCampusNotice('Campus Notice Updated', $description);
-        }
-
-        return back()->with('success', 'Campus notices updated.');
+        return redirect()
+            ->route('admin.settings', ['section' => 'notifications'])
+            ->with('success', 'General Information saved.');
     }
 
     public function storeGeneralInfo(Request $request): RedirectResponse
@@ -138,11 +143,44 @@ class SettingsController extends Controller
         GeneralInformation::query()->create([
             'id' => SequenceService::next('general_informations'),
             'description' => $description,
+            'status' => 'Active',
         ]);
 
-        $this->fanOutCampusNotice('New Campus Notice', $description);
+        $this->fanOutCampusNotice('General Information Updated', $description);
 
-        return back()->with('success', 'New notice added.');
+        return redirect()
+            ->route('admin.settings', ['section' => 'notifications'])
+            ->with('success', 'General Information item added.');
+    }
+
+    public function updateGeneralInfo(Request $request, int $id): RedirectResponse
+    {
+        $info = GeneralInformation::query()->where('id', $id)->firstOrFail();
+
+        $validated = $request->validate([
+            'description' => ['required', 'string', 'max:2000'],
+        ]);
+
+        $description = trim($validated['description']);
+
+        if ((string) $info->description !== $description) {
+            $info->update(['description' => $description]);
+            $this->fanOutCampusNotice('General Information Updated', $description);
+        }
+
+        return redirect()
+            ->route('admin.settings', ['section' => 'notifications'])
+            ->with('success', 'General Information item updated.');
+    }
+
+    public function destroyGeneralInfo(int $id): RedirectResponse
+    {
+        $info = GeneralInformation::query()->where('id', $id)->firstOrFail();
+        $info->delete();
+
+        return redirect()
+            ->route('admin.settings', ['section' => 'notifications'])
+            ->with('success', 'General Information item deleted.');
     }
 
     private function fanOutCampusNotice(string $title, string $message): void
@@ -337,6 +375,82 @@ class SettingsController extends Controller
             ->with('success', 'Parking access rule deleted.');
     }
 
+    public function storeStalledVehicle(Request $request): RedirectResponse
+    {
+        $validated = $request->validate([
+            'description' => ['required', 'string', 'max:2000'],
+        ]);
+
+        StalledVehicle::query()->create([
+            'id' => SequenceService::next('stalled_vehicles'),
+            'description' => trim($validated['description']),
+            'status' => 'Active',
+        ]);
+
+        return redirect()
+            ->route('admin.settings', ['section' => 'access'])
+            ->with('success', 'Stalled Vehicles item added.');
+    }
+
+    public function updateStalledVehicle(Request $request, int $id): RedirectResponse
+    {
+        $item = StalledVehicle::query()->where('id', $id)->firstOrFail();
+
+        $validated = $request->validate([
+            'description' => ['required', 'string', 'max:2000'],
+        ]);
+
+        $item->update([
+            'description' => trim($validated['description']),
+        ]);
+
+        return redirect()
+            ->route('admin.settings', ['section' => 'access'])
+            ->with('success', 'Stalled Vehicles item updated.');
+    }
+
+    public function saveStalledVehicles(Request $request): RedirectResponse
+    {
+        $validated = $request->validate([
+            'active' => ['nullable', 'array'],
+            'active.*' => ['integer'],
+        ]);
+
+        $activeIds = collect($validated['active'] ?? [])
+            ->map(fn ($id) => (int) $id)
+            ->unique()
+            ->values()
+            ->all();
+
+        StalledVehicle::query()
+            ->orderBy('id')
+            ->get()
+            ->each(function (StalledVehicle $item) use ($activeIds): void {
+                $shouldBeActive = in_array((int) $item->id, $activeIds, true);
+                $nextStatus = $shouldBeActive ? 'Active' : 'Inactive';
+
+                if (($item->isActive() && $shouldBeActive) || (! $item->isActive() && ! $shouldBeActive)) {
+                    return;
+                }
+
+                $item->update(['status' => $nextStatus]);
+            });
+
+        return redirect()
+            ->route('admin.settings', ['section' => 'access'])
+            ->with('success', 'Stalled Vehicles saved.');
+    }
+
+    public function destroyStalledVehicle(int $id): RedirectResponse
+    {
+        $item = StalledVehicle::query()->where('id', $id)->firstOrFail();
+        $item->delete();
+
+        return redirect()
+            ->route('admin.settings', ['section' => 'access'])
+            ->with('success', 'Stalled Vehicles item deleted.');
+    }
+
     public function storeViolationType(Request $request): RedirectResponse
     {
         $validated = $request->validate([
@@ -387,6 +501,39 @@ class SettingsController extends Controller
         return redirect()
             ->route('admin.settings', ['section' => 'violations'])
             ->with('success', 'Violation type status updated.');
+    }
+
+    public function saveViolationTypes(Request $request): RedirectResponse
+    {
+        $validated = $request->validate([
+            'active' => ['nullable', 'array'],
+            'active.*' => ['integer'],
+        ]);
+
+        $activeIds = collect($validated['active'] ?? [])
+            ->map(fn ($id) => (int) $id)
+            ->unique()
+            ->values()
+            ->all();
+
+        ViolationType::query()
+            ->orderBy('id')
+            ->get()
+            ->each(function (ViolationType $type) use ($activeIds): void {
+                $isActive = strcasecmp((string) ($type->status ?? ''), 'Active') === 0;
+                $shouldBeActive = in_array((int) $type->id, $activeIds, true);
+                $nextStatus = $shouldBeActive ? 'Active' : 'Inactive';
+
+                if (($isActive && $shouldBeActive) || (! $isActive && ! $shouldBeActive)) {
+                    return;
+                }
+
+                $type->update(['status' => $nextStatus]);
+            });
+
+        return redirect()
+            ->route('admin.settings', ['section' => 'violations'])
+            ->with('success', 'Violation types saved.');
     }
 
     public function destroyViolationType(int $id): RedirectResponse

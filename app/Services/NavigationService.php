@@ -26,6 +26,7 @@ class NavigationService
             ['label' => 'Dashboard', 'route' => 'admin.dashboard', 'icon' => 'layout-dashboard', 'access' => ['admin']],
             ['label' => 'Dashboard', 'route' => 'guard.dashboard', 'icon' => 'layout-dashboard', 'access' => ['guard']],
             ['label' => 'Dashboard', 'route' => 'user.dashboard', 'icon' => 'layout-dashboard', 'access' => ['student', 'staff']],
+            ['label' => 'Policy', 'route' => 'user.policy', 'icon' => 'book-open', 'access' => ['student', 'staff']],
 
             ['label' => 'Registrations', 'route' => 'admin.registrations', 'icon' => 'user-plus', 'access' => ['admin']],
             ['label' => 'RFID Assignment', 'route' => 'admin.rfid', 'icon' => 'hash', 'access' => ['admin']],

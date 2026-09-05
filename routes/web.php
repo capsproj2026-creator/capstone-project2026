@@ -30,6 +30,7 @@ use App\Http\Controllers\User\DashboardController as UserDashboardController;
 use App\Http\Controllers\User\EntryExitController;
 use App\Http\Controllers\User\NotificationController;
 use App\Http\Controllers\User\ParkingController as UserParkingController;
+use App\Http\Controllers\User\PolicyController as UserPolicyController;
 use App\Http\Controllers\User\ViolationController as UserViolationController;
 use App\Http\Controllers\VisitorPreRegistrationController;
 use App\Http\Controllers\VisitorController;
@@ -152,9 +153,18 @@ Route::prefix('admin')->middleware(['auth', 'verified', 'granted', 'no.cache', '
     Route::post('/settings/general', [SettingsController::class, 'updateGeneral'])
         ->middleware('permission:system_settings')
         ->name('settings.general');
+    Route::post('/settings/general/save', [SettingsController::class, 'saveGeneralInfo'])
+        ->middleware('permission:system_settings')
+        ->name('settings.general.save');
     Route::post('/settings/general/add', [SettingsController::class, 'storeGeneralInfo'])
         ->middleware('permission:system_settings')
         ->name('settings.general.store');
+    Route::put('/settings/general/{id}', [SettingsController::class, 'updateGeneralInfo'])
+        ->middleware('permission:system_settings')
+        ->name('settings.general.update');
+    Route::delete('/settings/general/{id}', [SettingsController::class, 'destroyGeneralInfo'])
+        ->middleware('permission:system_settings')
+        ->name('settings.general.destroy');
     Route::post('/settings/system', [SettingsController::class, 'updateSystemInfo'])
         ->middleware('permission:system_settings')
         ->name('settings.system');
@@ -182,9 +192,24 @@ Route::prefix('admin')->middleware(['auth', 'verified', 'granted', 'no.cache', '
     Route::delete('/settings/parking/{id}', [SettingsController::class, 'destroyParkingRule'])
         ->middleware('permission:system_settings')
         ->name('settings.parking.destroy');
+    Route::post('/settings/stalled/add', [SettingsController::class, 'storeStalledVehicle'])
+        ->middleware('permission:system_settings')
+        ->name('settings.stalled.store');
+    Route::post('/settings/stalled/save', [SettingsController::class, 'saveStalledVehicles'])
+        ->middleware('permission:system_settings')
+        ->name('settings.stalled.save');
+    Route::put('/settings/stalled/{id}', [SettingsController::class, 'updateStalledVehicle'])
+        ->middleware('permission:system_settings')
+        ->name('settings.stalled.update');
+    Route::delete('/settings/stalled/{id}', [SettingsController::class, 'destroyStalledVehicle'])
+        ->middleware('permission:system_settings')
+        ->name('settings.stalled.destroy');
     Route::post('/settings/violations/add', [SettingsController::class, 'storeViolationType'])
         ->middleware('permission:system_settings')
         ->name('settings.violations.store');
+    Route::post('/settings/violations/save', [SettingsController::class, 'saveViolationTypes'])
+        ->middleware('permission:system_settings')
+        ->name('settings.violations.save');
     Route::put('/settings/violations/{id}', [SettingsController::class, 'updateViolationType'])
         ->middleware('permission:system_settings')
         ->name('settings.violations.update');
@@ -265,6 +290,7 @@ Route::prefix('guard')->middleware(['auth', 'verified', 'granted', 'no.cache', '
 
 Route::prefix('user')->middleware(['auth', 'verified', 'portal', 'no.cache', 'role:Student,Staff'])->name('user.')->group(function () {
     Route::get('/', [UserDashboardController::class, 'index'])->name('dashboard');
+    Route::get('/policy', [UserPolicyController::class, 'index'])->name('policy');
     Route::get('/registration/fix', [\App\Http\Controllers\User\RegistrationResubmitController::class, 'show'])->name('registration.fix');
     Route::post('/registration/resubmit', [\App\Http\Controllers\User\RegistrationResubmitController::class, 'store'])->name('registration.resubmit');
     Route::get('/notifications', [NotificationController::class, 'index'])->name('notifications');

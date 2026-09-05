@@ -99,6 +99,7 @@ class RolePortalWalkthroughTest extends TestCase
     {
         return [
             ['user.dashboard'],
+            ['user.policy'],
             ['user.notifications'],
             ['user.violations'],
             ['user.entry-exit'],

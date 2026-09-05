@@ -81,7 +81,7 @@
     {{-- Approved Users list (no tabs) --}}
     <div class="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
         <div class="border-b border-gray-100 px-5 py-4 sm:px-6">
-            <h2 class="text-base font-semibold text-gray-900">Approved Users</h2>
+            <h2 class="text-base font-semibold text-gray-900">Users</h2>
             <p id="rfid-filter-label" class="mt-0.5 text-sm text-gray-500">{{ $filterLabels[$activeFilter] ?? 'All users' }}</p>
         </div>
 

@@ -87,11 +87,11 @@ class DashboardStatsService
                 ->get(['id', 'name', 'id_number', 'user_role_id', 'strike_count']),
             'recentViolations' => ViolationLog::query()
                 ->orderByDesc('created_at')
-                ->limit(5)
+                ->limit(2)
                 ->get(),
             'recentViolationLogs' => ViolationLog::query()
                 ->orderByDesc('created_at')
-                ->limit(5)
+                ->limit(2)
                 ->get(),
             ...$this->safeVisitorDashboardStats(),
         ];

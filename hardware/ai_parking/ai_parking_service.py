@@ -1,5 +1,5 @@
 """
-AI Parking service — YOLOv9c + zone polygons + rules + tracking + OCR + Laravel.
+AI Parking service — YOLOv9 + zone polygons + rules + tracking + OCR + Laravel.
 
 Run:
   cd hardware/ai_parking
@@ -54,34 +54,36 @@ STREAM_PORT = int(os.getenv("AI_STREAM_PORT", "8090"))
 
 IMG_SIZE = int(os.getenv("AI_PARKING_IMG_SIZE", "640"))
 # Lower conf for distant lot cameras; raise via .env if too many false positives.
-CONF = float(os.getenv("AI_PARKING_CONF", "0.28"))
+CONF = float(os.getenv("AI_PARKING_CONF", "0.22"))
 IOU = float(os.getenv("AI_PARKING_IOU", "0.50"))
-MAX_DET = int(os.getenv("AI_PARKING_MAX_DET", "50"))
+MAX_DET = int(os.getenv("AI_PARKING_MAX_DET", "40"))
 # Tiny-box filter (fraction of infer frame). Keep low so distant cars remain.
 MIN_BOX_AREA_FRAC = float(os.getenv("AI_PARKING_MIN_BOX_AREA", "0.0005"))
 if os.getenv("AI_PARKING_LONG_RANGE", "0") == "1":
     MIN_BOX_AREA_FRAC = float(os.getenv("AI_PARKING_LONG_RANGE_MIN_BOX_AREA", "0.00012"))
 # Infer width for live boxes (OCR still uses full-res RTSP crops asynchronously).
-INFER_MAX_WIDTH = int(os.getenv("AI_PARKING_INFER_MAX_WIDTH", "960"))
+INFER_MAX_WIDTH = int(os.getenv("AI_PARKING_INFER_MAX_WIDTH", "1280"))
 # Shared YOLO + ByteTrack persist=True breaks multi-cam; default to predict + IoU IDs.
 USE_ULTRALYTICS_TRACK = os.getenv("AI_PARKING_USE_TRACKER", "0") == "1"
-POST_EVERY_SEC = float(os.getenv("AI_PARKING_POST_EVERY_SEC", "1.5"))
+POST_EVERY_SEC = float(os.getenv("AI_PARKING_POST_EVERY_SEC", "3.0"))
 USE_WEBCAM = os.getenv("AI_USE_WEBCAM", "0") == "1"
 TRACKER = os.getenv("AI_PARKING_TRACKER", "bytetrack.yaml")
 # Target YOLO cadence; actual rate is also limited by CPU + model lock.
-INFER_EVERY_SEC = float(os.getenv("AI_PARKING_INFER_EVERY_SEC", "0.30"))
+INFER_EVERY_SEC = float(os.getenv("AI_PARKING_INFER_EVERY_SEC", "0.22"))
 # Keep last boxes briefly when a frame misses, so overlays don't flicker.
-BOX_HOLD_SEC = float(os.getenv("AI_PARKING_BOX_HOLD_SEC", "0.45"))
-PREVIEW_MAX_WIDTH = int(os.getenv("AI_PARKING_PREVIEW_MAX_WIDTH", "960"))
+BOX_HOLD_SEC = float(os.getenv("AI_PARKING_BOX_HOLD_SEC", "0.9"))
+PREVIEW_MAX_WIDTH = int(os.getenv("AI_PARKING_PREVIEW_MAX_WIDTH", "1280"))
 # Max width for AI overlay MJPEG (browser). Raise for distant plate viewing (e.g. 2560).
-AI_STREAM_MAX_WIDTH = int(os.getenv("AI_PARKING_AI_STREAM_MAX_WIDTH", "1920"))
-STREAM_TARGET_FPS = float(os.getenv("AI_PARKING_STREAM_FPS", "20"))
-STREAM_JPEG_QUALITY = int(os.getenv("AI_PARKING_STREAM_JPEG_QUALITY", "88"))
+AI_STREAM_MAX_WIDTH = int(os.getenv("AI_PARKING_AI_STREAM_MAX_WIDTH", "1280"))
+STREAM_TARGET_FPS = float(os.getenv("AI_PARKING_STREAM_FPS", "18"))
+STREAM_JPEG_QUALITY = int(os.getenv("AI_PARKING_STREAM_JPEG_QUALITY", "72"))
 # AI overlay stream (monitor). Higher than live preview so ~20 m plates stay readable.
-AI_STREAM_JPEG_QUALITY = int(os.getenv("AI_PARKING_AI_STREAM_JPEG_QUALITY", "90"))
-MONITOR_SHARPEN = os.getenv("AI_PARKING_MONITOR_SHARPEN", "1") == "1"
+AI_STREAM_JPEG_QUALITY = int(os.getenv("AI_PARKING_AI_STREAM_JPEG_QUALITY", "78"))
+MONITOR_SHARPEN = os.getenv("AI_PARKING_MONITOR_SHARPEN", "0") == "1"
 RECONNECT_EVERY_SEC = float(os.getenv("AI_CAMERA_RECONNECT_SEC", "5"))
 OPEN_LOCK = threading.Lock()
+# FP16 on CUDA only — free speedup for realtime multi-cam.
+USE_HALF = os.getenv("AI_PARKING_HALF", "1") == "1"
 
 MOTORCYCLE_CLS_ID = 3
 # Per-class detect toggles (all on by default — cars + motorcycles + buses + trucks)
@@ -964,7 +966,7 @@ def post_json(path: str, payload: dict) -> bool:
         method="POST",
     )
     try:
-        with urlrequest.urlopen(req, timeout=4) as resp:
+        with urlrequest.urlopen(req, timeout=15) as resp:
             print(f"Laravel HTTP {resp.status}: {path} cam={payload.get('camera_id')} vehicles={payload.get('vehicle_count')} slots={len(payload.get('slots') or [])} events={len(payload.get('events') or [])}")
             return True
     except HTTPError as e:
@@ -1209,6 +1211,30 @@ class MjpegHandler(BaseHTTPRequestHandler):
             self.wfile.write(body)
             return
 
+        # Single JPEG snapshot (never hangs like MJPEG).
+        snap_ai = False
+        snap_cam = None
+        if path in ("/snapshot.jpg", "/frame.jpg"):
+            snap_cam = next(iter(STREAM_STATES.keys()), None)
+        elif path.endswith("/snapshot.jpg") or path.endswith("/frame.jpg"):
+            parts = [p for p in path.split("/") if p]
+            if len(parts) >= 2:
+                snap_cam = parts[0]
+                snap_ai = len(parts) >= 3 and parts[1] == "ai"
+        if snap_cam:
+            state = STREAM_STATES.get(snap_cam)
+            jpeg = state.get_jpeg(ai=snap_ai) if state else None
+            if not jpeg:
+                self.send_error(503)
+                return
+            self.send_response(200)
+            self.send_header("Content-Type", "image/jpeg")
+            self.send_header("Cache-Control", "no-store, private")
+            self.send_header("Content-Length", str(len(jpeg)))
+            self.end_headers()
+            self.wfile.write(jpeg)
+            return
+
         if self._handle_plate_crop(path):
             return
 
@@ -1230,10 +1256,10 @@ class MjpegHandler(BaseHTTPRequestHandler):
             while True:
                 jpeg = state.get_jpeg(ai=ai_overlay)
                 if jpeg is None:
-                    time.sleep(0.01)
+                    time.sleep(0.005)
                     continue
                 if jpeg is last_sent:
-                    time.sleep(0.005)
+                    time.sleep(0.002)
                     continue
                 last_sent = jpeg
                 self.wfile.write(b"--frame\r\n")
@@ -1363,6 +1389,10 @@ class CameraWorker:
             legacy_primary_ai = "/CAM-AI-1/ai/stream.mjpg"
             if legacy_primary_ai != ai_path:
                 STREAM_PATH_INDEX[legacy_primary_ai] = (self.config.camera_id, True)
+        # Keep old CAM-AI-2 bookmarks working after id rename to CAM-2.
+        if str(self.config.camera_id).upper() == "CAM-2":
+            STREAM_PATH_INDEX["/CAM-AI-2/stream.mjpg"] = (self.config.camera_id, False)
+            STREAM_PATH_INDEX["/CAM-AI-2/ai/stream.mjpg"] = (self.config.camera_id, True)
 
         self.running.set()
 
@@ -1487,8 +1517,10 @@ class CameraWorker:
                 continue
 
             display_raw, _ = resize_for_infer(frame, self.preview_max_width)
+            # AI overlay: prefer sharp monitor feed up to ai_stream_max_width.
             ai_cap = max(640, int(self.ai_stream_max_width or AI_STREAM_MAX_WIDTH))
-            ai_width = max(self.preview_max_width, min(self.infer_max_width, ai_cap))
+            infer_w = int(self.infer_max_width) if int(self.infer_max_width or 0) > 0 else self.preview_max_width
+            ai_width = min(max(self.preview_max_width, min(infer_w, ai_cap)), ai_cap)
             display_ai, _ = resize_for_infer(frame, ai_width)
             if display_ai is frame:
                 display_ai = frame.copy()
@@ -1630,6 +1662,7 @@ class CameraWorker:
             infer_max = max(int(self.infer_max_width or INFER_MAX_WIDTH), 640)
             infer_frame, scale = resize_for_infer(frame, infer_max)
             box_to_ocr_scale = (1.0 / scale) if scale and scale > 0 else 1.0
+            use_half = bool(USE_HALF and self.device != "cpu")
             try:
                 with self.model_lock:
                     if USE_ULTRALYTICS_TRACK:
@@ -1642,6 +1675,7 @@ class CameraWorker:
                                 max_det=MAX_DET,
                                 classes=DETECT_CLASS_IDS,
                                 device=self.device,
+                                half=use_half,
                                 verbose=False,
                                 persist=True,
                                 tracker=TRACKER,
@@ -1656,6 +1690,7 @@ class CameraWorker:
                                 max_det=MAX_DET,
                                 classes=DETECT_CLASS_IDS,
                                 device=self.device,
+                                half=use_half,
                                 verbose=False,
                             )
                     else:
@@ -1667,6 +1702,7 @@ class CameraWorker:
                             max_det=MAX_DET,
                             classes=DETECT_CLASS_IDS,
                             device=self.device,
+                            half=use_half,
                             verbose=False,
                         )
             except Exception as e:

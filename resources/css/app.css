@@ -1449,4 +1449,67 @@
     html.dark .zone-access-savebar {
         background: color-mix(in srgb, var(--portal-surface) 94%, transparent);
     }
+
+    /* Hide the browser's built-in search ×; custom overlay is added by search-clear.js */
+    input[type='search']::-webkit-search-cancel-button,
+    input[type='search']::-webkit-search-decoration,
+    input[type='search']::-webkit-search-results-button,
+    input[type='search']::-webkit-search-results-decoration {
+        -webkit-appearance: none;
+        appearance: none;
+        display: none;
+    }
+
+    input[type='search']::-ms-clear,
+    input[type='search']::-ms-reveal {
+        display: none;
+        width: 0;
+        height: 0;
+    }
+
+    .sc-search-anchor {
+        position: relative;
+    }
+
+    .sc-search-input {
+        padding-right: 2.25rem !important;
+    }
+
+    .sc-search-clear {
+        position: absolute;
+        z-index: 2;
+        display: inline-flex;
+        height: 1.5rem;
+        width: 1.5rem;
+        align-items: center;
+        justify-content: center;
+        border: 0;
+        border-radius: 9999px;
+        background: rgba(148, 163, 184, 0.35);
+        color: #475569;
+        cursor: pointer;
+        transition:
+            background-color 150ms ease,
+            color 150ms ease;
+    }
+
+    .sc-search-clear:hover {
+        background: rgba(100, 116, 139, 0.45);
+        color: #0f172a;
+    }
+
+    .sc-search-clear:focus-visible {
+        outline: 2px solid rgba(59, 130, 246, 0.55);
+        outline-offset: 1px;
+    }
+
+    html.dark .sc-search-clear {
+        background: rgba(148, 163, 184, 0.22);
+        color: #cbd5e1;
+    }
+
+    html.dark .sc-search-clear:hover {
+        background: rgba(148, 163, 184, 0.38);
+        color: #f8fafc;
+    }
 }

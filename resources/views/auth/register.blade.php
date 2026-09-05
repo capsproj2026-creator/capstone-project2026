@@ -64,50 +64,66 @@
                 </div>
             @endif
 
-            <ol id="register-steps" class="mb-8 hidden grid-cols-4 gap-3 sm:grid">
+            <ol id="register-steps" class="mb-6 grid grid-cols-4 gap-2 sm:gap-3" aria-label="Registration steps">
                 <li>
-                    <button type="button" data-register-step="1" data-target="#register-step-1"
-                        class="register-step-btn w-full rounded-lg bg-blue-50 px-2 py-2.5 text-center transition hover:ring-2 hover:ring-blue-200">
+                    <button type="button" data-register-step="1" class="register-step-btn w-full rounded-lg border border-blue-200 bg-blue-50 px-1.5 py-2.5 text-center transition sm:px-2">
                         <p class="text-[10px] font-semibold uppercase tracking-wide text-blue-700">Step 1</p>
-                        <p class="text-xs font-medium text-gray-800">License</p>
+                        <p class="mt-0.5 text-[11px] font-medium text-gray-800 sm:text-xs">License</p>
                     </button>
                 </li>
                 <li>
-                    <button type="button" data-register-step="2" data-target="#register-step-2"
-                        class="register-step-btn w-full rounded-lg bg-slate-50 px-2 py-2.5 text-center transition hover:ring-2 hover:ring-blue-200">
+                    <button type="button" data-register-step="2" class="register-step-btn w-full rounded-lg border border-slate-200 bg-slate-50 px-1.5 py-2.5 text-center transition sm:px-2">
                         <p class="text-[10px] font-semibold uppercase tracking-wide text-slate-500">Step 2</p>
-                        <p class="text-xs font-medium text-gray-800">Your info</p>
+                        <p class="mt-0.5 text-[11px] font-medium text-gray-800 sm:text-xs">Your info</p>
                     </button>
                 </li>
                 <li>
-                    <button type="button" data-register-step="3" data-target="#register-step-3"
-                        class="register-step-btn w-full rounded-lg bg-slate-50 px-2 py-2.5 text-center transition hover:ring-2 hover:ring-blue-200">
+                    <button type="button" data-register-step="3" class="register-step-btn w-full rounded-lg border border-slate-200 bg-slate-50 px-1.5 py-2.5 text-center transition sm:px-2">
                         <p class="text-[10px] font-semibold uppercase tracking-wide text-slate-500">Step 3</p>
-                        <p class="text-xs font-medium text-gray-800">Vehicle</p>
+                        <p class="mt-0.5 text-[11px] font-medium text-gray-800 sm:text-xs">Vehicle</p>
                     </button>
                 </li>
                 <li>
-                    <button type="button" data-register-step="4" data-target="#register-step-4"
-                        class="register-step-btn w-full rounded-lg bg-slate-50 px-2 py-2.5 text-center transition hover:ring-2 hover:ring-blue-200">
+                    <button type="button" data-register-step="4" class="register-step-btn w-full rounded-lg border border-slate-200 bg-slate-50 px-1.5 py-2.5 text-center transition sm:px-2">
                         <p class="text-[10px] font-semibold uppercase tracking-wide text-slate-500">Step 4</p>
-                        <p class="text-xs font-medium text-gray-800">LTO files</p>
+                        <p class="mt-0.5 text-[11px] font-medium text-gray-800 sm:text-xs">LTO files</p>
                     </button>
                 </li>
             </ol>
 
-            <form method="POST" action="{{ route('register') }}" enctype="multipart/form-data" class="divide-y divide-gray-100" id="register-form" novalidate>
+            <p id="register-step-hint" class="mb-5 text-center text-xs text-gray-500">Complete each step carefully. You can go back anytime before submitting.</p>
+
+            @php
+                $step2Keys = ['profile_pic', 'id_document', 'full_name', 'address', 'phone_number', 'id_number', 'email', 'driver_license_number', 'password', 'user_type', 'department_code'];
+                $step3Keys = ['vehicle_id', 'vehicle_model', 'vehicle_color', 'plate_number'];
+                $step4Keys = ['lto_or_photo', 'lto_cr_photo'];
+                $initialStep = 1;
+                if ($errors->hasAny($step4Keys)) {
+                    $initialStep = 4;
+                } elseif ($errors->hasAny($step3Keys)) {
+                    $initialStep = 3;
+                } elseif ($errors->hasAny($step2Keys)) {
+                    $initialStep = 2;
+                } elseif ($errors->has('driver_license')) {
+                    $initialStep = 1;
+                }
+            @endphp
+
+            <form method="POST" action="{{ route('register') }}" enctype="multipart/form-data" class="space-y-0" id="register-form" novalidate data-initial-step="{{ $initialStep }}">
                 @csrf
                 <input type="hidden" name="reg_category" id="reg_category" value="vehicle">
                 @if (! empty($converting))
                     <input type="hidden" name="temp_token" value="{{ old('temp_token', $converting->temp_conversion_token) }}">
                 @endif
 
-                <section id="register-step-1" class="scroll-mt-24 space-y-4 pb-8">
-                    <div class="flex items-start gap-3">
-                        <span class="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-blue-600 text-xs font-bold text-white">1</span>
-                        <div>
-                            <h2 class="text-base font-semibold text-gray-900">Driver’s license</h2>
-                            <p class="mt-0.5 text-sm text-gray-500">Upload a clear photo of the <strong class="font-medium text-gray-700">front</strong> of your license. We’ll try to fill your name, address, and license number — please check them before submitting.</p>
+                <section id="register-step-1" class="register-step-panel space-y-4" data-step="1">
+                    <div class="rounded-xl border border-blue-100 bg-blue-50/60 px-4 py-3">
+                        <div class="flex items-start gap-3">
+                            <span class="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-blue-600 text-xs font-bold text-white">1</span>
+                            <div>
+                                <h2 class="text-base font-semibold text-gray-900">Driver’s license</h2>
+                                <p class="mt-0.5 text-sm text-gray-600">Upload a clear photo of the <strong class="font-medium text-gray-800">front</strong> of your license. We’ll try to fill your name, address, and license number — check them in the next step.</p>
+                            </div>
                         </div>
                     </div>
 
@@ -127,12 +143,14 @@
                     @enderror
                 </section>
 
-                <section id="register-step-2" class="scroll-mt-24 space-y-4 py-8">
-                    <div class="flex items-start gap-3">
-                        <span class="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-blue-600 text-xs font-bold text-white">2</span>
-                        <div>
-                            <h2 class="text-base font-semibold text-gray-900">Your information</h2>
-                            <p class="mt-0.5 text-sm text-gray-500">Photos, contact details, and campus account. Correct anything the scan missed.</p>
+                <section id="register-step-2" class="register-step-panel hidden space-y-4" data-step="2">
+                    <div class="rounded-xl border border-blue-100 bg-blue-50/60 px-4 py-3">
+                        <div class="flex items-start gap-3">
+                            <span class="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-blue-600 text-xs font-bold text-white">2</span>
+                            <div>
+                                <h2 class="text-base font-semibold text-gray-900">Your information</h2>
+                                <p class="mt-0.5 text-sm text-gray-600">Photos, contact details, and campus account. Correct anything the license scan missed.</p>
+                            </div>
                         </div>
                     </div>
 
@@ -174,7 +192,7 @@
                             placeholder="House / street, barangay, city, province"
                             class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm uppercase text-gray-900 shadow-sm placeholder:text-gray-400 placeholder:normal-case focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20 @error('address') border-red-500 focus:border-red-500 focus:ring-red-500/20 @enderror"
                         >{{ old('address') }}</textarea>
-                        <p class="mt-1 text-xs text-gray-500">Street, barangay, city, and province should appear once. Fix duplicates if needed.</p>
+                        <p class="mt-1 text-xs text-gray-500">Street, Barangay, City, Province, and ZIP Code should appear once.</p>
                         @error('address')
                             <p class="mt-1 text-xs text-red-600">{{ $message }}</p>
                         @enderror
@@ -213,7 +231,7 @@
                                 value="{{ old('email') }}"
                                 required
                                 autocomplete="email"
-                                placeholder="name@example.com"
+                                placeholder="name@my.cspc.edu.ph"
                                 class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm text-gray-900 shadow-sm placeholder:text-gray-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20 @error('email') border-red-500 focus:border-red-500 focus:ring-red-500/20 @enderror"
                             >
                             @error('email')
@@ -286,12 +304,14 @@
                     </div>
                 </section>
 
-                <section id="register-step-3" class="scroll-mt-24 space-y-4 py-8" data-vehicle-fields>
-                    <div class="flex items-start gap-3">
-                        <span class="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-blue-600 text-xs font-bold text-white">3</span>
-                        <div>
-                            <h2 class="text-base font-semibold text-gray-900">Vehicle</h2>
-                            <p class="mt-0.5 text-sm text-gray-500">Use the same details printed on your OR and CR.</p>
+                <section id="register-step-3" class="register-step-panel hidden space-y-4" data-step="3" data-vehicle-fields>
+                    <div class="rounded-xl border border-blue-100 bg-blue-50/60 px-4 py-3">
+                        <div class="flex items-start gap-3">
+                            <span class="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-blue-600 text-xs font-bold text-white">3</span>
+                            <div>
+                                <h2 class="text-base font-semibold text-gray-900">Vehicle</h2>
+                                <p class="mt-0.5 text-sm text-gray-600">Use the same details printed on your OR and CR.</p>
+                            </div>
                         </div>
                     </div>
 
@@ -327,12 +347,14 @@
                     @endif
                 </section>
 
-                <section id="register-step-4" class="scroll-mt-24 space-y-4 py-8">
-                    <div class="flex items-start gap-3">
-                        <span class="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-blue-600 text-xs font-bold text-white">4</span>
-                        <div>
-                            <h2 class="text-base font-semibold text-gray-900">LTO documents</h2>
-                            <p class="mt-0.5 text-sm text-gray-500">Upload clear photos of your Official Receipt and Certificate of Registration.</p>
+                <section id="register-step-4" class="register-step-panel hidden space-y-4" data-step="4">
+                    <div class="rounded-xl border border-blue-100 bg-blue-50/60 px-4 py-3">
+                        <div class="flex items-start gap-3">
+                            <span class="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-blue-600 text-xs font-bold text-white">4</span>
+                            <div>
+                                <h2 class="text-base font-semibold text-gray-900">LTO documents</h2>
+                                <p class="mt-0.5 text-sm text-gray-600">Upload clear photos of your Official Receipt and Certificate of Registration, then submit.</p>
+                            </div>
                         </div>
                     </div>
 
@@ -362,16 +384,37 @@
                     </div>
                 </section>
 
-                <div class="pt-8">
+                <div class="mt-8 flex flex-col-reverse gap-3 border-t border-gray-100 pt-6 sm:flex-row sm:items-center sm:justify-between">
                     <button
-                        type="submit"
-                        class="flex w-full cursor-pointer items-center justify-center gap-2 rounded-xl bg-[#5D9FD1] py-3 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-[#4A8FC4]"
+                        type="button"
+                        id="register-back-btn"
+                        class="hidden inline-flex items-center justify-center gap-2 rounded-xl border border-gray-300 bg-white px-5 py-3 text-sm font-semibold text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40"
                     >
-                        <i data-lucide="{{ ! empty($converting) ? 'clipboard-check' : 'user-plus' }}" class="h-4 w-4"></i>
-                        {{ ! empty($converting) ? 'Complete Registration' : 'Submit registration' }}
+                        <i data-lucide="arrow-left" class="h-4 w-4"></i>
+                        Back
                     </button>
-                    <p class="mt-3 text-center text-xs text-gray-500">GSU reviews submissions before gate access is granted.</p>
+
+                    <div class="flex flex-col gap-3 sm:flex-row sm:items-center">
+                        <p id="register-step-label" class="text-center text-xs text-gray-500 sm:text-right">Step 1 of 4</p>
+                        <button
+                            type="button"
+                            id="register-next-btn"
+                            class="inline-flex items-center justify-center gap-2 rounded-xl bg-[#5D9FD1] px-5 py-3 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-[#4A8FC4]"
+                        >
+                            Next
+                            <i data-lucide="arrow-right" class="h-4 w-4"></i>
+                        </button>
+                        <button
+                            type="submit"
+                            id="register-submit-btn"
+                            class="hidden inline-flex items-center justify-center gap-2 rounded-xl bg-[#5D9FD1] px-5 py-3 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-[#4A8FC4]"
+                        >
+                            <i data-lucide="{{ ! empty($converting) ? 'clipboard-check' : 'user-plus' }}" class="h-4 w-4"></i>
+                            {{ ! empty($converting) ? 'Complete Registration' : 'Submit registration' }}
+                        </button>
+                    </div>
                 </div>
+                <p class="mt-3 text-center text-xs text-gray-500">GSU reviews submissions before gate access is granted.</p>
             </form>
 
             <p class="mt-6 text-center text-sm text-gray-500">
@@ -386,51 +429,27 @@
     <script>
         document.addEventListener('DOMContentLoaded', function () {
             const form = document.getElementById('register-form');
-            const requiredFields = [
-                { id: 'email', label: 'Email address' },
-                { id: 'phone_number', label: 'Contact number' },
-                { id: 'password', label: 'Password' },
-                { id: 'password_confirmation', label: 'Password confirmation' },
-                { id: 'plate_number', label: 'Plate number' },
-            ];
+            const panels = Array.from(document.querySelectorAll('.register-step-panel'));
+            const stepButtons = Array.from(document.querySelectorAll('[data-register-step]'));
+            const backBtn = document.getElementById('register-back-btn');
+            const nextBtn = document.getElementById('register-next-btn');
+            const submitBtn = document.getElementById('register-submit-btn');
+            const stepLabel = document.getElementById('register-step-label');
+            const totalSteps = panels.length || 4;
+            let currentStep = Number(form?.dataset.initialStep || 1);
 
-            if (form) {
-                form.addEventListener('submit', function (event) {
-                    for (const field of requiredFields) {
-                        const input = document.getElementById(field.id);
-                        if (!input || String(input.value || '').trim() === '') {
-                            event.preventDefault();
-                            input?.focus();
-                            input?.reportValidity?.();
-                            return;
-                        }
-                    }
-
-                    const licenseInput = document.getElementById('driver_license');
-                    if (!licenseInput?.files?.length) {
-                        event.preventDefault();
-                        licenseInput?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                        setStatus(
-                            document.getElementById('license_scan_status'),
-                            'Please upload a photo of your driver’s license.',
-                            'error'
-                        );
-                        return;
-                    }
-
-                    const profileInput = document.getElementById('profile_pic');
-                    if (!profileInput?.files?.length) {
-                        event.preventDefault();
-                        profileInput?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                        profileInput?.reportValidity?.();
-                    }
-                });
-            }
+            const stepFields = {
+                1: ['driver_license'],
+                2: [
+                    'profile_pic', 'id_document', 'full_name', 'address', 'phone_number', 'id_number',
+                    'email', 'driver_license_number', 'password', 'password_confirmation', 'user_type', 'department_code',
+                ],
+                3: ['vehicle_id', 'vehicle_model', 'vehicle_color', 'plate_number'],
+                4: ['lto_or_photo', 'lto_cr_photo'],
+            };
 
             const setStatus = (el, message, tone) => {
-                if (!el) {
-                    return;
-                }
+                if (!el) return;
                 el.textContent = message;
                 el.classList.remove('hidden', 'text-blue-700', 'text-green-700', 'text-amber-700', 'text-red-600', 'text-gray-500');
                 el.classList.add(
@@ -441,10 +460,126 @@
                 );
             };
 
-            const fillField = (field, value) => {
-                if (!field || value == null || value === '') {
-                    return;
+            const paintStepButtons = (step) => {
+                stepButtons.forEach((btn) => {
+                    const n = Number(btn.dataset.registerStep);
+                    const active = n === step;
+                    const done = n < step;
+                    btn.classList.toggle('bg-blue-50', active);
+                    btn.classList.toggle('border-blue-200', active);
+                    btn.classList.toggle('bg-emerald-50', done);
+                    btn.classList.toggle('border-emerald-200', done);
+                    btn.classList.toggle('bg-slate-50', !active && !done);
+                    btn.classList.toggle('border-slate-200', !active && !done);
+                    const label = btn.querySelector('p');
+                    if (label) {
+                        label.className = active
+                            ? 'text-[10px] font-semibold uppercase tracking-wide text-blue-700'
+                            : done
+                                ? 'text-[10px] font-semibold uppercase tracking-wide text-emerald-700'
+                                : 'text-[10px] font-semibold uppercase tracking-wide text-slate-500';
+                    }
+                });
+            };
+
+            const showStep = (step) => {
+                currentStep = Math.min(Math.max(Number(step) || 1, 1), totalSteps);
+                panels.forEach((panel) => {
+                    const n = Number(panel.dataset.step);
+                    panel.classList.toggle('hidden', n !== currentStep);
+                });
+                paintStepButtons(currentStep);
+                if (stepLabel) stepLabel.textContent = `Step ${currentStep} of ${totalSteps}`;
+                if (backBtn) {
+                    backBtn.disabled = currentStep <= 1;
+                    backBtn.classList.toggle('hidden', currentStep <= 1);
                 }
+                if (nextBtn) nextBtn.classList.toggle('hidden', currentStep >= totalSteps);
+                if (submitBtn) submitBtn.classList.toggle('hidden', currentStep < totalSteps);
+                if (window.lucide) window.lucide.createIcons();
+                form?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            };
+
+            const fieldValueOk = (el) => {
+                if (!el) return false;
+                if (el.type === 'file') return el.files && el.files.length > 0;
+                return String(el.value || '').trim() !== '';
+            };
+
+            const validateStep = (step) => {
+                const ids = stepFields[step] || [];
+                for (const id of ids) {
+                    const el = document.getElementById(id);
+                    if (!fieldValueOk(el)) {
+                        el?.focus?.();
+                        el?.reportValidity?.();
+                        if (id === 'driver_license') {
+                            setStatus(
+                                document.getElementById('license_scan_status'),
+                                'Please upload a photo of your driver’s license.',
+                                'error'
+                            );
+                        }
+                        return false;
+                    }
+                    if (typeof el.checkValidity === 'function' && !el.checkValidity()) {
+                        el.focus();
+                        el.reportValidity();
+                        return false;
+                    }
+                }
+
+                if (step === 2) {
+                    const password = document.getElementById('password');
+                    const confirm = document.getElementById('password_confirmation');
+                    if (password && confirm && password.value !== confirm.value) {
+                        confirm.setCustomValidity('Passwords do not match.');
+                        confirm.reportValidity();
+                        confirm.setCustomValidity('');
+                        return false;
+                    }
+                }
+
+                return true;
+            };
+
+            nextBtn?.addEventListener('click', () => {
+                if (!validateStep(currentStep)) return;
+                showStep(currentStep + 1);
+            });
+
+            backBtn?.addEventListener('click', () => {
+                showStep(currentStep - 1);
+            });
+
+            stepButtons.forEach((btn) => {
+                btn.addEventListener('click', () => {
+                    const target = Number(btn.dataset.registerStep);
+                    if (target === currentStep) return;
+                    if (target > currentStep) {
+                        for (let s = currentStep; s < target; s += 1) {
+                            if (!validateStep(s)) {
+                                showStep(s);
+                                return;
+                            }
+                        }
+                    }
+                    showStep(target);
+                });
+            });
+
+            form?.addEventListener('submit', (event) => {
+                for (let s = 1; s <= totalSteps; s += 1) {
+                    if (!validateStep(s)) {
+                        event.preventDefault();
+                        showStep(s);
+                        return;
+                    }
+                }
+            });
+
+            const fillField = (field, value) => {
+                if (!field || value == null || value === '') return;
                 field.value = field.id === 'address' ? String(value).toUpperCase() : value;
                 field.dispatchEvent(new Event('input', { bubbles: true }));
                 field.dispatchEvent(new Event('change', { bubbles: true }));
@@ -524,9 +659,9 @@
 
                 const warnings = Array.isArray(data.warnings) ? data.warnings.filter(Boolean) : [];
                 if (warnings.length > 0) {
-                    setStatus(licenseStatus, `Filled what we could. ${warnings.join(' ')}`, 'warning');
+                    setStatus(licenseStatus, `Filled what we could. ${warnings.join(' ')} Click Next to review.`, 'warning');
                 } else {
-                    setStatus(licenseStatus, 'Details filled from your license. Please check your name, address, and license number.', 'success');
+                    setStatus(licenseStatus, 'Details filled from your license. Click Next to review your information.', 'success');
                 }
             };
 
@@ -552,9 +687,7 @@
 
             const scanOrCr = (input, kind, statusEl) => {
                 const file = input?.files?.[0];
-                if (!file || !statusEl) {
-                    return;
-                }
+                if (!file || !statusEl) return;
                 if (!file.type.startsWith('image/')) {
                     setStatus(statusEl, 'PDF uploaded. Review the file before submitting — auto-check works best with a photo.', 'warning');
                     return;
@@ -619,46 +752,7 @@
                 window.setInterval(tick, 30000);
             }
 
-            const stepButtons = Array.from(document.querySelectorAll('[data-register-step]'));
-            const stepSections = [1, 2, 3, 4]
-                .map((n) => document.getElementById(`register-step-${n}`))
-                .filter(Boolean);
-
-            const setActiveStep = (step) => {
-                stepButtons.forEach((btn) => {
-                    const active = Number(btn.dataset.registerStep) === Number(step);
-                    btn.classList.toggle('bg-blue-50', active);
-                    btn.classList.toggle('bg-slate-50', !active);
-                    const label = btn.querySelector('p');
-                    if (label) {
-                        label.className = active
-                            ? 'text-[10px] font-semibold uppercase tracking-wide text-blue-700'
-                            : 'text-[10px] font-semibold uppercase tracking-wide text-slate-500';
-                    }
-                });
-            };
-
-            stepButtons.forEach((btn) => {
-                btn.addEventListener('click', () => {
-                    const target = document.querySelector(btn.dataset.target || '');
-                    if (!target) return;
-                    target.scrollIntoView({ behavior: 'smooth', block: 'start' });
-                    setActiveStep(btn.dataset.registerStep);
-                });
-            });
-
-            if (stepSections.length) {
-                const onScroll = () => {
-                    const marker = window.scrollY + 120;
-                    let current = 1;
-                    stepSections.forEach((section, index) => {
-                        if (section.offsetTop <= marker) current = index + 1;
-                    });
-                    setActiveStep(current);
-                };
-                window.addEventListener('scroll', onScroll, { passive: true });
-                onScroll();
-            }
+            showStep(currentStep);
         });
     </script>
 @endpush

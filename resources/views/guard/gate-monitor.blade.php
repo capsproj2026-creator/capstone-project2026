@@ -65,7 +65,7 @@
             <div class="rounded-xl border border-gray-200 bg-white p-5 shadow-sm" data-gate-card="{{ $gate['gate_id'] }}">
                 <div class="flex flex-wrap items-start justify-between gap-3">
                     <div>
-                        <p class="text-sm font-medium text-gray-500">Entry boom (servo)</p>
+                        <p class="text-sm font-medium text-gray-500">EMERGENCY OPEN</p>
                         <p class="mt-0.5 font-mono text-sm text-gray-700">{{ $gate['gate_id'] }}</p>
                         <div class="mt-2 flex items-center gap-2">
                             <span data-gate-dot class="h-2.5 w-2.5 rounded-full {{ $gate['online'] ? 'bg-emerald-500' : 'bg-gray-300' }}"></span>

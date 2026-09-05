@@ -25,8 +25,16 @@ class DashboardController extends Controller
                     ->get()
                     ->filter(fn (ParkingRule $rule) => $rule->isActive())
                     ->values(),
-                'generalInfo' => GeneralInformation::query()->orderBy('id')->get(),
-                'stalledVehicles' => StalledVehicle::query()->orderBy('id')->get(),
+                'generalInfo' => GeneralInformation::query()
+                    ->orderBy('id')
+                    ->get()
+                    ->filter(fn (GeneralInformation $info) => $info->isActive())
+                    ->values(),
+                'stalledVehicles' => StalledVehicle::query()
+                    ->orderBy('id')
+                    ->get()
+                    ->filter(fn (StalledVehicle $item) => $item->isActive())
+                    ->values(),
             ]
         ));
     }

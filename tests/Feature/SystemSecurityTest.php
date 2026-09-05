@@ -46,6 +46,7 @@ class SystemSecurityTest extends TestCase
             route('guard.dashboard'),
             route('guard.gate'),
             route('user.dashboard'),
+            route('user.policy'),
             route('profile.edit'),
         ];
 

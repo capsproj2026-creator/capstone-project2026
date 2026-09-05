@@ -63,13 +63,27 @@ def scale_points_to_frame(
     src_wh: tuple[int, int],
     dst_wh: tuple[int, int],
 ) -> list[list[int]]:
-    """Map snapshot-pixel polygons onto a live frame without cropping (stretch to fill)."""
+    """Map snapshot polygons onto a live frame.
+
+    Uses cover+center (uniform scale) when aspect ratios differ so ACAD/Duran
+    portrait calibrations still land on landscape RTSP frames.
+    """
     sw, sh = src_wh
     dw, dh = dst_wh
     if sw <= 0 or sh <= 0 or (sw == dw and sh == dh):
         return [[int(round(p[0])), int(round(p[1]))] for p in points]
-    sx, sy = dw / sw, dh / sh
-    return [[int(round(p[0] * sx)), int(round(p[1] * sy))] for p in points]
+
+    src_aspect = sw / float(sh)
+    dst_aspect = dw / float(dh)
+    # Near-matching aspect: simple stretch is fine.
+    if abs(src_aspect - dst_aspect) < 0.08:
+        sx, sy = dw / sw, dh / sh
+        return [[int(round(p[0] * sx)), int(round(p[1] * sy))] for p in points]
+
+    scale = max(dw / sw, dh / sh)
+    nw, nh = sw * scale, sh * scale
+    ox, oy = (dw - nw) / 2.0, (dh - nh) / 2.0
+    return [[int(round(p[0] * scale + ox)), int(round(p[1] * scale + oy))] for p in points]
 
 
 def usable_zones_for_frame(zones_data: dict[str, Any], frame_shape: tuple[int, int]) -> list[dict[str, Any]]:
@@ -106,20 +120,53 @@ def box_center(xyxy: tuple[int, int, int, int]) -> tuple[float, float]:
 
 
 def box_iou_with_polygon(xyxy: tuple[int, int, int, int], points: list[list[float]], frame_shape: tuple[int, int]) -> float:
-    """Approximate IoU between axis-aligned box and polygon via masks."""
+    """Approximate IoU between axis-aligned box and polygon via ROI masks (not full-frame)."""
     h, w = frame_shape[:2]
-    x1, y1, x2, y2 = xyxy
+    x1, y1, x2, y2 = [int(v) for v in xyxy]
     x1, y1 = max(0, x1), max(0, y1)
     x2, y2 = min(w - 1, x2), min(h - 1, y2)
     if x2 <= x1 or y2 <= y1:
         return 0.0
 
-    poly_mask = np.zeros((h, w), dtype=np.uint8)
-    contour = np.array(points, dtype=np.int32)
-    cv2.fillPoly(poly_mask, [contour], 1)
+    pts = np.array(points, dtype=np.float32)
+    if pts.ndim != 2 or pts.shape[0] < 3:
+        return 0.0
 
-    box_mask = np.zeros((h, w), dtype=np.uint8)
-    box_mask[y1:y2, x1:x2] = 1
+    px1 = int(max(0, min(w - 1, np.floor(pts[:, 0].min()))))
+    py1 = int(max(0, min(h - 1, np.floor(pts[:, 1].min()))))
+    px2 = int(max(0, min(w - 1, np.ceil(pts[:, 0].max()))))
+    py2 = int(max(0, min(h - 1, np.ceil(pts[:, 1].max()))))
+
+    rx1 = min(x1, px1)
+    ry1 = min(y1, py1)
+    rx2 = max(x2, px2)
+    ry2 = max(y2, py2)
+    if rx2 <= rx1 or ry2 <= ry1:
+        return 0.0
+
+    rh = ry2 - ry1 + 1
+    rw = rx2 - rx1 + 1
+    # Cap ROI work for 4K frames — keep assignment realtime.
+    max_side = 480
+    scale = 1.0
+    if max(rh, rw) > max_side:
+        scale = max_side / float(max(rh, rw))
+        rh = max(1, int(round(rh * scale)))
+        rw = max(1, int(round(rw * scale)))
+
+    poly_mask = np.zeros((rh, rw), dtype=np.uint8)
+    box_mask = np.zeros((rh, rw), dtype=np.uint8)
+    shifted = (pts - np.array([rx1, ry1], dtype=np.float32)) * scale
+    cv2.fillPoly(poly_mask, [shifted.astype(np.int32)], 1)
+
+    bx1 = int(round((x1 - rx1) * scale))
+    by1 = int(round((y1 - ry1) * scale))
+    bx2 = int(round((x2 - rx1) * scale))
+    by2 = int(round((y2 - ry1) * scale))
+    bx1, by1 = max(0, bx1), max(0, by1)
+    bx2, by2 = min(rw, bx2), min(rh, by2)
+    if bx2 > bx1 and by2 > by1:
+        box_mask[by1:by2, bx1:bx2] = 1
 
     inter = int(np.logical_and(poly_mask, box_mask).sum())
     if inter == 0:

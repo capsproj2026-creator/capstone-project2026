@@ -93,6 +93,13 @@ class AiParkingOccupancyService
         if ($usedSlots) {
             $stats = $this->applySlotStatuses($areaId, $slots);
             $mode = 'slots';
+            $occupiedFromSlots = (int) ($stats['occupied'] ?? 0);
+            // Calibrated zones can miss a parked car (aspect mismatch / partial view).
+            // Prefer YOLO vehicle_count when it is higher than polygon matches.
+            if ($vehicleCount > $occupiedFromSlots) {
+                $stats = $this->applyVehicleCountInternal($areaId, $vehicleCount);
+                $mode = $occupiedFromSlots === 0 ? 'count_fallback' : 'count_boost';
+            }
         } else {
             $stats = $this->applyVehicleCountInternal($areaId, $vehicleCount);
             $mode = 'count';

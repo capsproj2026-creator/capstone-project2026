@@ -12,7 +12,7 @@ from geometry import assign_zones_for_box, has_calibrated_slots, usable_zones_fo
 
 OVERTIME_MINUTES = float(os.getenv("AI_PARKING_OVERTIME_MINUTES", "30"))
 DEBOUNCE_MINUTES = float(os.getenv("AI_PARKING_VIOLATION_DEBOUNCE_MINUTES", "10"))
-IOU_THRESHOLD = float(os.getenv("AI_PARKING_ZONE_IOU", "0.12"))
+IOU_THRESHOLD = float(os.getenv("AI_PARKING_ZONE_IOU", "0.08"))
 # Keep lost tracks briefly so ByteTrack ID flicker does not wipe plate memory / re-OCR.
 TRACK_HOLD_SEC = float(os.getenv("AI_PARKING_TRACK_HOLD_SEC", "3.0"))
 # Require this many matching OCR reads before locking a plate on a track.

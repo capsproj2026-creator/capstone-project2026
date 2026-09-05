@@ -90,13 +90,17 @@ class ViolationController extends Controller
             })
             ->count();
 
-        $strikeOverview = User::query()
+        $strikeOverviewQuery = User::query()
             ->whereIn('user_role_id', [3, 4])
-            ->where('strike_count', '>=', 1)
+            ->where('strike_count', '>=', 1);
+
+        $strikeOverviewCount = (clone $strikeOverviewQuery)->count();
+
+        $strikeOverview = (clone $strikeOverviewQuery)
             ->orderByDesc('strike_count')
-            ->orderBy('fullname')
-            ->limit(12)
-            ->get(['id', 'fullname', 'strike_count', 'status', 'plate_number', 'id_number']);
+            ->orderBy('name')
+            ->limit(3)
+            ->get();
 
         $typeCounts = collect();
         foreach ($violationTypes as $typeName) {
@@ -120,6 +124,7 @@ class ViolationController extends Controller
                 'suspended' => $suspendedUsers,
             ],
             'strikeOverview' => $strikeOverview,
+            'strikeOverviewCount' => $strikeOverviewCount,
             'typeCounts' => $typeCounts,
         ]);
     }
