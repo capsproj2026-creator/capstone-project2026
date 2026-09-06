@@ -96,6 +96,47 @@ def _preprocess_for_ocr(image):
     return cv2.cvtColor(enhanced, cv2.COLOR_LAB2BGR)
 
 
+def _high_contrast(image):
+    if image is None or getattr(image, "size", 0) == 0:
+        return image
+
+    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    clahe = cv2.createCLAHE(clipLimit=3.4, tileGridSize=(8, 8))
+    gray = clahe.apply(gray)
+    blur = cv2.GaussianBlur(gray, (0, 0), 1.1)
+    sharp = cv2.addWeighted(gray, 1.55, blur, -0.55, 0)
+    return cv2.cvtColor(sharp, cv2.COLOR_GRAY2BGR)
+
+
+def _ocr_band(engine, image, y0: float, y1: float, x0: float, x1: float, min_width: int = 780) -> list[dict]:
+    if image is None or getattr(image, "size", 0) == 0:
+        return []
+
+    height, width = image.shape[:2]
+    top = max(0, min(height, int(height * y0)))
+    bottom = max(top + 1, min(height, int(height * y1)))
+    left = max(0, min(width, int(width * x0)))
+    right = max(left + 1, min(width, int(width * x1)))
+    crop = image[top:bottom, left:right]
+    if crop.size == 0:
+        return []
+
+    crop_h, crop_w = crop.shape[:2]
+    scale = max(1.0, min_width / max(crop_w, 1))
+    if scale > 1.0:
+        crop = cv2.resize(crop, None, fx=scale, fy=scale, interpolation=cv2.INTER_CUBIC)
+        crop_h = float(crop.shape[0])
+    else:
+        crop_h = float(crop_h)
+
+    rows = _rapidocr_lines(engine, crop, crop_h)
+    for row in rows:
+        local_y = float(row.get("center_y") or 0.0)
+        row["center_y"] = round((top + local_y * crop_h / max(scale, 1.0)) / max(height, 1.0), 4)
+
+    return rows
+
+
 def scan_image(image_path: Path, full_card: bool = False):
     image = cv2.imread(str(image_path))
     if image is None:
@@ -114,19 +155,17 @@ def scan_image(image_path: Path, full_card: bool = False):
         lines = _rapidocr_lines(engine, enhanced, height)
 
         # Extra pass over the PH DL address band (below name, left/center, smaller type).
-        addr_top = int(height * 0.26)
-        addr_bottom = int(height * 0.70)
-        addr_right = int(width * 0.78)
-        addr_crop = enhanced[addr_top:addr_bottom, 0:addr_right]
-        addr_lines = []
-        if addr_crop.size > 0:
-            crop_h = float(max(1, addr_crop.shape[0]))
-            addr_lines = _rapidocr_lines(engine, addr_crop, crop_h)
-            for row in addr_lines:
-                local_y = float(row.get("center_y") or 0.0)
-                row["center_y"] = round((addr_top + local_y * crop_h) / max(height, 1.0), 4)
+        addr_lines = _ocr_band(engine, enhanced, 0.26, 0.70, 0.0, 0.78, min_width=900)
 
-        lines = _merge_lines(lines, addr_lines)
+        # License No / LICENSENO sits under the address, often glued to Expiration Date.
+        # Crop the left-center of that band and upscale so the number is read alone.
+        license_src = _high_contrast(enhanced)
+        license_lines = _merge_lines(
+            _ocr_band(engine, license_src, 0.56, 0.80, 0.16, 0.58, min_width=820),
+            _ocr_band(engine, license_src, 0.56, 0.80, 0.28, 0.72, min_width=820),
+        )
+
+        lines = _merge_lines(lines, addr_lines, license_lines)
         if not lines:
             return {"ok": False, "message": "No text detected on the document photo."}
 

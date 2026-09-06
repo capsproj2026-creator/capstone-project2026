@@ -30,7 +30,10 @@ class LicenseParser
         '/\bsignature\b/i',
         '/\bdl codes?\b/i',
         '/\blicense no\b/i',
+        '/\blicenseno\b/i',
+        '/\blicense\s*number\b/i',
         '/\blic\.?\s*no\b/i',
+        '/\bdl\s*no\b/i',
         '/last name,\s*first name/i',
         '/organ donation/i',
         '/in case of emergency/i',
@@ -95,15 +98,100 @@ class LicenseParser
 
     private function extractLicenseNumber(string $rawText): ?string
     {
-        if (preg_match('/\b([A-Z]\d{2}-\d{2}-\d{5,8})\b/i', $rawText, $match)) {
-            return strtoupper($match[1]);
+        $text = $this->normalizeLicenseOcrText($rawText);
+
+        $fromLabel = $this->extractLabeledLicenseNumber($text);
+        if ($fromLabel !== null) {
+            return $fromLabel;
         }
 
-        if (preg_match('/(?:license\s*no\.?|lic\.?\s*no\.?)\s*[:#]?\s*([A-Z0-9-]{8,20})/i', $rawText, $match)) {
-            return strtoupper(trim($match[1]));
+        return $this->findLicenseNumberInText($text);
+    }
+
+    private function normalizeLicenseOcrText(string $rawText): string
+    {
+        $text = str_replace(["\u{2013}", "\u{2014}", "\u{2212}", '_'], '-', $rawText);
+        $text = preg_replace('/[ \t]+/u', ' ', $text) ?? $text;
+
+        return trim($text);
+    }
+
+    private function extractLabeledLicenseNumber(string $text): ?string
+    {
+        $label = '(?:license\s*no\.?|licenseno|lic\.?\s*no\.?|license\s*number|dl\s*no\.?)';
+        $lines = preg_split('/\R/u', $text) ?: [];
+
+        foreach ($lines as $index => $line) {
+            if (! preg_match('/'.$label.'/i', $line)) {
+                continue;
+            }
+
+            $rest = trim((string) preg_replace('/^.*?(?:'.$label.')\s*[:#.\-]*/i', '', $line));
+            $candidate = $this->findLicenseNumberInText($rest);
+            if ($candidate !== null) {
+                return $candidate;
+            }
+
+            for ($j = $index + 1; $j < count($lines) && $j <= $index + 2; $j++) {
+                $next = trim($lines[$j]);
+                if ($next === '' || preg_match('/'.$label.'/i', $next)) {
+                    continue;
+                }
+
+                $candidate = $this->findLicenseNumberInText($next);
+                if ($candidate !== null) {
+                    return $candidate;
+                }
+            }
         }
 
         return null;
+    }
+
+    private function findLicenseNumberInText(string $text): ?string
+    {
+        if ($text === '') {
+            return null;
+        }
+
+        if (preg_match_all('/(?<![A-Z0-9])([A-Z][\dOI]{2}[\s.\-]*[\dOI]{2}[\s.\-]*[\dOI]{5,8})(?![\dOI])/i', $text, $matches)) {
+            foreach ($matches[1] as $candidate) {
+                $normalized = $this->normalizeLicenseNumber((string) $candidate);
+                if ($normalized !== null) {
+                    return $normalized;
+                }
+            }
+        }
+
+        if (preg_match_all('/(?<![A-Z0-9])([A-Z][\dOI]{9,12})(?![\dOI])/i', $text, $matches)) {
+            foreach ($matches[1] as $candidate) {
+                $normalized = $this->normalizeLicenseNumber((string) $candidate);
+                if ($normalized !== null) {
+                    return $normalized;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    private function normalizeLicenseNumber(string $raw): ?string
+    {
+        $value = strtoupper(trim($raw));
+        if ($value === '' || ! preg_match('/^[A-Z]/', $value)) {
+            return null;
+        }
+
+        $letter = $value[0];
+        $rest = substr($value, 1);
+        $rest = strtr($rest, ['O' => '0', 'I' => '1', 'L' => '1']);
+        $digits = preg_replace('/\D+/', '', $rest) ?? '';
+
+        if (strlen($digits) < 9 || strlen($digits) > 12) {
+            return null;
+        }
+
+        return $letter.substr($digits, 0, 2).'-'.substr($digits, 2, 2).'-'.substr($digits, 4);
     }
 
     private function extractPlateNumber(string $rawText, ?string $licenseNumber): ?string

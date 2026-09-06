@@ -156,4 +156,70 @@ class LicenseParserTest extends TestCase
         $this->assertSame('144 MAGNOLIA, LOURDES YOUNG, NABUA, CAMARINES SUR, 4434', $result['address']);
         $this->assertSame([], $result['warnings']);
     }
+
+    public function test_reads_license_number_when_ocr_glues_it_to_expiration(): void
+    {
+        $result = $this->parser->parse([
+            ['text' => 'License No'],
+            ['text' => 'N03-12-123456N2022/10/04'],
+            ['text' => 'N32'],
+        ]);
+
+        $this->assertSame('N03-12-123456', $result['driver_license_number']);
+    }
+
+    public function test_reads_licenseno_label_on_its_own_line(): void
+    {
+        $result = $this->parser->parse([
+            ['text' => 'LICENSENO'],
+            ['text' => 'N01-12-345678'],
+        ]);
+
+        $this->assertSame('N01-12-345678', $result['driver_license_number']);
+    }
+
+    public function test_reads_licenseno_same_line_with_spaces_instead_of_hyphens(): void
+    {
+        $result = $this->parser->parse([
+            ['text' => 'LICENSENO N01 12 345678'],
+        ]);
+
+        $this->assertSame('N01-12-345678', $result['driver_license_number']);
+    }
+
+    public function test_reads_compact_license_number_without_separators(): void
+    {
+        $result = $this->parser->parse([
+            ['text' => 'LICENSENO N0112345678'],
+        ]);
+
+        $this->assertSame('N01-12-345678', $result['driver_license_number']);
+    }
+
+    public function test_normalizes_ocr_letter_digit_confusion_in_license_number(): void
+    {
+        $result = $this->parser->parse([
+            ['text' => 'LICENSENO'],
+            ['text' => 'NO1-I2-345678'],
+        ]);
+
+        $this->assertSame('N01-12-345678', $result['driver_license_number']);
+    }
+
+    public function test_reads_license_number_from_sample_card_ocr_dump(): void
+    {
+        $result = $this->parser->parse([
+            ['text' => 'NON-PROFESSIONALDRIVER\'SLICENSI'],
+            ['text' => 'DELA CRUZJUAN PEDRO GARCIA'],
+            ['text' => 'Address'],
+            ['text' => 'UNIT/HOUSENO.BUILDING,STREETNAME'],
+            ['text' => 'License No'],
+            ['text' => 'Expiration Date'],
+            ['text' => 'N03-12-123456N2022/10/04'],
+            ['text' => 'N32'],
+            ['text' => 'NOS-12-124SEOELACRUZJRANPCDRDGARCIA'],
+        ]);
+
+        $this->assertSame('N03-12-123456', $result['driver_license_number']);
+    }
 }
