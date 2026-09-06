@@ -388,7 +388,7 @@
                     <button
                         type="button"
                         id="register-back-btn"
-                        class="hidden inline-flex items-center justify-center gap-2 rounded-xl border border-gray-300 bg-white px-5 py-3 text-sm font-semibold text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40"
+                        class="hidden items-center justify-center gap-2 rounded-xl border border-gray-300 bg-white px-5 py-3 text-sm font-semibold text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40"
                     >
                         <i data-lucide="arrow-left" class="h-4 w-4"></i>
                         Back
@@ -407,7 +407,7 @@
                         <button
                             type="submit"
                             id="register-submit-btn"
-                            class="hidden inline-flex items-center justify-center gap-2 rounded-xl bg-[#5D9FD1] px-5 py-3 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-[#4A8FC4]"
+                            class="hidden items-center justify-center gap-2 rounded-xl bg-[#5D9FD1] px-5 py-3 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-[#4A8FC4]"
                         >
                             <i data-lucide="{{ ! empty($converting) ? 'clipboard-check' : 'user-plus' }}" class="h-4 w-4"></i>
                             {{ ! empty($converting) ? 'Complete Registration' : 'Submit registration' }}
@@ -446,6 +446,12 @@
                 ],
                 3: ['vehicle_id', 'vehicle_model', 'vehicle_color', 'plate_number'],
                 4: ['lto_or_photo', 'lto_cr_photo'],
+            };
+
+            const setNavButtonVisible = (el, visible) => {
+                if (!el) return;
+                el.classList.toggle('hidden', !visible);
+                el.classList.toggle('inline-flex', visible);
             };
 
             const setStatus = (el, message, tone) => {
@@ -490,12 +496,14 @@
                 });
                 paintStepButtons(currentStep);
                 if (stepLabel) stepLabel.textContent = `Step ${currentStep} of ${totalSteps}`;
+                const isFirstStep = currentStep <= 1;
+                const isLastStep = currentStep >= totalSteps;
                 if (backBtn) {
-                    backBtn.disabled = currentStep <= 1;
-                    backBtn.classList.toggle('hidden', currentStep <= 1);
+                    backBtn.disabled = isFirstStep;
+                    setNavButtonVisible(backBtn, !isFirstStep);
                 }
-                if (nextBtn) nextBtn.classList.toggle('hidden', currentStep >= totalSteps);
-                if (submitBtn) submitBtn.classList.toggle('hidden', currentStep < totalSteps);
+                setNavButtonVisible(nextBtn, !isLastStep);
+                setNavButtonVisible(submitBtn, isLastStep);
                 if (window.lucide) window.lucide.createIcons();
                 form?.scrollIntoView({ behavior: 'smooth', block: 'start' });
             };
@@ -569,6 +577,14 @@
             });
 
             form?.addEventListener('submit', (event) => {
+                if (currentStep < totalSteps) {
+                    event.preventDefault();
+                    if (validateStep(currentStep)) {
+                        showStep(currentStep + 1);
+                    }
+                    return;
+                }
+
                 for (let s = 1; s <= totalSteps; s += 1) {
                     if (!validateStep(s)) {
                         event.preventDefault();
