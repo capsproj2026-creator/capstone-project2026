@@ -64,65 +64,20 @@
                 </div>
             @endif
 
-            <ol id="register-steps" class="mb-6 grid grid-cols-4 gap-2 sm:gap-3" aria-label="Registration steps">
-                <li>
-                    <button type="button" data-register-step="1" class="register-step-btn w-full rounded-lg border border-blue-200 bg-blue-50 px-1.5 py-2.5 text-center transition sm:px-2">
-                        <p class="text-[10px] font-semibold uppercase tracking-wide text-blue-700">Step 1</p>
-                        <p class="mt-0.5 text-[11px] font-medium text-gray-800 sm:text-xs">License</p>
-                    </button>
-                </li>
-                <li>
-                    <button type="button" data-register-step="2" class="register-step-btn w-full rounded-lg border border-slate-200 bg-slate-50 px-1.5 py-2.5 text-center transition sm:px-2">
-                        <p class="text-[10px] font-semibold uppercase tracking-wide text-slate-500">Step 2</p>
-                        <p class="mt-0.5 text-[11px] font-medium text-gray-800 sm:text-xs">Your info</p>
-                    </button>
-                </li>
-                <li>
-                    <button type="button" data-register-step="3" class="register-step-btn w-full rounded-lg border border-slate-200 bg-slate-50 px-1.5 py-2.5 text-center transition sm:px-2">
-                        <p class="text-[10px] font-semibold uppercase tracking-wide text-slate-500">Step 3</p>
-                        <p class="mt-0.5 text-[11px] font-medium text-gray-800 sm:text-xs">Vehicle</p>
-                    </button>
-                </li>
-                <li>
-                    <button type="button" data-register-step="4" class="register-step-btn w-full rounded-lg border border-slate-200 bg-slate-50 px-1.5 py-2.5 text-center transition sm:px-2">
-                        <p class="text-[10px] font-semibold uppercase tracking-wide text-slate-500">Step 4</p>
-                        <p class="mt-0.5 text-[11px] font-medium text-gray-800 sm:text-xs">LTO files</p>
-                    </button>
-                </li>
-            </ol>
-
-            <p id="register-step-hint" class="mb-5 text-center text-xs text-gray-500">Complete each step carefully. You can go back anytime before submitting.</p>
-
-            @php
-                $step2Keys = ['profile_pic', 'id_document', 'full_name', 'address', 'phone_number', 'id_number', 'email', 'driver_license_number', 'password', 'user_type', 'department_code'];
-                $step3Keys = ['vehicle_id', 'vehicle_model', 'vehicle_color', 'plate_number'];
-                $step4Keys = ['lto_or_photo', 'lto_cr_photo'];
-                $initialStep = 1;
-                if ($errors->hasAny($step4Keys)) {
-                    $initialStep = 4;
-                } elseif ($errors->hasAny($step3Keys)) {
-                    $initialStep = 3;
-                } elseif ($errors->hasAny($step2Keys)) {
-                    $initialStep = 2;
-                } elseif ($errors->has('driver_license')) {
-                    $initialStep = 1;
-                }
-            @endphp
-
-            <form method="POST" action="{{ route('register') }}" enctype="multipart/form-data" class="space-y-0" id="register-form" novalidate data-initial-step="{{ $initialStep }}">
+            <form method="POST" action="{{ route('register') }}" enctype="multipart/form-data" class="space-y-8" id="register-form">
                 @csrf
                 <input type="hidden" name="reg_category" id="reg_category" value="vehicle">
                 @if (! empty($converting))
                     <input type="hidden" name="temp_token" value="{{ old('temp_token', $converting->temp_conversion_token) }}">
                 @endif
 
-                <section id="register-step-1" class="register-step-panel space-y-4" data-step="1">
+                <section id="register-section-license" class="space-y-4">
                     <div class="rounded-xl border border-blue-100 bg-blue-50/60 px-4 py-3">
                         <div class="flex items-start gap-3">
                             <span class="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-blue-600 text-xs font-bold text-white">1</span>
                             <div>
                                 <h2 class="text-base font-semibold text-gray-900">Driver’s license</h2>
-                                <p class="mt-0.5 text-sm text-gray-600">Upload a clear photo of the <strong class="font-medium text-gray-800">front</strong> of your license. We’ll try to fill your name, address, and license number — check them in the next step.</p>
+                                <p class="mt-0.5 text-sm text-gray-600">Upload a clear photo of the <strong class="font-medium text-gray-800">front</strong> of your license. We’ll try to fill your name, address, and license number — check them in Your information below.</p>
                             </div>
                         </div>
                     </div>
@@ -143,7 +98,7 @@
                     @enderror
                 </section>
 
-                <section id="register-step-2" class="register-step-panel hidden space-y-4" data-step="2">
+                <section id="register-section-info" class="space-y-4">
                     <div class="rounded-xl border border-blue-100 bg-blue-50/60 px-4 py-3">
                         <div class="flex items-start gap-3">
                             <span class="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-blue-600 text-xs font-bold text-white">2</span>
@@ -304,7 +259,7 @@
                     </div>
                 </section>
 
-                <section id="register-step-3" class="register-step-panel hidden space-y-4" data-step="3" data-vehicle-fields>
+                <section id="register-section-vehicle" class="space-y-4">
                     <div class="rounded-xl border border-blue-100 bg-blue-50/60 px-4 py-3">
                         <div class="flex items-start gap-3">
                             <span class="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-blue-600 text-xs font-bold text-white">3</span>
@@ -347,7 +302,7 @@
                     @endif
                 </section>
 
-                <section id="register-step-4" class="register-step-panel hidden space-y-4" data-step="4">
+                <section id="register-section-lto" class="space-y-4">
                     <div class="rounded-xl border border-blue-100 bg-blue-50/60 px-4 py-3">
                         <div class="flex items-start gap-3">
                             <span class="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-blue-600 text-xs font-bold text-white">4</span>
@@ -384,35 +339,15 @@
                     </div>
                 </section>
 
-                <div class="mt-8 flex flex-col-reverse gap-3 border-t border-gray-100 pt-6 sm:flex-row sm:items-center sm:justify-between">
+                <div class="border-t border-gray-100 pt-6">
                     <button
-                        type="button"
-                        id="register-back-btn"
-                        class="hidden items-center justify-center gap-2 rounded-xl border border-gray-300 bg-white px-5 py-3 text-sm font-semibold text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40"
+                        type="submit"
+                        id="register-submit-btn"
+                        class="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-[#5D9FD1] px-5 py-3 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-[#4A8FC4] sm:w-auto"
                     >
-                        <i data-lucide="arrow-left" class="h-4 w-4"></i>
-                        Back
+                        <i data-lucide="{{ ! empty($converting) ? 'clipboard-check' : 'user-plus' }}" class="h-4 w-4"></i>
+                        {{ ! empty($converting) ? 'Complete Registration' : 'Submit registration' }}
                     </button>
-
-                    <div class="flex flex-col gap-3 sm:flex-row sm:items-center">
-                        <p id="register-step-label" class="text-center text-xs text-gray-500 sm:text-right">Step 1 of 4</p>
-                        <button
-                            type="button"
-                            id="register-next-btn"
-                            class="inline-flex items-center justify-center gap-2 rounded-xl bg-[#5D9FD1] px-5 py-3 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-[#4A8FC4]"
-                        >
-                            Next
-                            <i data-lucide="arrow-right" class="h-4 w-4"></i>
-                        </button>
-                        <button
-                            type="submit"
-                            id="register-submit-btn"
-                            class="hidden items-center justify-center gap-2 rounded-xl bg-[#5D9FD1] px-5 py-3 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-[#4A8FC4]"
-                        >
-                            <i data-lucide="{{ ! empty($converting) ? 'clipboard-check' : 'user-plus' }}" class="h-4 w-4"></i>
-                            {{ ! empty($converting) ? 'Complete Registration' : 'Submit registration' }}
-                        </button>
-                    </div>
                 </div>
                 <p class="mt-3 text-center text-xs text-gray-500">GSU reviews submissions before gate access is granted.</p>
             </form>
