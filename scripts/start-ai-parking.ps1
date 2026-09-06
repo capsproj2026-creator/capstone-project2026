@@ -55,10 +55,15 @@ function Stop-PortListeners([int]$Port) {
         if ($procId -match '^\d+$') { $procIds += [int]$procId }
     }
     foreach ($procId in ($procIds | Select-Object -Unique)) {
-        Write-Host ("Stopping previous AI process on port {0} (PID {1})" -f $Port, $procId) -ForegroundColor Yellow
+        Write-Host ("Stopping previous process on port {0} (PID {1})" -f $Port, $procId) -ForegroundColor Yellow
         Stop-Process -Id $procId -Force -ErrorAction SilentlyContinue
     }
     if ($procIds.Count -gt 0) { Start-Sleep -Seconds 2 }
+}
+
+function Test-PortListening([int]$Port) {
+    $hit = netstat -ano | Select-String (":{0}\s+.*LISTENING" -f $Port)
+    return [bool]$hit
 }
 
 Import-DotEnv $EnvFile
@@ -92,6 +97,11 @@ if ($LASTEXITCODE -ne 0) {
 Write-Host "  MongoDB: OK" -ForegroundColor Green
 
 if (-not $SkipWebStack) {
+    # Port open but HTTP hung (common after many restarts) - recycle Laravel first.
+    if ((Test-PortListening 8000) -and -not (Test-HttpOk $laravelUrl)) {
+        Write-Host "Laravel port 8000 is open but not responding - restarting it..." -ForegroundColor Yellow
+        Stop-PortListeners 8000
+    }
     if (-not (Test-HttpOk $laravelUrl)) {
         Write-Host ""
         Write-Host "Starting website stack (Laravel + Reverb + Vite)..." -ForegroundColor Cyan
@@ -103,12 +113,31 @@ if (-not $SkipWebStack) {
         & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $ScriptsDir "start-system.ps1") @sysArgs
         Write-Host "Waiting for Laravel..." -ForegroundColor DarkGray
         $ready = $false
-        for ($i = 0; $i -lt 15; $i++) {
+        for ($i = 0; $i -lt 45; $i++) {
             Start-Sleep -Seconds 1
-            if (Test-HttpOk $laravelUrl) { $ready = $true; break }
+            if (Test-HttpOk $laravelUrl) {
+                $ready = $true
+                break
+            }
+            if (($i -eq 12) -and (Test-PortListening 8000) -and -not (Test-HttpOk $laravelUrl)) {
+                Write-Host "Still hung - recycling port 8000 and reopening Laravel..." -ForegroundColor Yellow
+                Stop-PortListeners 8000
+                $laravelLaunch = @"
+`$Host.UI.RawUI.WindowTitle = 'Laravel'
+Set-Location -LiteralPath '$Root'
+php artisan serve --host=0.0.0.0 --port=8000
+"@
+                Start-Process powershell -WorkingDirectory $Root -ArgumentList @(
+                    "-NoExit",
+                    "-NoProfile",
+                    "-ExecutionPolicy", "Bypass",
+                    "-Command", $laravelLaunch
+                ) | Out-Null
+            }
         }
         if (-not $ready) {
             Write-Host "Laravel did not respond at $laravelUrl - check the Laravel window for errors." -ForegroundColor Red
+            Write-Host "Tip: close all 'Laravel' PowerShell windows, then run: .\scripts\start-ai-parking.ps1" -ForegroundColor DarkYellow
             exit 1
         }
     }

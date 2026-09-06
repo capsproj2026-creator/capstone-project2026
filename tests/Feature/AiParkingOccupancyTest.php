@@ -245,6 +245,19 @@ class AiParkingOccupancyTest extends TestCase
         $this->assertSame(2, ParkingSlot::query()->where('area_id', self::FIXTURE_B)->where('status', 'Occupied')->count());
         $this->assertSame(1, ParkingSlot::query()->where('area_id', self::FIXTURE_C)->where('status', 'Occupied')->count());
 
+        $occupancy = app(\App\Services\AiParkingOccupancyService::class);
+        $this->assertSame(4, (int) data_get($occupancy->latestSnapshot('CAM-AI-1'), 'occupied'));
+        $this->assertSame(2, (int) data_get($occupancy->latestSnapshot('CAM-AI-2'), 'occupied'));
+        $this->assertSame(1, (int) data_get($occupancy->latestSnapshot('CAM-AI-3'), 'occupied'));
+        $this->assertNull($occupancy->latestSnapshot('CAM-MISSING'));
+
+        $all = $occupancy->allSnapshots();
+        $this->assertSame(4, (int) data_get($all, 'CAM-AI-1.occupied'));
+        $this->assertSame(2, (int) data_get($all, 'CAM-AI-2.occupied'));
+        $this->assertSame(1, (int) data_get($all, 'CAM-AI-3.occupied'));
+        $this->assertSame('CAM-AI-1', data_get($all, 'CAM-AI-1.camera_id'));
+        $this->assertSame('CAM-AI-2', data_get($all, 'CAM-AI-2.camera_id'));
+
         $guard = User::query()->where('email', 'guard@my.cspc.edu.ph')->first();
         if ($guard) {
             $this->actingAs($guard)
@@ -254,6 +267,22 @@ class AiParkingOccupancyTest extends TestCase
                 ->assertJsonPath('ai_cameras.CAM-AI-2.occupied', 2)
                 ->assertJsonPath('ai_cameras.CAM-AI-3.occupied', 1);
         }
+    }
+
+    public function test_camera_snapshot_does_not_copy_another_camera(): void
+    {
+        $occupancy = app(\App\Services\AiParkingOccupancyService::class);
+
+        $this->withHeaders(['X-AI-TOKEN' => self::TOKEN])
+            ->postJson('/api/ai-parking/occupancy', [
+                'camera_id' => 'CAM-AI-1',
+                'vehicle_count' => 5,
+            ])
+            ->assertOk();
+
+        $this->assertNull($occupancy->latestSnapshot('CAM-AI-2'));
+        $this->assertArrayNotHasKey('CAM-AI-2', $occupancy->allSnapshots());
+        $this->assertSame(5, (int) data_get($occupancy->latestSnapshot('CAM-AI-1'), 'occupied'));
     }
 
     public function test_live_cameras_lists_ai_cameras(): void

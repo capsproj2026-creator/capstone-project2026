@@ -121,7 +121,6 @@ class LiveCameraController extends Controller
             'aiAreaName' => $area?->area_name ?? 'Parking area',
             'statusUrl' => route('guard.parking.status'),
             'correctPlateUrl' => route('guard.ai-parking.correct-plate'),
-            'testScanUrl' => route('guard.ai-parking.test-scan'),
             'plateCropUrlTemplate' => url('/guard/ai-parking/plate-crop/__CAMERA__/__TRACK__'),
             'parkingUrl' => route('guard.parking', ['zone_id' => $areaId]),
         ]);
@@ -287,6 +286,21 @@ class LiveCameraController extends Controller
 
     public function plateCrop(string $camera, int $track, AiCameraRegistry $registry, AiParkingHealthService $health): Response
     {
+        return $this->proxyTrackCrop($camera, $track, 'plate-crop', $registry, $health);
+    }
+
+    public function vehicleCrop(string $camera, int $track, AiCameraRegistry $registry, AiParkingHealthService $health): Response
+    {
+        return $this->proxyTrackCrop($camera, $track, 'vehicle-crop', $registry, $health);
+    }
+
+    private function proxyTrackCrop(
+        string $camera,
+        int $track,
+        string $kind,
+        AiCameraRegistry $registry,
+        AiParkingHealthService $health
+    ): Response {
         $cameraId = strtoupper(trim($camera));
         $known = collect($registry->cameras())->pluck('id')->map(fn ($id) => strtoupper((string) $id));
         if ($known->isNotEmpty() && ! $known->contains($cameraId)) {
@@ -298,7 +312,8 @@ class LiveCameraController extends Controller
             abort(503, 'AI parking service is not configured.');
         }
 
-        $upstream = $base.'/'.rawurlencode($cameraId).'/plate-crop/'.$track.'.jpg';
+        $kind = $kind === 'vehicle-crop' ? 'vehicle-crop' : 'plate-crop';
+        $upstream = $base.'/'.rawurlencode($cameraId).'/'.$kind.'/'.$track.'.jpg';
 
         try {
             $response = Http::connectTimeout(2)

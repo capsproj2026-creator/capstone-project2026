@@ -25,14 +25,14 @@ OCR_EVERY_SEC = float(os.getenv("AI_PARKING_OCR_EVERY_SEC", "1.0"))
 OCR_MIN_CONF = float(os.getenv("AI_PARKING_OCR_MIN_CONF", "0.26"))
 OCR_UNREADABLE_BELOW = float(os.getenv("AI_PARKING_OCR_UNREADABLE_BELOW", "0.18"))
 OCR_QUEUE_SIZE = int(os.getenv("AI_PARKING_OCR_QUEUE_SIZE", "8"))
-OCR_UPSCALE_MIN_WIDTH = int(os.getenv("AI_PARKING_OCR_UPSCALE_MIN_WIDTH", "560"))
-OCR_UPSCALE_FACTOR = float(os.getenv("AI_PARKING_OCR_UPSCALE_FACTOR", "5"))
+OCR_UPSCALE_MIN_WIDTH = int(os.getenv("AI_PARKING_OCR_UPSCALE_MIN_WIDTH", "640"))
+OCR_UPSCALE_FACTOR = float(os.getenv("AI_PARKING_OCR_UPSCALE_FACTOR", "6"))
 OCR_GPU = os.getenv("AI_PARKING_OCR_GPU", "0") == "1"
-OCR_HIGH_CONF_LOCK = float(os.getenv("AI_PARKING_OCR_HIGH_CONF_LOCK", "0.65"))
-# Empty by default for speed; set e.g. -6,-3,3,6 if plates are often tilted.
+OCR_HIGH_CONF_LOCK = float(os.getenv("AI_PARKING_OCR_HIGH_CONF_LOCK", "0.55"))
+# Mild angles help front plates under carports; empty disables rotations.
 OCR_ROTATION_ANGLES = [
     float(v.strip())
-    for v in os.getenv("AI_PARKING_OCR_ROTATION_ANGLES", "").split(",")
+    for v in os.getenv("AI_PARKING_OCR_ROTATION_ANGLES", "-8,-4,4,8").split(",")
     if v.strip()
 ]
 
@@ -94,13 +94,14 @@ class PlateOCR:
             y2p = y1 + int(box_h * (0.88 if distant else 0.76))
             x_pad = int(box_w * (0.01 if distant else 0.03))
         elif distant:
-            y1p = y1 + int(box_h * 0.18)
+            y1p = y1 + int(box_h * 0.12)
             y2p = y2 - int(box_h * 0.02)
             x_pad = int(box_w * 0.02)
         else:
-            y1p = y1 + int(box_h * 0.48)
+            # Front-facing lots (plate on bumper) + rear plates: keep mid→bottom.
+            y1p = y1 + int(box_h * 0.20)
             y2p = y2
-            x_pad = int(box_w * 0.05)
+            x_pad = int(box_w * 0.03)
         x1 = max(0, x1 + x_pad)
         y1p = max(0, y1p)
         x2 = min(w, x2 - x_pad)
@@ -111,14 +112,8 @@ class PlateOCR:
         crop = frame[y1p:y2p, x1:x2]
         if crop is None or crop.size == 0:
             return None
-        try:
-            from plate_detector import detect_plate_crop
-
-            tighter = detect_plate_crop(crop, cls_id=cls_id)
-            if tighter is not None:
-                return tighter
-        except Exception:
-            pass
+        # Keep the bumper/vehicle band. Optional tighter crops are tried inside read_crop
+        # so a bad OpenCV "plate" ROI cannot permanently hide the real plate.
         return crop.copy()
 
     @staticmethod
@@ -181,12 +176,14 @@ class PlateOCR:
             pass
 
         gamma = PlateOCR._gamma_correct(clahe_img, 1.2)
+        bright = PlateOCR._gamma_correct(clahe_img, 0.72)  # lift dark/shaded plates
         unsharp = PlateOCR._unsharp_mask(clahe_img)
         variants = [
             ("color", crop),
             ("gray", gray),
             ("clahe", clahe_img),
             ("gamma", gamma),
+            ("bright", bright),
             ("unsharp", unsharp),
         ]
         if not quick:
@@ -277,6 +274,14 @@ class PlateOCR:
         """Try full frame plus tighter bands where plates usually appear."""
         ch, cw = crop.shape[:2]
         out = [crop]
+        try:
+            from plate_detector import detect_plate_crop
+
+            tighter = detect_plate_crop(crop, cls_id=cls_id)
+            if tighter is not None and tighter.size > 0:
+                out.insert(0, tighter)
+        except Exception:
+            pass
         if cls_id == MOTORCYCLE_CLS_ID and ch >= 24:
             mid_y1 = max(0, int(ch * 0.10))
             mid_y2 = min(ch, int(ch * 0.70))
@@ -284,9 +289,13 @@ class PlateOCR:
             if mid.size > 0 and mid.shape[0] >= 12:
                 out.insert(0, mid)
         elif ch >= 24:
+            # Bumper / grille band (front-facing cars and multicabs).
+            bottom = crop[max(0, int(ch * 0.35)) : ch, :]
+            if bottom.size > 0 and bottom.shape[0] >= 12:
+                out.insert(0, bottom)
             top = crop[0 : max(12, int(ch * 0.50)), :]
             if top.size > 0 and top.shape[0] >= 12:
-                out.insert(0, top)
+                out.append(top)
         if ch >= 48:
             mid_y1 = max(0, int(ch * 0.16))
             mid_y2 = min(ch, int(ch * 0.64))

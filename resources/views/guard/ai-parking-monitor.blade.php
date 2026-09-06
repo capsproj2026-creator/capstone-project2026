@@ -19,6 +19,28 @@
         $healthById = collect($aiCamerasHealth ?? []);
         $snaps = is_array($aiCameras ?? null) ? $aiCameras : [];
         $primaryAi = $ai ?? null;
+        $latestDetections = [];
+        foreach ($snaps as $snapCamId => $snap) {
+            if (! is_array($snap)) {
+                continue;
+            }
+            foreach ($snap['detections'] ?? [] as $det) {
+                if (! is_array($det)) {
+                    continue;
+                }
+                $det['_camera'] = $det['_camera'] ?? $snapCamId;
+                $latestDetections[] = $det;
+            }
+        }
+        if ($latestDetections === [] && is_array($primaryAi)) {
+            foreach ($primaryAi['detections'] ?? [] as $det) {
+                if (! is_array($det)) {
+                    continue;
+                }
+                $det['_camera'] = $det['_camera'] ?? ($primaryAi['camera_id'] ?? '');
+                $latestDetections[] = $det;
+            }
+        }
     @endphp
 
     @if ($cameras->isEmpty())
@@ -54,11 +76,32 @@
                 @php
                     $camId = (string) ($cam['id'] ?? '');
                     $health = $healthById->get($camId, []);
-                    $snap = $snaps[$camId] ?? [];
+                    if ($health === [] && $healthById->isNotEmpty()) {
+                        $health = $healthById->first(fn ($row, $key) => strcasecmp((string) $key, $camId) === 0) ?? [];
+                    }
+                    $snap = $snaps[$camId] ?? null;
+                    if (! is_array($snap)) {
+                        foreach ($snaps as $snapKey => $candidate) {
+                            if (strcasecmp((string) $snapKey, $camId) === 0 && is_array($candidate)) {
+                                $snap = $candidate;
+                                break;
+                            }
+                        }
+                    }
+                    if (is_array($snap) && isset($snap['camera_id']) && strcasecmp((string) $snap['camera_id'], $camId) !== 0) {
+                        $snap = null;
+                    }
                     $browserUrl = $health['ai_stream_url'] ?? $health['stream_browser_url'] ?? ($cam['ai_stream_url'] ?? $cam['stream_url'] ?? null);
                     $online = (bool) ($health['connected'] ?? false);
+                    $showStats = $online && is_array($snap);
+                    $vehicles = $showStats ? (int) ($snap['reported_vehicle_count'] ?? $snap['vehicle_count'] ?? 0) : null;
+                    $free = $showStats ? ($snap['available'] ?? null) : null;
+                    $used = $showStats ? ($snap['occupied'] ?? null) : null;
+                    $capacity = $showStats ? ($snap['capacity'] ?? null) : null;
                     $topDet = data_get($snap, 'detections.0');
-                    $plateLine = \App\Support\AiDetectionPresenter::plateLine(is_array($topDet) ? $topDet : null);
+                    $plateLine = $showStats
+                        ? \App\Support\AiDetectionPresenter::plateLine(is_array($topDet) ? $topDet : null)
+                        : '';
                 @endphp
                 <article class="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
                     <div class="relative aspect-video bg-[#1a1d23]" data-camera-tile="{{ $camId }}" data-online="{{ $online ? '1' : '0' }}">
@@ -117,12 +160,21 @@
                             </div>
                             <span class="shrink-0 rounded bg-blue-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-blue-700">AI</span>
                         </div>
-                        <p class="mt-2 text-xs text-gray-500">
-                            Vehicles: <span class="js-cam-vehicles font-semibold text-gray-800" data-camera="{{ $camId }}">{{ $snap['vehicle_count'] ?? 0 }}</span>
-                            · Free: <span class="js-cam-available font-semibold text-green-700" data-camera="{{ $camId }}">{{ $snap['available'] ?? '—' }}</span>
-                            · Used: <span class="js-cam-occupied font-semibold text-red-700" data-camera="{{ $camId }}">{{ $snap['occupied'] ?? '—' }}</span>
+                        <p
+                            class="js-cam-stats mt-2 text-xs text-gray-500 {{ $showStats ? '' : 'hidden' }}"
+                            data-camera="{{ $camId }}"
+                        >
+                            Free:
+                            <span class="js-cam-available font-semibold text-green-700" data-camera="{{ $camId }}">{{ $free ?? '—' }}</span><span class="js-cam-capacity text-gray-400" data-camera="{{ $camId }}">@if ($capacity !== null)/{{ $capacity }}@endif</span>
+                            · Used:
+                            <span class="js-cam-occupied font-semibold text-red-700" data-camera="{{ $camId }}">{{ $used ?? '—' }}</span>
+                            · Vehicles:
+                            <span class="js-cam-vehicles font-semibold text-gray-800" data-camera="{{ $camId }}">{{ $vehicles ?? '—' }}</span>
                         </p>
-                        <p class="js-cam-plate mt-1 truncate text-xs font-medium text-indigo-700" data-camera="{{ $camId }}">{{ $plateLine }}</p>
+                        <p
+                            class="js-cam-plate mt-1 truncate text-xs font-medium text-indigo-700 {{ ($showStats && $plateLine !== '') ? '' : 'hidden' }}"
+                            data-camera="{{ $camId }}"
+                        >{{ $plateLine }}</p>
                     </div>
                 </article>
             @endforeach
@@ -132,79 +184,66 @@
             <div class="rounded-xl border border-gray-200 bg-white shadow-sm">
                 <div class="border-b border-gray-100 px-4 py-3 flex items-center justify-between gap-2">
                     <h3 class="font-semibold text-gray-900">Latest Detections</h3>
-                    <span id="ai-det-count" class="rounded-full bg-gray-100 px-2.5 py-0.5 text-xs font-semibold text-gray-600">{{ count($primaryAi['detections'] ?? []) }}</span>
+                    <span id="ai-det-count" class="rounded-full bg-gray-100 px-2.5 py-0.5 text-xs font-semibold text-gray-600">{{ count($latestDetections) }}</span>
                 </div>
                 <ul id="ai-detections" class="max-h-[32rem] divide-y divide-gray-100 overflow-y-auto text-sm">
-                    @forelse (($primaryAi['detections'] ?? []) as $det)
+                    @forelse ($latestDetections as $det)
                         @php
                             $detCam = $det['_camera'] ?? ($primaryAi['camera_id'] ?? '');
-                            $ocrText = $det['ocr_text'] ?? $det['plate_text'] ?? $det['plate'] ?? null;
+                            $plate = ($det['plate_status'] ?? '') === 'unreadable' ? null : ($det['plate'] ?? null);
+                            $ownerName = $det['owner_name'] ?? null;
+                            $ownerRole = $det['role'] ?? $det['owner_role'] ?? null;
+                            $vehicleCropUrl = (! empty($det['track_id']) && $detCam !== '')
+                                ? route('guard.ai-parking.vehicle-crop', ['camera' => $detCam, 'track' => $det['track_id']])
+                                : null;
                         @endphp
-                        <li class="flex items-center justify-between gap-3 px-4 py-3">
-                            @if (! empty($det['track_id']) && $detCam !== '')
+                        <li class="flex items-start gap-3 px-4 py-3">
+                            @if ($vehicleCropUrl)
                                 <img
-                                    src="{{ route('guard.ai-parking.plate-crop', ['camera' => $detCam, 'track' => $det['track_id']]) }}"
-                                    alt="Plate crop"
-                                    class="h-12 w-24 shrink-0 rounded border border-gray-200 bg-slate-50 object-contain"
+                                    src="{{ $vehicleCropUrl }}"
+                                    alt="Vehicle"
+                                    class="h-20 w-28 shrink-0 rounded-lg border border-gray-200 bg-slate-50 object-cover"
                                     onerror="this.classList.add('hidden')"
                                 >
+                            @else
+                                <div class="flex h-20 w-28 shrink-0 items-center justify-center rounded-lg border border-dashed border-gray-200 bg-gray-50 text-[10px] text-gray-400">No image</div>
                             @endif
                             <div class="min-w-0 flex-1">
-                                <p class="font-medium text-gray-800">
-                                    @if (! empty($det['track_id']))
-                                        <span class="text-xs text-gray-400">#{{ $det['track_id'] }}</span>
-                                    @endif
-                                    {{ $det['class'] ?? 'vehicle' }}
-                                    @if (($det['class'] ?? '') === 'motorcycle')
-                                        <span class="ml-1 rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-bold uppercase text-emerald-800">MC</span>
-                                    @endif
-                                    @php
-                                        $motionLabel = match ($det['motion_state'] ?? '') {
-                                            'parked' => 'Parked',
-                                            'idle' => 'Settling',
-                                            default => (($det['motion_label'] ?? null) && ! str_contains(strtolower((string) ($det['motion_label'] ?? '')), 'moving'))
-                                                ? $det['motion_label']
-                                                : null,
-                                        };
-                                    @endphp
-                                    @if ($motionLabel)
-                                        <span @class([
-                                            'ml-1 rounded px-1.5 py-0.5 text-[10px] font-bold uppercase',
-                                            'bg-sky-100 text-sky-700' => ($det['motion_state'] ?? '') === 'parked',
-                                            'bg-gray-100 text-gray-600' => ($det['motion_state'] ?? '') !== 'parked',
-                                        ])>{{ $motionLabel }}</span>
-                                    @endif
+                                <p class="font-mono text-base font-bold tracking-wide text-indigo-800">
                                     @if (($det['plate_status'] ?? '') === 'unreadable')
-                                        <span class="ml-1 text-xs text-slate-500">[Plate Unreadable]</span>
-                                    @elseif (! empty($det['plate']))
-                                        <span class="ml-1 rounded bg-indigo-100 px-1.5 py-0.5 text-xs font-bold tracking-wide text-indigo-800">{{ $det['plate'] }}</span>
+                                        <span class="font-sans text-sm font-semibold text-slate-500">Plate Unreadable</span>
+                                    @elseif ($plate)
+                                        {{ $plate }}
+                                    @else
+                                        <span class="font-sans text-sm font-medium text-gray-400">Reading plate…</span>
                                     @endif
                                 </p>
-                                @if (! empty($ocrText) && ($det['plate_status'] ?? '') !== 'unreadable')
-                                    <p class="mt-0.5 font-mono text-xs text-indigo-800">OCR {{ $ocrText }}</p>
-                                @endif
-                                @if (($det['plate_status'] ?? '') === 'unreadable')
-                                    <p class="mt-0.5 text-xs text-slate-500">Plate Unreadable</p>
-                                @elseif (! empty($det['registered']) && ! empty($det['owner_name']))
-                                    <p class="mt-0.5 truncate text-xs text-emerald-700">Registered · {{ $det['owner_name'] }}</p>
-                                @elseif (! empty($det['plate']))
-                                    <p class="mt-0.5 text-xs text-amber-700">Unknown Vehicle · Plate Not Registered</p>
-                                @else
-                                    <p class="mt-0.5 text-xs text-gray-400">Scanning plate…</p>
-                                @endif
+                                <p class="mt-1 truncate text-sm font-semibold text-gray-900">
+                                    {{ $ownerName ?: ($plate ? 'Unknown Vehicle' : '—') }}
+                                </p>
+                                <p class="mt-0.5 text-xs text-gray-500">
+                                    Role:
+                                    <span class="font-medium text-gray-700">{{ $ownerRole ?: ($plate ? 'Unregistered' : '—') }}</span>
+                                    @if (! empty($det['class']))
+                                        · {{ ucfirst((string) $det['class']) }}
+                                    @endif
+                                    @if (! empty($detCam))
+                                        · {{ $detCam }}
+                                    @endif
+                                </p>
                             </div>
-                            <div class="flex shrink-0 items-center gap-2">
+                            <div class="flex shrink-0 flex-col items-end gap-2">
                                 @if (! empty($det['track_id']))
                                     <button
                                         type="button"
                                         class="rounded-lg border border-indigo-200 px-2 py-1 text-[11px] font-semibold text-indigo-700 hover:bg-indigo-50"
                                         data-correct-plate
-                                        data-camera="{{ $det['_camera'] ?? ($primaryAi['camera_id'] ?? '') }}"
+                                        data-camera="{{ $detCam }}"
                                         data-track="{{ $det['track_id'] }}"
-                                        data-plate="{{ $det['plate'] ?? '' }}"
+                                        data-plate="{{ $plate ?? '' }}"
                                     >Correct</button>
                                 @endif
-                                <span class="text-gray-500">{{ isset($det['confidence']) ? round($det['confidence'] * 100).'%' : '—' }}</span>
+                                <span class="text-xs text-gray-500">{{ isset($det['confidence']) ? round($det['confidence'] * 100).'%' : '—' }}</span>
                             </div>
                         </li>
                     @empty
@@ -237,27 +276,25 @@
             </div>
         </div>
 
-        {{-- Full-screen expand with zoom (test plate scan, not saved) --}}
+        {{-- Full-screen expand with zoom --}}
         <div id="camera-expand-modal" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/80 p-2 sm:p-4" role="dialog" aria-modal="true">
             <div class="relative flex h-full w-full max-w-7xl flex-col overflow-hidden rounded-xl bg-black shadow-2xl">
                 <div class="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b border-white/10 px-4 py-3">
                     <div class="min-w-0">
                         <p id="camera-expand-title" class="font-semibold text-white">Camera</p>
-                        <p class="text-[11px] text-white/50">Zoom to a plate, then Scan. Test only — not saved to the database.</p>
+                        <p class="text-[11px] text-white/50">Scroll or use + / − to zoom. Drag when zoomed.</p>
                     </div>
                     <div class="flex flex-wrap items-center gap-2">
                         <button type="button" id="camera-zoom-out" class="rounded-md bg-white/10 px-2 py-1 text-sm font-bold text-white hover:bg-white/20" aria-label="Zoom out">−</button>
                         <span id="camera-zoom-label" class="min-w-[3rem] text-center text-xs font-semibold tabular-nums text-white/80">1.0×</span>
                         <button type="button" id="camera-zoom-in" class="rounded-md bg-white/10 px-2 py-1 text-sm font-bold text-white hover:bg-white/20" aria-label="Zoom in">+</button>
                         <button type="button" id="camera-zoom-reset" class="rounded-md bg-white/10 px-2 py-1 text-xs font-semibold text-white hover:bg-white/20">Reset</button>
-                        <button type="button" id="camera-test-scan" class="rounded-md bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-indigo-500">Scan plate</button>
                         <button type="button" id="camera-expand-close" class="rounded-md p-1.5 text-white/80 hover:bg-white/10" aria-label="Close">
                             <i data-lucide="x" class="h-5 w-5"></i>
                         </button>
                     </div>
                 </div>
                 <div id="camera-expand-body" class="relative min-h-0 flex-1 overflow-hidden bg-[#1a1d23]"></div>
-                <div id="camera-test-scan-panel" class="hidden shrink-0 border-t border-white/10 bg-black/80 px-4 py-3 text-sm text-white"></div>
             </div>
         </div>
     @endif
@@ -284,13 +321,14 @@
 (() => {
     const statusUrl = @json($statusUrl ?? null);
     const correctUrl = @json($correctPlateUrl ?? null);
-    const testScanUrl = @json($testScanUrl ?? null);
     const plateCropBase = @json(url('/guard/ai-parking/plate-crop'));
+    const vehicleCropBase = @json(url('/guard/ai-parking/vehicle-crop'));
     const csrf = document.querySelector('meta[name="csrf-token"]')?.content || '';
 
-    const cropUrlFor = (cam, track) => {
-        if (!plateCropBase || !cam || track == null || track === '') return '';
-        return `${plateCropBase}/${encodeURIComponent(cam)}/${encodeURIComponent(String(track))}`;
+    const cropUrlFor = (cam, track, kind = 'vehicle') => {
+        const base = kind === 'plate' ? plateCropBase : vehicleCropBase;
+        if (!base || !cam || track == null || track === '') return '';
+        return `${base}/${encodeURIComponent(cam)}/${encodeURIComponent(String(track))}`;
     };
 
     const clocks = () => {
@@ -308,8 +346,6 @@
     const zoomOutBtn = document.getElementById('camera-zoom-out');
     const zoomResetBtn = document.getElementById('camera-zoom-reset');
     const zoomLabel = document.getElementById('camera-zoom-label');
-    const testScanBtn = document.getElementById('camera-test-scan');
-    const testScanPanel = document.getElementById('camera-test-scan-panel');
 
     const zoomState = {
         cameraId: '',
@@ -344,25 +380,6 @@
         applyZoom();
     };
 
-    const visibleView = () => {
-        if (!modalBody || !zoomState.img) return { x: 0, y: 0, w: 1, h: 1 };
-        const vr = modalBody.getBoundingClientRect();
-        const ir = zoomState.img.getBoundingClientRect();
-        const ix = Math.max(vr.left, ir.left);
-        const iy = Math.max(vr.top, ir.top);
-        const ix2 = Math.min(vr.right, ir.right);
-        const iy2 = Math.min(vr.bottom, ir.bottom);
-        if (ix2 <= ix || iy2 <= iy || ir.width < 1 || ir.height < 1) {
-            return { x: 0, y: 0, w: 1, h: 1 };
-        }
-        return {
-            x: Math.max(0, (ix - ir.left) / ir.width),
-            y: Math.max(0, (iy - ir.top) / ir.height),
-            w: Math.min(1, (ix2 - ix) / ir.width),
-            h: Math.min(1, (iy2 - iy) / ir.height),
-        };
-    };
-
     const closeModal = () => {
         modal?.classList.add('hidden');
         modal?.classList.remove('flex');
@@ -372,49 +389,7 @@
         zoomState.scale = 1;
         zoomState.panX = 0;
         zoomState.panY = 0;
-        if (testScanPanel) {
-            testScanPanel.classList.add('hidden');
-            testScanPanel.replaceChildren();
-        }
         if (zoomLabel) zoomLabel.textContent = '1.0×';
-    };
-
-    const renderScanPanel = (data) => {
-        if (!testScanPanel) return;
-        testScanPanel.classList.remove('hidden');
-        testScanPanel.replaceChildren();
-        const wrap = document.createElement('div');
-        wrap.className = 'flex items-start gap-3';
-        if (data.crop_jpeg_base64) {
-            const img = document.createElement('img');
-            img.alt = 'Plate crop';
-            img.className = 'h-16 w-28 rounded border border-white/20 bg-white object-contain';
-            img.src = `data:image/jpeg;base64,${data.crop_jpeg_base64}`;
-            wrap.append(img);
-        }
-        const text = document.createElement('div');
-        text.className = 'min-w-0';
-        const badge = document.createElement('p');
-        badge.className = 'text-[10px] font-semibold uppercase tracking-wide text-amber-300';
-        badge.textContent = 'Test scan · not saved';
-        const plate = document.createElement('p');
-        plate.className = 'mt-0.5 font-mono text-lg font-bold tracking-wide';
-        plate.textContent = data.ocr_text || data.plate || 'Plate Unreadable';
-        const owner = document.createElement('p');
-        owner.className = 'mt-0.5 text-sm';
-        if (data.registered && data.owner_name) {
-            owner.className += ' text-emerald-300';
-            owner.textContent = `Registered · ${data.owner_name}`;
-        } else if (data.ocr_text || data.plate) {
-            owner.className += ' text-amber-200';
-            owner.textContent = 'Unknown Vehicle · Plate Not Registered';
-        } else {
-            owner.className += ' text-white/60';
-            owner.textContent = data.message || 'Could not read a plate in this view.';
-        }
-        text.append(badge, plate, owner);
-        wrap.append(text);
-        testScanPanel.append(wrap);
     };
 
     document.querySelectorAll('[data-expand-camera]').forEach((btn) => {
@@ -429,10 +404,6 @@
             zoomState.panX = 0;
             zoomState.panY = 0;
             if (modalTitle) modalTitle.textContent = title;
-            if (testScanPanel) {
-                testScanPanel.classList.add('hidden');
-                testScanPanel.replaceChildren();
-            }
             if (modalBody) {
                 modalBody.replaceChildren();
                 if (stream && !stream.classList.contains('hidden')) {
@@ -494,39 +465,6 @@
     };
     modalBody?.addEventListener('pointerup', stopDrag);
     modalBody?.addEventListener('pointercancel', stopDrag);
-
-    testScanBtn?.addEventListener('click', async () => {
-        if (!testScanUrl || !zoomState.cameraId) return;
-        testScanBtn.disabled = true;
-        testScanBtn.textContent = 'Scanning…';
-        try {
-            const response = await fetch(testScanUrl, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    Accept: 'application/json',
-                    'X-CSRF-TOKEN': csrf,
-                    'X-Requested-With': 'XMLHttpRequest',
-                },
-                credentials: 'same-origin',
-                body: JSON.stringify({
-                    camera_id: zoomState.cameraId,
-                    view: visibleView(),
-                }),
-            });
-            const data = await response.json().catch(() => ({}));
-            renderScanPanel(data);
-        } catch (err) {
-            renderScanPanel({
-                saved: false,
-                registered: false,
-                message: 'Scan failed. Is the AI parking service running?',
-            });
-        } finally {
-            testScanBtn.disabled = false;
-            testScanBtn.textContent = 'Scan plate';
-        }
-    });
 
     closeBtn?.addEventListener('click', closeModal);
     modal?.addEventListener('click', (e) => { if (e.target === modal) closeModal(); });
@@ -590,7 +528,7 @@
         if (det.plate_status === 'unreadable') bits.push('Plate Unreadable');
         else if (det.registered && det.owner_name) bits.push([det.owner_name, det.plate].filter(Boolean).join(' · '));
         else if (det.plate) bits.push(`Unknown · ${det.plate}`);
-        else bits.push('Scanning plate…');
+        else bits.push('Reading plate…');
         return bits.join(' · ');
     };
 
@@ -623,14 +561,55 @@
             const cams = data.ai_cameras || data.cameras || {};
             const healthMap = data.ai_cameras_health || {};
             const ai = data.ai;
-            Object.entries(healthMap).forEach(([id, health]) => {
-                const online = !!(health?.connected || health?.stream_reachable);
+            const findByCamera = (map, id) => {
+                if (!map || typeof map !== 'object') return null;
+                if (map[id]) return map[id];
+                const hit = Object.entries(map).find(([key]) => String(key).toLowerCase() === String(id).toLowerCase());
+                return hit ? hit[1] : null;
+            };
+
+            const updateCameraStats = (id, online, snap) => {
+                const statsEl = document.querySelector(`.js-cam-stats[data-camera="${id}"]`);
+                const plateLine = document.querySelector(`.js-cam-plate[data-camera="${id}"]`);
+                const v = document.querySelector(`.js-cam-vehicles[data-camera="${id}"]`);
+                const a = document.querySelector(`.js-cam-available[data-camera="${id}"]`);
+                const o = document.querySelector(`.js-cam-occupied[data-camera="${id}"]`);
+                const cap = document.querySelector(`.js-cam-capacity[data-camera="${id}"]`);
+
+                const ownSnap = snap
+                    && (!snap.camera_id || String(snap.camera_id).toLowerCase() === String(id).toLowerCase())
+                    ? snap
+                    : null;
+                const show = !!(online && ownSnap);
+
+                if (!show) {
+                    statsEl?.classList.add('hidden');
+                    plateLine?.classList.add('hidden');
+                    if (plateLine) plateLine.textContent = '';
+                    return;
+                }
+
+                statsEl?.classList.remove('hidden');
+                if (v) v.textContent = String(ownSnap.reported_vehicle_count ?? ownSnap.vehicle_count ?? 0);
+                if (a) a.textContent = ownSnap.available ?? '—';
+                if (o) o.textContent = ownSnap.occupied ?? '—';
+                if (cap) cap.textContent = (ownSnap.capacity != null && ownSnap.capacity !== '') ? `/${ownSnap.capacity}` : '';
+                const plateText = formatDet((ownSnap.detections || [])[0] || null);
+                if (plateLine) {
+                    plateLine.textContent = plateText;
+                    plateLine.classList.toggle('hidden', !plateText);
+                }
+            };
+
+            document.querySelectorAll('[data-camera-tile]').forEach((tile) => {
+                const id = tile.getAttribute('data-camera-tile');
+                if (!id) return;
+                const health = findByCamera(healthMap, id) || {};
+                const online = !!(health.connected || health.stream_reachable);
                 const setter = window.__aiParkingSetCameraOnline?.[id];
                 if (typeof setter === 'function') {
                     setter(online);
                 } else {
-                    const tile = document.querySelector(`[data-camera-tile="${id}"]`);
-                    if (!tile) return;
                     tile.dataset.online = online ? '1' : '0';
                     const badge = tile.querySelector('[data-status-badge]');
                     if (badge) {
@@ -648,35 +627,34 @@
                         fb?.classList.remove('hidden');
                     }
                 }
+                updateCameraStats(id, online, findByCamera(cams, id));
             });
+
             Object.entries(cams).forEach(([id, snap]) => {
-                const v = document.querySelector(`.js-cam-vehicles[data-camera="${id}"]`);
-                const a = document.querySelector(`.js-cam-available[data-camera="${id}"]`);
-                const o = document.querySelector(`.js-cam-occupied[data-camera="${id}"]`);
-                const plateLine = document.querySelector(`.js-cam-plate[data-camera="${id}"]`);
-                if (v) v.textContent = snap.vehicle_count ?? 0;
-                if (a) a.textContent = snap.available ?? '—';
-                if (o) o.textContent = snap.occupied ?? '—';
-                if (plateLine) plateLine.textContent = formatDet((snap.detections || [])[0] || null);
                 if (id === (ai?.camera_id || '') || Object.keys(cams).length === 1) {
                     if (parkedCount) parkedCount.textContent = String(snap.parked_count ?? 0);
                 }
             });
 
-            if (!ai) return;
-
             const allDets = [];
             Object.entries(cams).forEach(([camId, snap]) => {
+                const health = findByCamera(healthMap, camId) || {};
+                if (!(health.connected || health.stream_reachable)) return;
+                if (snap?.camera_id && String(snap.camera_id).toLowerCase() !== String(camId).toLowerCase()) return;
                 (snap.detections || []).forEach((det) => allDets.push({ ...det, _camera: camId }));
             });
-            if (allDets.length === 0 && (ai.detections || []).length) {
+            if (allDets.length === 0 && ai && (ai.detections || []).length) {
                 (ai.detections || []).forEach((det) => allDets.push(det));
             }
 
-            if (available) available.textContent = ai.available ?? '—';
-            if (occupied) occupied.textContent = ai.occupied ?? '—';
-            if (parkedCount) parkedCount.textContent = String(ai.parked_count ?? 0);
-            if (updatedAt) updatedAt.textContent = ai.updated_at_label || data.updated_at;
+            if (!ai && allDets.length === 0) return;
+
+            if (ai) {
+                if (available) available.textContent = ai.available ?? '—';
+                if (occupied) occupied.textContent = ai.occupied ?? '—';
+                if (parkedCount) parkedCount.textContent = String(ai.parked_count ?? 0);
+                if (updatedAt) updatedAt.textContent = ai.updated_at_label || data.updated_at;
+            }
             if (detCount) detCount.textContent = String(allDets.length);
 
             if (detectionsList) {
@@ -689,79 +667,60 @@
                 } else {
                     allDets.forEach((det) => {
                         const li = document.createElement('li');
-                        li.className = 'flex items-center justify-between gap-3 px-4 py-3';
+                        li.className = 'flex items-start gap-3 px-4 py-3';
                         const camId = det._camera || (ai?.camera_id || '');
-                        const cropSrc = cropUrlFor(camId, det.track_id);
+                        const cropSrc = cropUrlFor(camId, det.track_id, 'vehicle');
                         if (cropSrc) {
                             const crop = document.createElement('img');
-                            crop.alt = 'Plate crop';
-                            crop.className = 'h-12 w-24 shrink-0 rounded border border-gray-200 bg-slate-50 object-contain';
-                            crop.src = cropSrc;
-                            crop.addEventListener('error', () => crop.classList.add('hidden'));
+                            crop.alt = 'Vehicle';
+                            crop.className = 'h-20 w-28 shrink-0 rounded-lg border border-gray-200 bg-slate-50 object-cover';
+                            crop.src = cropSrc + '?t=' + Date.now();
+                            crop.addEventListener('error', () => {
+                                const plateSrc = cropUrlFor(camId, det.track_id, 'plate');
+                                if (plateSrc && crop.src.indexOf('/plate-crop/') === -1) {
+                                    crop.src = plateSrc + '?t=' + Date.now();
+                                    return;
+                                }
+                                crop.classList.add('hidden');
+                            });
                             li.append(crop);
+                        } else {
+                            const placeholder = document.createElement('div');
+                            placeholder.className = 'flex h-20 w-28 shrink-0 items-center justify-center rounded-lg border border-dashed border-gray-200 bg-gray-50 text-[10px] text-gray-400';
+                            placeholder.textContent = 'No image';
+                            li.append(placeholder);
                         }
+
                         const left = document.createElement('div');
                         left.className = 'min-w-0 flex-1';
-                        const name = document.createElement('p');
-                        name.className = 'font-medium text-gray-800';
-                        if (det.track_id != null) {
-                            const tid = document.createElement('span');
-                            tid.className = 'text-xs text-gray-400';
-                            tid.textContent = `#${det.track_id} `;
-                            name.append(tid);
-                        }
-                        name.append(document.createTextNode(det.class || 'vehicle'));
-                        if (det.class === 'motorcycle') {
-                            const mc = document.createElement('span');
-                            mc.className = 'ml-1 rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-bold uppercase text-emerald-800';
-                            mc.textContent = 'MC';
-                            name.append(mc);
-                        }
-                        if (det._camera) {
-                            const camTag = document.createElement('span');
-                            camTag.className = 'ml-1 text-[10px] font-medium text-gray-400';
-                            camTag.textContent = `[${det._camera}]`;
-                            name.append(camTag);
-                        }
-                        const badge = motionBadge(det);
-                        if (badge) name.append(badge);
+
+                        const plateEl = document.createElement('p');
+                        plateEl.className = 'font-mono text-base font-bold tracking-wide text-indigo-800';
                         if (det.plate_status === 'unreadable') {
-                            const plate = document.createElement('span');
-                            plate.className = 'ml-1 text-xs text-slate-500';
-                            plate.textContent = '[Plate Unreadable]';
-                            name.append(plate);
+                            plateEl.innerHTML = '<span class="font-sans text-sm font-semibold text-slate-500">Plate Unreadable</span>';
                         } else if (det.plate) {
-                            const plate = document.createElement('span');
-                            plate.className = 'ml-1 rounded bg-indigo-100 px-1.5 py-0.5 text-xs font-bold tracking-wide text-indigo-800';
-                            plate.textContent = det.plate;
-                            name.append(plate);
-                        }
-                        left.append(name);
-                        const ocrShown = det.ocr_text || det.plate_text || det.plate;
-                        if (ocrShown && det.plate_status !== 'unreadable') {
-                            const ocrLine = document.createElement('p');
-                            ocrLine.className = 'mt-0.5 font-mono text-xs text-indigo-800';
-                            ocrLine.textContent = `OCR ${ocrShown}`;
-                            left.append(ocrLine);
-                        }
-                        const sub = document.createElement('p');
-                        sub.className = 'mt-0.5 text-xs';
-                        if (det.plate_status === 'unreadable') {
-                            sub.className += ' text-slate-500';
-                            sub.textContent = 'Plate Unreadable';
-                        } else if (det.registered && det.owner_name) {
-                            sub.className += ' text-emerald-700';
-                            sub.textContent = `Registered · ${det.owner_name}`;
-                        } else if (det.plate) {
-                            sub.className += ' text-amber-700';
-                            sub.textContent = 'Unknown Vehicle · Plate Not Registered';
+                            plateEl.textContent = det.plate;
                         } else {
-                            sub.className += ' text-gray-400';
-                            sub.textContent = 'Scanning plate…';
+                            plateEl.innerHTML = '<span class="font-sans text-sm font-medium text-gray-400">Reading plate…</span>';
                         }
-                        left.append(sub);
+                        left.append(plateEl);
+
+                        const nameEl = document.createElement('p');
+                        nameEl.className = 'mt-1 truncate text-sm font-semibold text-gray-900';
+                        nameEl.textContent = det.owner_name || (det.plate ? 'Unknown Vehicle' : '—');
+                        left.append(nameEl);
+
+                        const roleEl = document.createElement('p');
+                        roleEl.className = 'mt-0.5 text-xs text-gray-500';
+                        const role = det.role || det.owner_role || (det.plate ? 'Unregistered' : '—');
+                        const bits = [`Role: ${role}`];
+                        if (det.class) bits.push(String(det.class).charAt(0).toUpperCase() + String(det.class).slice(1));
+                        if (camId) bits.push(camId);
+                        roleEl.textContent = bits.join(' · ');
+                        left.append(roleEl);
+
                         const right = document.createElement('div');
-                        right.className = 'flex shrink-0 items-center gap-2';
+                        right.className = 'flex shrink-0 flex-col items-end gap-2';
                         if (det.track_id != null) {
                             const corr = document.createElement('button');
                             corr.type = 'button';
@@ -774,7 +733,7 @@
                             right.append(corr);
                         }
                         const conf = document.createElement('span');
-                        conf.className = 'text-gray-500';
+                        conf.className = 'text-xs text-gray-500';
                         conf.textContent = det.confidence != null ? `${Math.round(det.confidence * 100)}%` : '—';
                         right.append(conf);
                         li.append(left, right);

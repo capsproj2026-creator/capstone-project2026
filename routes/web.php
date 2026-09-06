@@ -265,6 +265,9 @@ Route::prefix('guard')->middleware(['auth', 'verified', 'granted', 'no.cache', '
     Route::get('/ai-parking/plate-crop/{camera}/{track}', [LiveCameraController::class, 'plateCrop'])
         ->whereNumber('track')
         ->name('ai-parking.plate-crop');
+    Route::get('/ai-parking/vehicle-crop/{camera}/{track}', [LiveCameraController::class, 'vehicleCrop'])
+        ->whereNumber('track')
+        ->name('ai-parking.vehicle-crop');
     Route::get('/ai-parking/stream/{camera?}', [LiveCameraController::class, 'stream'])->name('ai-parking.stream');
     Route::get('/plate-lookup', [PlateLookupController::class, 'index'])->name('plate-lookup');
     Route::post('/plate-lookup', [PlateLookupController::class, 'index'])->name('plate-lookup.submit');

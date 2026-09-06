@@ -16,11 +16,11 @@ _LETTERS = set("ABCDEFGHIJKLMNOPQRSTUVWXYZ")
 _DIGITS = set("0123456789")
 
 # Common EasyOCR confusions (letter ↔ digit).
+# Do NOT map D→0 (kills real plates like EBD814).
 _TO_DIGIT = str.maketrans(
     {
         "O": "0",
         "Q": "0",
-        "D": "0",
         "I": "1",
         "L": "1",
         "Z": "2",
@@ -153,23 +153,46 @@ def correction_variants(text: str, max_variants: int = 12) -> list[str]:
     return out[:max_variants]
 
 
+_BRAND_OR_HEADER = {
+    "ISUZU",
+    "TOYOTA",
+    "HONDA",
+    "MITSUBISHI",
+    "NISSAN",
+    "SUZUKI",
+    "HYUNDAI",
+    "FORD",
+    "CHEVROLET",
+    "KIA",
+    "MAZDA",
+    "PHILIPPINES",
+    "PILIPINAS",
+    "REPUBLIC",
+}
+
+
 def score_candidate(parsed: str, known_format: bool, conf: float) -> float:
     score = float(conf)
+    if parsed in _BRAND_OR_HEADER or (parsed.isalpha() and len(parsed) >= 5):
+        # Brand / header text often outscores real plates — crush it.
+        return score * 0.25
     if is_ph_motorcycle_plate(parsed):
-        score += 0.40
-        # LTO motorcycle plates start with a 4-digit region code.
+        score += 0.45
         if parsed[:4].isdigit() and int(parsed[:4]) > 0:
             score += 0.06
     elif is_ph_car_plate(parsed):
-        score += 0.18
+        score += 0.42
         letters = sum(1 for ch in parsed if ch.isalpha())
         digits = sum(1 for ch in parsed if ch.isdigit())
         if 2 <= letters <= 3 and 3 <= digits <= 4:
-            score += 0.05
+            score += 0.08
     elif known_format:
         score += 0.08
-    elif parsed.isdigit() and len(parsed) < 11:
-        score *= 0.82
+    else:
+        # Generic alphanumeric (not PH layout) — keep weak so real plates win.
+        score *= 0.45
+        if parsed.isdigit() and len(parsed) < 11:
+            score *= 0.85
     return score
 
 
@@ -206,42 +229,126 @@ def _substring_candidates(text: str) -> list[str]:
     return out[:16]
 
 
+def _bbox_center_x(bbox) -> float:
+    try:
+        xs = [float(p[0]) for p in bbox]
+        return sum(xs) / max(len(xs), 1)
+    except Exception:
+        return 0.0
+
+
+def _bbox_center_y(bbox) -> float:
+    try:
+        ys = [float(p[1]) for p in bbox]
+        return sum(ys) / max(len(ys), 1)
+    except Exception:
+        return 0.0
+
+
+def _joined_ocr_candidates(results: list[tuple]) -> list[tuple[str, float]]:
+    """
+    EasyOCR often splits one plate into pieces (e.g. 'NAR' + '6011').
+    Build left-to-right joins so we can recover the full plate.
+    """
+    parts: list[tuple[float, float, str, float]] = []
+    for bbox, text, conf in results:
+        cleaned = re.sub(r"[^A-Z0-9]", "", _clean_raw(str(text)))
+        if not cleaned:
+            continue
+        parts.append((_bbox_center_x(bbox), _bbox_center_y(bbox), cleaned, float(conf)))
+
+    if not parts:
+        return []
+
+    parts.sort(key=lambda p: (round(p[1] / 12.0), p[0]))  # row then left→right
+
+    out: list[tuple[str, float]] = []
+    seen: set[str] = set()
+
+    def add(text: str, conf: float) -> None:
+        text = re.sub(r"[^A-Z0-9]", "", text.upper())
+        if len(text) < 5 or text in seen:
+            return
+        seen.add(text)
+        out.append((text, conf))
+
+    # Full join across all fragments.
+    add("".join(p[2] for p in parts), min(p[3] for p in parts))
+
+    # Sliding joins of 2–4 neighboring fragments (covers NAR+6011).
+    n = len(parts)
+    for width in range(2, min(5, n + 1)):
+        for start in range(0, n - width + 1):
+            chunk = parts[start : start + width]
+            add("".join(p[2] for p in chunk), min(p[3] for p in chunk))
+
+    # Same-row joins only (fragments that share a similar Y).
+    row: list[tuple[float, float, str, float]] = []
+    row_y = None
+    for part in parts:
+        if row_y is None or abs(part[1] - row_y) <= 18:
+            row.append(part)
+            row_y = part[1] if row_y is None else (row_y * 0.6 + part[1] * 0.4)
+        else:
+            if len(row) >= 2:
+                add("".join(p[2] for p in row), min(p[3] for p in row))
+            row = [part]
+            row_y = part[1]
+    if len(row) >= 2:
+        add("".join(p[2] for p in row), min(p[3] for p in row))
+
+    return out
+
+
 def best_from_results(
     results: Iterable[tuple],
     min_conf: float,
 ) -> tuple[Optional[str], float, float]:
     """Pick best plate from EasyOCR readtext output tuples."""
+    result_list = list(results)
     best: Optional[str] = None
     best_score = 0.0
     best_any = 0.0
 
-    for _bbox, text, conf in results:
+    candidates: list[tuple[str, float]] = []
+    for _bbox, text, conf in result_list:
         conf_f = float(conf)
         best_any = max(best_any, conf_f)
+        candidates.append((str(text), conf_f))
+        for sub in _substring_candidates(text):
+            candidates.append((sub, conf_f))
 
-        candidates = [text]
-        candidates.extend(_substring_candidates(text))
+    for joined, conf_f in _joined_ocr_candidates(result_list):
+        best_any = max(best_any, conf_f)
+        candidates.append((joined, conf_f))
+        for sub in _substring_candidates(joined):
+            candidates.append((sub, conf_f))
 
-        for candidate_text in candidates:
-            parsed, known = parse_plate_candidate(candidate_text)
-            if parsed is None:
-                for variant in correction_variants(candidate_text, max_variants=4):
-                    parsed_v, known_v = parse_plate_candidate(variant)
-                    if parsed_v is None:
-                        continue
-                    score_v = score_candidate(parsed_v, known_v, conf_f * 0.95)
-                    if conf_f < min_conf and not known_v:
-                        continue
-                    if score_v > best_score:
-                        best_score = score_v
-                        best = parsed_v
-                continue
+    for candidate_text, conf_f in candidates:
+        parsed, known = parse_plate_candidate(candidate_text)
+        if parsed is None:
+            for variant in correction_variants(candidate_text, max_variants=4):
+                parsed_v, known_v = parse_plate_candidate(variant)
+                if parsed_v is None:
+                    continue
+                score_v = score_candidate(parsed_v, known_v, conf_f * 0.95)
+                if conf_f < min_conf and not known_v:
+                    continue
+                if score_v > best_score:
+                    best_score = score_v
+                    best = parsed_v
+            continue
 
-            score = score_candidate(parsed, known, conf_f)
-            if conf_f < min_conf and not known:
-                continue
-            if score > best_score:
-                best_score = score
-                best = parsed
+        score = score_candidate(parsed, known, conf_f)
+        if conf_f < min_conf and not known:
+            continue
+        # Prefer known PH formats when scores are close (brand text often has higher raw conf).
+        if best is not None and known and not is_known_ph_format(best) and score >= best_score * 0.85:
+            best_score = score
+            best = parsed
+            continue
+        if score > best_score:
+            best_score = score
+            best = parsed
 
     return best, best_score, best_any

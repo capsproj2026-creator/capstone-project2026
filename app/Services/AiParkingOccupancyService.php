@@ -313,15 +313,17 @@ class AiParkingOccupancyService
     }
 
     /**
+     * Latest occupancy snapshot for one camera (or primary when $cameraId is null).
+     * Never falls back to another camera's cache when a camera id is given.
+     *
      * @return array<string, mixed>|null
      */
     public function latestSnapshot(?string $cameraId = null): ?array
     {
-        if ($cameraId) {
+        if ($cameraId !== null && trim($cameraId) !== '') {
             $cached = Cache::get($this->cacheKeyForCamera($cameraId));
-            if (is_array($cached)) {
-                return $cached;
-            }
+
+            return is_array($cached) ? $cached : null;
         }
 
         $legacy = Cache::get(self::CACHE_KEY);
@@ -336,16 +338,31 @@ class AiParkingOccupancyService
     }
 
     /**
+     * Per-camera snapshots only — each key is that camera's own cache entry.
+     *
      * @return array<string, array<string, mixed>>
      */
     public function allSnapshots(): array
     {
         $out = [];
         foreach (app(AiCameraRegistry::class)->cameras() as $camera) {
-            $snap = $this->latestSnapshot($camera['id']);
-            if (is_array($snap)) {
-                $out[$camera['id']] = $snap;
+            $id = (string) ($camera['id'] ?? '');
+            if (trim($id) === '') {
+                continue;
             }
+
+            $snap = $this->latestSnapshot($id);
+            if (! is_array($snap)) {
+                continue;
+            }
+
+            // Reject mismatched/stale entries that somehow landed under the wrong key.
+            $snapCam = (string) ($snap['camera_id'] ?? '');
+            if ($snapCam !== '' && strcasecmp($snapCam, $id) !== 0) {
+                continue;
+            }
+
+            $out[$id] = $snap;
         }
 
         return $out;
@@ -538,6 +555,7 @@ class AiParkingOccupancyService
                 $row['owner_label'] = null;
                 $row['owner_id_number'] = null;
                 $row['owner_role'] = null;
+                $row['role'] = null;
                 $row['user_id'] = null;
                 $row['registered'] = null;
                 $row['vehicle_details'] = null;
@@ -566,6 +584,7 @@ class AiParkingOccupancyService
             $row['owner_label'] = $identity['owner_label'];
             $row['owner_id_number'] = $identity['id_number'];
             $row['owner_role'] = $identity['role'];
+            $row['role'] = $identity['role'];
             $row['user_id'] = $identity['user_id'];
             $row['vehicle_details'] = $identity['vehicle_details'];
             $row['department'] = $identity['department'];
@@ -578,6 +597,8 @@ class AiParkingOccupancyService
                 $row['owner_label'] = 'Unknown Vehicle';
                 $row['registration_status'] = 'Plate Not Registered';
                 $row['owner_name'] = null;
+                $row['role'] = null;
+                $row['owner_role'] = null;
             }
 
             return $row;

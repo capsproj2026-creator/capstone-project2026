@@ -124,48 +124,70 @@ def deskew_plate(crop) -> Optional[np.ndarray]:
 
 
 def detect_plate_crop(vehicle_crop, cls_id: int | None = None) -> Optional[np.ndarray]:
-    """Return a tighter plate crop, or None to keep the vehicle-band crop."""
+    """Return a tighter plate crop, or None to keep the vehicle-band crop.
+
+    Without plate.pt, OpenCV/HSV heuristics often crop grille chrome / stickers
+    and hide the real bumper plate — so only accept YOLO or strongly plate-like ROIs.
+    """
     if vehicle_crop is None or getattr(vehicle_crop, "size", 0) == 0:
         return None
     ch, cw = vehicle_crop.shape[:2]
     if cw < 24 or ch < 12:
         return None
 
-    candidates: list[np.ndarray] = []
+    candidates: list[tuple[np.ndarray, float]] = []
 
     yolo_crop = _detect_yolo(vehicle_crop)
     if yolo_crop is not None:
-        candidates.append(yolo_crop)
+        candidates.append((yolo_crop, 1.35))
 
-    if cls_id == MOTORCYCLE_CLS_ID:
-        yellow = _detect_yellow_plate(vehicle_crop)
-        if yellow is not None:
-            candidates.append(yellow)
+    has_yolo = _load_plate_yolo() is not None
+    if has_yolo:
+        if cls_id == MOTORCYCLE_CLS_ID:
+            yellow = _detect_yellow_plate(vehicle_crop)
+            if yellow is not None:
+                candidates.append((yellow, 1.0))
+        else:
+            white = _detect_white_plate(vehicle_crop)
+            if white is not None:
+                candidates.append((white, 1.0))
+        opencv_crop = _detect_opencv(vehicle_crop)
+        if opencv_crop is not None:
+            candidates.append((opencv_crop, 0.9))
     else:
-        white = _detect_white_plate(vehicle_crop)
-        if white is not None:
-            candidates.append(white)
-
-    opencv_crop = _detect_opencv(vehicle_crop)
-    if opencv_crop is not None:
-        candidates.append(opencv_crop)
+        # No plate YOLO: only keep OpenCV/HSV hits that look like a wide plate in the lower half.
+        for cand, weight in (
+            (_detect_white_plate(vehicle_crop) if cls_id != MOTORCYCLE_CLS_ID else _detect_yellow_plate(vehicle_crop), 0.85),
+            (_detect_opencv(vehicle_crop), 0.75),
+        ):
+            if cand is None:
+                continue
+            th, tw = cand.shape[:2]
+            aspect = tw / max(th, 1)
+            cy = 0.5
+            # Approximate vertical position via matching in parent (optional); require plate aspect.
+            if aspect < 2.2 or aspect > 6.0 or tw < max(40, int(cw * 0.10)) or th < 12:
+                continue
+            candidates.append((cand, weight))
 
     if not candidates:
         return None
 
     best = None
     best_score = 0.0
-    for cand in candidates:
+    bumper_score = plate_contrast_score(vehicle_crop) * 0.55
+    for cand, weight in candidates:
         deskewed = deskew_plate(cand)
         for variant in (deskewed, cand):
             if variant is None or variant.size == 0:
                 continue
-            score = plate_contrast_score(variant)
+            score = plate_contrast_score(variant) * weight
             if score > best_score:
                 best_score = score
                 best = variant
 
-    if best is None:
+    # Only replace the bumper band when the tighter crop is clearly better.
+    if best is None or best_score < max(bumper_score, 8.0):
         return None
     return best.copy()
 
@@ -264,9 +286,9 @@ def _detect_white_plate(crop) -> Optional[np.ndarray]:
         if ratio < 1.6 or ratio > 7.0:
             continue
         cy = (y + bh / 2) / max(h, 1)
-        if cy > 0.88:
+        if cy > 0.96:
             continue
-        score = area * (1.15 if 2.2 <= ratio <= 5.2 else 0.8) * (1.1 if 0.08 <= cy <= 0.78 else 0.85)
+        score = area * (1.15 if 2.2 <= ratio <= 5.2 else 0.8) * (1.15 if 0.35 <= cy <= 0.95 else 0.85)
         if score > best_score:
             best_score = score
             pad_x = max(2, int(bw * 0.06))
@@ -319,9 +341,9 @@ def _detect_opencv(crop):
         if ratio < 1.35 or ratio > 8.5:
             continue
         cy = (y + bh / 2) / max(h, 1)
-        if cy > 0.90:
+        if cy > 0.97:
             continue
-        score = area * (1.0 if 2.0 <= ratio <= 5.5 else 0.72) * (1.18 if 0.12 <= cy <= 0.72 else 0.82)
+        score = area * (1.0 if 2.0 <= ratio <= 5.5 else 0.72) * (1.2 if 0.30 <= cy <= 0.95 else 0.82)
         if score > best_score:
             best_score = score
             pad_x = max(2, int(bw * 0.07))

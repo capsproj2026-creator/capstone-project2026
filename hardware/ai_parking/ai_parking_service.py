@@ -299,6 +299,7 @@ class StreamState:
         self.detections = []
         self.rtsp_online = False
         self.plate_crops: dict[int, bytes] = {}
+        self.vehicle_crops: dict[int, bytes] = {}
 
     def set_frame(self, raw_jpeg, ai_jpeg, vehicle_count, detections, rtsp_online=None):
         with self.lock:
@@ -315,9 +316,17 @@ class StreamState:
         with self.lock:
             self.plate_crops = dict(crops)
 
+    def set_vehicle_crops(self, crops: dict[int, bytes]):
+        with self.lock:
+            self.vehicle_crops = dict(crops)
+
     def get_plate_crop(self, track_id: int):
         with self.lock:
             return self.plate_crops.get(int(track_id))
+
+    def get_vehicle_crop(self, track_id: int):
+        with self.lock:
+            return self.vehicle_crops.get(int(track_id))
 
     def get_jpeg(self, ai: bool = False):
         with self.lock:
@@ -430,7 +439,7 @@ def _box_iou(a, b) -> float:
     return inter / union if union > 0 else 0.0
 
 
-def _vehicle_box_valid(x1: int, y1: int, x2: int, y2: int, cls_id: int) -> bool:
+def _vehicle_box_valid(x1: int, y1: int, x2: int, y2: int, cls_id: int, frame_shape=None) -> bool:
     """Filter obvious false positives before tracking/OCR."""
     bw = max(1, x2 - x1)
     bh = max(1, y2 - y1)
@@ -445,6 +454,15 @@ def _vehicle_box_valid(x1: int, y1: int, x2: int, y2: int, cls_id: int) -> bool:
         return False
     if min(bw, bh) < MIN_VEHICLE_SHORT_SIDE_PX:
         return False
+    # Tall/skinny wall posters and banners are often misread as trucks.
+    if cls_id in (5, 7) and aspect < 0.55 and bh > bw * 1.35:
+        return False
+    if frame_shape is not None:
+        fh, fw = frame_shape[:2]
+        area_frac = (bw * bh) / max(1, fh * fw)
+        # Tiny edge blobs (banner corners) — keep only if reasonably large.
+        if area_frac < max(MIN_BOX_AREA_FRAC * 3.0, 0.008) and (x1 < fw * 0.04 or x2 > fw * 0.96):
+            return False
     return True
 
 
@@ -592,7 +610,7 @@ def parse_tracks(
         min_frac = MOTORCYCLE_MIN_BOX_FRAC if cls_id == MOTORCYCLE_CLS_ID else MIN_BOX_AREA_FRAC
         if box_area / frame_area < min_frac:
             continue
-        if not _vehicle_box_valid(x1, y1, x2, y2, cls_id):
+        if not _vehicle_box_valid(x1, y1, x2, y2, cls_id, frame.shape):
             continue
 
         raw_vehicles.append({
@@ -633,8 +651,27 @@ def parse_tracks(
             motion_state = mem.update_motion((x1, y1, x2, y2), now)
             mem.last_ocr_xyxy = (ox1, oy1, ox2, oy2)
             mem.cls_id = row.get("cls_id")
+            try:
+                fh, fw = ocr_src.shape[:2]
+                pad_x = max(2, int((ox2 - ox1) * 0.04))
+                pad_y = max(2, int((oy2 - oy1) * 0.04))
+                vx1 = max(0, ox1 - pad_x)
+                vy1 = max(0, oy1 - pad_y)
+                vx2 = min(fw, ox2 + pad_x)
+                vy2 = min(fh, oy2 + pad_y)
+                if vx2 - vx1 >= 24 and vy2 - vy1 >= 24:
+                    mem.last_vehicle_crop = ocr_src[vy1:vy2, vx1:vx2].copy()
+            except Exception:
+                pass
             if plate_queue is not None:
                 ocr_ok = not OCR_PARKED_ONLY or motion_state in (None, "parked", "idle")
+                # Prefer real vehicles for OCR; still allow mid-size parked cars/multicabs.
+                box_w = max(1, ox2 - ox1)
+                box_h = max(1, oy2 - oy1)
+                frame_h, frame_w = ocr_src.shape[:2]
+                area_frac = (box_w * box_h) / max(1, frame_w * frame_h)
+                if area_frac < 0.006 or box_w < 64 or box_h < 48:
+                    ocr_ok = False
                 if ocr_ok:
                     plate_queue.submit(
                         camera_id,
@@ -803,7 +840,7 @@ def _draw_box_labels(annotated, x1, y1, x2, y2, name, conf, track_id, plate, pla
         if owner_label:
             lines.append(str(owner_label)[:32])
     elif track_id is not None:
-        lines.append("Scanning plate…")
+        lines.append("Reading plate…")
     _draw_label_block(annotated, x1, y1, lines[:4], color, lite=lite)
 
 
@@ -1151,8 +1188,9 @@ class MjpegHandler(BaseHTTPRequestHandler):
 
     def _handle_plate_crop(self, path: str) -> bool:
         parts = [p for p in path.split("/") if p]
-        if len(parts) < 3 or parts[1] != "plate-crop":
+        if len(parts) < 3 or parts[1] not in ("plate-crop", "vehicle-crop"):
             return False
+        kind = parts[1]
         camera_id = parts[0]
         track_raw = parts[2]
         if track_raw.lower().endswith(".jpg"):
@@ -1163,7 +1201,12 @@ class MjpegHandler(BaseHTTPRequestHandler):
             self.send_error(404)
             return True
         state = STREAM_STATES.get(camera_id)
-        jpeg = state.get_plate_crop(track_id) if state else None
+        if kind == "vehicle-crop":
+            jpeg = state.get_vehicle_crop(track_id) if state else None
+            if not jpeg and state:
+                jpeg = state.get_plate_crop(track_id)
+        else:
+            jpeg = state.get_plate_crop(track_id) if state else None
         if not jpeg:
             self.send_error(404)
             return True
@@ -1358,6 +1401,8 @@ class CameraWorker:
         self._held_detections = []
         self._held_until = 0.0
         self._held_counts = (0, 0)
+        self._ai_overlay_lock = threading.Lock()
+        self._ai_overlay_jpeg: bytes | None = None
         zones_path = Path(config.zones_file)
         if not zones_path.is_file():
             zones_path = BASE_DIR / "zones.json"
@@ -1517,74 +1562,115 @@ class CameraWorker:
                 continue
 
             display_raw, _ = resize_for_infer(frame, self.preview_max_width)
-            # AI overlay: prefer sharp monitor feed up to ai_stream_max_width.
-            ai_cap = max(640, int(self.ai_stream_max_width or AI_STREAM_MAX_WIDTH))
-            infer_w = int(self.infer_max_width) if int(self.infer_max_width or 0) > 0 else self.preview_max_width
-            ai_width = min(max(self.preview_max_width, min(infer_w, ai_cap)), ai_cap)
-            display_ai, _ = resize_for_infer(frame, ai_width)
-            if display_ai is frame:
-                display_ai = frame.copy()
-            state = self.scene.snapshot()
-            box_src = state.get("source_shape") or src_shape
-            boxes = scale_boxes_to_frame(state["annotated_boxes"], box_src, display_ai.shape)
-            if self.lite_preview:
-                annotated = draw_scene_lite(
-                    display_ai,
-                    boxes,
-                    state["occupied_slots"],
-                    state["person_count"],
-                    state["vehicle_count"],
-                )
-            else:
-                annotated = draw_scene(
-                    display_ai,
-                    boxes,
-                    zones_data,
-                    state["occupied_slots"],
-                    state["active_events"],
-                    state["person_count"],
-                    state["vehicle_count"],
-                    state["use_poly"],
-                )
-            cv2.putText(
-                annotated,
-                self.config.camera_id,
-                (16, annotated.shape[0] - 16),
-                cv2.FONT_HERSHEY_SIMPLEX,
-                0.55,
-                (255, 255, 255),
-                2,
-                cv2.LINE_AA,
-            )
-            if MONITOR_SHARPEN:
-                annotated = enhance_monitor_frame(annotated)
             raw_jpeg = None
-            ai_jpeg = None
             ok_raw, buf_raw = cv2.imencode(".jpg", display_raw, encode_params)
             if ok_raw:
                 raw_jpeg = buf_raw.tobytes()
-            ok_ai, buf_ai = cv2.imencode(".jpg", annotated, ai_encode_params)
-            if ok_ai:
-                ai_jpeg = buf_ai.tobytes()
+
+            # Dual-stream cameras: YOLO boxes are in main-stream coords. Never paste them onto the
+            # substream preview (FOV/aspect differ → boxes land on walls). AI MJPEG comes from infer.
+            ai_jpeg = None
+            vehicle_count = self.state.vehicle_count
+            detections = self.state.detections
+            if self._shared_reader:
+                state = self.scene.snapshot()
+                vehicle_count = state["vehicle_count"]
+                detections = state["detections"]
+                ai_jpeg = self._encode_ai_overlay(frame, state, zones_data, ai_encode_params)
+            else:
+                with self._ai_overlay_lock:
+                    ai_jpeg = self._ai_overlay_jpeg
+
             if raw_jpeg or ai_jpeg:
                 self.state.set_frame(
                     raw_jpeg,
                     ai_jpeg,
-                    state["vehicle_count"],
-                    state["detections"],
+                    vehicle_count,
+                    detections,
                     rtsp_online=live,
                 )
             elapsed = time.perf_counter() - started
             time.sleep(max(0.0, interval - elapsed))
 
+    def _encode_ai_overlay(self, frame, state: dict, zones_data, ai_encode_params) -> bytes | None:
+        """Draw YOLO boxes onto the same frame they were detected on."""
+        ai_cap = max(640, int(self.ai_stream_max_width or AI_STREAM_MAX_WIDTH))
+        infer_w = int(self.infer_max_width) if int(self.infer_max_width or 0) > 0 else self.preview_max_width
+        ai_width = min(max(self.preview_max_width, min(infer_w, ai_cap)), ai_cap)
+        display_ai, _ = resize_for_infer(frame, ai_width)
+        if display_ai is frame:
+            display_ai = frame.copy()
+        box_src = state.get("source_shape") or frame.shape
+        boxes = scale_boxes_to_frame(state["annotated_boxes"], box_src, display_ai.shape)
+        if self.lite_preview:
+            annotated = draw_scene_lite(
+                display_ai,
+                boxes,
+                state["occupied_slots"],
+                state["person_count"],
+                state["vehicle_count"],
+            )
+        else:
+            annotated = draw_scene(
+                display_ai,
+                boxes,
+                zones_data,
+                state["occupied_slots"],
+                state["active_events"],
+                state["person_count"],
+                state["vehicle_count"],
+                state["use_poly"],
+            )
+        cv2.putText(
+            annotated,
+            self.config.camera_id,
+            (16, annotated.shape[0] - 16),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.55,
+            (255, 255, 255),
+            2,
+            cv2.LINE_AA,
+        )
+        if MONITOR_SHARPEN:
+            annotated = enhance_monitor_frame(annotated)
+        ok_ai, buf_ai = cv2.imencode(".jpg", annotated, ai_encode_params)
+        return buf_ai.tobytes() if ok_ai else None
+
+    def _publish_ai_overlay(self, frame, state: dict | None = None) -> None:
+        """Publish AI MJPEG from the infer frame so dual-stream FOV cannot misplace boxes."""
+        zones_data = self.zones_holder[0]
+        snap = state or self.scene.snapshot()
+        ai_encode_params = [int(cv2.IMWRITE_JPEG_QUALITY), int(self.ai_jpeg_quality)]
+        ai_jpeg = self._encode_ai_overlay(frame, snap, zones_data, ai_encode_params)
+        if ai_jpeg is None:
+            return
+        with self._ai_overlay_lock:
+            self._ai_overlay_jpeg = ai_jpeg
+        # Keep counts/detections fresh even when preview is on a different RTSP path.
+        self.state.set_frame(
+            None,
+            ai_jpeg,
+            snap["vehicle_count"],
+            snap["detections"],
+            rtsp_online=True,
+        )
+
     def _publish_plate_crops(self) -> None:
-        crops: dict[int, bytes] = {}
+        plate_crops: dict[int, bytes] = {}
+        vehicle_crops: dict[int, bytes] = {}
         for tid, mem in list(self.intelligence.tracks.items()):
-            raw = getattr(mem, "last_plate_crop", None)
-            encoded = encode_crop_jpeg_bytes(raw, quality=90, max_side=360)
-            if encoded:
-                crops[int(tid)] = encoded
-        self.state.set_plate_crops(crops)
+            plate_raw = getattr(mem, "last_plate_crop", None)
+            encoded_plate = encode_crop_jpeg_bytes(plate_raw, quality=90, max_side=360)
+            if encoded_plate:
+                plate_crops[int(tid)] = encoded_plate
+            vehicle_raw = getattr(mem, "last_vehicle_crop", None)
+            encoded_vehicle = encode_crop_jpeg_bytes(vehicle_raw, quality=85, max_side=420)
+            if encoded_vehicle:
+                vehicle_crops[int(tid)] = encoded_vehicle
+            elif encoded_plate:
+                vehicle_crops[int(tid)] = encoded_plate
+        self.state.set_plate_crops(plate_crops)
+        self.state.set_vehicle_crops(vehicle_crops)
 
     def test_scan_view(self, view: dict | None) -> dict:
         """OCR the zoomed monitor region. Does not post occupancy or write Laravel DB."""
@@ -1606,7 +1692,7 @@ class CameraWorker:
         for tid, mem in list(self.intelligence.tracks.items()):
             if mem.plate_status == "ok" and mem.plate:
                 continue
-            if (now - mem.first_seen) < 0.4:
+            if (now - mem.first_seen) < 0.15:
                 continue
             if not getattr(mem, "last_ocr_xyxy", None):
                 continue
@@ -1781,6 +1867,18 @@ class CameraWorker:
                 events=events,
                 source_shape=frame.shape,
             )
+            scene_snap = {
+                "annotated_boxes": annotated_boxes,
+                "person_count": person_count,
+                "vehicle_count": vehicle_count,
+                "occupied_slots": occupied_slots,
+                "active_events": list(self.intelligence.active_events),
+                "use_poly": use_poly,
+                "detections": detections,
+                "source_shape": frame.shape,
+            }
+            # Draw AI overlay on the infer RTSP frame (same FOV/coords as boxes), never the substream.
+            self._publish_ai_overlay(frame, scene_snap)
             self._publish_plate_crops()
             last_infer = time.time()
 

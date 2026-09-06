@@ -14,7 +14,7 @@ if TYPE_CHECKING:
 
 API_BASE = os.getenv("AI_LARAVEL_API_BASE", "http://127.0.0.1:8000").rstrip("/")
 AI_API_TOKEN = os.getenv("AI_PARKING_API_TOKEN", "capstone-ai-parking-dev-token-change-me")
-LOOKUP_TIMEOUT_SEC = float(os.getenv("AI_PARKING_LOOKUP_TIMEOUT_SEC", "2.5"))
+LOOKUP_TIMEOUT_SEC = float(os.getenv("AI_PARKING_LOOKUP_TIMEOUT_SEC", "8.0"))
 
 _logged_fail = False
 _fail_lock = threading.Lock()

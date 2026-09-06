@@ -17,7 +17,7 @@ IOU_THRESHOLD = float(os.getenv("AI_PARKING_ZONE_IOU", "0.08"))
 TRACK_HOLD_SEC = float(os.getenv("AI_PARKING_TRACK_HOLD_SEC", "3.0"))
 # Require this many matching OCR reads before locking a plate on a track.
 PLATE_VOTE_NEEDED = int(os.getenv("AI_PARKING_PLATE_VOTE_NEEDED", "1"))
-OCR_HIGH_CONF_LOCK = float(os.getenv("AI_PARKING_OCR_HIGH_CONF_LOCK", "0.65"))
+OCR_HIGH_CONF_LOCK = float(os.getenv("AI_PARKING_OCR_HIGH_CONF_LOCK", "0.55"))
 PLATE_VOTE_CONSENSUS_RATIO = float(os.getenv("AI_PARKING_PLATE_VOTE_CONSENSUS_RATIO", "0.55"))
 TRACK_MATCH_IOU = float(os.getenv("AI_PARKING_TRACK_MATCH_IOU", "0.25"))
 # Normalized center movement (px/sec ÷ bbox diagonal). Below = parked, above = moving.
@@ -99,6 +99,7 @@ class TrackMemory:
     last_ocr_at: float = 0.0
     last_ocr_xyxy: tuple[int, int, int, int] | None = None
     last_plate_crop: Any = None
+    last_vehicle_crop: Any = None
     cls_id: int | None = None
     sync_ocr_attempted: bool = False
     last_sync_ocr_at: float = 0.0
@@ -243,11 +244,19 @@ class TrackMemory:
                 and confidence >= OCR_HIGH_CONF_LOCK
                 and is_known_ph_format(plate)
             )
-            consensus_lock = votes >= PLATE_VOTE_NEEDED and (
-                len(self.plate_votes) == 1 or consensus >= PLATE_VOTE_CONSENSUS_RATIO
+            # Never lock brand/header junk (ISUZU, PHILIPPINES, etc.).
+            consensus_lock = (
+                is_known_ph_format(plate)
+                and votes >= PLATE_VOTE_NEEDED
+                and (len(self.plate_votes) == 1 or consensus >= PLATE_VOTE_CONSENSUS_RATIO)
+            )
+            format_lock = (
+                votes >= 1
+                and is_known_ph_format(plate)
+                and confidence >= max(0.22, OCR_HIGH_CONF_LOCK - 0.15)
             )
 
-            if high_conf_lock or consensus_lock:
+            if high_conf_lock or consensus_lock or format_lock:
                 if self.plate != plate:
                     self.clear_owner()
                 self.plate = plate
