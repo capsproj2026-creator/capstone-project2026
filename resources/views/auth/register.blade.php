@@ -364,30 +364,6 @@
     <script>
         document.addEventListener('DOMContentLoaded', function () {
             const form = document.getElementById('register-form');
-            const panels = Array.from(document.querySelectorAll('.register-step-panel'));
-            const stepButtons = Array.from(document.querySelectorAll('[data-register-step]'));
-            const backBtn = document.getElementById('register-back-btn');
-            const nextBtn = document.getElementById('register-next-btn');
-            const submitBtn = document.getElementById('register-submit-btn');
-            const stepLabel = document.getElementById('register-step-label');
-            const totalSteps = panels.length || 4;
-            let currentStep = Number(form?.dataset.initialStep || 1);
-
-            const stepFields = {
-                1: ['driver_license'],
-                2: [
-                    'profile_pic', 'id_document', 'full_name', 'address', 'phone_number', 'id_number',
-                    'email', 'driver_license_number', 'password', 'password_confirmation', 'user_type', 'department_code',
-                ],
-                3: ['vehicle_id', 'vehicle_model', 'vehicle_color', 'plate_number'],
-                4: ['lto_or_photo', 'lto_cr_photo'],
-            };
-
-            const setNavButtonVisible = (el, visible) => {
-                if (!el) return;
-                el.classList.toggle('hidden', !visible);
-                el.classList.toggle('inline-flex', visible);
-            };
 
             const setStatus = (el, message, tone) => {
                 if (!el) return;
@@ -401,131 +377,14 @@
                 );
             };
 
-            const paintStepButtons = (step) => {
-                stepButtons.forEach((btn) => {
-                    const n = Number(btn.dataset.registerStep);
-                    const active = n === step;
-                    const done = n < step;
-                    btn.classList.toggle('bg-blue-50', active);
-                    btn.classList.toggle('border-blue-200', active);
-                    btn.classList.toggle('bg-emerald-50', done);
-                    btn.classList.toggle('border-emerald-200', done);
-                    btn.classList.toggle('bg-slate-50', !active && !done);
-                    btn.classList.toggle('border-slate-200', !active && !done);
-                    const label = btn.querySelector('p');
-                    if (label) {
-                        label.className = active
-                            ? 'text-[10px] font-semibold uppercase tracking-wide text-blue-700'
-                            : done
-                                ? 'text-[10px] font-semibold uppercase tracking-wide text-emerald-700'
-                                : 'text-[10px] font-semibold uppercase tracking-wide text-slate-500';
-                    }
-                });
-            };
-
-            const showStep = (step) => {
-                currentStep = Math.min(Math.max(Number(step) || 1, 1), totalSteps);
-                panels.forEach((panel) => {
-                    const n = Number(panel.dataset.step);
-                    panel.classList.toggle('hidden', n !== currentStep);
-                });
-                paintStepButtons(currentStep);
-                if (stepLabel) stepLabel.textContent = `Step ${currentStep} of ${totalSteps}`;
-                const isFirstStep = currentStep <= 1;
-                const isLastStep = currentStep >= totalSteps;
-                if (backBtn) {
-                    backBtn.disabled = isFirstStep;
-                    setNavButtonVisible(backBtn, !isFirstStep);
-                }
-                setNavButtonVisible(nextBtn, !isLastStep);
-                setNavButtonVisible(submitBtn, isLastStep);
-                if (window.lucide) window.lucide.createIcons();
-                form?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-            };
-
-            const fieldValueOk = (el) => {
-                if (!el) return false;
-                if (el.type === 'file') return el.files && el.files.length > 0;
-                return String(el.value || '').trim() !== '';
-            };
-
-            const validateStep = (step) => {
-                const ids = stepFields[step] || [];
-                for (const id of ids) {
-                    const el = document.getElementById(id);
-                    if (!fieldValueOk(el)) {
-                        el?.focus?.();
-                        el?.reportValidity?.();
-                        if (id === 'driver_license') {
-                            setStatus(
-                                document.getElementById('license_scan_status'),
-                                'Please upload a photo of your driver’s license.',
-                                'error'
-                            );
-                        }
-                        return false;
-                    }
-                    if (typeof el.checkValidity === 'function' && !el.checkValidity()) {
-                        el.focus();
-                        el.reportValidity();
-                        return false;
-                    }
-                }
-
-                if (step === 2) {
-                    const password = document.getElementById('password');
-                    const confirm = document.getElementById('password_confirmation');
-                    if (password && confirm && password.value !== confirm.value) {
-                        confirm.setCustomValidity('Passwords do not match.');
-                        confirm.reportValidity();
-                        confirm.setCustomValidity('');
-                        return false;
-                    }
-                }
-
-                return true;
-            };
-
-            nextBtn?.addEventListener('click', () => {
-                if (!validateStep(currentStep)) return;
-                showStep(currentStep + 1);
-            });
-
-            backBtn?.addEventListener('click', () => {
-                showStep(currentStep - 1);
-            });
-
-            stepButtons.forEach((btn) => {
-                btn.addEventListener('click', () => {
-                    const target = Number(btn.dataset.registerStep);
-                    if (target === currentStep) return;
-                    if (target > currentStep) {
-                        for (let s = currentStep; s < target; s += 1) {
-                            if (!validateStep(s)) {
-                                showStep(s);
-                                return;
-                            }
-                        }
-                    }
-                    showStep(target);
-                });
-            });
-
             form?.addEventListener('submit', (event) => {
-                if (currentStep < totalSteps) {
+                const password = document.getElementById('password');
+                const confirm = document.getElementById('password_confirmation');
+                if (password && confirm && password.value !== confirm.value) {
                     event.preventDefault();
-                    if (validateStep(currentStep)) {
-                        showStep(currentStep + 1);
-                    }
-                    return;
-                }
-
-                for (let s = 1; s <= totalSteps; s += 1) {
-                    if (!validateStep(s)) {
-                        event.preventDefault();
-                        showStep(s);
-                        return;
-                    }
+                    confirm.setCustomValidity('Passwords do not match.');
+                    confirm.reportValidity();
+                    confirm.setCustomValidity('');
                 }
             });
 
@@ -610,9 +469,9 @@
 
                 const warnings = Array.isArray(data.warnings) ? data.warnings.filter(Boolean) : [];
                 if (warnings.length > 0) {
-                    setStatus(licenseStatus, `Filled what we could. ${warnings.join(' ')} Click Next to review.`, 'warning');
+                    setStatus(licenseStatus, `Filled what we could. ${warnings.join(' ')} Review your information below.`, 'warning');
                 } else {
-                    setStatus(licenseStatus, 'Details filled from your license. Click Next to review your information.', 'success');
+                    setStatus(licenseStatus, 'Details filled from your license. Please review your information below.', 'success');
                 }
             };
 
@@ -702,8 +561,6 @@
                 tick();
                 window.setInterval(tick, 30000);
             }
-
-            showStep(currentStep);
         });
     </script>
 @endpush

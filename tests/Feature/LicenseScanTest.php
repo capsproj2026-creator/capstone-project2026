@@ -34,10 +34,12 @@ class LicenseScanTest extends TestCase
             ->assertDontSee('Scan like this', false)
             ->assertDontSee('ocr-guides', false)
             ->assertDontSee('id_scan_status', false)
-            ->assertSee('id="register-back-btn"', false)
             ->assertSee('id="register-submit-btn"', false)
-            ->assertSee('setNavButtonVisible(backBtn, !isFirstStep)', false)
-            ->assertSee('setNavButtonVisible(submitBtn, isLastStep)', false);
+            ->assertSee('Submit registration', false)
+            ->assertDontSee('id="register-back-btn"', false)
+            ->assertDontSee('id="register-next-btn"', false)
+            ->assertDontSee('register-steps', false)
+            ->assertDontSee('Step 1 of 4', false);
     }
 
     public function test_scan_license_endpoint_returns_parsed_fields(): void
