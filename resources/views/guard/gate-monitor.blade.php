@@ -196,6 +196,11 @@
                         <span id="scan-status-label">—</span>
                     </div>
                     <p id="scan-reason" class="hidden border-t border-red-100 bg-red-50 px-4 pb-4 text-center text-xs text-red-600 sm:text-sm"></p>
+                    <div id="scan-violation-bar" class="hidden border-t border-red-300 bg-red-600 px-4 py-3 text-center text-white">
+                        <p class="text-[10px] font-bold uppercase tracking-wide text-red-100">Violation record</p>
+                        <p id="scan-violation-label" class="mt-0.5 text-sm font-semibold sm:text-base">—</p>
+                        <p id="scan-violation-meta" class="mt-0.5 hidden text-xs text-red-100"></p>
+                    </div>
                 </div>
             </div>
         </div>
@@ -427,6 +432,33 @@
                 const reason = (!granted && latest.reason) ? latest.reason : '';
                 reasonEl.textContent = reason;
                 reasonEl.classList.toggle('hidden', reason === '');
+            }
+
+            const violationBar = document.getElementById('scan-violation-bar');
+            const violationLabel = document.getElementById('scan-violation-label');
+            const violationMeta = document.getElementById('scan-violation-meta');
+            const hasViolations = !!(latest.has_violations || (Number(latest.strike_count || 0) > 0));
+            if (violationBar) {
+                if (hasViolations) {
+                    violationBar.classList.remove('hidden');
+                    if (violationLabel) {
+                        violationLabel.textContent = latest.violation_label
+                            || (`${latest.strike_count || 0} Strike${Number(latest.strike_count) === 1 ? '' : 's'} on record`);
+                    }
+                    if (violationMeta) {
+                        const metaBits = [];
+                        if (latest.latest_violation_at) metaBits.push(latest.latest_violation_at);
+                        violationMeta.textContent = metaBits.join(' · ');
+                        violationMeta.classList.toggle('hidden', metaBits.length === 0);
+                    }
+                } else {
+                    violationBar.classList.add('hidden');
+                    if (violationLabel) violationLabel.textContent = '—';
+                    if (violationMeta) {
+                        violationMeta.textContent = '';
+                        violationMeta.classList.add('hidden');
+                    }
+                }
             }
 
             if (idleTimer) clearTimeout(idleTimer);

@@ -871,12 +871,21 @@
         border-color: var(--portal-border) !important;
     }
 
+    /* Tailwind v4 paints divide-y on :not(:last-child) (incl. the first row).
+       The v3 sibling selector skipped that first border, leaving gray-100 (bright white). */
     html.dark .divide-y > :not([hidden]) ~ :not([hidden]),
     html.dark .divide-gray-100 > :not([hidden]) ~ :not([hidden]),
     html.dark .divide-gray-200 > :not([hidden]) ~ :not([hidden]),
     html.dark .divide-slate-100 > :not([hidden]) ~ :not([hidden]),
-    html.dark .divide-slate-200 > :not([hidden]) ~ :not([hidden]) {
-        border-color: var(--portal-border) !important;
+    html.dark .divide-slate-200 > :not([hidden]) ~ :not([hidden]),
+    html.dark .divide-y > :not(:last-child),
+    html.dark .divide-gray-100 > :not(:last-child),
+    html.dark .divide-gray-200 > :not(:last-child),
+    html.dark .divide-slate-100 > :not(:last-child),
+    html.dark .divide-slate-200 > :not(:last-child) {
+        border-color: rgba(51, 65, 85, 0.45) !important;
+        border-top-color: rgba(51, 65, 85, 0.45) !important;
+        border-bottom-color: rgba(51, 65, 85, 0.45) !important;
     }
 
     html.dark table,
@@ -1064,8 +1073,12 @@
     /* Keep body row lines muted; never bright/near-white */
     html.dark table tbody.divide-y > :not([hidden]) ~ :not([hidden]),
     html.dark table tbody.divide-gray-100 > :not([hidden]) ~ :not([hidden]),
-    html.dark table tbody.divide-gray-200 > :not([hidden]) ~ :not([hidden]) {
-        border-top-color: rgba(51, 65, 85, 0.55) !important;
+    html.dark table tbody.divide-gray-200 > :not([hidden]) ~ :not([hidden]),
+    html.dark table tbody.divide-y > :not(:last-child),
+    html.dark table tbody.divide-gray-100 > :not(:last-child),
+    html.dark table tbody.divide-gray-200 > :not(:last-child) {
+        border-top-color: rgba(51, 65, 85, 0.45) !important;
+        border-bottom-color: rgba(51, 65, 85, 0.45) !important;
     }
 
     html.dark table tbody tr:hover {
@@ -1450,7 +1463,7 @@
         background: color-mix(in srgb, var(--portal-surface) 94%, transparent);
     }
 
-    /* Hide the browser's built-in search ×; custom overlay is added by search-clear.js */
+    /* Hide the browser's built-in search/text ×; custom overlay is added by search-clear.js */
     input[type='search']::-webkit-search-cancel-button,
     input[type='search']::-webkit-search-decoration,
     input[type='search']::-webkit-search-results-button,
@@ -1461,7 +1474,14 @@
     }
 
     input[type='search']::-ms-clear,
-    input[type='search']::-ms-reveal {
+    input[type='search']::-ms-reveal,
+    input[type='text']::-ms-clear,
+    input[type='email']::-ms-clear,
+    input[type='tel']::-ms-clear,
+    input[type='url']::-ms-clear,
+    input[type='number']::-ms-clear,
+    input[type='password']::-ms-clear,
+    input[type='password']::-ms-reveal {
         display: none;
         width: 0;
         height: 0;
@@ -1491,6 +1511,10 @@
         transition:
             background-color 150ms ease,
             color 150ms ease;
+    }
+
+    .sc-search-clear[hidden] {
+        display: none !important;
     }
 
     .sc-search-clear:hover {

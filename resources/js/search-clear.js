@@ -1,23 +1,62 @@
 /**
- * Overlay a clear (×) on search fields. Never wraps inputs or changes holder width.
+ * Overlay a clear (×) on text-like inputs across the app.
+ * Never wraps inputs or changes holder width — absolute overlay only.
+ * Opt out with data-no-clear / data-no-search-clear.
  */
-const SEARCH_SELECTOR = [
-    'input[type="search"]',
-    'input[name="q"]',
-    'input[name="search"]',
-    'input[data-search-clear]',
-].join(',');
+const CLEARABLE_TYPES = new Set([
+    'text',
+    'search',
+    'email',
+    'tel',
+    'url',
+    'number',
+    'password',
+]);
+
+const SKIP_TYPES = new Set([
+    'hidden',
+    'checkbox',
+    'radio',
+    'file',
+    'submit',
+    'button',
+    'reset',
+    'image',
+    'color',
+    'range',
+    'date',
+    'datetime-local',
+    'time',
+    'month',
+    'week',
+]);
 
 const BUTTON_SIZE = 24;
 const BUTTON_INSET = 8;
 
+function isOptedOut(input) {
+    const noClear = input.dataset.noClear ?? input.dataset.noSearchClear;
+    return noClear === '1' || noClear === 'true';
+}
+
 function isSearchLike(input) {
-    if (!(input instanceof HTMLInputElement)) return false;
-    if (input.dataset.noSearchClear === '1' || input.dataset.noSearchClear === 'true') return false;
-    if (input.type === 'hidden' || input.type === 'password' || input.disabled || input.readOnly) return false;
-    if (input.matches(SEARCH_SELECTOR)) return true;
+    if (input.type === 'search') return true;
+    if (input.matches('input[name="q"], input[name="search"], input[data-search-clear]')) return true;
     const placeholder = (input.getAttribute('placeholder') || '').toLowerCase();
     return placeholder.includes('search');
+}
+
+function isClearableInput(input) {
+    if (!(input instanceof HTMLInputElement)) return false;
+    if (isOptedOut(input)) return false;
+    if (input.disabled || input.readOnly) return false;
+
+    const type = (input.type || 'text').toLowerCase();
+    if (SKIP_TYPES.has(type)) return false;
+    if (CLEARABLE_TYPES.has(type)) return true;
+
+    // Default missing/unknown type on <input> is text in browsers.
+    return type === '' || type === 'text';
 }
 
 function syncClearButton(input, button) {
@@ -38,12 +77,14 @@ function placeClearButton(input, button) {
     button.style.top = `${Math.round(inputBox.top - parentBox.top + (inputBox.height - BUTTON_SIZE) / 2)}px`;
 }
 
-function enhanceSearchInput(input) {
-    if (!isSearchLike(input) || input.dataset.searchClearBound === '1') return;
+function enhanceClearableInput(input) {
+    if (!isClearableInput(input) || input.dataset.searchClearBound === '1') return;
     input.dataset.searchClearBound = '1';
 
     const parent = input.parentElement;
     if (!parent) return;
+
+    const searchLike = isSearchLike(input);
 
     parent.classList.add('sc-search-anchor');
     input.classList.add('sc-search-input');
@@ -51,8 +92,8 @@ function enhanceSearchInput(input) {
     const button = document.createElement('button');
     button.type = 'button';
     button.className = 'sc-search-clear';
-    button.setAttribute('aria-label', 'Clear search');
-    button.title = 'Clear search';
+    button.setAttribute('aria-label', searchLike ? 'Clear search' : 'Clear');
+    button.title = searchLike ? 'Clear search' : 'Clear';
     button.hidden = true;
     button.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="h-3.5 w-3.5" aria-hidden="true"><path d="M6.28 5.22a.75.75 0 0 0-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 1 0 1.06 1.06L10 11.06l3.72 3.72a.75.75 0 1 0 1.06-1.06L11.06 10l3.72-3.72a.75.75 0 0 0-1.06-1.06L10 8.94 6.28 5.22Z"/></svg>';
 
@@ -71,9 +112,11 @@ function enhanceSearchInput(input) {
         refresh();
         input.focus();
 
+        // Only auto-resubmit GET search filters — never normal create/edit forms.
         const form = input.form;
         if (
             hadValue
+            && searchLike
             && form
             && String(form.method || 'get').toLowerCase() === 'get'
             && input.dataset.clearSubmit !== '0'
@@ -91,6 +134,7 @@ function enhanceSearchInput(input) {
 
     input.addEventListener('input', refresh);
     input.addEventListener('change', refresh);
+    input.addEventListener('focus', refresh);
     window.addEventListener('resize', refresh);
 
     if (typeof ResizeObserver === 'function') {
@@ -102,16 +146,39 @@ function enhanceSearchInput(input) {
 
 function initSearchClear(root = document) {
     root.querySelectorAll('input').forEach((input) => {
-        if (isSearchLike(input)) enhanceSearchInput(input);
+        enhanceClearableInput(input);
     });
+}
+
+function watchForNewInputs() {
+    if (typeof MutationObserver !== 'function') return;
+
+    const observer = new MutationObserver((mutations) => {
+        for (const mutation of mutations) {
+            mutation.addedNodes.forEach((node) => {
+                if (!(node instanceof HTMLElement)) return;
+                if (node.matches?.('input')) {
+                    enhanceClearableInput(node);
+                }
+                node.querySelectorAll?.('input').forEach((input) => enhanceClearableInput(input));
+            });
+        }
+    });
+
+    observer.observe(document.documentElement, { childList: true, subtree: true });
 }
 
 window.initSearchClear = initSearchClear;
 
-if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', () => initSearchClear());
-} else {
+function boot() {
     initSearchClear();
+    watchForNewInputs();
+}
+
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', boot);
+} else {
+    boot();
 }
 
 export { initSearchClear };

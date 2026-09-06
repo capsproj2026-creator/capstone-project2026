@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "hooks": {
+    "sessionStart": [
+      {
+        "command": "powershell -NoProfile -ExecutionPolicy Bypass -File .cursor/hooks/git-pull.ps1",
+        "timeout": 60
+      }
+    ],
+    "stop": [
+      {
+        "command": "powershell -NoProfile -ExecutionPolicy Bypass -File .cursor/hooks/git-push-if-ahead.ps1",
+        "timeout": 90
+      }
+    ]
+  }
+}
