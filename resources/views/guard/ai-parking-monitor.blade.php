@@ -56,7 +56,7 @@
                     $health = $healthById->get($camId, []);
                     $snap = $snaps[$camId] ?? [];
                     $browserUrl = $health['ai_stream_url'] ?? $health['stream_browser_url'] ?? ($cam['ai_stream_url'] ?? $cam['stream_url'] ?? null);
-                    $online = (bool) ($health['ingest_active'] ?? false);
+                    $online = (bool) ($health['connected'] ?? false);
                     $topDet = data_get($snap, 'detections.0');
                     $plateLine = \App\Support\AiDetectionPresenter::plateLine(is_array($topDet) ? $topDet : null);
                 @endphp
@@ -561,17 +561,12 @@
                 }
             }
         };
-        img.addEventListener('load', () => setOnline(true));
+        // MJPEG can "load" blank offline placeholder frames — never treat that as Live.
         img.addEventListener('error', () => setOnline(false));
-        // Try stream even when initially offline (URL configured independently per camera).
-        if (tile?.dataset.online !== '1' && img.getAttribute('src')) {
-            const base = img.getAttribute('src');
-            try {
-                const url = new URL(base, window.location.origin);
-                url.searchParams.set('t', String(Date.now()));
-                img.classList.remove('hidden');
-                img.src = url.toString();
-            } catch (e) {}
+        window.__aiParkingSetCameraOnline = window.__aiParkingSetCameraOnline || {};
+        const camId = tile?.getAttribute('data-camera-tile');
+        if (camId) {
+            window.__aiParkingSetCameraOnline[camId] = setOnline;
         }
     });
 
@@ -626,7 +621,34 @@
             if (!response.ok) return;
             const data = await response.json();
             const cams = data.ai_cameras || data.cameras || {};
+            const healthMap = data.ai_cameras_health || {};
             const ai = data.ai;
+            Object.entries(healthMap).forEach(([id, health]) => {
+                const online = !!(health?.connected || health?.stream_reachable);
+                const setter = window.__aiParkingSetCameraOnline?.[id];
+                if (typeof setter === 'function') {
+                    setter(online);
+                } else {
+                    const tile = document.querySelector(`[data-camera-tile="${id}"]`);
+                    if (!tile) return;
+                    tile.dataset.online = online ? '1' : '0';
+                    const badge = tile.querySelector('[data-status-badge]');
+                    if (badge) {
+                        badge.textContent = online ? 'Live' : 'Offline';
+                        badge.className = 'absolute right-3 top-3 z-10 rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wide '
+                            + (online ? 'bg-emerald-500 text-white' : 'bg-red-500 text-white');
+                    }
+                    const img = tile.querySelector('[data-stream-img]');
+                    const fb = tile.querySelector('[data-stream-fallback]');
+                    if (online) {
+                        img?.classList.remove('hidden');
+                        fb?.classList.add('hidden');
+                    } else {
+                        img?.classList.add('hidden');
+                        fb?.classList.remove('hidden');
+                    }
+                }
+            });
             Object.entries(cams).forEach(([id, snap]) => {
                 const v = document.querySelector(`.js-cam-vehicles[data-camera="${id}"]`);
                 const a = document.querySelector(`.js-cam-available[data-camera="${id}"]`);

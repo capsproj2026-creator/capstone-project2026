@@ -269,10 +269,12 @@
             const reload = () => {
                 const url = new URL(base, window.location.origin);
                 url.searchParams.set('t', String(Date.now()));
-                img.classList.remove('hidden');
+                if (tile?.dataset.online === '1') {
+                    img.classList.remove('hidden');
+                }
                 img.src = url.toString();
             };
-            img.addEventListener('load', () => setCameraOnline(tile, true));
+            // Blank offline placeholder frames still fire "load" — do not mark Online from that.
             img.addEventListener('error', () => {
                 setCameraOnline(tile, false);
                 if (retryTimer) return;
@@ -281,10 +283,6 @@
                     reload();
                 }, 5000);
             });
-            // Attempt stream even when initially marked offline (URL configured).
-            if (tile?.dataset.online !== '1') {
-                reload();
-            }
         });
     })();
 </script>

@@ -134,12 +134,9 @@ class AiParkingHealthService
         return (bool) Cache::remember($cacheKey, now()->addSeconds(45), function () use ($probeUrl, $healthUrl) {
             try {
                 if ($healthUrl !== null && $probeUrl === $healthUrl) {
-                    $response = Http::connectTimeout(1)
-                        ->timeout(1.5)
-                        ->acceptJson()
-                        ->get($healthUrl);
+                    $payload = $this->serviceHealthPayload();
 
-                    return $response->successful();
+                    return is_array($payload) && (($payload['ok'] ?? false) === true || isset($payload['camera_status']));
                 }
 
                 // Fallback: tiny ranged GET — still keep timeouts aggressive.
@@ -153,6 +150,77 @@ class AiParkingHealthService
                 return false;
             }
         });
+    }
+
+    /**
+     * Cached JSON body from the Python MJPEG service /health endpoint.
+     *
+     * @return array<string, mixed>|null
+     */
+    public function serviceHealthPayload(): ?array
+    {
+        $healthUrl = $this->serviceHealthUrl();
+        if ($healthUrl === null) {
+            return null;
+        }
+
+        $cacheKey = 'ai_parking:service_health_json:'.md5($healthUrl);
+
+        $cached = Cache::remember($cacheKey, now()->addSeconds(5), function () use ($healthUrl) {
+            try {
+                $response = Http::connectTimeout(1)
+                    ->timeout(1.5)
+                    ->acceptJson()
+                    ->get($healthUrl);
+
+                if (! $response->successful()) {
+                    return false;
+                }
+
+                $json = $response->json();
+
+                return is_array($json) ? $json : false;
+            } catch (\Throwable) {
+                return false;
+            }
+        });
+
+        return is_array($cached) ? $cached : null;
+    }
+
+    /**
+     * True only when the AI service reports this camera's RTSP feed is live.
+     * Configured stream URLs / blank placeholder MJPEG frames do not count.
+     */
+    public function isCameraOnline(?string $cameraId = null): bool
+    {
+        $cameraId = $cameraId ?: app(AiCameraRegistry::class)->primaryCameraId();
+        $payload = $this->serviceHealthPayload();
+        if ($payload === null) {
+            return false;
+        }
+
+        $statusMap = $payload['camera_status'] ?? null;
+        if (! is_array($statusMap) || $statusMap === []) {
+            // Older health payload without per-camera detail.
+            return (bool) ($payload['any_online'] ?? $payload['ok'] ?? false);
+        }
+
+        $row = $statusMap[$cameraId] ?? null;
+        if (! is_array($row)) {
+            foreach ($statusMap as $id => $candidate) {
+                if (strcasecmp((string) $id, (string) $cameraId) === 0 && is_array($candidate)) {
+                    $row = $candidate;
+                    break;
+                }
+            }
+        }
+
+        if (! is_array($row)) {
+            return false;
+        }
+
+        return (bool) ($row['online'] ?? false);
     }
 
     public function isIngestActive(?string $cameraId = null, ?int $maxAgeSeconds = null): bool
@@ -173,7 +241,7 @@ class AiParkingHealthService
     }
 
     /**
-     * Page-load safe status: no HTTP stream probe (uses cache/config/ingest only).
+     * Page-load safe status: uses cached /health (no MJPEG probe).
      *
      * @return array<string, mixed>
      */
@@ -182,13 +250,14 @@ class AiParkingHealthService
         $upstream = $this->upstreamStreamUrl($cameraId);
         $snapshot = app(AiParkingOccupancyService::class)->latestSnapshot($cameraId);
         $ingestActive = $this->isIngestActive($cameraId);
+        $cameraOnline = $upstream !== null && $this->isCameraOnline($cameraId);
 
         return [
             'camera_id' => $cameraId ?? app(AiCameraRegistry::class)->primaryCameraId(),
             'configured' => $upstream !== null,
-            'stream_reachable' => $upstream !== null,
+            'stream_reachable' => $cameraOnline,
             'ingest_active' => $ingestActive,
-            'connected' => $ingestActive || $upstream !== null,
+            'connected' => $cameraOnline,
             'upstream_stream_url' => $upstream,
             'stream_proxy_url' => $this->streamProxyUrl($isGuard, $cameraId, true),
             'stream_browser_url' => $this->streamBrowserUrl($cameraId, true),
@@ -213,15 +282,15 @@ class AiParkingHealthService
 
         $upstream = $this->upstreamStreamUrl($cameraId);
         $snapshot = app(AiParkingOccupancyService::class)->latestSnapshot($cameraId);
-        $streamReachable = $upstream !== null && $this->isStreamReachable($upstream);
         $ingestActive = $this->isIngestActive($cameraId);
+        $cameraOnline = $upstream !== null && $this->isCameraOnline($cameraId);
 
         return [
             'camera_id' => $cameraId ?? app(AiCameraRegistry::class)->primaryCameraId(),
             'configured' => $upstream !== null,
-            'stream_reachable' => $streamReachable,
+            'stream_reachable' => $cameraOnline,
             'ingest_active' => $ingestActive,
-            'connected' => $streamReachable || $ingestActive,
+            'connected' => $cameraOnline,
             'upstream_stream_url' => $upstream,
             'stream_proxy_url' => $this->streamProxyUrl($isGuard, $cameraId, true),
             'stream_browser_url' => $this->streamBrowserUrl($cameraId, true),
@@ -234,7 +303,6 @@ class AiParkingHealthService
             'available' => is_array($snapshot) ? ($snapshot['available'] ?? null) : null,
         ];
     }
-
     /**
      * @return array<string, array<string, mixed>>
      */

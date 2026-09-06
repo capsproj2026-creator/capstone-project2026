@@ -42,9 +42,10 @@ class LiveCameraController extends Controller
                 : route('admin.parking', ['zone_id' => $cam['area_id']]);
 
             $hasStream = filled($streamUrl);
+            // Live only when the AI service reports RTSP online for this camera.
+            // Blank placeholder MJPEG frames must not count as online.
+            $online = $health->isCameraOnline($cam['id']);
             $ingestActive = $health->isIngestActive($cam['id']);
-            // Online only when ingest is fresh — URL alone is not enough.
-            $online = $ingestActive;
 
             $cameras[] = [
                 'id' => strtolower(str_replace('_', '-', $cam['id'])),
