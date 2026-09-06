@@ -20,9 +20,12 @@ RFID tap → RC522 → ESP32 → POST /api/rfid/scan → Laravel
 2. **Libraries** (Library Manager):
    | Library | Notes |
    |---------|--------|
+   | **WiFiManager** (tzapu) | **Required** for Gate-Setup phone portal |
    | **MFRC522** | RFID reader |
    | **ArduinoJson** | 6.x or 7.x |
    | **ESP32Servo** | Use **3.0.x** with ESP32 board **3.x** (fixes `attach=0`) |
+
+   Or one command: `powershell -File .\scripts\install-esp32-wifimanager.ps1`
 3. **Board settings:** Tools → Board → **ESP32 Dev Module** (or your exact board).
 4. **Port:** Tools → Port → your ESP32 COM port.
 5. Open **`Entry.ino`** from `hardware/arduino/Entry` or `OneDrive\Documents\Arduino\Entry` (after `sync-arduino.bat`).

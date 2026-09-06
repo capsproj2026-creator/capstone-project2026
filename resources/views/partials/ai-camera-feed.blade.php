@@ -250,7 +250,7 @@
         };
 
         refresh();
-        window.setInterval(refresh, 5000);
+        window.setInterval(refresh, 1000);
     })();
 </script>
 @endpush

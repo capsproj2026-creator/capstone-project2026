@@ -24,6 +24,9 @@ Write-Host " ESP32 Gate - full connect setup" -ForegroundColor Cyan
 Write-Host "========================================" -ForegroundColor Cyan
 Write-Host ""
 
+# Ensure WiFiManager library is present (Gate-Setup phone portal).
+& powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $Scripts "install-esp32-wifimanager.ps1")
+
 # --- Detect networks ---
 $ips = Get-NetIPAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue |
     Where-Object { $_.IPAddress -notlike "127.*" -and $_.IPAddress -notlike "169.254.*" -and $_.IPAddress -notlike "192.168.230.*" }
@@ -116,22 +119,31 @@ Write-Host "========================================" -ForegroundColor Green
 Write-Host " NEXT: Arduino IDE (2.3.10)" -ForegroundColor Green
 Write-Host "========================================" -ForegroundColor Green
 Write-Host @"
-1. Upload Entry.ino from:
+1. WiFiManager library must be installed (this script already ran install-esp32-wifimanager.ps1).
+   If compile fails on WiFiManager.h: Library Manager → WiFiManager (tzapu), restart IDE.
+
+2. Upload Entry.ino from:
    OneDrive\Documents\Arduino\Entry
    (servo wired to GPIO 14 on THIS board only)
 
-2. Upload Exit.ino from:
+3. Upload Exit.ino from:
    OneDrive\Documents\Arduino\Exit
    (RFID only - no servo)
 
-3. Serial Monitor 115200 - expect:
-   WiFi OK IP: 192.168.x.x
+4. Serial Monitor 115200 — expect:
+   === Gate Wi-Fi / API portal (WiFiManager) ===
+   then either WiFi OK IP: ... OR open phone AP Gate-Setup / capstone123
+
+5. In the portal set:
+   - 2.4 GHz Wi-Fi SSID + password
+   - Laravel PC IP: $useIp
+   - Port 8000 + RFID token
+
+6. After connect expect:
    TCP probe $useIp`:8000 = OK
    API online - heartbeats OK
 
-4. Register RFID card in Admin -> RFID (UID e.g. 5AB48FF8)
-
-5. Guard -> Live Gate Monitor (keep Reverb window open from start.ps1)
+7. Hold BOOT 3s anytime to reopen Gate-Setup (change Wi-Fi without reflash).
 
 SERVO wiring (Entry board only):
   Signal -> GPIO 14 | VCC -> 5V supply | GND -> common GND

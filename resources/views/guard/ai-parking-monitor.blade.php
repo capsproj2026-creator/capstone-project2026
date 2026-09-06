@@ -819,7 +819,7 @@
     };
 
     refresh();
-    window.setInterval(refresh, 5000);
+    window.setInterval(refresh, 1000);
     document.addEventListener('visibilitychange', () => { if (!document.hidden) refresh(); });
 
     const plateModal = document.getElementById('plate-correct-modal');

@@ -1,12 +1,14 @@
 /**
- * Capstone Smart Campus VMS — ESP32 Entry Gate
+ * Capstone Smart Campus VMS — ESP32 Entry Gate (canonical folder)
  *
- * Flash THIS sketch to the ESP32 that has:
- *   - RC522 RFID reader (Entry lane)
- *   - Servo boom on GPIO 14 (the ONLY servo — shared for Entry + Exit)
+ * Prefer flashing from Arduino IDE:
+ *   OneDrive\Documents\Arduino\Entry\Entry.ino
+ * after running sync-arduino.bat
  *
- * The second ESP32 uses Exit.ino (RFID only, no servo).
- * Exit grants still open THIS servo via Laravel heartbeat.
+ * Flash THIS board with RC522 + servo on GPIO 14.
+ * Exit board uses hardware/arduino/Exit/Exit.ino (RFID only).
+ *
+ * WiFi: WiFiManager portal AP "Gate-Setup" / "capstone123"
  */
 
 #define GATE_ID "GATE-IN-1"
@@ -16,6 +18,9 @@
 
 void setup() {
   Serial.begin(115200);
+  delay(200);
+  Serial.println();
+  Serial.println("=== Capstone Entry gate (GATE-IN-1) ===");
   setupGateHardware();
 }
 

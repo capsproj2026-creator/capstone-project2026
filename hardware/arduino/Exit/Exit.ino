@@ -5,11 +5,12 @@
  *   - RC522 RFID reader only
  *   - Do NOT wire a servo here
  *
+ * Network: same WiFiManager portal as Entry (AP "Gate-Setup").
  * When Exit is granted, Laravel queues open on GATE-IN-1.
  * The Entry ESP32 (with the servo) opens the boom on its next heartbeat.
  *
- * Arduino IDE: File → Open → hardware/arduino/Exit/Exit.ino
- * (keep Exit.ino + rfid_gate_common.h + rfid_gate_config.h in this folder)
+ * Arduino IDE: File → Open → OneDrive\Documents\Arduino\Exit\Exit.ino
+ * (run sync-arduino.bat from the project if this folder looks old)
  */
 
 #define GATE_ID "GATE-OUT-1"
@@ -23,6 +24,9 @@
 
 void setup() {
   Serial.begin(115200);
+  delay(200);
+  Serial.println();
+  Serial.println("=== Capstone Exit gate (GATE-OUT-1) ===");
   setupGateHardware();
 }
 

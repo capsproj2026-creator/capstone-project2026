@@ -65,7 +65,7 @@ if os.getenv("AI_PARKING_LONG_RANGE", "0") == "1":
 INFER_MAX_WIDTH = int(os.getenv("AI_PARKING_INFER_MAX_WIDTH", "1280"))
 # Shared YOLO + ByteTrack persist=True breaks multi-cam; default to predict + IoU IDs.
 USE_ULTRALYTICS_TRACK = os.getenv("AI_PARKING_USE_TRACKER", "0") == "1"
-POST_EVERY_SEC = float(os.getenv("AI_PARKING_POST_EVERY_SEC", "3.0"))
+POST_EVERY_SEC = float(os.getenv("AI_PARKING_POST_EVERY_SEC", "1.5"))
 USE_WEBCAM = os.getenv("AI_USE_WEBCAM", "0") == "1"
 TRACKER = os.getenv("AI_PARKING_TRACKER", "bytetrack.yaml")
 # Target YOLO cadence; actual rate is also limited by CPU + model lock.
@@ -117,7 +117,7 @@ if not VEHICLES_ONLY and os.getenv("AI_PARKING_DETECT_PERSONS", "0") == "1":
     DETECT_CLASS_IDS = [0, 2, 3, 5, 7]
     VEHICLE_CLASS_IDS = set(DETECT_CLASS_IDS)
 POST_PERSON_DETECTIONS = (not VEHICLES_ONLY) and os.getenv("AI_PARKING_POST_PERSONS", "0") == "1"
-OCR_PARKED_ONLY = os.getenv("AI_PARKING_OCR_PARKED_ONLY", "1") == "1"
+OCR_PARKED_ONLY = os.getenv("AI_PARKING_OCR_PARKED_ONLY", "0") == "1"
 COCO_NAMES = {
     0: "person",
     2: "car",
@@ -1606,12 +1606,12 @@ class CameraWorker:
         for tid, mem in list(self.intelligence.tracks.items()):
             if mem.plate_status == "ok" and mem.plate:
                 continue
-            if (now - mem.first_seen) < 1.0:
+            if (now - mem.first_seen) < 0.4:
                 continue
             if not getattr(mem, "last_ocr_xyxy", None):
                 continue
             last_sync = float(getattr(mem, "last_sync_ocr_at", 0.0) or 0.0)
-            if last_sync and (now - last_sync) < 2.5:
+            if last_sync and (now - last_sync) < OCR_EVERY_SEC:
                 continue
             mem.last_sync_ocr_at = now
             read = ocr.read_plate(frame, mem.last_ocr_xyxy, cls_id=getattr(mem, "cls_id", None))

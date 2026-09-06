@@ -16,13 +16,13 @@ IOU_THRESHOLD = float(os.getenv("AI_PARKING_ZONE_IOU", "0.08"))
 # Keep lost tracks briefly so ByteTrack ID flicker does not wipe plate memory / re-OCR.
 TRACK_HOLD_SEC = float(os.getenv("AI_PARKING_TRACK_HOLD_SEC", "3.0"))
 # Require this many matching OCR reads before locking a plate on a track.
-PLATE_VOTE_NEEDED = int(os.getenv("AI_PARKING_PLATE_VOTE_NEEDED", "2"))
+PLATE_VOTE_NEEDED = int(os.getenv("AI_PARKING_PLATE_VOTE_NEEDED", "1"))
 OCR_HIGH_CONF_LOCK = float(os.getenv("AI_PARKING_OCR_HIGH_CONF_LOCK", "0.65"))
 PLATE_VOTE_CONSENSUS_RATIO = float(os.getenv("AI_PARKING_PLATE_VOTE_CONSENSUS_RATIO", "0.55"))
 TRACK_MATCH_IOU = float(os.getenv("AI_PARKING_TRACK_MATCH_IOU", "0.25"))
 # Normalized center movement (px/sec ÷ bbox diagonal). Below = parked, above = moving.
 MOTION_SPEED_THRESH = float(os.getenv("AI_PARKING_MOTION_SPEED_THRESH", "0.12"))
-MOTION_PARK_SEC = float(os.getenv("AI_PARKING_MOTION_PARK_SEC", "1.5"))
+MOTION_PARK_SEC = float(os.getenv("AI_PARKING_MOTION_PARK_SEC", "0.8"))
 MOTION_SMOOTH_ALPHA = float(os.getenv("AI_PARKING_MOTION_SMOOTH_ALPHA", "0.35"))
 
 

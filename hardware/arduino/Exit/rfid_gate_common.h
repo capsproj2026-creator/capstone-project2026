@@ -4,6 +4,9 @@
  *
  * Shared boom: wire the servo to the Entry ESP32 only. Exit uses ACTUATOR_NONE;
  * Laravel queues an open to Entry when Exit RFID is granted.
+ *
+ * Network: WiFiManager phone portal + NVS-saved Laravel host/port/token so you can
+ * switch home Wi-Fi / hotspot / campus without reflashing. Hold BOOT 3s to reopen portal.
  */
 #pragma once
 
@@ -12,11 +15,27 @@
 #include <ArduinoJson.h>
 #include <SPI.h>
 #include <MFRC522.h>
+#include <Preferences.h>
 
+// Config first so USE_WIFI_MANAGER is known before the WiFiManager include check.
 #if __has_include("rfid_gate_config.h")
 #include "rfid_gate_config.h"
 #else
-#error "Copy rfid_gate_config.example.h to rfid_gate_config.h and configure WiFi/API/token."
+#error "Copy rfid_gate_config.example.h to rfid_gate_config.h and configure defaults/token."
+#endif
+
+#ifndef USE_WIFI_MANAGER
+#define USE_WIFI_MANAGER 1
+#endif
+
+#if USE_WIFI_MANAGER
+// Include directly so Arduino's library scanner adds WiFiManager to the path.
+// __has_include(<WiFiManager.h>) is false until that happens, which caused a
+// false "WiFiManager required" error even when the library was installed.
+#include <WiFiManager.h>
+#define GATE_HAS_WIFI_MANAGER 1
+#else
+#define GATE_HAS_WIFI_MANAGER 0
 #endif
 
 #ifndef ACTUATOR_NONE
@@ -60,11 +79,31 @@
 #ifndef HEARTBEAT_FAIL_MAX_MS
 #define HEARTBEAT_FAIL_MAX_MS 30000UL
 #endif
+
+// Compile-time defaults (overridden by phone portal / NVS when WiFiManager is available).
 #ifndef API_HOST
 #define API_HOST "127.0.0.1"
 #endif
 #ifndef API_PORT
 #define API_PORT 8000
+#endif
+#ifndef WIFI_SSID
+#define WIFI_SSID ""
+#endif
+#ifndef WIFI_PASSWORD
+#define WIFI_PASSWORD ""
+#endif
+#ifndef RFID_API_TOKEN
+#define RFID_API_TOKEN "capstone-rfid-dev-token-change-me"
+#endif
+#ifndef WIFI_PORTAL_AP_NAME
+#define WIFI_PORTAL_AP_NAME "Gate-Setup"
+#endif
+#ifndef WIFI_PORTAL_AP_PASS
+#define WIFI_PORTAL_AP_PASS "capstone123"
+#endif
+#ifndef FORCE_CONFIG_PIN
+#define FORCE_CONFIG_PIN 0
 #endif
 
 #define SS_PIN    5
@@ -83,10 +122,16 @@ const uint16_t HTTP_HB_CONNECT_MS = 3000;
 const uint16_t HTTP_HB_READ_MS    = 5000;
 
 MFRC522 mfrc522(SS_PIN, RST_PIN);
+Preferences gatePrefs;
 
 #if ACTUATOR_MODE == ACTUATOR_SERVO
 Servo gateServo;
 #endif
+
+// Runtime network target (NVS / portal). Prefer these over compile-time macros in HTTP calls.
+String runtimeApiHost = API_HOST;
+uint16_t runtimeApiPort = (uint16_t) API_PORT;
+String runtimeApiToken = RFID_API_TOKEN;
 
 struct ScanResult {
   bool granted;
@@ -103,9 +148,11 @@ unsigned long heartbeatIntervalMs = HEARTBEAT_MS;
 unsigned long gateCycleEndsMs = 0;
 unsigned long gateCloseAtMs = 0;
 unsigned long lastRfidRecoverMs = 0;
+unsigned long forceConfigHoldStartMs = 0;
 bool gateIsOpen = false;
 bool apiOnline = false;
 bool rfidOk = false;
+bool portalBusy = false;
 int apiFailStreak = 0;
 unsigned long lastLanDiagMs = 0;
 
@@ -125,6 +172,199 @@ void connectWifiStartup();
 void printWifiFailureHelp();
 bool initRfidReader();
 void recoverRfidIfNeeded();
+void loadNetworkPrefs();
+void saveNetworkPrefs();
+String runtimeApiBase();
+bool wifiManagerEnabled();
+bool forceConfigRequested();
+void startWifiConfigPortal(bool force = false);
+void pollForceConfigButton();
+
+String runtimeApiBase() {
+  return String("http://") + runtimeApiHost + ":" + String(runtimeApiPort);
+}
+
+bool wifiManagerEnabled() {
+#if GATE_HAS_WIFI_MANAGER && USE_WIFI_MANAGER
+  return true;
+#else
+  return false;
+#endif
+}
+
+void loadNetworkPrefs() {
+  runtimeApiHost = API_HOST;
+  runtimeApiPort = (uint16_t) API_PORT;
+  runtimeApiToken = RFID_API_TOKEN;
+
+  if (!gatePrefs.begin("gate", true)) {
+    return;
+  }
+  String host = gatePrefs.getString("api_host", "");
+  uint16_t port = (uint16_t) gatePrefs.getUShort("api_port", 0);
+  String token = gatePrefs.getString("api_token", "");
+  gatePrefs.end();
+
+  if (host.length() > 0) {
+    runtimeApiHost = host;
+  }
+  if (port > 0) {
+    runtimeApiPort = port;
+  }
+  if (token.length() > 0) {
+    runtimeApiToken = token;
+  }
+}
+
+void saveNetworkPrefs() {
+  if (!gatePrefs.begin("gate", false)) {
+    Serial.println("NVS: failed to open gate prefs for write");
+    return;
+  }
+  gatePrefs.putString("api_host", runtimeApiHost);
+  gatePrefs.putUShort("api_port", runtimeApiPort);
+  gatePrefs.putString("api_token", runtimeApiToken);
+  gatePrefs.end();
+  Serial.printf("NVS saved API %s:%u\n", runtimeApiHost.c_str(), runtimeApiPort);
+}
+
+bool forceConfigRequested() {
+  pinMode(FORCE_CONFIG_PIN, INPUT_PULLUP);
+  delay(20);
+  if (digitalRead(FORCE_CONFIG_PIN) != LOW) {
+    return false;
+  }
+  Serial.println("BOOT held — wait 2s to open Wi-Fi / API setup portal...");
+  unsigned long start = millis();
+  while (digitalRead(FORCE_CONFIG_PIN) == LOW) {
+    if (millis() - start >= 2000UL) {
+      return true;
+    }
+    delay(20);
+  }
+  return false;
+}
+
+#if GATE_HAS_WIFI_MANAGER && USE_WIFI_MANAGER
+void startWifiConfigPortal(bool force) {
+  portalBusy = true;
+  WiFiManager wm;
+  wm.setConfigPortalTimeout(180);
+  wm.setConnectTimeout(25);
+  wm.setTitle("Capstone Gate Setup");
+  wm.setWiFiAutoReconnect(true);
+  // Open portal automatically if saved/preloaded Wi-Fi fails to connect.
+  wm.setEnableConfigPortal(true);
+  wm.setConfigPortalBlocking(true);
+
+  // Seed portal / first connect from rfid_gate_config.h (overridden when user saves in portal).
+  if (String(WIFI_SSID).length() > 0) {
+    wm.preloadWiFi(String(WIFI_SSID), String(WIFI_PASSWORD));
+  }
+
+  char hostBuf[48];
+  char portBuf[8];
+  char tokenBuf[80];
+  snprintf(hostBuf, sizeof(hostBuf), "%s", runtimeApiHost.c_str());
+  snprintf(portBuf, sizeof(portBuf), "%u", runtimeApiPort);
+  snprintf(tokenBuf, sizeof(tokenBuf), "%s", runtimeApiToken.c_str());
+
+  WiFiManagerParameter pHost("api_host", "Laravel PC IP (ipconfig)", hostBuf, 47);
+  WiFiManagerParameter pPort("api_port", "Laravel port", portBuf, 7);
+  WiFiManagerParameter pToken("api_token", "RFID API token (same as .env)", tokenBuf, 79);
+  wm.addParameter(&pHost);
+  wm.addParameter(&pPort);
+  wm.addParameter(&pToken);
+
+  wm.setSaveParamsCallback([&]() {
+    String host = String(pHost.getValue());
+    host.trim();
+    if (host.length() > 0) {
+      runtimeApiHost = host;
+    }
+    int port = atoi(pPort.getValue());
+    if (port > 0 && port < 65536) {
+      runtimeApiPort = (uint16_t) port;
+    }
+    String token = String(pToken.getValue());
+    token.trim();
+    if (token.length() > 0) {
+      runtimeApiToken = token;
+    }
+    saveNetworkPrefs();
+  });
+
+  Serial.println();
+  Serial.println("=== Gate Wi-Fi / API portal (WiFiManager) ===");
+  Serial.printf("1) On phone join Wi-Fi AP: %s  password: %s\n", WIFI_PORTAL_AP_NAME, WIFI_PORTAL_AP_PASS);
+  Serial.println("2) Browser opens setup (or go to http://192.168.4.1)");
+  Serial.println("3) Pick this location's 2.4 GHz Wi-Fi + Laravel PC IP + token");
+  Serial.printf("   Default API target: %s\n", runtimeApiBase().c_str());
+  if (String(WIFI_SSID).length() > 0) {
+    Serial.printf("   Preloaded SSID from config: %s\n", WIFI_SSID);
+  }
+  Serial.println("==============================");
+
+  bool ok = false;
+  if (force) {
+    ok = wm.startConfigPortal(WIFI_PORTAL_AP_NAME, WIFI_PORTAL_AP_PASS);
+  } else {
+    ok = wm.autoConnect(WIFI_PORTAL_AP_NAME, WIFI_PORTAL_AP_PASS);
+  }
+
+  // Always re-read custom params after portal closes (save callback may not fire on all paths).
+  String host = String(pHost.getValue());
+  host.trim();
+  if (host.length() > 0) {
+    runtimeApiHost = host;
+  }
+  int port = atoi(pPort.getValue());
+  if (port > 0 && port < 65536) {
+    runtimeApiPort = (uint16_t) port;
+  }
+  String token = String(pToken.getValue());
+  token.trim();
+  if (token.length() > 0) {
+    runtimeApiToken = token;
+  }
+  saveNetworkPrefs();
+
+  portalBusy = false;
+  WiFi.mode(WIFI_STA);
+  WiFi.setAutoReconnect(true);
+  WiFi.setSleep(false);
+
+  if (ok || WiFi.status() == WL_CONNECTED) {
+    Serial.print("WiFi OK IP: ");
+    Serial.println(WiFi.localIP());
+    Serial.printf("API target: %s\n", runtimeApiBase().c_str());
+  } else {
+    Serial.println("Portal finished without Wi-Fi — will keep retrying.");
+  }
+}
+#else
+void startWifiConfigPortal(bool force) {
+  (void) force;
+  Serial.println("WiFiManager disabled (USE_WIFI_MANAGER 0). Using WIFI_SSID from rfid_gate_config.h only.");
+}
+#endif
+
+void pollForceConfigButton() {
+  if (portalBusy || !wifiManagerEnabled()) {
+    return;
+  }
+  if (digitalRead(FORCE_CONFIG_PIN) == LOW) {
+    if (forceConfigHoldStartMs == 0) {
+      forceConfigHoldStartMs = millis();
+    } else if (millis() - forceConfigHoldStartMs >= 3000UL) {
+      Serial.println("BOOT held 3s — opening setup portal...");
+      forceConfigHoldStartMs = 0;
+      startWifiConfigPortal(true);
+    }
+  } else {
+    forceConfigHoldStartMs = 0;
+  }
+}
 
 void logLanDiagnostic() {
   if (millis() - lastLanDiagMs < 15000UL) {
@@ -132,19 +372,20 @@ void logLanDiagnostic() {
   }
   lastLanDiagMs = millis();
 
-  Serial.printf("LAN check: ESP32=%s -> %s:%d\n",
-                WiFi.localIP().toString().c_str(), API_HOST, API_PORT);
+  Serial.printf("LAN check: ESP32=%s -> %s:%u\n",
+                WiFi.localIP().toString().c_str(), runtimeApiHost.c_str(), runtimeApiPort);
 
   WiFiClient probe;
-  bool tcpOk = probe.connect(API_HOST, API_PORT, 5000);
-  Serial.printf("TCP probe %s:%d = %s\n", API_HOST, API_PORT, tcpOk ? "OK" : "FAIL");
+  bool tcpOk = probe.connect(runtimeApiHost.c_str(), runtimeApiPort, 5000);
+  Serial.printf("TCP probe %s:%u = %s\n", runtimeApiHost.c_str(), runtimeApiPort, tcpOk ? "OK" : "FAIL");
   if (tcpOk) {
     probe.stop();
     Serial.println("TCP to PC is OK. Heartbeat HTTP will retry (keep Laravel/start.ps1 open).");
   } else {
     Serial.println("PC unreachable from ESP32. On the PC run allow-laravel-firewall.bat (Admin).");
-    Serial.printf("On phone (same Wi-Fi) open: http://%s:%d\n", API_HOST, API_PORT);
+    Serial.printf("On phone (same Wi-Fi) open: http://%s:%u\n", runtimeApiHost.c_str(), runtimeApiPort);
     Serial.println("If phone fails too: disable router AP isolation / guest Wi-Fi.");
+    Serial.println("Wrong network? Hold BOOT 3s to reopen Gate-Setup portal and enter new Wi-Fi + PC IP.");
   }
 }
 
@@ -154,10 +395,10 @@ void printWifiFailureHelp() {
   Serial.println((int)st);
   switch (st) {
     case WL_NO_SSID_AVAIL:
-      Serial.println("WiFi: SSID not found — check WIFI_SSID spelling (case + spaces).");
+      Serial.println("WiFi: SSID not found — open Gate-Setup portal (hold BOOT 3s) and pick the network.");
       break;
     case WL_CONNECT_FAILED:
-      Serial.println("WiFi: password rejected — check WIFI_PASSWORD.");
+      Serial.println("WiFi: password rejected — reopen portal and re-enter password.");
       break;
     case WL_DISCONNECTED:
       Serial.println("WiFi: still disconnected — router may be off or out of range.");
@@ -167,29 +408,76 @@ void printWifiFailureHelp() {
       break;
   }
 
-  Serial.println("Scanning nearby Wi-Fi (5s)...");
-  int found = WiFi.scanNetworks(false, true);
-  if (found <= 0) {
-    Serial.println("  (no networks seen — check 2.4 GHz antenna / router power)");
+  // Fresh STA mode before scan (scan after a failed begin() often returns 0 otherwise).
+  WiFi.persistent(false);
+  WiFi.disconnect(true, true);
+  delay(200);
+  WiFi.mode(WIFI_STA);
+  WiFi.setSleep(false);
+  delay(100);
+
+  Serial.println("Scanning nearby Wi-Fi (async, ~6s)...");
+  WiFi.scanDelete();
+  int found = WiFi.scanNetworks(/*async=*/false, /*show_hidden=*/true);
+  if (found == WIFI_SCAN_FAILED) {
+    Serial.println("  Scan failed — power-cycle ESP32 and check antenna connector.");
     return;
   }
+  if (found <= 0) {
+    Serial.println("  (no networks seen)");
+    Serial.println("  Checklist:");
+    Serial.println("   1) ESP32 is 2.4 GHz only — enable 2.4 GHz on the router (or use a mixed SSID).");
+    Serial.println("   2) External antenna screwed onto the board (IPEX/u.FL) if your module needs one.");
+    Serial.println("   3) Move closer to the router; avoid metal boxes.");
+    Serial.println("   4) Install Arduino library 'WiFiManager' by tzapu, re-flash, join AP Gate-Setup.");
+    return;
+  }
+  String want = String(WIFI_SSID);
   for (int i = 0; i < found && i < 12; i++) {
     String name = WiFi.SSID(i);
     Serial.printf("  [%d] %s (%d dBm)", i + 1, name.c_str(), WiFi.RSSI(i));
-    if (name == WIFI_SSID) {
-      Serial.print("  <-- matches WIFI_SSID");
+    if (want.length() > 0 && name == want) {
+      Serial.print("  <-- matches WIFI_SSID default");
     }
     Serial.println();
   }
+  WiFi.scanDelete();
 }
 
 void connectWifiStartup() {
+  loadNetworkPrefs();
+  pinMode(FORCE_CONFIG_PIN, INPUT_PULLUP);
+
   WiFi.mode(WIFI_STA);
   WiFi.setAutoReconnect(true);
   WiFi.persistent(true);
   WiFi.setSleep(false);
-  WiFi.disconnect(true);
-  delay(200);
+
+  bool forcePortal = forceConfigRequested();
+
+  if (wifiManagerEnabled()) {
+    if (forcePortal) {
+      Serial.println("Forced setup portal (BOOT held at power-on).");
+      startWifiConfigPortal(true);
+    } else {
+      Serial.println("WiFiManager: connecting with saved credentials (or opening Gate-Setup portal)...");
+      startWifiConfigPortal(false);
+    }
+    return;
+  }
+
+  Serial.println("NOTE: USE_WIFI_MANAGER is 0 — using WIFI_SSID from rfid_gate_config.h only.");
+
+  // Legacy compile-time Wi-Fi.
+  if (String(WIFI_SSID).length() == 0) {
+    Serial.println("ERROR: WIFI_SSID empty. Set it in rfid_gate_config.h or enable USE_WIFI_MANAGER.");
+    return;
+  }
+
+  WiFi.disconnect(true, true);
+  delay(300);
+  WiFi.mode(WIFI_STA);
+  WiFi.setSleep(false);
   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
 
   Serial.printf("Connecting WiFi SSID=\"%s\" ...", WIFI_SSID);
@@ -203,13 +491,21 @@ void connectWifiStartup() {
   if (WiFi.status() == WL_CONNECTED) {
     Serial.print("WiFi OK IP: ");
     Serial.println(WiFi.localIP());
+    Serial.printf("API target: %s\n", runtimeApiBase().c_str());
   } else {
     Serial.println("WiFi not ready yet — will keep retrying in loop (no BOOT button needed).");
     printWifiFailureHelp();
+    // Resume STA connect after diagnostic scan.
+    WiFi.mode(WIFI_STA);
+    WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
   }
 }
 
 bool ensureWifiConnected() {
+  if (portalBusy) {
+    return false;
+  }
+
   if (WiFi.status() == WL_CONNECTED) {
     wifiRetryDelayMs = 1000UL;
     return true;
@@ -221,11 +517,28 @@ bool ensureWifiConnected() {
 
   lastWifiRetryMs = millis();
   Serial.println("WiFi lost — reconnecting...");
-  WiFi.disconnect();
-  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+
+  if (wifiManagerEnabled()) {
+    WiFi.reconnect();
+  } else {
+    WiFi.disconnect();
+    WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+  }
 
   if (wifiRetryDelayMs < WIFI_RETRY_MAX_MS) {
     wifiRetryDelayMs = min(wifiRetryDelayMs * 2UL, WIFI_RETRY_MAX_MS);
+  }
+
+  // After several failures, open portal so user can switch to home/hotspot/campus.
+  static int wifiFailStreak = 0;
+  wifiFailStreak++;
+  if (wifiManagerEnabled() && wifiFailStreak >= 6) {
+    wifiFailStreak = 0;
+    Serial.println("WiFi still down — opening Gate-Setup portal.");
+    startWifiConfigPortal(true);
+  }
+  if (WiFi.status() == WL_CONNECTED) {
+    wifiFailStreak = 0;
   }
   return false;
 }
@@ -334,7 +647,7 @@ void setupGateHardware() {
 
   lastHeartbeatMs = millis();
   Serial.printf("Gate %s (%s) ready — power-on auto-start enabled.\n", GATE_ID, DIRECTION);
-  Serial.printf("API target: %s\n", API_BASE);
+  Serial.printf("API target: %s\n", runtimeApiBase().c_str());
 #if defined(GATE_ID) && defined(DIRECTION)
   if (String(GATE_ID) == "GATE-IN-1") {
     Serial.println("ROLE: ENTRY — RC522 + servo GPIO 14. Opens boom for Entry scans and Exit grants.");
@@ -342,10 +655,11 @@ void setupGateHardware() {
     Serial.println("ROLE: EXIT — RC522 only. No servo. Laravel tells Entry ESP32 to open the boom.");
   }
 #endif
-  Serial.println("No BOOT button needed for normal use; just keep USB/power connected.");
+  Serial.println("Normal use: power only. Hold BOOT 2s at power-on or 3s while running to open Gate-Setup portal.");
 }
 
 void loopGateClient() {
+  pollForceConfigButton();
   updateGateCycle();
   recoverRfidIfNeeded();
 
@@ -398,7 +712,7 @@ void loopGateClient() {
   digitalWrite(PIN_GREEN, LOW);
 
   if (!wifiOk) {
-    Serial.println("WiFi down — UID seen but not sent to Laravel. Fix WiFi/API_HOST.");
+    Serial.println("WiFi down — UID seen but not sent. Hold BOOT 3s for Gate-Setup portal.");
     mfrc522.PICC_HaltA();
     mfrc522.PCD_StopCrypto1();
     return;
@@ -437,16 +751,16 @@ ScanResult postScan(const String &uid) {
 
   HTTPClient http;
   http.setReuse(false);
-  Serial.printf("POST http://%s:%d/api/rfid/scan\n", API_HOST, API_PORT);
+  Serial.printf("POST http://%s:%u/api/rfid/scan\n", runtimeApiHost.c_str(), runtimeApiPort);
 
-  if (!http.begin(client, API_HOST, API_PORT, "/api/rfid/scan")) {
+  if (!http.begin(client, runtimeApiHost.c_str(), runtimeApiPort, "/api/rfid/scan")) {
     Serial.println("HTTP error: unable to initialize connection");
     return fail;
   }
 
   http.addHeader("Content-Type", "application/json");
   http.addHeader("Connection", "close");
-  http.addHeader("X-RFID-TOKEN", RFID_API_TOKEN);
+  http.addHeader("X-RFID-TOKEN", runtimeApiToken.c_str());
   http.setConnectTimeout(HTTP_CONNECT_MS);
   http.setTimeout(HTTP_READ_MS);
 
@@ -490,14 +804,14 @@ bool pollHeartbeat() {
 
   HTTPClient http;
   http.setReuse(false);
-  if (!http.begin(client, API_HOST, API_PORT, "/api/rfid/heartbeat")) {
+  if (!http.begin(client, runtimeApiHost.c_str(), runtimeApiPort, "/api/rfid/heartbeat")) {
     Serial.println("Heartbeat: begin failed");
     return false;
   }
 
   http.addHeader("Content-Type", "application/json");
   http.addHeader("Connection", "close");
-  http.addHeader("X-RFID-TOKEN", RFID_API_TOKEN);
+  http.addHeader("X-RFID-TOKEN", runtimeApiToken.c_str());
   http.setConnectTimeout(HTTP_HB_CONNECT_MS);
   http.setTimeout(HTTP_HB_READ_MS);
 
@@ -510,7 +824,7 @@ bool pollHeartbeat() {
   if (code <= 0) {
     apiFailStreak++;
     Serial.printf("Heartbeat: HTTP error %d (%s) — server %s:%d\n",
-                  code, HTTPClient::errorToString(code).c_str(), API_HOST, API_PORT);
+                  code, HTTPClient::errorToString(code).c_str(), runtimeApiHost.c_str(), runtimeApiPort);
     if (apiFailStreak >= 2) {
       logLanDiagnostic();
     }
@@ -625,7 +939,7 @@ void denyAccess(const ScanResult &result) {
   } else if (result.code == "card_not_registered") {
     Serial.println("HINT: Admin -> RFID Assignment -> set UID to this card.");
   } else if (result.code == "network_error") {
-    Serial.println("HINT: Exit board must use same Wi-Fi + API_HOST as Entry. Upload Exit.ino (not Entry.ino).");
+    Serial.println("HINT: Exit board must use same Wi-Fi + API host as Entry (or same Gate-Setup values).");
   }
 }
 

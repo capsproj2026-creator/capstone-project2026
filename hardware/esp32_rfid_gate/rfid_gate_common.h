@@ -17,17 +17,25 @@
 #include <MFRC522.h>
 #include <Preferences.h>
 
-#if __has_include(<WiFiManager.h>)
-#include <WiFiManager.h>
-#define GATE_HAS_WIFI_MANAGER 1
-#else
-#define GATE_HAS_WIFI_MANAGER 0
-#endif
-
+// Config first so USE_WIFI_MANAGER is known before the WiFiManager include check.
 #if __has_include("rfid_gate_config.h")
 #include "rfid_gate_config.h"
 #else
 #error "Copy rfid_gate_config.example.h to rfid_gate_config.h and configure defaults/token."
+#endif
+
+#ifndef USE_WIFI_MANAGER
+#define USE_WIFI_MANAGER 1
+#endif
+
+#if USE_WIFI_MANAGER
+// Include directly so Arduino's library scanner adds WiFiManager to the path.
+// __has_include(<WiFiManager.h>) is false until that happens, which caused a
+// false "WiFiManager required" error even when the library was installed.
+#include <WiFiManager.h>
+#define GATE_HAS_WIFI_MANAGER 1
+#else
+#define GATE_HAS_WIFI_MANAGER 0
 #endif
 
 #ifndef ACTUATOR_NONE
@@ -87,9 +95,6 @@
 #endif
 #ifndef RFID_API_TOKEN
 #define RFID_API_TOKEN "capstone-rfid-dev-token-change-me"
-#endif
-#ifndef USE_WIFI_MANAGER
-#define USE_WIFI_MANAGER 1
 #endif
 #ifndef WIFI_PORTAL_AP_NAME
 #define WIFI_PORTAL_AP_NAME "Gate-Setup"
@@ -245,8 +250,17 @@ void startWifiConfigPortal(bool force) {
   portalBusy = true;
   WiFiManager wm;
   wm.setConfigPortalTimeout(180);
-  wm.setConnectTimeout(20);
+  wm.setConnectTimeout(25);
   wm.setTitle("Capstone Gate Setup");
+  wm.setWiFiAutoReconnect(true);
+  // Open portal automatically if saved/preloaded Wi-Fi fails to connect.
+  wm.setEnableConfigPortal(true);
+  wm.setConfigPortalBlocking(true);
+
+  // Seed portal / first connect from rfid_gate_config.h (overridden when user saves in portal).
+  if (String(WIFI_SSID).length() > 0) {
+    wm.preloadWiFi(String(WIFI_SSID), String(WIFI_PASSWORD));
+  }
 
   char hostBuf[48];
   char portBuf[8];
@@ -281,11 +295,14 @@ void startWifiConfigPortal(bool force) {
   });
 
   Serial.println();
-  Serial.println("=== Gate Wi-Fi / API portal ===");
+  Serial.println("=== Gate Wi-Fi / API portal (WiFiManager) ===");
   Serial.printf("1) On phone join Wi-Fi AP: %s  password: %s\n", WIFI_PORTAL_AP_NAME, WIFI_PORTAL_AP_PASS);
-  Serial.println("2) Browser should open setup page (or go to http://192.168.4.1)");
-  Serial.println("3) Enter Wi-Fi SSID/password for THIS location + PC Laravel IP + token");
-  Serial.printf("   Current API target: %s\n", runtimeApiBase().c_str());
+  Serial.println("2) Browser opens setup (or go to http://192.168.4.1)");
+  Serial.println("3) Pick this location's 2.4 GHz Wi-Fi + Laravel PC IP + token");
+  Serial.printf("   Default API target: %s\n", runtimeApiBase().c_str());
+  if (String(WIFI_SSID).length() > 0) {
+    Serial.printf("   Preloaded SSID from config: %s\n", WIFI_SSID);
+  }
   Serial.println("==============================");
 
   bool ok = false;
@@ -328,7 +345,7 @@ void startWifiConfigPortal(bool force) {
 #else
 void startWifiConfigPortal(bool force) {
   (void) force;
-  Serial.println("WiFiManager library missing. Install tzapu WiFiManager, or set WIFI_SSID in rfid_gate_config.h.");
+  Serial.println("WiFiManager disabled (USE_WIFI_MANAGER 0). Using WIFI_SSID from rfid_gate_config.h only.");
 }
 #endif
 
@@ -391,10 +408,28 @@ void printWifiFailureHelp() {
       break;
   }
 
-  Serial.println("Scanning nearby Wi-Fi (5s)...");
-  int found = WiFi.scanNetworks(false, true);
+  // Fresh STA mode before scan (scan after a failed begin() often returns 0 otherwise).
+  WiFi.persistent(false);
+  WiFi.disconnect(true, true);
+  delay(200);
+  WiFi.mode(WIFI_STA);
+  WiFi.setSleep(false);
+  delay(100);
+
+  Serial.println("Scanning nearby Wi-Fi (async, ~6s)...");
+  WiFi.scanDelete();
+  int found = WiFi.scanNetworks(/*async=*/false, /*show_hidden=*/true);
+  if (found == WIFI_SCAN_FAILED) {
+    Serial.println("  Scan failed — power-cycle ESP32 and check antenna connector.");
+    return;
+  }
   if (found <= 0) {
-    Serial.println("  (no networks seen — check 2.4 GHz antenna / router power)");
+    Serial.println("  (no networks seen)");
+    Serial.println("  Checklist:");
+    Serial.println("   1) ESP32 is 2.4 GHz only — enable 2.4 GHz on the router (or use a mixed SSID).");
+    Serial.println("   2) External antenna screwed onto the board (IPEX/u.FL) if your module needs one.");
+    Serial.println("   3) Move closer to the router; avoid metal boxes.");
+    Serial.println("   4) Install Arduino library 'WiFiManager' by tzapu, re-flash, join AP Gate-Setup.");
     return;
   }
   String want = String(WIFI_SSID);
@@ -406,6 +441,7 @@ void printWifiFailureHelp() {
     }
     Serial.println();
   }
+  WiFi.scanDelete();
 }
 
 void connectWifiStartup() {
@@ -430,14 +466,18 @@ void connectWifiStartup() {
     return;
   }
 
-  // Legacy compile-time Wi-Fi (no WiFiManager library).
+  Serial.println("NOTE: USE_WIFI_MANAGER is 0 — using WIFI_SSID from rfid_gate_config.h only.");
+
+  // Legacy compile-time Wi-Fi.
   if (String(WIFI_SSID).length() == 0) {
-    Serial.println("ERROR: WIFI_SSID empty and WiFiManager not installed.");
+    Serial.println("ERROR: WIFI_SSID empty. Set it in rfid_gate_config.h or enable USE_WIFI_MANAGER.");
     return;
   }
 
-  WiFi.disconnect(true);
-  delay(200);
+  WiFi.disconnect(true, true);
+  delay(300);
+  WiFi.mode(WIFI_STA);
+  WiFi.setSleep(false);
   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
 
   Serial.printf("Connecting WiFi SSID=\"%s\" ...", WIFI_SSID);
@@ -451,9 +491,13 @@ void connectWifiStartup() {
   if (WiFi.status() == WL_CONNECTED) {
     Serial.print("WiFi OK IP: ");
     Serial.println(WiFi.localIP());
+    Serial.printf("API target: %s\n", runtimeApiBase().c_str());
   } else {
     Serial.println("WiFi not ready yet — will keep retrying in loop (no BOOT button needed).");
     printWifiFailureHelp();
+    // Resume STA connect after diagnostic scan.
+    WiFi.mode(WIFI_STA);
+    WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
   }
 }
 

@@ -21,17 +21,18 @@ if TYPE_CHECKING:
     from parking_rules import ParkingIntelligence
 
 OCR_ENABLED = os.getenv("AI_PARKING_OCR_ENABLED", "0") == "1"
-OCR_EVERY_SEC = float(os.getenv("AI_PARKING_OCR_EVERY_SEC", "2.0"))
+OCR_EVERY_SEC = float(os.getenv("AI_PARKING_OCR_EVERY_SEC", "1.0"))
 OCR_MIN_CONF = float(os.getenv("AI_PARKING_OCR_MIN_CONF", "0.26"))
 OCR_UNREADABLE_BELOW = float(os.getenv("AI_PARKING_OCR_UNREADABLE_BELOW", "0.18"))
 OCR_QUEUE_SIZE = int(os.getenv("AI_PARKING_OCR_QUEUE_SIZE", "8"))
-OCR_UPSCALE_MIN_WIDTH = int(os.getenv("AI_PARKING_OCR_UPSCALE_MIN_WIDTH", "720"))
-OCR_UPSCALE_FACTOR = float(os.getenv("AI_PARKING_OCR_UPSCALE_FACTOR", "8"))
+OCR_UPSCALE_MIN_WIDTH = int(os.getenv("AI_PARKING_OCR_UPSCALE_MIN_WIDTH", "560"))
+OCR_UPSCALE_FACTOR = float(os.getenv("AI_PARKING_OCR_UPSCALE_FACTOR", "5"))
 OCR_GPU = os.getenv("AI_PARKING_OCR_GPU", "0") == "1"
 OCR_HIGH_CONF_LOCK = float(os.getenv("AI_PARKING_OCR_HIGH_CONF_LOCK", "0.65"))
+# Empty by default for speed; set e.g. -6,-3,3,6 if plates are often tilted.
 OCR_ROTATION_ANGLES = [
     float(v.strip())
-    for v in os.getenv("AI_PARKING_OCR_ROTATION_ANGLES", "-6,-3,3,6").split(",")
+    for v in os.getenv("AI_PARKING_OCR_ROTATION_ANGLES", "").split(",")
     if v.strip()
 ]
 
@@ -236,6 +237,9 @@ class PlateOCR:
             if s > best_score:
                 best_score = s
                 best = b
+            # Stop as soon as we have a strong PH-format hit — skip remaining variants.
+            if best and best_score >= OCR_HIGH_CONF_LOCK and is_known_ph_format(best):
+                break
         return best, best_score, best_any_score
 
     def _readtext(self, img):
@@ -321,6 +325,8 @@ class PlateOCR:
                 if s > best_score:
                     best_score = s
                     best = b
+                if best and best_score >= OCR_HIGH_CONF_LOCK and is_known_ph_format(best):
+                    break
         except Exception as e:
             print(f"OCR pipeline error: {e}")
             return PlateRead(status="unreadable", confidence=0.0)

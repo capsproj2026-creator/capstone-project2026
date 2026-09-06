@@ -22,7 +22,9 @@
 #define RFID_API_TOKEN "capstone-rfid-dev-token-change-me"
 
 // 1 = use phone portal (recommended). 0 = only compile-time WIFI_SSID / WIFI_PASSWORD.
+#ifndef USE_WIFI_MANAGER
 #define USE_WIFI_MANAGER 1
+#endif
 #define WIFI_PORTAL_AP_NAME "Gate-Setup"
 #define WIFI_PORTAL_AP_PASS "capstone123"
 

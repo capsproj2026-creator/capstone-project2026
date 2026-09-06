@@ -79,6 +79,16 @@ function Sync-SketchFolder {
 }
 
 function Sync-ArduinoSketches {
+    # Keep in-repo arduino copies aligned with canonical esp32_rfid_gate common header.
+    if (Test-Path $CommonSrc) {
+        Copy-Item -Path $CommonSrc -Destination (Join-Path $EntrySrc "rfid_gate_common.h") -Force
+        Copy-Item -Path $CommonSrc -Destination (Join-Path $ExitSrc "rfid_gate_common.h") -Force
+    }
+    if (Test-Path $ConfigSrc) {
+        Copy-Item -Path $ConfigSrc -Destination (Join-Path $EntrySrc "rfid_gate_config.h") -Force
+        Copy-Item -Path $ConfigSrc -Destination (Join-Path $ExitSrc "rfid_gate_config.h") -Force
+    }
+
     Sync-SketchFolder -Source $EntrySrc -Dest $EntryDir -InoName "Entry.ino"
     Sync-SketchFolder -Source $ExitSrc -Dest $ExitDir -InoName "Exit.ino"
 
