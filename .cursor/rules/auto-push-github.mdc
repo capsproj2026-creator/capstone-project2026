@@ -29,13 +29,18 @@ After completing any task that changes project files, **pull**, then **commit an
 5. Commit, then `git push origin main` (or the current branch with upstream).
 6. Confirm the push succeeded and share the commit hash with the user.
 
-## Background watcher (optional for demos)
+## Background watcher (keep GitHub ↔ local in sync)
+
+Run once per machine/session (leave the window open):
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\scripts\auto-sync-github.ps1
 ```
 
-Pulls remote updates and auto-commits/pushes safe local changes on an interval.
+Every ~90s it: pulls from GitHub, auto-commits safe local files, then pushes.
+One-shot: `.\scripts\auto-sync-github.ps1 -Once`
+
+Cursor hooks also pull on session start and sync on agent stop.
 
 ## Git safety
 

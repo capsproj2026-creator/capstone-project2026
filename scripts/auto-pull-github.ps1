@@ -1,14 +1,12 @@
 #Requires -Version 5.1
 <#
 .SYNOPSIS
-  Background watcher: auto-pull AND auto-push to GitHub.
-
-  Prefer scripts\auto-sync-github.ps1 (same behavior). This wrapper remains for older docs.
+  Alias for auto-sync-github.ps1 (pull + safe auto-commit + push).
 
 .EXAMPLE
   powershell -ExecutionPolicy Bypass -File .\scripts\auto-pull-github.ps1
 #>
 param([int]$IntervalSeconds = 90)
 
-$syncer = Join-Path $PSScriptRoot "auto-sync-github.ps1"
-& powershell -ExecutionPolicy Bypass -File $syncer -IntervalSeconds $IntervalSeconds
+$syncer = Join-Path $PSScriptRoot 'auto-sync-github.ps1'
+& powershell -NoProfile -ExecutionPolicy Bypass -File $syncer -IntervalSeconds $IntervalSeconds
