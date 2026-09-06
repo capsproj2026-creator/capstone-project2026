@@ -30,12 +30,27 @@ RFID tap → RC522 → ESP32 → POST /api/rfid/scan → Laravel
 
 If compile says `wifi_status_t` unknown — you need the latest synced `rfid_gate_common.h` (uses `wl_status_t` for ESP32 3.3.7). Run **`sync-arduino.bat`**.
 
-1. Arduino libraries: **MFRC522**, **ArduinoJson**, **ESP32Servo** (servo mode).
-2. Copy `rfid_gate_config.example.h` → `rfid_gate_config.h` and set WiFi, `API_BASE`, token, actuator mode.
-3. Match `RFID_API_TOKEN` with Laravel `.env`.
+1. Arduino libraries: **MFRC522**, **ArduinoJson**, **ESP32Servo** (servo mode), **WiFiManager** by tzapu (phone setup portal).
+2. Copy `rfid_gate_config.example.h` → `rfid_gate_config.h` (optional defaults for token / first API IP).
+3. Match `RFID_API_TOKEN` with Laravel `.env` (or set the token in the portal).
 4. In Arduino IDE: **File → Open** → `hardware/arduino/Entry/Entry.ino` or synced OneDrive copy.
 5. Flash **Entry** to the servo board. Flash **Exit** from `hardware/arduino/Exit/Exit.ino` to the second ESP32.
 6. Laravel must listen on the LAN: `.\start.ps1` (uses `--host=0.0.0.0`).
+
+### Switch Wi‑Fi without reflashing (home / hotspot / campus)
+
+1. Install **WiFiManager** (Library Manager → search `WiFiManager` → author **tzapu**).
+2. After upload, if there are no saved credentials (or Wi‑Fi fails), the ESP32 opens AP **`Gate-Setup`** (password **`capstone123`**).
+3. On your phone: join `Gate-Setup` → open the captive portal (or `http://192.168.4.1`).
+4. Enter:
+   - Current location Wi‑Fi SSID + password
+   - **Laravel PC IP** from `ipconfig` on the PC (same Wi‑Fi as the ESP32)
+   - Port `8000`
+   - RFID API token (same as `.env`)
+5. Save. Settings are stored in ESP32 flash (NVS).
+6. To change network later: hold **BOOT** for **3 seconds** (or **2 seconds at power-on**) to reopen the portal — no Arduino upload needed.
+
+Compile-time `WIFI_SSID` / `API_HOST` in `rfid_gate_config.h` are only defaults if WiFiManager is missing or disabled (`USE_WIFI_MANAGER 0`).
 
 **Arduino IDE folders (auto-sync):** If you open sketches from  
 `OneDrive\Documents\Arduino\Entry` and `Exit`, run **`sync-arduino.bat`** once, or **`watch-arduino-sync.bat`** to copy every time firmware files change.  
@@ -53,7 +68,8 @@ If compile says `wifi_status_t` unknown — you need the latest synced `rfid_gat
 | `attached=0` or `WARNING: Servo not attached` | Servo PWM really failed | Install **ESP32Servo 3.x** with Arduino ESP32 3.x; check GPIO 14 wiring + external 5V + common GND |
 | Stuck on `connecting wifi` | Old firmware or wrong SSID | Re-upload latest sketch; set `WIFI_SSID` exactly as phone Wi‑Fi list shows (spaces matter) |
 | `WiFi: SSID not found` | Wrong network name | Fix `WIFI_SSID` in `rfid_gate_config.h` — yours may be `MERCUSYS_08BA` not `MERCUSYS_08BA 2` |
-| `WiFi OK IP:` then heartbeat `-1` | Windows Firewall | Run `allow-laravel-firewall.bat` as Admin on the PC |
+| `WiFi OK IP:` then heartbeat `-1` | Wrong `API_HOST` / firewall | Open portal (BOOT 3s), set PC LAN IP; run `allow-laravel-firewall.bat` as Admin |
+| Portal AP `Gate-Setup` appears | No saved Wi‑Fi or forced setup | Join AP on phone, enter Wi‑Fi + Laravel PC IP |
 
 **Do not paste `rfid_gate_config.h` into the `.ino` file.** That removes `setup()` / `loop()` and causes:
 `undefined reference to setup()` / `undefined reference to loop()`.

@@ -68,16 +68,25 @@ if ($Mercusys -and $mercusysIp) {
 # Update config
 $config = $config -replace '(#define\s+WIFI_SSID\s+")[^"]+(")', "`${1}$ssid`${2}"
 $config = $config -replace '(#define\s+WIFI_PASSWORD\s+")[^"]+(")', "`${1}$pass`${2}"
+if ($config -notmatch '#define\s+API_HOST') {
+    $config = $config -replace '(#define\s+API_PORT\s+\d+)', "#define API_HOST       `"$useIp`"`r`n`$1"
+}
 $config = $config -replace '(#define\s+API_HOST\s+")[^"]+(")', "`${1}$useIp`${2}"
+if ($config -notmatch '#define\s+API_PORT') {
+    $config = $config -replace '(#define\s+API_HOST\s+"[^"]+")', "`$1`r`n#define API_PORT       8000"
+}
+$config = $config -replace '(#define\s+API_PORT\s+)\d+', "`${1}8000"
 $apiBase = "http://${useIp}:8000"
 $config = $config -replace '(#define\s+API_BASE\s+")[^"]+(")', "`${1}$apiBase`${2}"
 Set-Content -Path $configPath -Value $config -NoNewline
 
 Write-Host ""
-Write-Host "Updated rfid_gate_config.h:" -ForegroundColor Green
+Write-Host "Updated rfid_gate_config.h defaults:" -ForegroundColor Green
 Write-Host "  WIFI_SSID  = $ssid" -ForegroundColor White
 Write-Host "  API_HOST   = $useIp" -ForegroundColor White
+Write-Host "  API_PORT   = 8000" -ForegroundColor White
 Write-Host "  API_BASE   = $apiBase" -ForegroundColor White
+Write-Host "After flash, you can also change Wi-Fi/IP via Gate-Setup portal (hold BOOT 3s)." -ForegroundColor DarkGray
 
 # Sync to Arduino IDE folders
 & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $Scripts "sync-arduino-sketches.ps1") -Quiet
