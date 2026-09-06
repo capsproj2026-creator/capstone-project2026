@@ -73,7 +73,7 @@
                     @error('email')
                         <p class="mt-1 text-xs font-medium text-red-600">{{ $message }}</p>
                     @enderror
-                    <p class="mt-1 text-xs text-gray-500">Required — used for visit confirmation and reference code delivery.</p>
+                    
                 </div>
             </div>
         </div>
