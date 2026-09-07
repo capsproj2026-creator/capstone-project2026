@@ -40,7 +40,8 @@ function Import-DotEnv([string]$Path) {
 
 function Test-HttpOk([string]$Url) {
     try {
-        $r = Invoke-WebRequest -Uri $Url -TimeoutSec 4 -UseBasicParsing
+        # Local Laravel + Mongo can take several seconds when busy; 4s false-fails often.
+        $r = Invoke-WebRequest -Uri $Url -TimeoutSec 12 -UseBasicParsing
         return ($r.StatusCode -ge 200 -and $r.StatusCode -lt 500)
     } catch {
         return $false
@@ -143,10 +144,36 @@ php artisan serve --host=0.0.0.0 --port=8000
     }
     Write-Host "  Laravel: OK ($laravelUrl)" -ForegroundColor Green
 } else {
-    if (-not (Test-HttpOk $laravelUrl)) {
-        Write-Host "Laravel is not running at $laravelUrl (use without -SkipWebStack to auto-start)" -ForegroundColor Red
-        exit 1
+    # -SkipWebStack: still recover a hung/dead Laravel so AI can start.
+    if ((Test-PortListening 8000) -and -not (Test-HttpOk $laravelUrl)) {
+        Write-Host "Laravel port 8000 is open but not responding - restarting it..." -ForegroundColor Yellow
+        Stop-PortListeners 8000
     }
+    if (-not (Test-HttpOk $laravelUrl)) {
+        Write-Host "Laravel is down - starting php artisan serve..." -ForegroundColor Yellow
+        $laravelLaunch = @"
+`$Host.UI.RawUI.WindowTitle = 'Laravel'
+Set-Location -LiteralPath '$Root'
+php artisan serve --host=0.0.0.0 --port=8000
+"@
+        Start-Process powershell -WorkingDirectory $Root -ArgumentList @(
+            "-NoExit",
+            "-NoProfile",
+            "-ExecutionPolicy", "Bypass",
+            "-Command", $laravelLaunch
+        ) | Out-Null
+        $ready = $false
+        for ($i = 0; $i -lt 25; $i++) {
+            Start-Sleep -Seconds 1
+            if (Test-HttpOk $laravelUrl) { $ready = $true; break }
+        }
+        if (-not $ready) {
+            Write-Host "Laravel did not respond at $laravelUrl - open a Laravel window manually:" -ForegroundColor Red
+            Write-Host "  php artisan serve --host=0.0.0.0 --port=8000" -ForegroundColor DarkYellow
+            exit 1
+        }
+    }
+    Write-Host "  Laravel: OK ($laravelUrl)" -ForegroundColor Green
 }
 
 Write-Host ""

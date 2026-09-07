@@ -14,7 +14,7 @@ PlateLookup::forgetIndex();
 $tests = [
     ['ABC1234', true, 'Juan Dela Cruz'],
     ['XYZ-5678', true, 'Maria Santos'],
-    ['NOPE9999', false, 'Unknown Vehicle'],
+    ['NOPE9999', false, 'Unknown'],
 ];
 
 $ok = true;

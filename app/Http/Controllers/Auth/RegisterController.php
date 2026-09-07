@@ -295,6 +295,13 @@ class RegisterController extends Controller
             }
         }
 
+        // Multi-vehicle table + flat scan registry (AI / gate plate lookup).
+        try {
+            app(\App\Services\UserVehicleService::class)->ensureMigrated($user);
+        } catch (\Throwable) {
+            // User row already has plate; profile can re-add if sync failed.
+        }
+
         Notification::query()->create([
             'user_id' => $user->id,
             'sender_id' => $user->id,

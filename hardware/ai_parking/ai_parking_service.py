@@ -36,8 +36,8 @@ from load_env import load_project_env
 load_project_env()
 
 from parking_rules import ParkingIntelligence, SimpleIoUTracker
-from plate_ocr import OCR_EVERY_SEC, AsyncPlateQueue, PlateOCR
-from monitor_scan import encode_crop_jpeg_bytes, enhance_monitor_frame, scan_visible_region
+from plate_ocr import OCR_EVERY_SEC, OCR_SYNC_ENABLED, OCR_SYNC_EVERY_SEC, AsyncPlateQueue, PlateOCR
+from monitor_scan import encode_crop_jpeg, encode_crop_jpeg_bytes, enhance_monitor_frame, scan_visible_region
 from yolo_models import ensure_model, resolve_model_name, resolve_model_path
 
 # Default; open_rtsp() may override per-camera under OPEN_LOCK.
@@ -65,7 +65,8 @@ if os.getenv("AI_PARKING_LONG_RANGE", "0") == "1":
 INFER_MAX_WIDTH = int(os.getenv("AI_PARKING_INFER_MAX_WIDTH", "1280"))
 # Shared YOLO + ByteTrack persist=True breaks multi-cam; default to predict + IoU IDs.
 USE_ULTRALYTICS_TRACK = os.getenv("AI_PARKING_USE_TRACKER", "0") == "1"
-POST_EVERY_SEC = float(os.getenv("AI_PARKING_POST_EVERY_SEC", "1.5"))
+POST_EVERY_SEC = float(os.getenv("AI_PARKING_POST_EVERY_SEC", "2.5"))
+POST_EVIDENCE = os.getenv("AI_PARKING_POST_EVIDENCE", "0") == "1"
 USE_WEBCAM = os.getenv("AI_USE_WEBCAM", "0") == "1"
 TRACKER = os.getenv("AI_PARKING_TRACKER", "bytetrack.yaml")
 # Target YOLO cadence; actual rate is also limited by CPU + model lock.
@@ -661,6 +662,18 @@ def parse_tracks(
                 vy2 = min(fh, oy2 + pad_y)
                 if vx2 - vx1 >= 24 and vy2 - vy1 >= 24:
                     mem.last_vehicle_crop = ocr_src[vy1:vy2, vx1:vx2].copy()
+                    # Always keep a bumper/plate-band thumb for the monitor even before OCR finishes.
+                    if getattr(mem, "last_plate_crop", None) is None:
+                        try:
+                            bumper = PlateOCR.crop_plate_region(
+                                ocr_src,
+                                (ox1, oy1, ox2, oy2),
+                                cls_id=row.get("cls_id"),
+                            )
+                            if bumper is not None:
+                                mem.last_plate_crop = bumper
+                        except Exception:
+                            pass
             except Exception:
                 pass
             if plate_queue is not None:
@@ -737,6 +750,8 @@ def parse_tracks(
         if track_id is not None:
             mem_crop = intelligence.tracks.get(int(track_id))
             if mem_crop is not None and getattr(mem_crop, "last_plate_crop", None) is not None:
+                det["has_plate_crop"] = True
+            elif mem_crop is not None and getattr(mem_crop, "last_vehicle_crop", None) is not None:
                 det["has_plate_crop"] = True
         if owner_name:
             det["owner_name"] = owner_name
@@ -953,7 +968,7 @@ def draw_scene_lite(frame, annotated_boxes, occupied_slots, person_count, vehicl
     return annotated
 
 
-def encode_evidence_jpeg(frame, xyxy=None, max_side: int = 640, quality: int = 70) -> str | None:
+def encode_evidence_jpeg(frame, xyxy=None, max_side: int = 320, quality: int = 50) -> str | None:
     """Crop (optional) and return base64 JPEG for violation evidence (size-capped)."""
     import base64
 
@@ -979,17 +994,24 @@ def encode_evidence_jpeg(frame, xyxy=None, max_side: int = 640, quality: int = 7
         if not ok:
             return None
         raw = buf.tobytes()
-        if len(raw) > 450000:
-            ok, buf = cv2.imencode(".jpg", crop, [int(cv2.IMWRITE_JPEG_QUALITY), 50])
+        if len(raw) > 120000:
+            ok, buf = cv2.imencode(".jpg", crop, [int(cv2.IMWRITE_JPEG_QUALITY), 35])
             if not ok:
                 return None
             raw = buf.tobytes()
+        if len(raw) > 180000:
+            return None
         return base64.b64encode(raw).decode("ascii")
     except Exception:
         return None
 
 
+_post_lock = threading.Lock()
+_POST_TIMEOUT_SEC = float(os.getenv("AI_PARKING_POST_TIMEOUT_SEC", "3.0"))
+
+
 def post_json(path: str, payload: dict) -> bool:
+    """POST to Laravel. Single-flight — php artisan serve is single-threaded."""
     url = f"{API_BASE}{path}"
     body = json.dumps(payload).encode("utf-8")
     req = urlrequest.Request(
@@ -1002,9 +1024,16 @@ def post_json(path: str, payload: dict) -> bool:
         },
         method="POST",
     )
+    if not _post_lock.acquire(blocking=False):
+        print(f"Skip Laravel POST {path} (previous request still in flight)")
+        return False
     try:
-        with urlrequest.urlopen(req, timeout=15) as resp:
-            print(f"Laravel HTTP {resp.status}: {path} cam={payload.get('camera_id')} vehicles={payload.get('vehicle_count')} slots={len(payload.get('slots') or [])} events={len(payload.get('events') or [])}")
+        with urlrequest.urlopen(req, timeout=_POST_TIMEOUT_SEC) as resp:
+            print(
+                f"Laravel HTTP {resp.status}: {path} cam={payload.get('camera_id')} "
+                f"vehicles={payload.get('vehicle_count')} slots={len(payload.get('slots') or [])} "
+                f"events={len(payload.get('events') or [])}"
+            )
             return True
     except HTTPError as e:
         print(f"Laravel HTTP {e.code}: {e.read().decode('utf-8', errors='replace')}")
@@ -1012,7 +1041,41 @@ def post_json(path: str, payload: dict) -> bool:
         print(f"Laravel connection failed: {e.reason}")
     except Exception as e:
         print(f"Laravel POST error: {e}")
+    finally:
+        _post_lock.release()
     return False
+
+
+def attach_detection_thumbs(detections: list, intelligence: ParkingIntelligence) -> list:
+    """Attach small plate thumbs only when posting (never on every YOLO frame)."""
+    out = []
+    now = time.time()
+    for det in detections:
+        row = dict(det)
+        tid = row.get("track_id")
+        if tid is None:
+            out.append(row)
+            continue
+        mem = intelligence.tracks.get(int(tid))
+        if mem is None:
+            out.append(row)
+            continue
+        cached = getattr(mem, "thumb_jpeg_base64", None)
+        cached_at = float(getattr(mem, "thumb_jpeg_at", 0.0) or 0.0)
+        if cached and (now - cached_at) < 2.0:
+            row["thumb_jpeg_base64"] = cached
+            row["has_plate_crop"] = True
+            out.append(row)
+            continue
+        thumb_src = getattr(mem, "last_plate_crop", None) or getattr(mem, "last_vehicle_crop", None)
+        thumb_b64 = encode_crop_jpeg(thumb_src, quality=55, max_side=140) if thumb_src is not None else None
+        if thumb_b64:
+            mem.thumb_jpeg_base64 = thumb_b64
+            mem.thumb_jpeg_at = now
+            row["thumb_jpeg_base64"] = thumb_b64
+            row["has_plate_crop"] = True
+        out.append(row)
+    return out
 
 
 def post_occupancy_async(camera_id: str, area_id: int, vehicle_count, detections, slots, events):
@@ -1683,30 +1746,48 @@ class CameraWorker:
         return scan_visible_region(frame, view, ocr, self.intelligence.tracks)
 
     def _try_sync_plate_ocr(self, frame, now: float) -> None:
-        """Run one blocking OCR read per stalled track so plates appear without waiting on the async queue."""
+        """Optional last-resort OCR (off by default). Sync reads freeze the YOLO loop on CPU."""
+        if not OCR_SYNC_ENABLED:
+            return
         ocr = self.plate_queue.ocr if self.plate_queue else None
         if not ocr or not ocr.enabled:
             return
         from plate_owner_lookup import lookup_plate_async
 
+        # Only one track per infer tick — never walk the whole fleet with blocking OCR.
+        candidates = []
         for tid, mem in list(self.intelligence.tracks.items()):
             if mem.plate_status == "ok" and mem.plate:
                 continue
-            if (now - mem.first_seen) < 0.15:
+            if (now - mem.first_seen) < 0.4:
                 continue
             if not getattr(mem, "last_ocr_xyxy", None):
                 continue
             last_sync = float(getattr(mem, "last_sync_ocr_at", 0.0) or 0.0)
-            if last_sync and (now - last_sync) < OCR_EVERY_SEC:
+            if last_sync and (now - last_sync) < OCR_SYNC_EVERY_SEC:
                 continue
-            mem.last_sync_ocr_at = now
-            read = ocr.read_plate(frame, mem.last_ocr_xyxy, cls_id=getattr(mem, "cls_id", None))
-            crop = PlateOCR.crop_plate_region(frame, mem.last_ocr_xyxy, cls_id=getattr(mem, "cls_id", None))
-            if crop is not None:
-                mem.last_plate_crop = crop
-            mem.apply_ocr_vote(read.plate, read.status, read.confidence)
-            if mem.needs_owner_lookup():
-                lookup_plate_async(mem)
+            candidates.append((tid, mem))
+        if not candidates:
+            return
+
+        # Prefer the oldest stalled track.
+        candidates.sort(key=lambda item: float(getattr(item[1], "first_seen", 0.0) or 0.0))
+        _tid, mem = candidates[0]
+        mem.last_sync_ocr_at = now
+        read = ocr.read_plate(
+            frame,
+            mem.last_ocr_xyxy,
+            cls_id=getattr(mem, "cls_id", None),
+            fast=True,
+        )
+        crop = PlateOCR.crop_plate_region(
+            frame, mem.last_ocr_xyxy, cls_id=getattr(mem, "cls_id", None)
+        )
+        if crop is not None:
+            mem.last_plate_crop = crop
+        mem.apply_ocr_vote(read.plate, read.status, read.confidence)
+        if mem.needs_owner_lookup():
+            lookup_plate_async(mem)
 
     def _inference_loop(self):
         last_post = 0.0
@@ -1907,14 +1988,30 @@ class CameraWorker:
                             xyxy = mem.last_xyxy
                     evt["camera_id"] = self.config.camera_id
                     evt["area_id"] = self.config.area_id
-                    evidence = encode_evidence_jpeg(frame, xyxy)
-                    if evidence:
-                        evt["evidence_jpeg_base64"] = evidence
+                    # Evidence JPEGs are huge and freeze single-threaded `php artisan serve`.
+                    # Opt in with AI_PARKING_POST_EVIDENCE=1 only when needed.
+                    if POST_EVIDENCE:
+                        evidence = encode_evidence_jpeg(frame, xyxy)
+                        if evidence:
+                            evt["evidence_jpeg_base64"] = evidence
+                # Only forward freshly emitted events (already debounced). Skip empty-plate
+                # spam to Laravel — monitor still shows overlay from AI active_events.
+                post_events = [
+                    evt for evt in post_events
+                    if isinstance(evt, dict) and (
+                        (evt.get("plate") or "").strip()
+                        or evt.get("type") in ("overtime", "unauthorized")
+                    )
+                ]
+                # Thumbs are optional — crop URLs on the monitor are enough and keep Laravel responsive.
+                post_dets = detections
+                if os.getenv("AI_PARKING_POST_THUMBS", "0") == "1":
+                    post_dets = attach_detection_thumbs(detections, self.intelligence)
                 post_occupancy_async(
                     self.config.camera_id,
                     self.config.area_id,
                     vehicle_count,
-                    detections,
+                    post_dets,
                     slot_statuses,
                     post_events,
                 )
@@ -1955,7 +2052,7 @@ def main():
     print(
         f"Stream {STREAM_TARGET_FPS:.0f} fps @ preview {PREVIEW_MAX_WIDTH}px | "
         f"infer ≤{INFER_MAX_WIDTH}px imgsz={IMG_SIZE} conf={CONF} | "
-        f"every {INFER_EVERY_SEC}s | OCR={'async' if ocr.enabled else 'off'} | "
+        f"every {INFER_EVERY_SEC}s | OCR={'async-fast' if ocr.enabled else 'off'} | "
         f"tracker={'ultralytics' if USE_ULTRALYTICS_TRACK else 'iou'} | "
         f"detect={','.join(COCO_NAMES.get(i, str(i)) for i in DETECT_CLASS_IDS)} | "
         f"vehicles_only={'yes' if VEHICLES_ONLY else 'no'}"

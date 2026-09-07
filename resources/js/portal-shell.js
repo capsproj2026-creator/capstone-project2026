@@ -20,6 +20,8 @@ function initPasswordToggles(root = document) {
             if (window.lucide?.createIcons) {
                 window.lucide.createIcons();
             }
+            // Keep × left of the eye after reveal/hide.
+            input.dispatchEvent(new Event('input', { bubbles: true }));
         });
     });
 }

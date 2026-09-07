@@ -1495,6 +1495,11 @@
         padding-right: 2.25rem !important;
     }
 
+    /* Room for clear × + password eye with a gap between them */
+    .sc-search-input.sc-has-password-toggle {
+        padding-right: 4.5rem !important;
+    }
+
     .sc-search-clear {
         position: absolute;
         z-index: 2;

@@ -121,6 +121,7 @@ class LiveCameraController extends Controller
             'aiAreaName' => $area?->area_name ?? 'Parking area',
             'statusUrl' => route('guard.parking.status'),
             'correctPlateUrl' => route('guard.ai-parking.correct-plate'),
+            'aiCropOrigin' => $health->pythonServiceBaseUrl(),
             'plateCropUrlTemplate' => url('/guard/ai-parking/plate-crop/__CAMERA__/__TRACK__'),
             'parkingUrl' => route('guard.parking', ['zone_id' => $areaId]),
         ]);
@@ -251,7 +252,7 @@ class LiveCameraController extends Controller
         $identity = [
             'registered' => false,
             'owner_name' => null,
-            'owner_label' => 'Unknown Vehicle',
+            'owner_label' => 'Unknown',
             'registration_status' => 'Plate Not Registered',
             'plate' => $ocrText !== '' ? $ocrText : null,
             'role' => null,
@@ -274,7 +275,7 @@ class LiveCameraController extends Controller
             'ocr_confidence' => $payload['ocr_confidence'] ?? null,
             'registered' => $registered,
             'owner_name' => $registered ? ($identity['owner_name'] ?? null) : null,
-            'owner_label' => $registered ? ($identity['owner_name'] ?? 'Registered') : 'Unknown Vehicle',
+            'owner_label' => $registered ? ($identity['owner_name'] ?? 'Registered') : 'Unknown',
             'registration_status' => $registered
                 ? (string) ($identity['registration_status'] ?? 'Registered')
                 : ($ocrText !== '' ? 'Plate Not Registered' : 'Plate Unreadable'),
@@ -284,23 +285,27 @@ class LiveCameraController extends Controller
         ]);
     }
 
-    public function plateCrop(string $camera, int $track, AiCameraRegistry $registry, AiParkingHealthService $health): Response
+    public function plateCrop(string $camera, int $track, AiCameraRegistry $registry, AiParkingHealthService $health): RedirectResponse
     {
-        return $this->proxyTrackCrop($camera, $track, 'plate-crop', $registry, $health);
+        return $this->redirectTrackCrop($camera, $track, 'plate-crop', $registry, $health);
     }
 
-    public function vehicleCrop(string $camera, int $track, AiCameraRegistry $registry, AiParkingHealthService $health): Response
+    public function vehicleCrop(string $camera, int $track, AiCameraRegistry $registry, AiParkingHealthService $health): RedirectResponse
     {
-        return $this->proxyTrackCrop($camera, $track, 'vehicle-crop', $registry, $health);
+        return $this->redirectTrackCrop($camera, $track, 'vehicle-crop', $registry, $health);
     }
 
-    private function proxyTrackCrop(
+    /**
+     * Redirect to the local AI JPEG — never proxy through php artisan serve
+     * (monitor polls crops every second and that freezes occupancy/status).
+     */
+    private function redirectTrackCrop(
         string $camera,
         int $track,
         string $kind,
         AiCameraRegistry $registry,
         AiParkingHealthService $health
-    ): Response {
+    ): RedirectResponse {
         $cameraId = strtoupper(trim($camera));
         $known = collect($registry->cameras())->pluck('id')->map(fn ($id) => strtoupper((string) $id));
         if ($known->isNotEmpty() && ! $known->contains($cameraId)) {
@@ -315,22 +320,11 @@ class LiveCameraController extends Controller
         $kind = $kind === 'vehicle-crop' ? 'vehicle-crop' : 'plate-crop';
         $upstream = $base.'/'.rawurlencode($cameraId).'/'.$kind.'/'.$track.'.jpg';
 
-        try {
-            $response = Http::connectTimeout(2)
-                ->timeout(4)
-                ->withHeaders(['Accept' => 'image/jpeg'])
-                ->get($upstream);
-        } catch (\Throwable) {
-            abort(503, 'AI parking service is unreachable.');
+        $host = parse_url($upstream, PHP_URL_HOST);
+        if (! in_array(strtolower((string) $host), ['127.0.0.1', 'localhost', '::1'], true)) {
+            abort(503, 'AI parking crop host is not allowed.');
         }
 
-        if (! $response->successful() || $response->body() === '') {
-            abort(404);
-        }
-
-        return response($response->body(), 200, [
-            'Content-Type' => 'image/jpeg',
-            'Cache-Control' => 'no-store, private',
-        ]);
+        return redirect()->away($upstream);
     }
 }

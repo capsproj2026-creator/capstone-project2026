@@ -31,6 +31,7 @@ class NavigationService
             ['label' => 'Registrations', 'route' => 'admin.registrations', 'icon' => 'user-plus', 'access' => ['admin']],
             ['label' => 'RFID Assignment', 'route' => 'admin.rfid', 'icon' => 'hash', 'access' => ['admin']],
             ['label' => 'User Management', 'route' => 'admin.users', 'icon' => 'users', 'access' => ['admin']],
+            ['label' => 'Registered Plates', 'route' => 'admin.plates', 'icon' => 'car', 'access' => ['admin']],
             ['label' => 'Registered Visitors', 'route' => 'admin.visitors.active', 'icon' => 'user-round-check', 'access' => ['admin']],
             ['label' => 'Visitor History', 'route' => 'admin.visitors.history', 'icon' => 'history', 'access' => ['admin']],
             ['label' => 'Violations', 'route' => 'admin.violations', 'icon' => 'triangle-alert', 'access' => ['admin']],

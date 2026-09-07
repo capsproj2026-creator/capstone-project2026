@@ -515,7 +515,7 @@ class AiParkingOccupancyTest extends TestCase
                 ->postJson('/api/ai-parking/plate-lookup', ['plate' => 'NOPE0001'])
                 ->assertOk()
                 ->assertJsonPath('data.registered', false)
-                ->assertJsonPath('data.owner_label', 'Unknown Vehicle')
+                ->assertJsonPath('data.owner_label', 'Unknown')
                 ->assertJsonPath('data.registration_status', 'Plate Not Registered');
         } finally {
             PlateLookup::forgetIndex();
@@ -549,7 +549,7 @@ class AiParkingOccupancyTest extends TestCase
         $det = $response->json('data.detections.0');
         $this->assertSame('ZZZ9999', $det['plate']);
         $this->assertFalse($det['registered']);
-        $this->assertSame('Unknown Vehicle', $det['owner_label']);
+        $this->assertSame('Unknown', $det['owner_label']);
         $this->assertSame('Plate Not Registered', $det['registration_status']);
         $this->assertNull($det['owner_name']);
     }
@@ -807,7 +807,7 @@ class AiParkingOccupancyTest extends TestCase
             ->assertJsonPath('saved', false)
             ->assertJsonPath('registered', false)
             ->assertJsonPath('owner_name', null)
-            ->assertJsonPath('owner_label', 'Unknown Vehicle')
+            ->assertJsonPath('owner_label', 'Unknown')
             ->assertJsonPath('registration_status', 'Plate Not Registered');
 
         $afterSlots = ParkingSlot::query()->where('area_id', self::FIXTURE_A)->pluck('status', 'slot_number')->all();
@@ -846,19 +846,10 @@ class AiParkingOccupancyTest extends TestCase
             $guard->update(['email_verified_at' => now()]);
         }
 
-        Http::fake(function (\Illuminate\Http\Client\Request $request) {
-            if (str_contains($request->url(), '/plate-crop/')) {
-                return Http::response('fake-jpeg', 200, ['Content-Type' => 'image/jpeg']);
-            }
+        Http::fake(); // crop route no longer proxies; it redirects to the local AI service.
 
-            return Http::response('offline', 404);
-        });
-
-        $response = $this->actingAs($guard)
+        $this->actingAs($guard)
             ->get(route('guard.ai-parking.plate-crop', ['camera' => 'CAM-AI-1', 'track' => 12]))
-            ->assertOk();
-
-        $this->assertStringContainsString('image/jpeg', (string) $response->headers->get('Content-Type'));
-        $this->assertSame('fake-jpeg', $response->getContent());
+            ->assertRedirect();
     }
 }

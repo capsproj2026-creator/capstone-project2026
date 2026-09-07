@@ -147,9 +147,11 @@ def correction_variants(text: str, max_variants: int = 12) -> list[str]:
             if len(out) >= max_variants:
                 return out[:max_variants]
 
-    # Global translate fallbacks.
-    add(parsed.translate(_TO_DIGIT))
-    add(parsed.translate(_TO_LETTER))
+    # Global translate only when the string is not already a clean PH plate
+    # (global B→8 would corrupt real plates like EBD814).
+    if not is_ph_car_plate(parsed) and not is_ph_motorcycle_plate(parsed):
+        add(parsed.translate(_TO_DIGIT))
+        add(parsed.translate(_TO_LETTER))
     return out[:max_variants]
 
 

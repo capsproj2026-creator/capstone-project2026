@@ -155,9 +155,9 @@ class PlateLookup
     }
 
     /**
-     * Last-resort match when OCR is off by one character.
+     * Last-resort match when OCR is off by 1–2 characters (common plate OCR noise).
      */
-    public static function findUserFuzzy(?string $plate, int $maxDistance = 1): ?User
+    public static function findUserFuzzy(?string $plate, int $maxDistance = 2): ?User
     {
         $normalized = self::normalize($plate);
         if ($normalized === '' || strlen($normalized) < 6) {
@@ -245,10 +245,89 @@ class PlateLookup
     public static function identity(?string $plate): array
     {
         $normalized = self::normalize($plate);
+
+        // Fast path: flat registered_plates table (supports multiple vehicles per user).
+        if ($normalized !== '') {
+            try {
+                $registered = app(\App\Services\RegisteredPlateService::class)->findByPlate($plate);
+            } catch (\Throwable) {
+                $registered = null;
+            }
+
+            if ($registered !== null) {
+                $resolvedPlate = self::normalize((string) $registered->plate_number) ?: $normalized;
+
+                if ($registered->owner_type === \App\Models\RegisteredPlate::OWNER_VISITOR) {
+                    return [
+                        'plate' => $resolvedPlate,
+                        'user_id' => null,
+                        'visitor_id' => $registered->visitor_id ?? $registered->owner_id,
+                        'owner_name' => $registered->owner_name,
+                        'owner_label' => $registered->owner_name,
+                        'id_number' => $registered->id_number,
+                        'role' => $registered->owner_role ?: 'Visitor',
+                        'purpose' => null,
+                        'registered' => true,
+                        'vehicle_details' => $registered->vehicle_type_name,
+                        'department' => $registered->department,
+                        'registration_status' => (string) ($registered->status ?: 'Registered'),
+                        'is_visitor' => true,
+                    ];
+                }
+
+                $user = User::query()
+                    ->with(['role', 'vehicleType', 'department'])
+                    ->find($registered->owner_id);
+
+                if ($user) {
+                    $department = $user->department?->departmentname
+                        ?? (filled($user->department_code) ? (string) $user->department_code : null)
+                        ?? $registered->department;
+
+                    $registrationStatus = $user->isGranted()
+                        ? 'Registered'
+                        : (string) ($user->status ?: 'Registered');
+
+                    $vehicleDetails = $registered->vehicle_type_name
+                        ?? self::vehicleDetailsForUserPlate($user, $resolvedPlate)
+                        ?? $user->vehicleType?->vehicle_name;
+
+                    return [
+                        'plate' => $resolvedPlate,
+                        'user_id' => $user->id,
+                        'visitor_id' => null,
+                        'owner_name' => $user->displayName(),
+                        'owner_label' => $user->displayName(),
+                        'id_number' => $user->id_number,
+                        'role' => $user->displayRoleLabel(),
+                        'purpose' => null,
+                        'registered' => true,
+                        'vehicle_details' => $vehicleDetails,
+                        'department' => $department,
+                        'registration_status' => $registrationStatus,
+                        'is_visitor' => false,
+                    ];
+                }
+            }
+        }
+
         $user = $normalized !== '' ? self::findUser($plate) : null;
 
         if ($user !== null) {
-            $resolvedPlate = self::normalize((string) $user->plate_number) ?: $normalized;
+            // Prefer the scanned plate when the account owns multiple vehicles.
+            $resolvedPlate = $normalized !== '' ? $normalized : self::normalize((string) $user->plate_number);
+            $matchPlate = self::vehicleDetailsForUserPlate($user, $resolvedPlate);
+            if ($matchPlate === null && $normalized !== '') {
+                // Fuzzy / primary fallback: keep user's primary plate if OCR plate isn't one of theirs.
+                $owned = \App\Models\UserVehicle::query()
+                    ->where('user_id', $user->id)
+                    ->get()
+                    ->contains(fn ($row) => self::normalize((string) $row->plate_number) === $normalized);
+                if (! $owned) {
+                    $resolvedPlate = self::normalize((string) $user->plate_number) ?: $normalized;
+                }
+            }
+
             $department = $user->department?->departmentname
                 ?? (filled($user->department_code) ? (string) $user->department_code : null);
 
@@ -303,7 +382,7 @@ class PlateLookup
             'user_id' => null,
             'visitor_id' => null,
             'owner_name' => null,
-            'owner_label' => $normalized !== '' ? 'Unknown Vehicle' : null,
+            'owner_label' => $normalized !== '' ? 'Unknown' : null,
             'id_number' => null,
             'role' => null,
             'purpose' => null,

@@ -1,9 +1,10 @@
 /**
- * Overlay a clear (×) on text-like inputs across the app.
- * Never wraps inputs or changes holder width — absolute overlay only.
+ * Overlay a clear (×) on all textboxes.
+ * Password + eye: × sits left of the eye with a gap.
  * Opt out with data-no-clear / data-no-search-clear.
+ * Force on with data-clear / data-search-clear, or window.enableInputClear(input).
  */
-const CLEARABLE_TYPES = new Set([
+const TEXTBOX_TYPES = new Set([
     'text',
     'search',
     'email',
@@ -33,6 +34,8 @@ const SKIP_TYPES = new Set([
 
 const BUTTON_SIZE = 24;
 const BUTTON_INSET = 8;
+/** Space reserved for the password eye so × and eye do not overlap. */
+const EYE_RESERVE = 36;
 
 function isOptedOut(input) {
     const noClear = input.dataset.noClear ?? input.dataset.noSearchClear;
@@ -46,17 +49,33 @@ function isSearchLike(input) {
     return placeholder.includes('search');
 }
 
+function passwordToggleButton(input) {
+    if (!(input instanceof HTMLInputElement)) return null;
+    const wrap = input.closest('.relative');
+    const fromWrap = wrap?.querySelector('[data-password-toggle]');
+    if (fromWrap) return fromWrap;
+    const id = input.id;
+    if (!id) return null;
+    return document.querySelector(`[data-password-toggle="${CSS.escape(id)}"]`);
+}
+
+function hasPasswordToggle(input) {
+    return Boolean(passwordToggleButton(input));
+}
+
+function isTextbox(input) {
+    if (!(input instanceof HTMLInputElement)) return false;
+    const type = (input.type || 'text').toLowerCase();
+    if (SKIP_TYPES.has(type)) return false;
+    if (TEXTBOX_TYPES.has(type)) return true;
+    return type === '' || type === 'text';
+}
+
 function isClearableInput(input) {
     if (!(input instanceof HTMLInputElement)) return false;
     if (isOptedOut(input)) return false;
     if (input.disabled || input.readOnly) return false;
-
-    const type = (input.type || 'text').toLowerCase();
-    if (SKIP_TYPES.has(type)) return false;
-    if (CLEARABLE_TYPES.has(type)) return true;
-
-    // Default missing/unknown type on <input> is text in browsers.
-    return type === '' || type === 'text';
+    return isTextbox(input);
 }
 
 function syncClearButton(input, button) {
@@ -72,8 +91,9 @@ function placeClearButton(input, button) {
 
     const inputBox = input.getBoundingClientRect();
     const parentBox = parent.getBoundingClientRect();
+    const eyeOffset = hasPasswordToggle(input) ? EYE_RESERVE : 0;
 
-    button.style.left = `${Math.round(inputBox.right - parentBox.left - BUTTON_SIZE - BUTTON_INSET)}px`;
+    button.style.left = `${Math.round(inputBox.right - parentBox.left - BUTTON_SIZE - BUTTON_INSET - eyeOffset)}px`;
     button.style.top = `${Math.round(inputBox.top - parentBox.top + (inputBox.height - BUTTON_SIZE) / 2)}px`;
 }
 
@@ -85,19 +105,24 @@ function enhanceClearableInput(input) {
     if (!parent) return;
 
     const searchLike = isSearchLike(input);
+    const withEye = hasPasswordToggle(input);
 
     parent.classList.add('sc-search-anchor');
     input.classList.add('sc-search-input');
+    input.classList.toggle('sc-has-password-toggle', withEye);
 
     const button = document.createElement('button');
     button.type = 'button';
     button.className = 'sc-search-clear';
+    if (withEye) button.classList.add('sc-search-clear--with-eye');
     button.setAttribute('aria-label', searchLike ? 'Clear search' : 'Clear');
     button.title = searchLike ? 'Clear search' : 'Clear';
     button.hidden = true;
     button.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="h-3.5 w-3.5" aria-hidden="true"><path d="M6.28 5.22a.75.75 0 0 0-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 1 0 1.06 1.06L10 11.06l3.72 3.72a.75.75 0 1 0 1.06-1.06L11.06 10l3.72-3.72a.75.75 0 0 0-1.06-1.06L10 8.94 6.28 5.22Z"/></svg>';
 
     const refresh = () => {
+        input.classList.toggle('sc-has-password-toggle', hasPasswordToggle(input));
+        button.classList.toggle('sc-search-clear--with-eye', hasPasswordToggle(input));
         syncClearButton(input, button);
         placeClearButton(input, button);
     };
@@ -112,7 +137,6 @@ function enhanceClearableInput(input) {
         refresh();
         input.focus();
 
-        // Only auto-resubmit GET search filters — never normal create/edit forms.
         const form = input.form;
         if (
             hadValue
@@ -144,6 +168,17 @@ function enhanceClearableInput(input) {
     }
 }
 
+/** Attach / re-attach clear × to one input. */
+function enableInputClear(input) {
+    if (!(input instanceof HTMLInputElement)) return false;
+    delete input.dataset.noClear;
+    delete input.dataset.noSearchClear;
+    delete input.dataset.searchClearBound;
+    input.parentElement?.querySelectorAll(':scope > .sc-search-clear').forEach((el) => el.remove());
+    enhanceClearableInput(input);
+    return input.dataset.searchClearBound === '1';
+}
+
 function initSearchClear(root = document) {
     root.querySelectorAll('input').forEach((input) => {
         enhanceClearableInput(input);
@@ -169,6 +204,7 @@ function watchForNewInputs() {
 }
 
 window.initSearchClear = initSearchClear;
+window.enableInputClear = enableInputClear;
 
 function boot() {
     initSearchClear();
@@ -181,4 +217,4 @@ if (document.readyState === 'loading') {
     boot();
 }
 
-export { initSearchClear };
+export { initSearchClear, enableInputClear };

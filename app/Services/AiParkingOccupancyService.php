@@ -69,8 +69,9 @@ class AiParkingOccupancyService
             && ($previous['reported_vehicle_count'] ?? null) === $vehicleCount
             && ($previous['area_id'] ?? null) === $areaId
         ) {
-            $detections = $this->enrichWithOwners($detections);
             $detections = $this->applyPlateCorrections($cameraId, $detections);
+            $detections = $this->enrichWithOwners($detections);
+            $this->persistAutoMatchedPlates($cameraId, $detections);
             $detections = $this->attachViolationStatus($detections, $previous['events'] ?? []);
 
             $snapshot = array_merge($previous, [
@@ -119,10 +120,13 @@ class AiParkingOccupancyService
             $events = array_merge($events, $authEvents);
         }
 
-        $detections = $this->enrichWithOwners($detections);
         $events = $this->enrichWithOwners($events);
         $detections = $this->applyPlateCorrections($cameraId, $detections);
+        $detections = $this->enrichWithOwners($detections);
+        $this->persistAutoMatchedPlates($cameraId, $detections);
         $detections = $this->attachViolationStatus($detections, $events);
+        $events = $this->stripHeavyBinaryFields($events);
+        $detections = $this->stripHeavyBinaryFields($detections, keepThumbs: true);
 
         $snapshot = [
             'camera_id' => $cameraId,
@@ -323,18 +327,18 @@ class AiParkingOccupancyService
         if ($cameraId !== null && trim($cameraId) !== '') {
             $cached = Cache::get($this->cacheKeyForCamera($cameraId));
 
-            return is_array($cached) ? $cached : null;
+            return is_array($cached) ? $this->sanitizeSnapshotForClients($cached) : null;
         }
 
         $legacy = Cache::get(self::CACHE_KEY);
         if (is_array($legacy)) {
-            return $legacy;
+            return $this->sanitizeSnapshotForClients($legacy);
         }
 
         $primary = app(AiCameraRegistry::class)->primaryCameraId();
         $cached = Cache::get($this->cacheKeyForCamera($primary));
 
-        return is_array($cached) ? $cached : null;
+        return is_array($cached) ? $this->sanitizeSnapshotForClients($cached) : null;
     }
 
     /**
@@ -449,6 +453,8 @@ class AiParkingOccupancyService
         $snap = $this->latestSnapshot($cameraId);
         if (is_array($snap)) {
             $snap['detections'] = $this->applyPlateCorrections($cameraId, $snap['detections'] ?? []);
+            $snap['detections'] = $this->enrichWithOwners($snap['detections']);
+            $this->persistAutoMatchedPlates($cameraId, $snap['detections']);
             $snap['updated_at'] = now()->toIso8601String();
             $snap['updated_at_label'] = now()->format('h:i:s A');
             $ttl = now()->addMinutes(30);
@@ -468,6 +474,8 @@ class AiParkingOccupancyService
     }
 
     /**
+     * Apply cached manual/auto plate overrides (before owner enrichment).
+     *
      * @param  list<array<string, mixed>>  $detections
      * @return list<array<string, mixed>>
      */
@@ -478,7 +486,6 @@ class AiParkingOccupancyService
             return $detections;
         }
 
-        $changed = false;
         foreach ($detections as $i => $det) {
             if (! is_array($det)) {
                 continue;
@@ -487,13 +494,76 @@ class AiParkingOccupancyService
             if ($tid === '' || ! isset($map[$tid]['plate'])) {
                 continue;
             }
+            if (empty($detections[$i]['ocr_text']) && ! empty($detections[$i]['plate'])) {
+                $detections[$i]['ocr_text'] = $detections[$i]['plate'];
+            }
             $detections[$i]['plate'] = $map[$tid]['plate'];
             $detections[$i]['plate_status'] = 'ok';
             $detections[$i]['plate_corrected'] = true;
+            if (! empty($map[$tid]['auto'])) {
+                $detections[$i]['plate_auto_corrected'] = true;
+            }
+        }
+
+        return $detections;
+    }
+
+    /**
+     * When OCR fuzzy-matches a registered plate, lock that track to the DB plate
+     * so later frames keep the owner even if OCR flickers.
+     *
+     * @param  list<array<string, mixed>>  $detections
+     */
+    private function persistAutoMatchedPlates(string $cameraId, array $detections): void
+    {
+        $key = $this->correctionsKey($cameraId);
+        $map = Cache::get($key, []);
+        if (! is_array($map)) {
+            $map = [];
+        }
+
+        $changed = false;
+        foreach ($detections as $det) {
+            if (! is_array($det)) {
+                continue;
+            }
+            $tid = isset($det['track_id']) ? (string) $det['track_id'] : '';
+            if ($tid === '' || empty($det['registered']) || empty($det['plate'])) {
+                continue;
+            }
+
+            // Do not overwrite a guard's manual correction.
+            if (isset($map[$tid]) && empty($map[$tid]['auto'])) {
+                continue;
+            }
+
+            $resolved = PlateLookup::normalize((string) $det['plate']);
+            if ($resolved === '') {
+                continue;
+            }
+
+            $ocr = PlateLookup::normalize((string) ($det['ocr_text'] ?? $det['plate_text'] ?? ''));
+            $needsLock = $ocr === '' || $ocr !== $resolved || ! empty($det['plate_auto_corrected']);
+            if (! $needsLock && (($map[$tid]['plate'] ?? null) === $resolved)) {
+                continue;
+            }
+
+            if (($map[$tid]['plate'] ?? null) === $resolved && ! empty($map[$tid]['auto'])) {
+                continue;
+            }
+
+            $map[$tid] = [
+                'plate' => $resolved,
+                'user_id' => $det['user_id'] ?? null,
+                'at' => now()->toIso8601String(),
+                'auto' => true,
+            ];
             $changed = true;
         }
 
-        return $changed ? $this->enrichWithOwners($detections) : $detections;
+        if ($changed) {
+            Cache::put($key, $map, now()->addHours(2));
+        }
     }
 
     private function correctionsKey(string $cameraId): string
@@ -506,8 +576,8 @@ class AiParkingOccupancyService
      *
      * Display contract:
      * - plate_status=unreadable → "Plate Unreadable" (no invented plate text)
-     * - registered match → owner full name, plate, vehicle details, registration status
-     * - readable but unmatched → "Unknown Vehicle" / "Plate Not Registered"
+     * - registered match → owner full name (auto-correct OCR to DB plate when fuzzy)
+     * - readable but unmatched → "Unknown"
      *
      * @param  list<array<string, mixed>>  $rows
      * @return list<array<string, mixed>>
@@ -552,7 +622,7 @@ class AiParkingOccupancyService
                 $row['plate_status'] = 'unreadable';
                 $row['plate_label'] = 'Plate Unreadable';
                 $row['owner_name'] = null;
-                $row['owner_label'] = null;
+                $row['owner_label'] = 'Unknown';
                 $row['owner_id_number'] = null;
                 $row['owner_role'] = null;
                 $row['role'] = null;
@@ -570,13 +640,19 @@ class AiParkingOccupancyService
             if ($plate === '') {
                 $row['plate_status'] = $status !== '' ? $status : 'pending';
                 $row['plate_label'] = null;
+                $row['owner_name'] = null;
                 $row['owner_label'] = null;
+                $row['registered'] = null;
 
                 return $row;
             }
 
+            $ocrNormalized = PlateLookup::normalize((string) ($row['ocr_text'] ?? $plate));
             $identity = PlateLookup::identity($plate);
-            $row['plate'] = $identity['plate'] !== '' ? $identity['plate'] : $plate;
+            $resolvedPlate = $identity['plate'] !== '' ? $identity['plate'] : $plate;
+            $resolvedNormalized = PlateLookup::normalize($resolvedPlate);
+
+            $row['plate'] = $resolvedPlate;
             $row['plate_status'] = 'ok';
             $row['plate_label'] = $row['plate'];
             $row['registered'] = $identity['registered'];
@@ -586,15 +662,19 @@ class AiParkingOccupancyService
             $row['owner_role'] = $identity['role'];
             $row['role'] = $identity['role'];
             $row['user_id'] = $identity['user_id'];
+            $row['visitor_id'] = $identity['visitor_id'] ?? null;
             $row['vehicle_details'] = $identity['vehicle_details'];
             $row['department'] = $identity['department'];
             $row['registration_status'] = $identity['registration_status'];
 
             if ($identity['registered']) {
-                $row['owner_label'] = $identity['owner_name'];
+                $row['owner_label'] = $identity['owner_name'] ?: 'Unknown';
                 $row['registration_status'] = $identity['registration_status'] ?: 'Registered';
+                if ($ocrNormalized !== '' && $resolvedNormalized !== '' && $ocrNormalized !== $resolvedNormalized) {
+                    $row['plate_auto_corrected'] = true;
+                }
             } else {
-                $row['owner_label'] = 'Unknown Vehicle';
+                $row['owner_label'] = 'Unknown';
                 $row['registration_status'] = 'Plate Not Registered';
                 $row['owner_name'] = null;
                 $row['role'] = null;
@@ -651,6 +731,45 @@ class AiParkingOccupancyService
 
             return in_array($class, self::VEHICLE_TYPES, true);
         }));
+    }
+
+    /**
+     * Drop huge base64 blobs from cached occupancy so status polling cannot hang php artisan serve.
+     *
+     * @param  list<array<string, mixed>>  $rows
+     * @return list<array<string, mixed>>
+     */
+    private function stripHeavyBinaryFields(array $rows, bool $keepThumbs = false): array
+    {
+        return array_map(function ($row) use ($keepThumbs) {
+            if (! is_array($row)) {
+                return $row;
+            }
+            unset($row['evidence_jpeg_base64']);
+            if (! $keepThumbs) {
+                unset($row['thumb_jpeg_base64'], $row['crop_jpeg_base64']);
+            } elseif (isset($row['thumb_jpeg_base64']) && is_string($row['thumb_jpeg_base64']) && strlen($row['thumb_jpeg_base64']) > 80000) {
+                unset($row['thumb_jpeg_base64']);
+            }
+
+            return $row;
+        }, $rows);
+    }
+
+    /**
+     * @param  array<string, mixed>  $snap
+     * @return array<string, mixed>
+     */
+    private function sanitizeSnapshotForClients(array $snap): array
+    {
+        if (isset($snap['events']) && is_array($snap['events'])) {
+            $snap['events'] = $this->stripHeavyBinaryFields($snap['events']);
+        }
+        if (isset($snap['detections']) && is_array($snap['detections'])) {
+            $snap['detections'] = $this->stripHeavyBinaryFields($snap['detections'], keepThumbs: true);
+        }
+
+        return $snap;
     }
 
     /**

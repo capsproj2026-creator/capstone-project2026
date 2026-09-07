@@ -7,11 +7,15 @@ use App\Models\UserVehicle;
 use App\Models\Vehicle;
 use App\Support\PlateLookup;
 use Illuminate\Support\Collection;
-use Illuminate\Validation\ValidationException;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 
 class UserVehicleService
 {
+    public function __construct(private readonly RegisteredPlateService $plates)
+    {
+    }
+
     /**
      * Ensure legacy User.plate_number / vehicle_id appear in user_vehicles.
      */
@@ -24,6 +28,14 @@ class UserVehicleService
             ->get();
 
         if ($vehicles->isNotEmpty()) {
+            foreach ($vehicles as $row) {
+                try {
+                    $this->plates->syncUserVehicle($row->loadMissing('vehicleType'), $user);
+                } catch (\Throwable) {
+                    // keep listing even if scan-table sync fails
+                }
+            }
+
             return $vehicles->load('vehicleType');
         }
 
@@ -42,6 +54,13 @@ class UserVehicleService
             'vehicle_color' => $user->vehicle_color,
             'is_primary' => true,
         ]);
+
+        try {
+            $this->plates->syncUserVehicle($row->load('vehicleType'), $user);
+        } catch (\Throwable) {
+            //
+        }
+        PlateLookup::forgetIndex();
 
         return collect([$row->load('vehicleType')]);
     }
@@ -72,6 +91,7 @@ class UserVehicleService
         ]);
 
         $this->syncPrimaryToUser($user);
+        $this->plates->syncUserVehicle($vehicle->load('vehicleType'), $user->fresh());
         PlateLookup::forgetIndex();
 
         return $vehicle->load('vehicleType');
@@ -94,6 +114,7 @@ class UserVehicleService
         ]);
 
         $this->syncPrimaryToUser($user);
+        $this->plates->syncUserVehicle($vehicle->fresh()->load('vehicleType'), $user->fresh());
         PlateLookup::forgetIndex();
 
         return $vehicle->fresh()->load('vehicleType');
@@ -103,7 +124,9 @@ class UserVehicleService
     {
         $this->assertOwned($user, $vehicle);
         $wasPrimary = (bool) $vehicle->is_primary;
+        $vehicleId = (int) $vehicle->id;
         $vehicle->delete();
+        $this->plates->removeUserVehicle($vehicleId);
 
         if ($wasPrimary) {
             $next = UserVehicle::query()
@@ -112,6 +135,7 @@ class UserVehicleService
                 ->first();
             if ($next) {
                 $next->update(['is_primary' => true]);
+                $this->plates->syncUserVehicle($next->load('vehicleType'), $user);
             }
         }
 
@@ -129,6 +153,14 @@ class UserVehicleService
 
         $vehicle->update(['is_primary' => true]);
         $this->syncPrimaryToUser($user);
+
+        foreach (UserVehicle::query()->where('user_id', $user->id)->get() as $row) {
+            try {
+                $this->plates->syncUserVehicle($row->load('vehicleType'), $user);
+            } catch (\Throwable) {
+                //
+            }
+        }
         PlateLookup::forgetIndex();
     }
 
@@ -168,7 +200,7 @@ class UserVehicleService
 
     /**
      * @param  array{vehicle_id: int|string, plate_number: string}  $data
-     * @return array{vehicle_id: int, plate_number: string}
+     * @return array{vehicle_id: int, plate_number: string, vehicle_model: ?string, vehicle_color: ?string}
      */
     private function validatedPayload(array $data, User $user): array
     {

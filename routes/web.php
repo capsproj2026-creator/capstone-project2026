@@ -4,6 +4,7 @@ use App\Http\Controllers\AccessLogController;
 use App\Http\Controllers\Admin\DashboardController as AdminDashboardController;
 use App\Http\Controllers\Admin\GuardRegistrationController;
 use App\Http\Controllers\Admin\RegistrationController;
+use App\Http\Controllers\Admin\RegisteredPlatesController;
 use App\Http\Controllers\Admin\ReportController;
 use App\Http\Controllers\Admin\RfidController;
 use App\Http\Controllers\Admin\SettingsController;
@@ -101,6 +102,12 @@ Route::prefix('admin')->middleware(['auth', 'verified', 'granted', 'no.cache', '
     Route::get('/users', [UserManagementController::class, 'index'])
         ->middleware('permission:manage_users')
         ->name('users');
+    Route::get('/plates', [RegisteredPlatesController::class, 'index'])
+        ->middleware('permission:manage_users')
+        ->name('plates');
+    Route::post('/plates/rebuild', [RegisteredPlatesController::class, 'rebuild'])
+        ->middleware('permission:manage_users')
+        ->name('plates.rebuild');
     Route::get('/users/{id}', [UserManagementController::class, 'show'])
         ->middleware('permission:manage_users')
         ->name('users.show');

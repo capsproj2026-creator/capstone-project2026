@@ -14,7 +14,7 @@ OVERTIME_MINUTES = float(os.getenv("AI_PARKING_OVERTIME_MINUTES", "30"))
 DEBOUNCE_MINUTES = float(os.getenv("AI_PARKING_VIOLATION_DEBOUNCE_MINUTES", "10"))
 IOU_THRESHOLD = float(os.getenv("AI_PARKING_ZONE_IOU", "0.08"))
 # Keep lost tracks briefly so ByteTrack ID flicker does not wipe plate memory / re-OCR.
-TRACK_HOLD_SEC = float(os.getenv("AI_PARKING_TRACK_HOLD_SEC", "3.0"))
+TRACK_HOLD_SEC = float(os.getenv("AI_PARKING_TRACK_HOLD_SEC", "20.0"))
 # Require this many matching OCR reads before locking a plate on a track.
 PLATE_VOTE_NEEDED = int(os.getenv("AI_PARKING_PLATE_VOTE_NEEDED", "1"))
 OCR_HIGH_CONF_LOCK = float(os.getenv("AI_PARKING_OCR_HIGH_CONF_LOCK", "0.55"))
@@ -100,6 +100,8 @@ class TrackMemory:
     last_ocr_xyxy: tuple[int, int, int, int] | None = None
     last_plate_crop: Any = None
     last_vehicle_crop: Any = None
+    thumb_jpeg_base64: str | None = None
+    thumb_jpeg_at: float = 0.0
     cls_id: int | None = None
     sync_ocr_attempted: bool = False
     last_sync_ocr_at: float = 0.0
@@ -196,14 +198,14 @@ class TrackMemory:
         self.lookup_done_at = time.time()
         self.lookup_plate = self.plate
         if not data:
-            self.owner_label = "Unknown Vehicle"
+            self.owner_label = "Unknown"
             self.registered = False
             self.registration_status = "Plate Not Registered"
             return
         self.registered = bool(data.get("registered"))
         self.owner_name = data.get("owner_name")
         self.owner_label = data.get("owner_label") or (
-            self.owner_name if self.registered else "Unknown Vehicle"
+            self.owner_name if self.registered else "Unknown"
         )
         self.user_id = data.get("user_id")
         self.vehicle_details = data.get("vehicle_details")
@@ -212,7 +214,7 @@ class TrackMemory:
         self.registration_status = data.get("registration_status")
         if not self.registered:
             self.owner_name = None
-            self.owner_label = "Unknown Vehicle"
+            self.owner_label = "Unknown"
             if not self.registration_status:
                 self.registration_status = "Plate Not Registered"
 
@@ -222,7 +224,7 @@ class TrackMemory:
         if self.plate_status != "ok" or not self.plate:
             return None
         if self.lookup_done_at > 0 and self.lookup_plate == self.plate:
-            return self.owner_label or ("Unknown Vehicle" if not self.registered else None)
+            return self.owner_label or ("Unknown" if not self.registered else None)
         return None
 
     def apply_ocr_vote(self, plate: str | None, status: str, confidence: float) -> None:

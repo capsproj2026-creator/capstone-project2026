@@ -28,6 +28,11 @@
                 if (! is_array($det)) {
                     continue;
                 }
+                // Latest Detections: only show rows that already have a plate number.
+                $plate = trim((string) ($det['plate'] ?? ''));
+                if ($plate === '' || strtolower((string) ($det['plate_status'] ?? '')) === 'unreadable') {
+                    continue;
+                }
                 $det['_camera'] = $det['_camera'] ?? $snapCamId;
                 $latestDetections[] = $det;
             }
@@ -35,6 +40,10 @@
         if ($latestDetections === [] && is_array($primaryAi)) {
             foreach ($primaryAi['detections'] ?? [] as $det) {
                 if (! is_array($det)) {
+                    continue;
+                }
+                $plate = trim((string) ($det['plate'] ?? ''));
+                if ($plate === '' || strtolower((string) ($det['plate_status'] ?? '')) === 'unreadable') {
                     continue;
                 }
                 $det['_camera'] = $det['_camera'] ?? ($primaryAi['camera_id'] ?? '');
@@ -193,17 +202,34 @@
                             $plate = ($det['plate_status'] ?? '') === 'unreadable' ? null : ($det['plate'] ?? null);
                             $ownerName = $det['owner_name'] ?? null;
                             $ownerRole = $det['role'] ?? $det['owner_role'] ?? null;
-                            $vehicleCropUrl = (! empty($det['track_id']) && $detCam !== '')
-                                ? route('guard.ai-parking.vehicle-crop', ['camera' => $detCam, 'track' => $det['track_id']])
-                                : null;
                         @endphp
                         <li class="flex items-start gap-3 px-4 py-3">
-                            @if ($vehicleCropUrl)
+                            @php
+                                $thumbB64 = $det['thumb_jpeg_base64'] ?? null;
+                                $aiOrigin = rtrim((string) ($aiCropOrigin ?? ''), '/');
+                                $plateCropUrl = null;
+                                $vehicleCropUrl = null;
+                                if (! empty($det['track_id']) && $detCam !== '') {
+                                    if ($aiOrigin !== '') {
+                                        $plateCropUrl = $aiOrigin.'/'.$detCam.'/plate-crop/'.$det['track_id'].'.jpg';
+                                        $vehicleCropUrl = $aiOrigin.'/'.$detCam.'/vehicle-crop/'.$det['track_id'].'.jpg';
+                                    } else {
+                                        $plateCropUrl = route('guard.ai-parking.plate-crop', ['camera' => $detCam, 'track' => $det['track_id']]);
+                                        $vehicleCropUrl = route('guard.ai-parking.vehicle-crop', ['camera' => $detCam, 'track' => $det['track_id']]);
+                                    }
+                                }
+                                $thumbSrc = $thumbB64
+                                    ? 'data:image/jpeg;base64,'.$thumbB64
+                                    : ($vehicleCropUrl ?: $plateCropUrl);
+                            @endphp
+                            @if ($thumbSrc)
                                 <img
-                                    src="{{ $vehicleCropUrl }}"
-                                    alt="Vehicle"
-                                    class="h-20 w-28 shrink-0 rounded-lg border border-gray-200 bg-slate-50 object-cover"
-                                    onerror="this.classList.add('hidden')"
+                                    src="{{ $thumbSrc }}"
+                                    alt="Plate scan"
+                                    class="h-20 w-28 shrink-0 rounded-lg border border-gray-200 bg-slate-900 object-cover"
+                                    data-plate-crop="{{ $plateCropUrl }}"
+                                    data-vehicle-crop="{{ $vehicleCropUrl }}"
+                                    onerror="window.aiDetThumbFallback && window.aiDetThumbFallback(this)"
                                 >
                             @else
                                 <div class="flex h-20 w-28 shrink-0 items-center justify-center rounded-lg border border-dashed border-gray-200 bg-gray-50 text-[10px] text-gray-400">No image</div>
@@ -218,9 +244,6 @@
                                         <span class="font-sans text-sm font-medium text-gray-400">Reading plate…</span>
                                     @endif
                                 </p>
-                                <p class="mt-1 truncate text-sm font-semibold text-gray-900">
-                                    {{ $ownerName ?: ($plate ? 'Unknown Vehicle' : '—') }}
-                                </p>
                                 <p class="mt-0.5 text-xs text-gray-500">
                                     Role:
                                     <span class="font-medium text-gray-700">{{ $ownerRole ?: ($plate ? 'Unregistered' : '—') }}</span>
@@ -233,21 +256,30 @@
                                 </p>
                             </div>
                             <div class="flex shrink-0 flex-col items-end gap-2">
+                                @php
+                                    $ownerBadge = $ownerName
+                                        ?: (($det['owner_label'] ?? null) ?: null)
+                                        ?: (($plate || ($det['plate_status'] ?? '') === 'unreadable') ? 'Unknown' : '…');
+                                    $isKnownOwner = filled($ownerName);
+                                @endphp
                                 @if (! empty($det['track_id']))
                                     <button
                                         type="button"
-                                        class="rounded-lg border border-indigo-200 px-2 py-1 text-[11px] font-semibold text-indigo-700 hover:bg-indigo-50"
+                                        class="max-w-[9rem] truncate rounded-lg border px-2 py-1 text-[11px] font-semibold {{ $isKnownOwner ? 'border-emerald-200 bg-emerald-50 text-emerald-800 hover:bg-emerald-100' : 'border-slate-200 bg-slate-50 text-slate-600 hover:bg-slate-100' }}"
+                                        title="{{ $isKnownOwner ? 'Registered owner — click to fix plate if wrong' : 'Not in database — click to enter plate' }}"
                                         data-correct-plate
                                         data-camera="{{ $detCam }}"
                                         data-track="{{ $det['track_id'] }}"
                                         data-plate="{{ $plate ?? '' }}"
-                                    >Correct</button>
+                                    >{{ $ownerBadge }}</button>
+                                @else
+                                    <span class="max-w-[9rem] truncate rounded-lg border px-2 py-1 text-[11px] font-semibold {{ $isKnownOwner ? 'border-emerald-200 bg-emerald-50 text-emerald-800' : 'border-slate-200 bg-slate-50 text-slate-600' }}">{{ $ownerBadge }}</span>
                                 @endif
                                 <span class="text-xs text-gray-500">{{ isset($det['confidence']) ? round($det['confidence'] * 100).'%' : '—' }}</span>
                             </div>
                         </li>
                     @empty
-                        <li class="px-4 py-10 text-center text-gray-500">No vehicles detected.</li>
+                        <li class="px-4 py-10 text-center text-gray-500">No plate numbers scanned yet.</li>
                     @endforelse
                 </ul>
             </div>
@@ -301,8 +333,8 @@
 
     <div id="plate-correct-modal" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/50 p-4" role="dialog" aria-modal="true">
         <form id="plate-correct-form" class="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
-            <h3 class="text-lg font-bold text-gray-900">Correct plate number</h3>
-            <p class="mt-1 text-sm text-gray-500">Fixes a bad OCR read and looks up the registered owner.</p>
+            <h3 class="text-lg font-bold text-gray-900">Fix plate number</h3>
+            <p class="mt-1 text-sm text-gray-500">Override a bad OCR read. Owner is looked up automatically from the database.</p>
             <input type="hidden" id="plate-correct-camera">
             <input type="hidden" id="plate-correct-track">
             <label class="mt-4 block text-sm font-medium text-gray-700" for="plate-correct-value">Plate</label>
@@ -321,14 +353,213 @@
 (() => {
     const statusUrl = @json($statusUrl ?? null);
     const correctUrl = @json($correctPlateUrl ?? null);
+    const aiCropOrigin = @json($aiCropOrigin ?? null);
     const plateCropBase = @json(url('/guard/ai-parking/plate-crop'));
     const vehicleCropBase = @json(url('/guard/ai-parking/vehicle-crop'));
     const csrf = document.querySelector('meta[name="csrf-token"]')?.content || '';
 
     const cropUrlFor = (cam, track, kind = 'vehicle') => {
+        if (!cam || track == null || track === '') return '';
+        const cropKind = kind === 'plate' ? 'plate-crop' : 'vehicle-crop';
+        // Prefer direct AI service URL so php artisan serve is not flooded with crop proxies.
+        if (aiCropOrigin) {
+            return `${aiCropOrigin.replace(/\/$/, '')}/${encodeURIComponent(cam)}/${cropKind}/${encodeURIComponent(String(track))}.jpg`;
+        }
         const base = kind === 'plate' ? plateCropBase : vehicleCropBase;
-        if (!base || !cam || track == null || track === '') return '';
+        if (!base) return '';
         return `${base}/${encodeURIComponent(cam)}/${encodeURIComponent(String(track))}`;
+    };
+
+    window.aiDetThumbFallback = (img) => {
+        if (!img || img.dataset.fallbackDone === '1') return;
+        const plate = img.dataset.plateCrop || '';
+        const vehicle = img.dataset.vehicleCrop || '';
+        const cur = (img.getAttribute('src') || '').split('?')[0];
+        if (plate && cur.indexOf('plate-crop') === -1 && !cur.startsWith('data:')) {
+            img.src = plate;
+            return;
+        }
+        if (vehicle && cur.indexOf('vehicle-crop') === -1) {
+            img.src = vehicle;
+            return;
+        }
+        img.dataset.fallbackDone = '1';
+        const ph = document.createElement('div');
+        ph.className = 'flex h-20 w-28 shrink-0 items-center justify-center rounded-lg border border-dashed border-gray-200 bg-gray-50 text-[10px] text-gray-400';
+        ph.textContent = 'No image';
+        img.replaceWith(ph);
+    };
+
+    const ensureDetThumb = (li, det, camId) => {
+        const plateUrl = cropUrlFor(camId, det.track_id, 'plate');
+        const vehicleUrl = cropUrlFor(camId, det.track_id, 'vehicle');
+        const dataUri = det.thumb_jpeg_base64
+            ? ('data:image/jpeg;base64,' + det.thumb_jpeg_base64)
+            : '';
+        // Prefer stable crop URL so we do not rebuild/reload the <img> every poll.
+        const stableSrc = vehicleUrl || plateUrl || dataUri;
+        let crop = li.querySelector('[data-det-thumb]');
+        if (!stableSrc) {
+            if (crop) crop.remove();
+            let ph = li.querySelector('[data-det-thumb-empty]');
+            if (!ph) {
+                ph = document.createElement('div');
+                ph.dataset.detThumbEmpty = '1';
+                ph.className = 'flex h-20 w-28 shrink-0 items-center justify-center rounded-lg border border-dashed border-gray-200 bg-gray-50 text-[10px] text-gray-400';
+                ph.textContent = 'No image';
+                li.prepend(ph);
+            }
+            return;
+        }
+        li.querySelector('[data-det-thumb-empty]')?.remove();
+        if (!crop) {
+            crop = document.createElement('img');
+            crop.alt = 'Vehicle';
+            crop.dataset.detThumb = '1';
+            crop.className = 'h-20 w-28 shrink-0 rounded-lg border border-gray-200 bg-slate-900 object-cover';
+            crop.addEventListener('error', () => window.aiDetThumbFallback(crop));
+            li.prepend(crop);
+        }
+        if (plateUrl) crop.dataset.plateCrop = plateUrl;
+        if (vehicleUrl) crop.dataset.vehicleCrop = vehicleUrl;
+        // Only set src when the track/URL actually changes — prevents blink on every refresh.
+        if (crop.dataset.stableSrc !== stableSrc) {
+            crop.dataset.stableSrc = stableSrc;
+            crop.dataset.fallbackDone = '0';
+            crop.src = stableSrc;
+        }
+    };
+
+    const ownerBadgeFor = (det) => {
+        const ownerName = (det.owner_name || '').trim();
+        const hasPlate = !!det.plate || det.plate_status === 'unreadable';
+        const ownerBadge = ownerName
+            || (det.owner_label && det.owner_label !== 'Unknown Vehicle' ? det.owner_label : '')
+            || (hasPlate ? 'Unknown' : '…');
+        return { ownerName, ownerBadge, isKnownOwner: !!ownerName };
+    };
+
+    const updateDetRow = (li, det, camId) => {
+        ensureDetThumb(li, det, camId);
+
+        let left = li.querySelector('[data-det-left]');
+        if (!left) {
+            left = document.createElement('div');
+            left.dataset.detLeft = '1';
+            left.className = 'min-w-0 flex-1';
+            const plateEl = document.createElement('p');
+            plateEl.dataset.detPlate = '1';
+            plateEl.className = 'font-mono text-base font-bold tracking-wide text-indigo-800';
+            const roleEl = document.createElement('p');
+            roleEl.dataset.detRole = '1';
+            roleEl.className = 'mt-0.5 text-xs text-gray-500';
+            left.append(plateEl, roleEl);
+            li.append(left);
+        }
+
+        const plateEl = left.querySelector('[data-det-plate]');
+        if (det.plate_status === 'unreadable') {
+            plateEl.innerHTML = '<span class="font-sans text-sm font-semibold text-slate-500">Plate Unreadable</span>';
+        } else if (det.plate) {
+            plateEl.textContent = det.plate;
+        } else {
+            plateEl.innerHTML = '<span class="font-sans text-sm font-medium text-gray-400">Reading plate…</span>';
+        }
+
+        const roleEl = left.querySelector('[data-det-role]');
+        const role = det.role || det.owner_role || (det.plate ? 'Unregistered' : '—');
+        const bits = [`Role: ${role}`];
+        if (det.class) bits.push(String(det.class).charAt(0).toUpperCase() + String(det.class).slice(1));
+        if (camId) bits.push(camId);
+        roleEl.textContent = bits.join(' · ');
+
+        const { ownerBadge, isKnownOwner } = ownerBadgeFor(det);
+        let right = li.querySelector('[data-det-right]');
+        if (!right) {
+            right = document.createElement('div');
+            right.dataset.detRight = '1';
+            right.className = 'flex shrink-0 flex-col items-end gap-2';
+            li.append(right);
+        }
+
+        let corr = right.querySelector('[data-correct-plate], [data-det-owner]');
+        if (det.track_id != null) {
+            if (!corr || corr.tagName !== 'BUTTON') {
+                corr?.remove();
+                corr = document.createElement('button');
+                corr.type = 'button';
+                corr.dataset.correctPlate = '1';
+                right.prepend(corr);
+            }
+            corr.className = isKnownOwner
+                ? 'max-w-[9rem] truncate rounded-lg border border-emerald-200 bg-emerald-50 px-2 py-1 text-[11px] font-semibold text-emerald-800 hover:bg-emerald-100'
+                : 'max-w-[9rem] truncate rounded-lg border border-slate-200 bg-slate-50 px-2 py-1 text-[11px] font-semibold text-slate-600 hover:bg-slate-100';
+            corr.textContent = ownerBadge;
+            corr.title = isKnownOwner
+                ? 'Registered owner — click to fix plate if wrong'
+                : 'Not in database — click to enter plate';
+            corr.dataset.camera = camId;
+            corr.dataset.track = String(det.track_id);
+            corr.dataset.plate = det.plate || '';
+        } else {
+            if (!corr || corr.tagName === 'BUTTON') {
+                corr?.remove();
+                corr = document.createElement('span');
+                corr.dataset.detOwner = '1';
+                right.prepend(corr);
+            }
+            corr.className = isKnownOwner
+                ? 'max-w-[9rem] truncate rounded-lg border border-emerald-200 bg-emerald-50 px-2 py-1 text-[11px] font-semibold text-emerald-800'
+                : 'max-w-[9rem] truncate rounded-lg border border-slate-200 bg-slate-50 px-2 py-1 text-[11px] font-semibold text-slate-600';
+            corr.textContent = ownerBadge;
+        }
+
+        let conf = right.querySelector('[data-det-conf]');
+        if (!conf) {
+            conf = document.createElement('span');
+            conf.dataset.detConf = '1';
+            conf.className = 'text-xs text-gray-500';
+            right.append(conf);
+        }
+        conf.textContent = det.confidence != null ? `${Math.round(det.confidence * 100)}%` : '—';
+    };
+
+    const renderDetections = (allDets, ai) => {
+        if (!detectionsList) return;
+        if (!allDets.length) {
+            detectionsList.replaceChildren();
+            const li = document.createElement('li');
+            li.className = 'px-4 py-10 text-center text-gray-500';
+            li.textContent = 'No plate numbers scanned yet.';
+            detectionsList.append(li);
+            return;
+        }
+
+        const existing = new Map();
+        detectionsList.querySelectorAll('li[data-det-key]').forEach((li) => {
+            existing.set(li.dataset.detKey, li);
+        });
+        // Drop empty-state row if present.
+        detectionsList.querySelectorAll('li:not([data-det-key])').forEach((li) => li.remove());
+
+        const seen = new Set();
+        allDets.forEach((det, index) => {
+            const camId = det._camera || (ai?.camera_id || '');
+            const key = `${camId}:${det.track_id != null ? det.track_id : 'i' + index}`;
+            seen.add(key);
+            let li = existing.get(key);
+            if (!li) {
+                li = document.createElement('li');
+                li.dataset.detKey = key;
+                li.className = 'flex items-start gap-3 px-4 py-3';
+            }
+            updateDetRow(li, det, camId);
+            detectionsList.append(li);
+        });
+
+        existing.forEach((li, key) => {
+            if (!seen.has(key)) li.remove();
+        });
     };
 
     const clocks = () => {
@@ -636,15 +867,28 @@
                 }
             });
 
+            const hasPlateNumber = (det) => {
+                const plate = String(det?.plate || '').trim();
+                if (!plate) return false;
+                if (String(det?.plate_status || '').toLowerCase() === 'unreadable') return false;
+                return true;
+            };
+
             const allDets = [];
             Object.entries(cams).forEach(([camId, snap]) => {
                 const health = findByCamera(healthMap, camId) || {};
                 if (!(health.connected || health.stream_reachable)) return;
                 if (snap?.camera_id && String(snap.camera_id).toLowerCase() !== String(camId).toLowerCase()) return;
-                (snap.detections || []).forEach((det) => allDets.push({ ...det, _camera: camId }));
+                (snap.detections || []).forEach((det) => {
+                    if (!hasPlateNumber(det)) return;
+                    allDets.push({ ...det, _camera: camId });
+                });
             });
             if (allDets.length === 0 && ai && (ai.detections || []).length) {
-                (ai.detections || []).forEach((det) => allDets.push(det));
+                (ai.detections || []).forEach((det) => {
+                    if (!hasPlateNumber(det)) return;
+                    allDets.push(det);
+                });
             }
 
             if (!ai && allDets.length === 0) return;
@@ -658,88 +902,7 @@
             if (detCount) detCount.textContent = String(allDets.length);
 
             if (detectionsList) {
-                detectionsList.replaceChildren();
-                if (!allDets.length) {
-                    const li = document.createElement('li');
-                    li.className = 'px-4 py-10 text-center text-gray-500';
-                    li.textContent = 'No vehicles detected.';
-                    detectionsList.append(li);
-                } else {
-                    allDets.forEach((det) => {
-                        const li = document.createElement('li');
-                        li.className = 'flex items-start gap-3 px-4 py-3';
-                        const camId = det._camera || (ai?.camera_id || '');
-                        const cropSrc = cropUrlFor(camId, det.track_id, 'vehicle');
-                        if (cropSrc) {
-                            const crop = document.createElement('img');
-                            crop.alt = 'Vehicle';
-                            crop.className = 'h-20 w-28 shrink-0 rounded-lg border border-gray-200 bg-slate-50 object-cover';
-                            crop.src = cropSrc + '?t=' + Date.now();
-                            crop.addEventListener('error', () => {
-                                const plateSrc = cropUrlFor(camId, det.track_id, 'plate');
-                                if (plateSrc && crop.src.indexOf('/plate-crop/') === -1) {
-                                    crop.src = plateSrc + '?t=' + Date.now();
-                                    return;
-                                }
-                                crop.classList.add('hidden');
-                            });
-                            li.append(crop);
-                        } else {
-                            const placeholder = document.createElement('div');
-                            placeholder.className = 'flex h-20 w-28 shrink-0 items-center justify-center rounded-lg border border-dashed border-gray-200 bg-gray-50 text-[10px] text-gray-400';
-                            placeholder.textContent = 'No image';
-                            li.append(placeholder);
-                        }
-
-                        const left = document.createElement('div');
-                        left.className = 'min-w-0 flex-1';
-
-                        const plateEl = document.createElement('p');
-                        plateEl.className = 'font-mono text-base font-bold tracking-wide text-indigo-800';
-                        if (det.plate_status === 'unreadable') {
-                            plateEl.innerHTML = '<span class="font-sans text-sm font-semibold text-slate-500">Plate Unreadable</span>';
-                        } else if (det.plate) {
-                            plateEl.textContent = det.plate;
-                        } else {
-                            plateEl.innerHTML = '<span class="font-sans text-sm font-medium text-gray-400">Reading plate…</span>';
-                        }
-                        left.append(plateEl);
-
-                        const nameEl = document.createElement('p');
-                        nameEl.className = 'mt-1 truncate text-sm font-semibold text-gray-900';
-                        nameEl.textContent = det.owner_name || (det.plate ? 'Unknown Vehicle' : '—');
-                        left.append(nameEl);
-
-                        const roleEl = document.createElement('p');
-                        roleEl.className = 'mt-0.5 text-xs text-gray-500';
-                        const role = det.role || det.owner_role || (det.plate ? 'Unregistered' : '—');
-                        const bits = [`Role: ${role}`];
-                        if (det.class) bits.push(String(det.class).charAt(0).toUpperCase() + String(det.class).slice(1));
-                        if (camId) bits.push(camId);
-                        roleEl.textContent = bits.join(' · ');
-                        left.append(roleEl);
-
-                        const right = document.createElement('div');
-                        right.className = 'flex shrink-0 flex-col items-end gap-2';
-                        if (det.track_id != null) {
-                            const corr = document.createElement('button');
-                            corr.type = 'button';
-                            corr.className = 'rounded-lg border border-indigo-200 px-2 py-1 text-[11px] font-semibold text-indigo-700 hover:bg-indigo-50';
-                            corr.textContent = 'Correct';
-                            corr.dataset.correctPlate = '1';
-                            corr.dataset.camera = camId;
-                            corr.dataset.track = String(det.track_id);
-                            corr.dataset.plate = det.plate || '';
-                            right.append(corr);
-                        }
-                        const conf = document.createElement('span');
-                        conf.className = 'text-xs text-gray-500';
-                        conf.textContent = det.confidence != null ? `${Math.round(det.confidence * 100)}%` : '—';
-                        right.append(conf);
-                        li.append(left, right);
-                        detectionsList.append(li);
-                    });
-                }
+                renderDetections(allDets, ai);
             }
 
             if (eventsList) {
@@ -778,7 +941,7 @@
     };
 
     refresh();
-    window.setInterval(refresh, 1000);
+    window.setInterval(refresh, 2500);
     document.addEventListener('visibilitychange', () => { if (!document.hidden) refresh(); });
 
     const plateModal = document.getElementById('plate-correct-modal');

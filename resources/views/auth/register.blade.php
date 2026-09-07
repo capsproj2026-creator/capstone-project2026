@@ -139,14 +139,17 @@
 
                     <div>
                         <label for="address" class="mb-1.5 block text-sm font-medium text-gray-700">Address <span class="text-red-500">*</span></label>
-                        <textarea
-                            name="address"
-                            id="address"
-                            rows="2"
-                            required
-                            placeholder="House / street, barangay, city, province"
-                            class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm uppercase text-gray-900 shadow-sm placeholder:text-gray-400 placeholder:normal-case focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20 @error('address') border-red-500 focus:border-red-500 focus:ring-red-500/20 @enderror"
-                        >{{ old('address') }}</textarea>
+                        <div class="relative">
+                            <input
+                                type="text"
+                                name="address"
+                                id="address"
+                                required
+                                placeholder="House / street, barangay, city, province"
+                                value="{{ old('address') }}"
+                                class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 pr-10 text-sm uppercase text-gray-900 shadow-sm placeholder:text-gray-400 placeholder:normal-case focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20 @error('address') border-red-500 focus:border-red-500 focus:ring-red-500/20 @enderror"
+                            >
+                        </div>
                         <p class="mt-1 text-xs text-gray-500">Street, Barangay, City, Province, and ZIP Code should appear once.</p>
                         @error('address')
                             <p class="mt-1 text-xs text-red-600">{{ $message }}</p>

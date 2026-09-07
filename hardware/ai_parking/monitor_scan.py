@@ -176,7 +176,7 @@ def scan_visible_region(
             if seen > 8:
                 break
             try:
-                read = ocr.read_crop(crop, cls_id=None)
+                read = ocr.read_crop(crop, cls_id=None, fast=False)
             except Exception:
                 continue
             conf = float(getattr(read, "confidence", 0.0) or 0.0)

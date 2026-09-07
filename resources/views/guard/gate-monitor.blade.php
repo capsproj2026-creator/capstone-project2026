@@ -23,6 +23,10 @@
 
     @include('partials.shell.flash')
 
+    @php
+        $gateStatuses = $gateStatuses ?? [];
+        $entryGateOnline = collect($gateStatuses)->contains(fn ($g) => ($g['gate_id'] ?? '') === 'GATE-IN-1' && ! empty($g['online']));
+    @endphp
     {{-- Summary cards (normal view only — hidden in fullscreen) --}}
     <div id="gate-monitor-stats" class="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-3">
         <div class="flex items-center justify-between rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
@@ -47,10 +51,18 @@
 
         <div class="flex items-center justify-between rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
             <div>
-                <p class="text-sm text-gray-500">Status</p>
+                <p class="text-sm text-gray-500">ESP32 Status</p>
                 <div class="mt-2 flex items-center gap-2">
-                    <span id="live-indicator" class="h-2.5 w-2.5 animate-pulse rounded-full bg-emerald-500"></span>
-                    <p id="live-status" class="text-lg font-semibold text-gray-900">Active</p>
+                    <span id="live-indicator" @class([
+                        'h-2.5 w-2.5 rounded-full',
+                        'animate-pulse bg-emerald-500' => $entryGateOnline,
+                        'bg-red-500' => ! $entryGateOnline,
+                    ])></span>
+                    <p id="live-status" @class([
+                        'text-lg font-semibold',
+                        'text-gray-900' => $entryGateOnline,
+                        'text-red-600' => ! $entryGateOnline,
+                    ])>{{ $entryGateOnline ? 'Active' : 'Offline' }}</p>
                 </div>
             </div>
             <div class="flex h-11 w-11 items-center justify-center rounded-xl bg-gray-100 text-gray-400">
@@ -59,7 +71,6 @@
         </div>
     </div>
 
-    @php $gateStatuses = $gateStatuses ?? []; @endphp
     <div id="gate-hardware-panel" class="mb-6 grid grid-cols-1 gap-4">
         @foreach ($gateStatuses as $gate)
             <div class="rounded-xl border border-gray-200 bg-white p-5 shadow-sm" data-gate-card="{{ $gate['gate_id'] }}">
@@ -467,7 +478,10 @@
             if (window.lucide) window.lucide.createIcons();
         };
 
-        const setConnectionState = (online, updatedAt = null) => {
+        let lastScanAt = null;
+        let echoReady = false;
+
+        const setEsp32Status = (online) => {
             if (indicator) {
                 indicator.className = `h-2.5 w-2.5 rounded-full ${online ? 'animate-pulse bg-emerald-500' : 'bg-red-500'}`;
             }
@@ -476,9 +490,15 @@
                 liveStatus.className = `text-lg font-semibold ${online ? 'text-gray-900' : 'text-red-600'}`;
             }
             if (lastUpdated) {
-                lastUpdated.textContent = online
-                    ? (updatedAt ? `Last scan ${updatedAt}` : 'Listening for RFID…')
-                    : 'Realtime disconnected — check Reverb';
+                if (!online) {
+                    lastUpdated.textContent = 'ESP32 offline — no recent heartbeat';
+                } else if (lastScanAt) {
+                    lastUpdated.textContent = `Last scan ${lastScanAt}`;
+                } else {
+                    lastUpdated.textContent = echoReady
+                        ? 'ESP32 online — listening for RFID…'
+                        : 'ESP32 online — waiting for realtime channel…';
+                }
                 lastUpdated.classList.remove('hidden');
             }
         };
@@ -496,37 +516,36 @@
             } else if (exits && scan.granted && scan.action === 'Exit') {
                 exits.textContent = String(Number(exits.textContent || 0) + 1);
             }
+            lastScanAt = scan.time || lastScanAt;
             showScanCard(scan);
-            setConnectionState(true, scan.time || null);
+            // A successful scan implies the board was online; heartbeat poll will confirm.
+            setEsp32Status(true);
         };
 
         showWaiting();
-        setConnectionState(false);
+        setEsp32Status(@json($entryGateOnline));
 
         const subscribeGateScans = (echo) => {
             if (!echo) {
-                if (liveStatus) liveStatus.textContent = 'Echo offline';
+                echoReady = false;
                 if (lastUpdated) {
-                    lastUpdated.textContent = 'Build assets with VITE_REVERB_* and run php artisan reverb:start';
+                    lastUpdated.textContent = 'ESP32 status from heartbeat; realtime scans need Reverb (php artisan reverb:start).';
                     lastUpdated.classList.remove('hidden');
                 }
                 return;
             }
 
+            echoReady = true;
             echo.private('gate.scans')
-                .listen('.GateScanProcessed', (scan) => handleScan(scan))
-                .error(() => setConnectionState(false));
+                .listen('.GateScanProcessed', (scan) => handleScan(scan));
 
             const connector = echo.connector?.pusher;
-            connector?.connection?.bind('connected', () => setConnectionState(true));
-            connector?.connection?.bind('disconnected', () => setConnectionState(false));
-            connector?.connection?.bind('unavailable', () => setConnectionState(false));
-            connector?.connection?.bind('failed', () => setConnectionState(false));
-            connector?.connection?.bind('error', () => setConnectionState(false));
-
-            if (connector?.connection?.state === 'connected') {
-                setConnectionState(true);
-            }
+            connector?.connection?.bind('connected', () => {
+                echoReady = true;
+            });
+            connector?.connection?.bind('disconnected', () => {
+                echoReady = false;
+            });
         };
 
         // Vite loads app.js as a deferred module; whenEchoReady waits for it.
@@ -605,7 +624,11 @@
         const csrf = document.querySelector('meta[name="csrf-token"]')?.content || '';
 
         const paintGates = (gates) => {
+            let entryOnline = false;
             (gates || []).forEach((gate) => {
+                if (gate.gate_id === 'GATE-IN-1') {
+                    entryOnline = !!gate.online;
+                }
                 const card = document.querySelector(`[data-gate-card="${gate.gate_id}"]`);
                 if (!card) return;
                 const dot = card.querySelector('[data-gate-dot]');
@@ -622,6 +645,8 @@
                 }
                 pending?.classList.toggle('hidden', !gate.pending_open);
             });
+            // Status card follows Entry ESP32 heartbeat (not Echo/WebSocket).
+            setEsp32Status(entryOnline);
         };
 
         const refreshGateHardware = async () => {
