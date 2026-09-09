@@ -77,9 +77,20 @@ class PlateTextTest(unittest.TestCase):
 
     def test_ebd814_is_known_car(self):
         self.assertTrue(is_ph_car_plate("EBD814"))
-        parsed, known = parse_plate_candidate("EBD 814")
-        self.assertEqual(parsed, "EBD814")
-        self.assertTrue(known)
+        self.assertEqual(parse_plate_candidate("EBD 814"), ("EBD814", True))
+
+    def test_reconcile_bullbar_partials(self):
+        from plate_text import reconcile_partial_plates
+
+        self.assertEqual(reconcile_partial_plates(["EBD81", "EBD84"]), "EBD814")
+        # Same-frame best_from_results merge
+        results = [
+            ([[0, 0], [10, 0], [10, 10], [0, 10]], "EBD81", 0.79),
+            ([[20, 0], [40, 0], [40, 10], [20, 10]], "EBD84", 0.48),
+        ]
+        best, score, _ = best_from_results(results, 0.15)
+        self.assertEqual(best, "EBD814")
+        self.assertGreaterEqual(score, 0.5)
 
 
 if __name__ == "__main__":

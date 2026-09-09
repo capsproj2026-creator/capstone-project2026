@@ -621,6 +621,7 @@ class AiParkingOccupancyService
                 $row['plate'] = null;
                 $row['plate_status'] = 'unreadable';
                 $row['plate_label'] = 'Plate Unreadable';
+                $row['recognition_status'] = 'OCR_FAILED';
                 $row['owner_name'] = null;
                 $row['owner_label'] = 'Unknown';
                 $row['owner_id_number'] = null;
@@ -641,6 +642,7 @@ class AiParkingOccupancyService
                 $row['plate'] = null;
                 $row['plate_status'] = 'not_read';
                 $row['plate_label'] = 'Plate Not Read';
+                $row['recognition_status'] = 'OCR_FAILED';
                 $row['owner_name'] = null;
                 $row['owner_label'] = 'Unknown';
                 $row['owner_id_number'] = null;
@@ -660,6 +662,7 @@ class AiParkingOccupancyService
             if ($plate === '') {
                 $row['plate_status'] = $status !== '' ? $status : 'pending';
                 $row['plate_label'] = null;
+                $row['recognition_status'] = 'OCR_PENDING';
                 $row['owner_name'] = null;
                 $row['owner_label'] = null;
                 $row['registered'] = null;
@@ -675,6 +678,7 @@ class AiParkingOccupancyService
             $row['plate'] = $resolvedPlate;
             $row['plate_status'] = 'ok';
             $row['plate_label'] = $row['plate'];
+            $row['recognition_status'] = ! empty($identity['registered']) ? 'USER_FOUND' : 'USER_NOT_FOUND';
             $row['registered'] = $identity['registered'];
             $row['owner_name'] = $identity['owner_name'];
             $row['owner_label'] = $identity['owner_label'];

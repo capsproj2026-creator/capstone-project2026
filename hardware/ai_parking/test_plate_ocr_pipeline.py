@@ -78,40 +78,28 @@ class PlateTextTests(unittest.TestCase):
 
 
 class PlateOnlySubCropTests(unittest.TestCase):
-    def test_plate_only_returns_empty_without_detector_roi(self):
-        # Synthetic bumper-sized crop with no plate detector hit → empty list when plate_only.
+    def test_plate_only_returns_targeted_rois_without_detector(self):
+        # Synthetic bumper-sized crop with no plate detector hit → targeted bands (not empty, not full bumper).
         import numpy as np
 
         crop = np.zeros((80, 160, 3), dtype=np.uint8)
-        # Force plate_only path; detect_plate_crop on blank should miss.
         subs = PlateOCR._sub_crops(crop, cls_id=2, fast=True, plate_only=True)
-        self.assertEqual(subs, [])
+        self.assertGreaterEqual(len(subs), 1)
+        for sub in subs:
+            self.assertLess(sub.shape[0] * sub.shape[1], crop.shape[0] * crop.shape[1])
 
-    def test_plate_only_path_faster_than_bumper_bands(self):
-        """Offline timing: plate-only miss skips bumper bands (no EasyOCR)."""
+    def test_plate_only_path_uses_targeted_not_full_bumper(self):
+        """Offline: plate-only miss still yields bounded ROIs (not empty full skip forever)."""
         import numpy as np
 
         crop = np.zeros((120, 240, 3), dtype=np.uint8)
-        t0 = time.perf_counter()
-        for _ in range(5):
-            PlateOCR._sub_crops(crop, cls_id=2, fast=True, plate_only=True)
-        plate_only_ms = (time.perf_counter() - t0) * 1000 / 5
-
-        t1 = time.perf_counter()
-        for _ in range(5):
-            PlateOCR._sub_crops(crop, cls_id=2, fast=True, plate_only=False)
-        bumper_ms = (time.perf_counter() - t1) * 1000 / 5
-
         only = PlateOCR._sub_crops(crop, cls_id=2, fast=True, plate_only=True)
         bumper = PlateOCR._sub_crops(crop, cls_id=2, fast=True, plate_only=False)
-        self.assertEqual(only, [])
+        self.assertGreaterEqual(len(only), 1)
         self.assertGreaterEqual(len(bumper), 1)
-        # Crop selection itself is cheap; plate-only returns fewer/zero crops to OCR.
-        print(
-            f"[timing] plate-only sub_crops={plate_only_ms:.1f}ms "
-            f"bumper sub_crops={bumper_ms:.1f}ms "
-            f"bumper_subs={len(bumper)} (EasyOCR skipped when plate-only miss)"
-        )
+        # Targeted ROIs are smaller than the parent bumper crop.
+        self.assertTrue(all(s.shape[0] <= crop.shape[0] and s.shape[1] <= crop.shape[1] for s in only))
+        print(f"[timing] plate-only subs={len(only)} bumper_path_subs={len(bumper)}")
 
 
 class AsyncSubmitGateTests(unittest.TestCase):

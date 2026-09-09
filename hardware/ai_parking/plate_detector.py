@@ -192,18 +192,44 @@ def detect_plate_crop(vehicle_crop, cls_id: int | None = None) -> Optional[np.nd
     return best.copy()
 
 
-def _detect_yolo(crop):
-    model = _load_plate_yolo()
-    if model is None:
-        return None
-    try:
-        results = model.predict(crop, conf=PLATE_YOLO_CONF, verbose=False)
-    except Exception:
-        return None
+def expand_xyxy(
+    xyxy: tuple[int, int, int, int],
+    frame_w: int,
+    frame_h: int,
+    *,
+    pad_x_ratio: float = 0.22,
+    pad_y_ratio: float = 0.28,
+    min_pad_x: int = 12,
+    min_pad_y: int = 8,
+) -> tuple[int, int, int, int]:
+    """Widen a plate box so the last digit is not clipped (common YOLO miss)."""
+    x1, y1, x2, y2 = (int(v) for v in xyxy)
+    bw = max(1, x2 - x1)
+    bh = max(1, y2 - y1)
+    # Bias extra padding to the right — CAM-2 EBD814 lost the trailing '4'.
+    pad_x = max(min_pad_x, int(bw * pad_x_ratio))
+    pad_y = max(min_pad_y, int(bh * pad_y_ratio))
+    pad_x_right = max(pad_x, int(bw * (pad_x_ratio + 0.12)))
+    nx1 = max(0, x1 - pad_x)
+    ny1 = max(0, y1 - pad_y)
+    nx2 = min(frame_w, x2 + pad_x_right)
+    ny2 = min(frame_h, y2 + pad_y)
+    return nx1, ny1, nx2, ny2
 
-    best = None
+
+def detect_plate_xyxy(vehicle_crop) -> tuple[Optional[tuple[int, int, int, int]], float]:
+    """Return (expanded xyxy in vehicle_crop coords, conf) from plate YOLO, or (None, 0)."""
+    model = _load_plate_yolo()
+    if model is None or vehicle_crop is None or getattr(vehicle_crop, "size", 0) == 0:
+        return None, 0.0
+    try:
+        results = model.predict(vehicle_crop, conf=PLATE_YOLO_CONF, verbose=False)
+    except Exception:
+        return None, 0.0
+
+    best_xyxy = None
     best_conf = 0.0
-    h, w = crop.shape[:2]
+    h, w = vehicle_crop.shape[:2]
     for r in results:
         if r.boxes is None:
             continue
@@ -212,14 +238,19 @@ def _detect_yolo(crop):
             if conf <= best_conf:
                 continue
             x1, y1, x2, y2 = (int(v) for v in b.xyxy[0].tolist())
-            x1 = max(0, x1 - 6)
-            y1 = max(0, y1 - 4)
-            x2 = min(w, x2 + 6)
-            y2 = min(h, y2 + 4)
             if x2 - x1 < 16 or y2 - y1 < 8:
                 continue
             best_conf = conf
-            best = crop[y1:y2, x1:x2]
+            best_xyxy = expand_xyxy((x1, y1, x2, y2), w, h)
+    return best_xyxy, best_conf
+
+
+def _detect_yolo(crop):
+    xyxy, conf = detect_plate_xyxy(crop)
+    if xyxy is None or conf <= 0:
+        return None
+    x1, y1, x2, y2 = xyxy
+    best = crop[y1:y2, x1:x2]
     if best is None or best.size == 0:
         return None
     return best.copy()

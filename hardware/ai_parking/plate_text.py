@@ -53,6 +53,127 @@ def is_known_ph_format(text: str) -> bool:
     return is_ph_car_plate(text) or is_ph_motorcycle_plate(text)
 
 
+def looks_like_plate_text(text: str) -> bool:
+    """Loose gate: alphanumeric plate-like string (OCR success ≠ PH validation)."""
+    cleaned = re.sub(r"[^A-Z0-9]", "", _clean_raw(text or ""))
+    if len(cleaned) < 5 or len(cleaned) > 12:
+        return False
+    # Brand junk checked after _BRAND_OR_HEADER is defined — inline common ones here.
+    if cleaned in {
+        "ISUZU",
+        "TOYOTA",
+        "HONDA",
+        "MITSUBISHI",
+        "NISSAN",
+        "SUZUKI",
+        "HYUNDAI",
+        "FORD",
+        "CHEVROLET",
+        "KIA",
+        "MAZDA",
+        "PHILIPPINES",
+        "PILIPINAS",
+        "REPUBLIC",
+    }:
+        return False
+    if cleaned.isalpha() and len(cleaned) >= 5:
+        return False
+    has_letter = any(ch.isalpha() for ch in cleaned)
+    has_digit = any(ch.isdigit() for ch in cleaned)
+    if has_letter and has_digit:
+        return True
+    return is_ph_motorcycle_plate(cleaned)
+
+
+def reconcile_partial_plates(candidates: Iterable[str]) -> Optional[str]:
+    """
+    Recover full PH car plates from truncated OCR pairs.
+
+    Bull-bar cameras often yield EBD81 and EBD84 for the same plate EBD814.
+    """
+    expanded: list[str] = []
+    for raw in candidates:
+        text = str(raw or "")
+        if not text:
+            continue
+        expanded.append(text)
+        parsed, _known = parse_plate_candidate(text)
+        if parsed:
+            expanded.append(parsed)
+            expanded.extend(correction_variants(parsed, max_variants=6))
+
+    dig_groups: dict[str, set[str]] = {}
+    complete: list[str] = []
+    for raw in expanded:
+        parsed, known = parse_plate_candidate(str(raw))
+        if not parsed:
+            continue
+        if known and is_ph_car_plate(parsed):
+            complete.append(parsed)
+            continue
+        m = re.fullmatch(r"([A-Z]{2,3})(\d{2,4})", parsed)
+        if not m:
+            # Try position-corrected form for digit/letter swaps (EBDB1 → EBD81).
+            corrected = _position_correct(parsed)
+            m = re.fullmatch(r"([A-Z]{2,3})(\d{2,4})", corrected)
+            if not m:
+                continue
+            parsed = corrected
+            if is_ph_car_plate(parsed):
+                complete.append(parsed)
+                continue
+        letters, digits = m.group(1), m.group(2)
+        dig_groups.setdefault(letters, set()).add(digits)
+
+    if complete:
+        # Prefer longest / most common complete plate.
+        complete.sort(key=lambda p: (len(p), complete.count(p), p), reverse=True)
+        return complete[0]
+
+    for letters, digs in dig_groups.items():
+        # Already have a 3–4 digit reading.
+        for d in sorted(digs, key=len, reverse=True):
+            cand = letters + d
+            if is_ph_car_plate(cand):
+                return cand
+        two = [d for d in digs if len(d) == 2]
+        if len(two) < 2:
+            # Single 2-digit partial with high letter confidence — cannot invent last digit.
+            continue
+        # Same leading digit, different trailing → insert both trail digits (81+84→814).
+        by_lead: dict[str, set[str]] = {}
+        for d in two:
+            by_lead.setdefault(d[0], set()).add(d[1])
+        for lead, trails in by_lead.items():
+            if len(trails) < 2:
+                continue
+            merged_digits = lead + "".join(sorted(trails))
+            cand = letters + merged_digits
+            if is_ph_car_plate(cand):
+                return cand
+            merged_digits = lead + "".join(trails)
+            cand = letters + merged_digits
+            if is_ph_car_plate(cand):
+                return cand
+    return None
+
+
+def looks_like_plate_text(text: str) -> bool:
+    """Loose gate: alphanumeric plate-like string (OCR success ≠ PH validation)."""
+    cleaned = re.sub(r"[^A-Z0-9]", "", _clean_raw(text or ""))
+    if len(cleaned) < 5 or len(cleaned) > 12:
+        return False
+    if cleaned in _BRAND_OR_HEADER:
+        return False
+    if cleaned.isalpha() and len(cleaned) >= 5:
+        return False
+    has_letter = any(ch.isalpha() for ch in cleaned)
+    has_digit = any(ch.isdigit() for ch in cleaned)
+    if has_letter and has_digit:
+        return True
+    return is_ph_motorcycle_plate(cleaned)
+
+
 def _clean_raw(text: str) -> str:
     raw = str(text).upper().strip()
     return re.sub(r"\s+", "", raw)
@@ -188,6 +309,11 @@ def score_candidate(parsed: str, known_format: bool, conf: float) -> float:
         digits = sum(1 for ch in parsed if ch.isdigit())
         if 2 <= letters <= 3 and 3 <= digits <= 4:
             score += 0.08
+        # Prefer 3-letter series (EBD814) over truncated 2-letter false positives (EB248).
+        if letters == 3:
+            score += 0.12
+        elif letters == 2:
+            score -= 0.08
     elif known_format:
         score += 0.08
     else:
@@ -352,5 +478,14 @@ def best_from_results(
         if score > best_score:
             best_score = score
             best = parsed
+
+    # Bull-bar truncation: merge EBD81 + EBD84 → EBD814 within the same OCR pass.
+    merged = reconcile_partial_plates(
+        [c for c, _ in candidates] + ([best] if best else [])
+    )
+    if merged and is_known_ph_format(merged):
+        if best is None or not is_known_ph_format(best) or len(merged) > len(best or ""):
+            best = merged
+            best_score = max(best_score, 0.55)
 
     return best, best_score, best_any

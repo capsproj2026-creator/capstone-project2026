@@ -52,9 +52,14 @@ class AiDetectionPresenter
             }
             $bits[] = implode(' · ', array_values(array_filter($parts, fn ($p) => trim($p) !== '')));
         } elseif (! empty($det['plate'])) {
-            $bits[] = 'Unknown Vehicle · Plate Not Registered ('.$det['plate'].')';
+            $bits[] = (string) $det['plate'];
+            $bits[] = 'Unknown Vehicle';
         } else {
             $bits[] = 'Waiting for plate…';
+        }
+
+        if (in_array(($det['plate_status'] ?? ''), ['unreadable', 'not_read'], true)) {
+            $bits[] = 'Unknown';
         }
 
         if (! empty($det['violation_status']) || ! empty($det['violation_flag'])) {

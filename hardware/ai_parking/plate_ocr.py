@@ -7,6 +7,7 @@ import queue
 import threading
 import time
 from dataclasses import dataclass
+from pathlib import Path
 from typing import TYPE_CHECKING, Optional
 
 import cv2
@@ -15,6 +16,8 @@ import numpy as np
 from plate_text import (
     best_from_results,
     is_known_ph_format,
+    looks_like_plate_text,
+    reconcile_partial_plates,
 )
 
 if TYPE_CHECKING:
@@ -37,6 +40,13 @@ OCR_PLATE_ONLY = os.getenv("AI_PARKING_OCR_PLATE_ONLY", "1").strip().lower() in 
 )
 OCR_MIN_PLATE_CROP_W = int(os.getenv("AI_PARKING_OCR_MIN_PLATE_CROP_W", "28"))
 OCR_MIN_PLATE_CROP_H = int(os.getenv("AI_PARKING_OCR_MIN_PLATE_CROP_H", "12"))
+OCR_DEBUG = os.getenv("AI_PARKING_OCR_DEBUG", "0").strip().lower() in ("1", "true", "yes", "on")
+OCR_DEBUG_DIR = Path(
+    os.getenv(
+        "AI_PARKING_OCR_DEBUG_DIR",
+        str(Path(__file__).resolve().parent / "debug_plates"),
+    )
+)
 # Fast mode (default on CPU): fewer crops/variants so EasyOCR finishes and YOLO stays live.
 _fast_env = os.getenv("AI_PARKING_OCR_FAST", "").strip().lower()
 if _fast_env in ("1", "true", "yes", "on"):
@@ -261,8 +271,9 @@ class PlateOCR:
         best: Optional[str] = None
         best_score = 0.0
         best_any_score = 0.0
-        # Accept a decent PH-format hit early so we do not burn the whole variant list.
-        early_lock = max(OCR_MIN_CONF, OCR_HIGH_CONF_LOCK - (0.20 if fast or quick else 0.0))
+        raw_texts: list[str] = []
+        # Accept a strong PH-format hit early so we do not burn the whole variant list.
+        early_lock = max(OCR_MIN_CONF, OCR_HIGH_CONF_LOCK - (0.10 if fast or quick else 0.0))
         for _label, img in self._ocr_variants(crop, quick=quick, fast=fast):
             try:
                 results = self._readtext(img, fast=fast or quick)
@@ -271,6 +282,9 @@ class PlateOCR:
                 continue
             if not results:
                 continue
+            for _bbox, text, conf in results:
+                raw_texts.append(str(text))
+                best_any_score = max(best_any_score, float(conf))
             b, s, any_s = best_from_results(results, OCR_MIN_CONF)
             best_any_score = max(best_any_score, any_s)
             if s > best_score:
@@ -280,6 +294,13 @@ class PlateOCR:
                 break
             if best and best_score >= OCR_HIGH_CONF_LOCK and is_known_ph_format(best):
                 break
+
+        # Merge truncated bull-bar reads across preprocess variants (EBD81 + EBD84).
+        merged = reconcile_partial_plates(raw_texts + ([best] if best else []))
+        if merged and is_known_ph_format(merged):
+            if best is None or not is_known_ph_format(best) or len(merged) >= len(best or ""):
+                best = merged
+                best_score = max(best_score, 0.55)
         return best, best_score, best_any_score
 
     def _readtext(self, img, *, fast: bool = False):
@@ -319,66 +340,147 @@ class PlateOCR:
         return self.read_crop(crop, cls_id=cls_id, fast=fast)
 
     @staticmethod
+    def _targeted_plate_rois(crop, cls_id: int | None = None) -> list:
+        """Bounded lower-front / rear plate bands — never the full vehicle."""
+        ch, cw = crop.shape[:2]
+        if ch < 20 or cw < 40:
+            return []
+        out = []
+        if cls_id == MOTORCYCLE_CLS_ID:
+            bands = ((0.12, 0.72, 0.08, 0.92),)
+        else:
+            # Front bumper plates can sit left/center/right (CAM-2 multicab was left-biased).
+            bands = (
+                (0.42, 1.0, 0.02, 0.70),  # lower-left
+                (0.42, 1.0, 0.15, 0.85),  # lower-center
+                (0.42, 1.0, 0.30, 0.98),  # lower-right
+                (0.55, 1.0, 0.05, 0.95),  # tight bumper strip
+            )
+        for y0, y1, x0, x1 in bands:
+            y_a, y_b = int(ch * y0), int(ch * y1)
+            x_a, x_b = int(cw * x0), int(cw * x1)
+            if y_b - y_a < 14 or x_b - x_a < 40:
+                continue
+            roi = crop[y_a:y_b, x_a:x_b]
+            if roi is not None and roi.size > 0:
+                out.append(roi.copy())
+        return out
+
+    @staticmethod
+    def _save_debug_crops(
+        camera_id: str,
+        track_id: int | None,
+        *,
+        vehicle_crop=None,
+        plate_crop=None,
+        processed=None,
+        label: str = "ocr",
+    ) -> None:
+        if not OCR_DEBUG:
+            return
+        try:
+            cam = (camera_id or "CAM").replace("/", "_")
+            tid = f"track_{track_id}" if track_id is not None else "track_unknown"
+            dest = OCR_DEBUG_DIR / cam / tid
+            dest.mkdir(parents=True, exist_ok=True)
+            stamp = int(time.time() * 1000) % 100000
+            if vehicle_crop is not None and getattr(vehicle_crop, "size", 0) > 0:
+                cv2.imwrite(str(dest / f"{stamp}_vehicle_crop.jpg"), vehicle_crop)
+            if plate_crop is not None and getattr(plate_crop, "size", 0) > 0:
+                cv2.imwrite(str(dest / f"{stamp}_plate_crop_raw.jpg"), plate_crop)
+            if processed is not None and getattr(processed, "size", 0) > 0:
+                cv2.imwrite(str(dest / f"{stamp}_plate_crop_processed.jpg"), processed)
+            elif plate_crop is not None and getattr(plate_crop, "size", 0) > 0:
+                up = PlateOCR._upscale_crop(plate_crop, fast=True)
+                cv2.imwrite(str(dest / f"{stamp}_plate_crop_processed.jpg"), up)
+            meta = dest / f"{stamp}_{label}.txt"
+            meta.write_text(
+                f"camera={camera_id} track={track_id} label={label}\n",
+                encoding="utf-8",
+            )
+        except Exception as e:
+            print(f"[OCR debug] save failed: {e}")
+
+    @staticmethod
     def _sub_crops(crop, cls_id: int | None = None, *, fast: bool = False, plate_only: bool | None = None):
-        """Try plate-YOLO crop first; optionally skip large bumper bands."""
+        """Plate YOLO (expanded) first; targeted lower bands if miss — never full bumper OCR when plate_only."""
         ch, cw = crop.shape[:2]
         use_plate_only = OCR_PLATE_ONLY if plate_only is None else bool(plate_only)
-        plate_roi = None
+        out: list = []
+        plate_meta = "NOT_FOUND"
+        plate_conf = 0.0
+
         try:
-            from plate_detector import detect_plate_crop
+            from plate_detector import detect_plate_crop, detect_plate_xyxy
 
-            tighter = detect_plate_crop(crop, cls_id=cls_id)
-            if tighter is not None and tighter.size > 0:
-                th, tw = tighter.shape[:2]
-                if tw >= OCR_MIN_PLATE_CROP_W and th >= OCR_MIN_PLATE_CROP_H:
-                    plate_roi = tighter
-        except Exception:
-            plate_roi = None
+            xyxy, conf = detect_plate_xyxy(crop)
+            plate_conf = float(conf or 0.0)
+            if xyxy is not None:
+                x1, y1, x2, y2 = xyxy
+                tighter = crop[y1:y2, x1:x2]
+                if tighter is not None and tighter.size > 0:
+                    th, tw = tighter.shape[:2]
+                    if tw >= OCR_MIN_PLATE_CROP_W and th >= OCR_MIN_PLATE_CROP_H:
+                        out.append(tighter.copy())
+                        plate_meta = f"FOUND bbox={xyxy} conf={plate_conf:.3f} crop={tw}x{th}"
+            if not out:
+                tighter = detect_plate_crop(crop, cls_id=cls_id)
+                if tighter is not None and tighter.size > 0:
+                    th, tw = tighter.shape[:2]
+                    if tw >= OCR_MIN_PLATE_CROP_W and th >= OCR_MIN_PLATE_CROP_H:
+                        out.append(tighter.copy())
+                        plate_meta = f"FOUND(opencv/hsv) crop={tw}x{th}"
+        except Exception as e:
+            plate_meta = f"ERROR:{e}"
 
-        if plate_roi is not None:
-            return [plate_roi]
+        print(f"[OCR] Plate detector: {plate_meta}")
+
+        targets = PlateOCR._targeted_plate_rois(crop, cls_id=cls_id)
+        # Prefer bounded lower bands first — plate YOLO often clips the last digit
+        # (CAM-2 EBD814 → EBD81) and can invent false 2-letter plates (EB248).
+        ordered: list = []
+        if use_plate_only or targets:
+            ordered.extend(targets[:3] if not fast else targets[:2])
+        ordered.extend(out)
+        # de-dupe by shape id
+        uniq: list = []
+        seen_ids: set[int] = set()
+        for roi in ordered:
+            rid = id(roi)
+            if rid in seen_ids:
+                continue
+            seen_ids.add(rid)
+            uniq.append(roi)
+
+        if uniq:
+            return uniq[:3] if fast else uniq[:4]
 
         if use_plate_only:
-            # No usable plate ROI — do not EasyOCR the whole bumper (slow + noisy).
-            return []
+            return targets[:2] if fast else targets[:3]
 
-        out = [crop]
+        out = list(targets[:2]) if targets else []
         if fast:
-            # One bumper/mid band only — keeps CPU EasyOCR under a few seconds.
             if cls_id == MOTORCYCLE_CLS_ID and ch >= 24:
-                mid_y1 = max(0, int(ch * 0.10))
-                mid_y2 = min(ch, int(ch * 0.70))
-                mid = crop[mid_y1:mid_y2, :]
+                mid = crop[max(0, int(ch * 0.10)) : min(ch, int(ch * 0.70)), :]
                 if mid.size > 0 and mid.shape[0] >= 12:
-                    out.insert(0, mid)
+                    out.append(mid)
             elif ch >= 24:
                 bottom = crop[max(0, int(ch * 0.35)) : ch, :]
                 if bottom.size > 0 and bottom.shape[0] >= 12:
-                    out.insert(0, bottom)
-            # Prefer plate-YOLO / bumper first; drop the raw full crop if we have a tighter one.
-            return out[:2]
+                    out.append(bottom)
+            return out[:3] or [crop]
 
+        if not out:
+            out = [crop]
         if cls_id == MOTORCYCLE_CLS_ID and ch >= 24:
-            mid_y1 = max(0, int(ch * 0.10))
-            mid_y2 = min(ch, int(ch * 0.70))
-            mid = crop[mid_y1:mid_y2, :]
+            mid = crop[max(0, int(ch * 0.10)) : min(ch, int(ch * 0.70)), :]
             if mid.size > 0 and mid.shape[0] >= 12:
                 out.insert(0, mid)
         elif ch >= 24:
-            # Bumper / grille band (front-facing cars and multicabs).
             bottom = crop[max(0, int(ch * 0.35)) : ch, :]
             if bottom.size > 0 and bottom.shape[0] >= 12:
                 out.insert(0, bottom)
-            top = crop[0 : max(12, int(ch * 0.50)), :]
-            if top.size > 0 and top.shape[0] >= 12:
-                out.append(top)
-        if ch >= 48:
-            mid_y1 = max(0, int(ch * 0.16))
-            mid_y2 = min(ch, int(ch * 0.64))
-            mid = crop[mid_y1:mid_y2, :]
-            if mid.size > 0 and mid.shape[0] >= 12:
-                out.append(mid)
-        return out
+        return out[:4]
 
     def read_crop(
         self,
@@ -402,8 +504,10 @@ class PlateOCR:
         best: Optional[str] = None
         best_score = 0.0
         best_any_score = 0.0
+        seen_plates: list[str] = []
         t0 = time.perf_counter()
         crop_meta = f"{crop.shape[1]}x{crop.shape[0]}" if hasattr(crop, "shape") else "?"
+        first_sub = None
 
         try:
             subs = self._sub_crops(crop, cls_id=cls_id, fast=use_fast, plate_only=use_plate_only)
@@ -412,39 +516,49 @@ class PlateOCR:
                 print(f"[OCR] plate=no crop={crop_meta} OCR='' conf=0 valid=NO ms={ms} (no plate ROI)")
                 return PlateRead(status="unreadable", confidence=0.0)
 
+            first_sub = subs[0]
+            if OCR_DEBUG:
+                PlateOCR._save_debug_crops(
+                    getattr(self, "_debug_camera_id", "CAM"),
+                    getattr(self, "_debug_track_id", None),
+                    vehicle_crop=crop,
+                    plate_crop=first_sub,
+                    label="read_crop",
+                )
+
+            def _note(b: Optional[str], s: float, any_s: float) -> None:
+                nonlocal best, best_score, best_any_score
+                best_any_score = max(best_any_score, any_s)
+                if b:
+                    seen_plates.append(b)
+                if s > best_score and b:
+                    best_score = s
+                    best = b
+
             if use_fast:
                 for sub in subs:
                     b, s, any_s = self._scan_variants(sub, quick=True, fast=True)
-                    best_any_score = max(best_any_score, any_s)
-                    if s > best_score:
-                        best_score = s
-                        best = b
-                    if best and is_known_ph_format(best) and best_score >= OCR_MIN_CONF:
+                    _note(b, s, any_s)
+                    if best and is_known_ph_format(best) and best_score >= max(OCR_MIN_CONF, OCR_HIGH_CONF_LOCK - 0.05):
                         break
-                # Fast miss but crop has text — one medium pass (still no heavy rotations).
-                if not (best and is_known_ph_format(best) and best_score >= OCR_MIN_CONF):
+                if not (best and is_known_ph_format(best) and best_score >= max(OCR_MIN_CONF, OCR_HIGH_CONF_LOCK - 0.05)):
                     if best_any_score >= OCR_UNREADABLE_BELOW or best is not None:
-                        # Medium pass may use bumper bands only when plate-only is off.
                         for sub in self._sub_crops(
                             crop, cls_id=cls_id, fast=False, plate_only=use_plate_only
                         )[:2]:
                             b, s, any_s = self._scan_variants(sub, quick=True, fast=False)
-                            best_any_score = max(best_any_score, any_s)
-                            if s > best_score:
-                                best_score = s
-                                best = b
-                            if best and is_known_ph_format(best) and best_score >= OCR_MIN_CONF:
+                            _note(b, s, any_s)
+                            if best and is_known_ph_format(best) and best_score >= max(OCR_MIN_CONF, OCR_HIGH_CONF_LOCK - 0.05):
                                 break
             else:
                 quick_crop = subs[0]
-                best, best_score, best_any_score = self._scan_variants(
-                    quick_crop, quick=True, fast=False
-                )
+                b, s, any_s = self._scan_variants(quick_crop, quick=True, fast=False)
+                _note(b, s, any_s)
                 if best and best_score >= OCR_HIGH_CONF_LOCK and is_known_ph_format(best):
                     ms = int((time.perf_counter() - t0) * 1000)
                     print(
-                        f"[OCR] plate=yes crop={crop_meta} OCR={best!r} conf={best_score:.2f} "
-                        f"valid=YES ms={ms}"
+                        f"[OCR] OCR_SUCCESS plate={best!r} conf={best_score:.2f} "
+                        f"validation=PASS ms={ms} crop={crop_meta}"
                     )
                     return PlateRead(
                         plate=best,
@@ -454,28 +568,32 @@ class PlateOCR:
 
                 for sub in subs:
                     b, s, any_s = self._scan_variants(sub, quick=False, fast=False)
-                    best_any_score = max(best_any_score, any_s)
-                    if s > best_score:
-                        best_score = s
-                        best = b
+                    _note(b, s, any_s)
                     if best and best_score >= OCR_HIGH_CONF_LOCK and is_known_ph_format(best):
                         break
         except Exception as e:
             print(f"OCR pipeline error: {e}")
             return PlateRead(status="unreadable", confidence=0.0)
 
+        merged = reconcile_partial_plates(seen_plates + ([best] if best else []))
+        if merged and is_known_ph_format(merged):
+            print(f"[OCR] reconciled partials {seen_plates} → {merged}")
+            best = merged
+            best_score = max(best_score, 0.55)
+
         ms = int((time.perf_counter() - t0) * 1000)
-        if best and best_score >= OCR_MIN_CONF:
-            valid = "YES" if is_known_ph_format(best) else "NO"
+        known = bool(best and is_known_ph_format(best))
+        loose = bool(best and looks_like_plate_text(best))
+        if best and best_score >= OCR_MIN_CONF and (known or loose):
             print(
-                f"[OCR] plate=yes crop={crop_meta} OCR={best!r} conf={best_score:.2f} "
-                f"valid={valid} ms={ms}"
+                f"[OCR] OCR_SUCCESS plate={best!r} conf={best_score:.2f} "
+                f"validation={'PASS' if known else 'LOOSE'} ms={ms} crop={crop_meta}"
             )
             return PlateRead(plate=best, confidence=round(min(best_score, 1.0), 3), status="ok")
 
         print(
-            f"[OCR] plate=yes crop={crop_meta} OCR={best!r} conf={best_any_score:.2f} "
-            f"valid=NO ms={ms}"
+            f"[OCR] OCR_FAILED plate={best!r} conf={best_any_score:.2f} "
+            f"validation=FAIL ms={ms} crop={crop_meta}"
         )
         if best_any_score >= OCR_UNREADABLE_BELOW or best is not None:
             return PlateRead(
@@ -484,7 +602,6 @@ class PlateOCR:
                 status="unreadable",
             )
         return PlateRead(status="unreadable", confidence=round(best_any_score, 3))
-
 
 class AsyncPlateQueue:
     """Background OCR so YOLO / preview keep running in real time."""
@@ -568,6 +685,8 @@ class AsyncPlateQueue:
                 xyxy = None
             try:
                 t0 = time.perf_counter()
+                self.ocr._debug_camera_id = str(camera_id or "CAM")
+                self.ocr._debug_track_id = int(track_id) if track_id is not None else None
                 # Always use fast path on the async worker when OCR_FAST is set (CPU default).
                 read = self.ocr.read_crop(crop, cls_id=cls_id, fast=OCR_FAST)
                 mem = intelligence.tracks.get(track_id)
@@ -576,15 +695,18 @@ class AsyncPlateQueue:
                     mem = intelligence.find_track_near_xyxy(xyxy, pending_only=True)
                 if mem is not None:
                     mem.last_plate_crop = crop
+                    before = mem.plate_status
                     mem.apply_ocr_vote(read.plate, read.status, read.confidence)
                     mem.tick_plate_deadline()
                     ms = int((time.perf_counter() - t0) * 1000)
                     ch = crop.shape[0] if hasattr(crop, "shape") else 0
                     cw = crop.shape[1] if hasattr(crop, "shape") else 0
+                    known = "YES" if (read.plate and is_known_ph_format(read.plate)) else "NO"
                     print(
                         f"[{camera_id}] Track #{track_id} "
-                        f"OCR={read.plate!r} conf={read.confidence:.2f} "
-                        f"status={mem.plate_status} crop={cw}x{ch} ms={ms}"
+                        f"OCR={read.plate!r} conf={read.confidence:.2f} valid_ph={known} "
+                        f"vote={before}->{mem.plate_status} plate={mem.plate!r} "
+                        f"crop={cw}x{ch} ms={ms}"
                     )
                     if mem.needs_owner_lookup():
                         from plate_owner_lookup import lookup_plate_async

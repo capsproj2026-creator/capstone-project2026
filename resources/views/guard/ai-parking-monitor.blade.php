@@ -28,9 +28,14 @@
                 if (! is_array($det)) {
                     continue;
                 }
-                // Latest Detections: only show rows that already have a plate number.
+                // Latest Detections: parked / tracked vehicles (include plate failures).
+                $status = strtolower((string) ($det['plate_status'] ?? ''));
                 $plate = trim((string) ($det['plate'] ?? ''));
-                if ($plate === '' || in_array(strtolower((string) ($det['plate_status'] ?? '')), ['unreadable', 'not_read'], true)) {
+                $hasTrack = isset($det['track_id']) && $det['track_id'] !== null && $det['track_id'] !== '';
+                if ($plate === '' && ! in_array($status, ['unreadable', 'not_read', 'ok', 'pending'], true) && ! $hasTrack) {
+                    continue;
+                }
+                if ($plate === '' && ! $hasTrack && ! in_array($status, ['unreadable', 'not_read'], true)) {
                     continue;
                 }
                 $det['_camera'] = $det['_camera'] ?? $snapCamId;
@@ -42,8 +47,10 @@
                 if (! is_array($det)) {
                     continue;
                 }
+                $status = strtolower((string) ($det['plate_status'] ?? ''));
                 $plate = trim((string) ($det['plate'] ?? ''));
-                if ($plate === '' || in_array(strtolower((string) ($det['plate_status'] ?? '')), ['unreadable', 'not_read'], true)) {
+                $hasTrack = isset($det['track_id']) && $det['track_id'] !== null && $det['track_id'] !== '';
+                if ($plate === '' && ! $hasTrack && ! in_array($status, ['unreadable', 'not_read'], true)) {
                     continue;
                 }
                 $det['_camera'] = $det['_camera'] ?? ($primaryAi['camera_id'] ?? '');
@@ -247,13 +254,20 @@
                                     @endif
                                 </p>
                                 <p class="mt-0.5 text-xs text-gray-500">
+                                    @if (! empty($det['motion_label']) || ($det['motion_state'] ?? '') === 'parked')
+                                        <span class="font-medium text-sky-700">{{ $det['motion_label'] ?? 'Parked' }}</span>
+                                        ·
+                                    @endif
                                     Role:
-                                    <span class="font-medium text-gray-700">{{ $ownerRole ?: ($plate ? 'Unregistered' : '—') }}</span>
-                                    @if (! empty($det['class']))
-                                        · {{ ucfirst((string) $det['class']) }}
+                                    <span class="font-medium text-gray-700">{{ $ownerRole ?: (($plate || in_array(($det['plate_status'] ?? ''), ['unreadable', 'not_read'], true)) ? 'Unregistered' : '—') }}</span>
+                                    @if (! empty($det['vehicle_type']) || ! empty($det['class']))
+                                        · {{ ucfirst((string) ($det['vehicle_type'] ?? $det['class'])) }}
                                     @endif
                                     @if (! empty($detCam))
                                         · {{ $detCam }}
+                                    @endif
+                                    @if (! empty($det['track_id']))
+                                        · #{{ $det['track_id'] }}
                                     @endif
                                 </p>
                             </div>
@@ -758,13 +772,16 @@
         if (!det) return '—';
         const bits = [];
         if (det.track_id != null) bits.push(`#${det.track_id}`);
+        const vType = det.vehicle_type || det.class;
+        if (vType) bits.push(String(vType).charAt(0).toUpperCase() + String(vType).slice(1));
         if (det.motion_state === 'parked') bits.push('Parked');
         else if (det.motion_state === 'idle') bits.push('Settling');
         if (det.plate_status === 'unreadable') bits.push('Plate Unreadable');
         else if (det.plate_status === 'not_read') bits.push('Plate Not Read');
-        else if (det.registered && det.owner_name) bits.push([det.owner_name, det.plate].filter(Boolean).join(' · '));
-        else if (det.plate) bits.push(`Unknown · ${det.plate}`);
+        else if (det.plate) bits.push(String(det.plate));
         else bits.push('Reading plate…');
+        if (det.owner_name) bits.push(String(det.owner_name));
+        else if (det.plate || det.plate_status === 'unreadable' || det.plate_status === 'not_read') bits.push('Unknown');
         return bits.join(' · ');
     };
 
@@ -872,11 +889,13 @@
                 }
             });
 
-            const hasPlateNumber = (det) => {
-                const plate = String(det?.plate || '').trim();
-                if (!plate) return false;
-                if (['unreadable', 'not_read'].includes(String(det?.plate_status || '').toLowerCase())) return false;
-                return true;
+            const isVisibleDet = (det) => {
+                if (!det) return false;
+                if (det.track_id != null && det.track_id !== '') return true;
+                const plate = String(det.plate || '').trim();
+                const status = String(det.plate_status || '').toLowerCase();
+                if (plate) return true;
+                return ['unreadable', 'not_read', 'pending', 'ok'].includes(status);
             };
 
             const allDets = [];
@@ -885,13 +904,13 @@
                 if (!(health.connected || health.stream_reachable)) return;
                 if (snap?.camera_id && String(snap.camera_id).toLowerCase() !== String(camId).toLowerCase()) return;
                 (snap.detections || []).forEach((det) => {
-                    if (!hasPlateNumber(det)) return;
+                    if (!isVisibleDet(det)) return;
                     allDets.push({ ...det, _camera: camId });
                 });
             });
             if (allDets.length === 0 && ai && (ai.detections || []).length) {
                 (ai.detections || []).forEach((det) => {
-                    if (!hasPlateNumber(det)) return;
+                    if (!isVisibleDet(det)) return;
                     allDets.push(det);
                 });
             }

@@ -273,7 +273,7 @@ class TrackMemory:
 
     def apply_ocr_vote(self, plate: str | None, status: str, confidence: float) -> None:
         """Stabilize plate text across frames; avoid locking on a single bad read."""
-        from plate_text import is_known_ph_format
+        from plate_text import is_known_ph_format, looks_like_plate_text, reconcile_partial_plates
 
         if self.plate_status == "ok" and self.plate:
             return
@@ -282,10 +282,26 @@ class TrackMemory:
 
         self.ocr_confidence = max(self.ocr_confidence, float(confidence or 0.0))
         if status == "ok" and plate:
+            known = is_known_ph_format(plate)
+            loose = looks_like_plate_text(plate)
+            if not known and not loose:
+                self.unreadable_votes += 1
+                self.tick_plate_deadline()
+                return
+
             weight = max(1, int(round(float(confidence or 0.0) * 4)))
-            if is_known_ph_format(plate):
+            if known:
                 weight += 1
             self.plate_votes[plate] = self.plate_votes.get(plate, 0) + weight
+
+            # Cross-frame bull-bar merge (EBD81 + EBD84 → EBD814).
+            merged = reconcile_partial_plates(list(self.plate_votes.keys()) + [plate])
+            if merged and is_known_ph_format(merged) and merged not in self.plate_votes:
+                self.plate_votes[merged] = self.plate_votes.get(merged, 0) + max(2, weight)
+                plate = merged
+                known = True
+                loose = True
+
             votes = self.plate_votes[plate]
             total_votes = sum(self.plate_votes.values())
             consensus = votes / max(total_votes, 1)
@@ -293,18 +309,17 @@ class TrackMemory:
             high_conf_lock = (
                 votes >= 1
                 and confidence >= OCR_HIGH_CONF_LOCK
-                and is_known_ph_format(plate)
+                and known
             )
-            # Never lock brand/header junk (ISUZU, PHILIPPINES, etc.).
             consensus_lock = (
-                is_known_ph_format(plate)
-                and votes >= PLATE_VOTE_NEEDED
+                votes >= PLATE_VOTE_NEEDED
                 and (len(self.plate_votes) == 1 or consensus >= PLATE_VOTE_CONSENSUS_RATIO)
+                and (known or (loose and confidence >= 0.25))
             )
             format_lock = (
-                votes >= 1
-                and is_known_ph_format(plate)
-                and confidence >= max(0.22, OCR_HIGH_CONF_LOCK - 0.15)
+                known
+                and votes >= 1
+                and confidence >= max(0.22, OCR_HIGH_CONF_LOCK - 0.20)
             )
 
             if high_conf_lock or consensus_lock or format_lock:
@@ -313,22 +328,18 @@ class TrackMemory:
                 self.plate = plate
                 self.plate_status = "ok"
                 self.unreadable_votes = 0
+                print(
+                    f"[OCR] VOTE_LOCK plate={plate!r} conf={confidence:.2f} "
+                    f"known_ph={known} votes={votes}"
+                )
                 return
 
-            # Non-locking ok read still counts toward attempt budget via submit;
-            # soft-fail toward unreadable when format never wins.
-            self.unreadable_votes += 1
-            if self.unreadable_votes >= PLATE_VOTE_NEEDED + 2:
-                self.plate = None
-                self.plate_status = "unreadable"
-                self.clear_owner()
-            else:
-                self.tick_plate_deadline()
+            # Non-locking ok read still counts toward attempt budget via submit.
+            self.tick_plate_deadline()
             return
 
         if status == "unreadable":
             self.unreadable_votes += 1
-            # Only mark unreadable once we have tried enough and never locked a plate.
             if self.plate_status != "ok" and self.unreadable_votes >= PLATE_VOTE_NEEDED + 1:
                 self.plate = None
                 self.plate_status = "unreadable"
