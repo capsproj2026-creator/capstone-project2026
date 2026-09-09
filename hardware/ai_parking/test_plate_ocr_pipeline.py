@@ -56,17 +56,71 @@ class PlateDeadlineTests(unittest.TestCase):
 
     def test_apply_ocr_vote_ignores_after_ok(self):
         mem = TrackMemory(first_seen=time.time())
-        mem.plate = "EBD8123"
-        mem.plate_status = "ok"
+        mem.lock_plate("EBD814", 0.95, "test")
         mem.apply_ocr_vote("ZZZ9999", "ok", 0.99)
-        self.assertEqual(mem.plate, "EBD8123")
+        mem.apply_ocr_vote(None, "unreadable", 0.1)
+        mem.tick_plate_deadline()
+        self.assertEqual(mem.plate, "EBD814")
         self.assertEqual(mem.plate_status, "ok")
+
+    def test_locked_plate_survives_failures_and_outliers(self):
+        mem = TrackMemory(first_seen=time.time())
+        mem.apply_ocr_vote("EBD814", "ok", 0.91)
+        mem.apply_ocr_vote("EBD814", "ok", 0.94)
+        mem.apply_ocr_vote("EBD814", "ok", 0.93)
+        self.assertEqual(mem.plate_status, "ok")
+        self.assertEqual(mem.plate, "EBD814")
+        # Later noise must not unlock or replace.
+        mem.apply_ocr_vote(None, "unreadable", 0.2)
+        mem.apply_ocr_vote("EBD8147", "ok", 0.52)
+        mem.ocr_attempts = 99
+        mem.tick_plate_deadline()
+        self.assertEqual(mem.plate, "EBD814")
+        self.assertEqual(mem.plate_status, "ok")
+
+    def test_outlier_does_not_beat_consensus(self):
+        mem = TrackMemory(first_seen=time.time())
+        mem.apply_ocr_vote("EBD814", "ok", 0.91)
+        mem.apply_ocr_vote("EBD8147", "ok", 0.52)
+        mem.apply_ocr_vote("EBD814", "ok", 0.94)
+        mem.apply_ocr_vote("EBD81", "ok", 0.61)
+        mem.apply_ocr_vote("EBD814", "ok", 0.93)
+        self.assertEqual(mem.plate_status, "ok")
+        self.assertEqual(mem.plate, "EBD814")
 
     def test_is_plate_terminal(self):
         mem = TrackMemory(first_seen=time.time())
         self.assertFalse(mem.is_plate_terminal())
         mem.plate_status = "not_read"
         self.assertTrue(mem.is_plate_terminal())
+
+    def test_reattach_absorbs_locked_plate(self):
+        intel = ParkingIntelligence()
+        old = intel.touch_track(15, xyxy=(100, 100, 300, 300))
+        old.lock_plate("EBD814", 0.92, "test")
+        old.owner_name = "Joshua Fuertes Sabater"
+        old.owner_label = "Joshua Fuertes Sabater"
+        old.registered = True
+        old.lookup_done_at = time.time()
+        old.lookup_plate = "EBD814"
+        # Tracker ID changes to 16 for same box.
+        new = intel.touch_track(16, xyxy=(110, 110, 290, 290))
+        self.assertEqual(new.plate_status, "ok")
+        self.assertEqual(new.plate, "EBD814")
+        self.assertEqual(new.owner_name, "Joshua Fuertes Sabater")
+        # Submit must no-op on absorbed lock.
+        from plate_ocr import AsyncPlateQueue
+
+        class FakeOCR:
+            enabled = True
+
+        q = AsyncPlateQueue(FakeOCR())  # type: ignore[arg-type]
+        import numpy as np
+
+        frame = np.zeros((200, 300, 3), dtype=np.uint8)
+        before = new.ocr_attempts
+        q.submit("CAM-2", 16, frame, (110, 110, 290, 290), intel, every_sec=0.0)
+        self.assertEqual(new.ocr_attempts, before)
 
 
 class PlateTextTests(unittest.TestCase):

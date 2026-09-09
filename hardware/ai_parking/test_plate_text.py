@@ -92,6 +92,21 @@ class PlateTextTest(unittest.TestCase):
         self.assertEqual(best, "EBD814")
         self.assertGreaterEqual(score, 0.5)
 
+    def test_prefer_stable_over_extra_digit(self):
+        from plate_text import prefer_stable_car_plate
+
+        self.assertEqual(
+            prefer_stable_car_plate("EBD8147", ["EBD814", "EBD8147"]),
+            "EBD814",
+        )
+        # Lone trailing scrap join should lose to embedded 6-char plate in best_from_results.
+        results = [
+            ([[0, 0], [80, 0], [80, 30], [0, 30]], "EBD814", 0.94),
+            ([[90, 0], [100, 0], [100, 30], [90, 30]], "7", 0.40),
+        ]
+        best, score, _ = best_from_results(results, 0.15)
+        self.assertEqual(best, "EBD814")
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -654,7 +654,7 @@ def parse_tracks(
         oy2 = int(y2 * scale_ocr)
 
         if track_id is not None:
-            mem = intelligence.touch_track(track_id, now)
+            mem = intelligence.touch_track(track_id, now, xyxy=(x1, y1, x2, y2))
             plate = mem.plate
             plate_status = mem.plate_status
             ocr_confidence = mem.ocr_confidence
@@ -685,7 +685,7 @@ def parse_tracks(
                             pass
             except Exception:
                 pass
-            if plate_queue is not None:
+            if plate_queue is not None and not mem.is_plate_terminal():
                 ocr_ok = not OCR_PARKED_ONLY or motion_state in (None, "parked", "idle")
                 # Prefer real vehicles for OCR; still allow mid-size parked cars/multicabs.
                 box_w = max(1, ox2 - ox1)
@@ -704,6 +704,11 @@ def parse_tracks(
                         OCR_EVERY_SEC,
                         cls_id=row.get("cls_id"),
                     )
+            elif plate_queue is not None and mem.is_plate_locked():
+                # One-line skip (rate-limit via last_ocr_at reuse).
+                if (now - getattr(mem, "last_ocr_at", 0)) > 5.0:
+                    print(f"[{camera_id}] Track #{track_id} OCR skipped: plate already locked ({mem.plate})")
+                    mem.last_ocr_at = now
             # Refresh after possible prior async result
             plate = mem.plate
             plate_status = mem.plate_status

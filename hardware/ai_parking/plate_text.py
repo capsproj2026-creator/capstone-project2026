@@ -158,22 +158,6 @@ def reconcile_partial_plates(candidates: Iterable[str]) -> Optional[str]:
     return None
 
 
-def looks_like_plate_text(text: str) -> bool:
-    """Loose gate: alphanumeric plate-like string (OCR success ≠ PH validation)."""
-    cleaned = re.sub(r"[^A-Z0-9]", "", _clean_raw(text or ""))
-    if len(cleaned) < 5 or len(cleaned) > 12:
-        return False
-    if cleaned in _BRAND_OR_HEADER:
-        return False
-    if cleaned.isalpha() and len(cleaned) >= 5:
-        return False
-    has_letter = any(ch.isalpha() for ch in cleaned)
-    has_digit = any(ch.isdigit() for ch in cleaned)
-    if has_letter and has_digit:
-        return True
-    return is_ph_motorcycle_plate(cleaned)
-
-
 def _clean_raw(text: str) -> str:
     raw = str(text).upper().strip()
     return re.sub(r"\s+", "", raw)
@@ -294,6 +278,69 @@ _BRAND_OR_HEADER = {
 }
 
 
+def prefer_stable_car_plate(candidate: str | None, pool: Iterable[str]) -> Optional[str]:
+    """
+    Prefer a reliable shorter PH plate over an overlong extension.
+
+    Example: pool has EBD814 and EBD8147 → keep EBD814 (extra trailing digit
+    often comes from bull-bar OCR noise, not a real character).
+
+    Do NOT invent a shorter plate from a lone 4-digit reading (NAR6011 must stay).
+    """
+    if not candidate:
+        return None
+    parsed, _ = parse_plate_candidate(candidate)
+    if not parsed:
+        return candidate
+
+    raw_forms: set[str] = set()
+    known_pool: list[str] = []
+    for raw in pool:
+        cleaned = re.sub(r"[^A-Z0-9]", "", _clean_raw(str(raw)))
+        if cleaned:
+            raw_forms.add(cleaned)
+        p, known = parse_plate_candidate(str(raw))
+        if p and known and is_ph_car_plate(p):
+            known_pool.append(p)
+    if parsed not in known_pool and is_ph_car_plate(parsed):
+        known_pool.append(parsed)
+
+    if not known_pool:
+        return parsed
+
+    # Demote 3+4 only when a true 3+3 reading also appeared as its own OCR string.
+    m_long = re.fullmatch(r"([A-Z]{2,3})(\d{3,4})", parsed)
+    if m_long and len(m_long.group(2)) == 4:
+        letters, digits = m_long.group(1), m_long.group(2)
+        shorter = letters + digits[:3]
+        if (
+            is_ph_car_plate(shorter)
+            and shorter in raw_forms
+            and shorter != parsed
+        ):
+            return shorter
+
+    best = parsed
+    best_key = (
+        0 if is_ph_car_plate(parsed) else -1,
+        -len(parsed),
+        sum(1 for ch in parsed if ch.isalpha()),
+    )
+    for p in known_pool:
+        if p not in raw_forms and p != parsed:
+            continue
+        key = (
+            1 if is_ph_car_plate(p) else 0,
+            -len(p),
+            sum(1 for ch in p if ch.isalpha()),
+        )
+        if p == parsed or parsed.startswith(p) or p.startswith(parsed[: max(5, len(p) - 1)]):
+            if key > best_key:
+                best_key = key
+                best = p
+    return best
+
+
 def score_candidate(parsed: str, known_format: bool, conf: float) -> float:
     score = float(conf)
     if parsed in _BRAND_OR_HEADER or (parsed.isalpha() and len(parsed) >= 5):
@@ -342,6 +389,11 @@ def _substring_candidates(text: str) -> list[str]:
     if len(compact) == 11 and compact.isdigit():
         add(compact)
 
+    # If the full string is already a known 3+4 plate, do not emit its 3+3
+    # prefix as a competing candidate (would steal NAR6011 → NAR601).
+    if is_ph_car_plate(compact) and re.fullmatch(r"[A-Z]{2,3}\d{4}", compact):
+        return out[:16]
+
     # Car plates embedded in longer reads (e.g. ABC1234X).
     for length in (7, 6):
         if len(compact) < length:
@@ -377,13 +429,24 @@ def _joined_ocr_candidates(results: list[tuple]) -> list[tuple[str, float]]:
     """
     EasyOCR often splits one plate into pieces (e.g. 'NAR' + '6011').
     Build left-to-right joins so we can recover the full plate.
+    Reject tiny low-confidence scraps (often bull-bar holes → fake trailing digits).
     """
-    parts: list[tuple[float, float, str, float]] = []
+    parts: list[tuple[float, float, str, float, float]] = []
     for bbox, text, conf in results:
         cleaned = re.sub(r"[^A-Z0-9]", "", _clean_raw(str(text)))
         if not cleaned:
             continue
-        parts.append((_bbox_center_x(bbox), _bbox_center_y(bbox), cleaned, float(conf)))
+        conf_f = float(conf)
+        # Ignore single-character scraps unless very confident — they create EBD814+"7".
+        if len(cleaned) == 1 and conf_f < 0.85:
+            continue
+        width = 0.0
+        try:
+            xs = [float(p[0]) for p in bbox]
+            width = max(xs) - min(xs)
+        except Exception:
+            width = 0.0
+        parts.append((_bbox_center_x(bbox), _bbox_center_y(bbox), cleaned, conf_f, width))
 
     if not parts:
         return []
@@ -397,21 +460,34 @@ def _joined_ocr_candidates(results: list[tuple]) -> list[tuple[str, float]]:
         text = re.sub(r"[^A-Z0-9]", "", text.upper())
         if len(text) < 5 or text in seen:
             return
+        # Prefer stripping a trailing singleton digit when a known 3+3 plate is prefix.
+        if len(text) >= 7:
+            head = text[:6]
+            if is_ph_car_plate(head) and len(text) == 7 and text[-1].isdigit():
+                # Keep both; scoring will prefer the stable shorter form when present.
+                pass
         seen.add(text)
         out.append((text, conf))
 
-    # Full join across all fragments.
-    add("".join(p[2] for p in parts), min(p[3] for p in parts))
+    # Do not full-join every scrap — only fragments that look plate-sized.
+    core = [p for p in parts if len(p[2]) >= 2 or p[3] >= 0.85]
+    if len(core) >= 2:
+        add("".join(p[2] for p in core), min(p[3] for p in core))
 
-    # Sliding joins of 2–4 neighboring fragments (covers NAR+6011).
     n = len(parts)
     for width in range(2, min(5, n + 1)):
         for start in range(0, n - width + 1):
             chunk = parts[start : start + width]
+            # Skip joins that append a lone character with large horizontal gap.
+            if any(len(p[2]) == 1 for p in chunk):
+                xs = [p[0] for p in chunk]
+                if max(xs) - min(xs) > 120:
+                    continue
+                if min(p[3] for p in chunk if len(p[2]) == 1) < 0.85:
+                    continue
             add("".join(p[2] for p in chunk), min(p[3] for p in chunk))
 
-    # Same-row joins only (fragments that share a similar Y).
-    row: list[tuple[float, float, str, float]] = []
+    row: list[tuple[float, float, str, float, float]] = []
     row_y = None
     for part in parts:
         if row_y is None or abs(part[1] - row_y) <= 18:
@@ -480,12 +556,19 @@ def best_from_results(
             best = parsed
 
     # Bull-bar truncation: merge EBD81 + EBD84 → EBD814 within the same OCR pass.
-    merged = reconcile_partial_plates(
-        [c for c, _ in candidates] + ([best] if best else [])
-    )
+    pool = [c for c, _ in candidates] + ([best] if best else [])
+    merged = reconcile_partial_plates(pool)
     if merged and is_known_ph_format(merged):
-        if best is None or not is_known_ph_format(best) or len(merged) > len(best or ""):
+        if best is None or not is_known_ph_format(best):
             best = merged
             best_score = max(best_score, 0.55)
+        else:
+            stable = prefer_stable_car_plate(best, [merged, best] + pool)
+            if stable:
+                best = stable
+                best_score = max(best_score, 0.55)
+
+    if best:
+        best = prefer_stable_car_plate(best, pool + [best]) or best
 
     return best, best_score, best_any

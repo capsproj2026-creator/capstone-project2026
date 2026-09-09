@@ -16,8 +16,13 @@ IOU_THRESHOLD = float(os.getenv("AI_PARKING_ZONE_IOU", "0.08"))
 # Keep lost tracks briefly so ByteTrack ID flicker does not wipe plate memory / re-OCR.
 TRACK_HOLD_SEC = float(os.getenv("AI_PARKING_TRACK_HOLD_SEC", "20.0"))
 # Require this many matching OCR reads before locking a plate on a track.
-PLATE_VOTE_NEEDED = int(os.getenv("AI_PARKING_PLATE_VOTE_NEEDED", "2"))
-OCR_HIGH_CONF_LOCK = float(os.getenv("AI_PARKING_OCR_HIGH_CONF_LOCK", "0.55"))
+PLATE_VOTE_NEEDED = int(os.getenv("AI_PARKING_PLATE_VOTE_NEEDED", "3"))
+# Exceptional single-frame lock (known PH format only).
+OCR_HIGH_CONF_LOCK = float(os.getenv("AI_PARKING_OCR_HIGH_CONF_LOCK", "0.90"))
+# Alias / explicit lock threshold (falls back to HIGH_CONF).
+PLATE_LOCK_CONFIDENCE = float(
+    os.getenv("AI_PARKING_PLATE_LOCK_CONFIDENCE", str(OCR_HIGH_CONF_LOCK))
+)
 PLATE_VOTE_CONSENSUS_RATIO = float(os.getenv("AI_PARKING_PLATE_VOTE_CONSENSUS_RATIO", "0.55"))
 TRACK_MATCH_IOU = float(os.getenv("AI_PARKING_TRACK_MATCH_IOU", "0.25"))
 # Cap OCR retries / pending "Reading plate…" time so tracks reach a terminal state.
@@ -101,13 +106,16 @@ class TrackMemory:
     slot_id: str | None = None
     slot_since: float | None = None
     plate: str | None = None
-    # pending | ok | unreadable | not_read
+    # pending | ok | unreadable | not_read  (ok == plate_locked)
     plate_status: str = "pending"
     ocr_confidence: float = 0.0
     plate_votes: dict[str, int] = field(default_factory=dict)
+    plate_vote_scores: dict[str, float] = field(default_factory=dict)
     unreadable_votes: int = 0
     ocr_attempts: int = 0
     ocr_started_at: float = 0.0
+    plate_locked_at: float = 0.0
+    plate_lock_reason: str | None = None
     last_ocr_at: float = 0.0
     last_ocr_xyxy: tuple[int, int, int, int] | None = None
     last_plate_crop: Any = None
@@ -241,10 +249,15 @@ class TrackMemory:
             return self.owner_label or ("Unknown" if not self.registered else None)
         return None
 
+    def is_plate_locked(self) -> bool:
+        return self.plate_status == "ok" and bool(self.plate)
+
     def is_plate_terminal(self) -> bool:
         return self.plate_status in ("ok", "unreadable", "not_read")
 
     def mark_ocr_attempt(self, now: float | None = None) -> None:
+        if self.is_plate_terminal():
+            return
         now = now if now is not None else time.time()
         if self.ocr_started_at <= 0:
             self.ocr_started_at = now
@@ -253,8 +266,10 @@ class TrackMemory:
     def tick_plate_deadline(self, now: float | None = None) -> bool:
         """
         Force pending → not_read when attempts/timeout are exhausted.
-        Returns True if status changed to not_read.
+        Never clears a locked plate.
         """
+        if self.is_plate_locked() or self.plate_status in ("unreadable", "not_read"):
+            return False
         if self.plate_status != "pending":
             return False
         now = now if now is not None else time.time()
@@ -268,19 +283,94 @@ class TrackMemory:
             return False
         self.plate = None
         self.plate_status = "not_read"
+        self.plate_locked_at = 0.0
+        self.plate_lock_reason = "timeout_or_max_attempts"
         self.clear_owner()
+        print(
+            f"[OCR] PLATE NOT READ attempts={self.ocr_attempts}/{OCR_MAX_ATTEMPTS} "
+            f"timeout={OCR_PENDING_TIMEOUT_SEC}s"
+        )
+        return True
+
+    def lock_plate(self, plate: str, confidence: float, reason: str) -> None:
+        """Hard-lock plate; subsequent OCR must be ignored."""
+        if self.is_plate_locked() and self.plate == plate:
+            self.ocr_confidence = max(self.ocr_confidence, float(confidence or 0.0))
+            return
+        if self.plate != plate:
+            self.clear_owner()
+        self.plate = plate
+        self.plate_status = "ok"
+        self.ocr_confidence = max(self.ocr_confidence, float(confidence or 0.0))
+        self.plate_locked_at = time.time()
+        self.plate_lock_reason = reason
+        self.unreadable_votes = 0
+        print(
+            f"[OCR] PLATE LOCKED: {plate} conf={confidence:.2f} reason={reason} "
+            f"attempts={self.ocr_attempts}"
+        )
+
+    def absorb_plate_state(self, donor: "TrackMemory") -> bool:
+        """Copy locked / in-progress OCR state from a nearby track (ID churn)."""
+        if donor is self:
+            return False
+        if self.is_plate_locked():
+            return False
+        if not (donor.is_plate_locked() or donor.plate_votes or donor.ocr_attempts > 0):
+            return False
+
+        self.plate = donor.plate
+        self.plate_status = donor.plate_status
+        self.ocr_confidence = donor.ocr_confidence
+        self.plate_votes = dict(donor.plate_votes)
+        self.plate_vote_scores = dict(donor.plate_vote_scores)
+        self.unreadable_votes = donor.unreadable_votes
+        self.ocr_attempts = max(self.ocr_attempts, donor.ocr_attempts)
+        self.ocr_started_at = donor.ocr_started_at or self.ocr_started_at
+        self.plate_locked_at = donor.plate_locked_at
+        self.plate_lock_reason = donor.plate_lock_reason
+        if donor.last_plate_crop is not None:
+            self.last_plate_crop = donor.last_plate_crop
+        if donor.last_vehicle_crop is not None:
+            self.last_vehicle_crop = donor.last_vehicle_crop
+        # Preserve owner so UI does not flicker to Unknown.
+        if donor.lookup_done_at > 0 and donor.lookup_plate == donor.plate:
+            self.owner_name = donor.owner_name
+            self.owner_label = donor.owner_label
+            self.user_id = donor.user_id
+            self.vehicle_details = donor.vehicle_details
+            self.department = donor.department
+            self.owner_role = donor.owner_role
+            self.registration_status = donor.registration_status
+            self.registered = donor.registered
+            self.lookup_done_at = donor.lookup_done_at
+            self.lookup_plate = donor.lookup_plate
+            self.lookup_pending = False
+        print(
+            f"[OCR] REATTACH absorbed status={self.plate_status} plate={self.plate!r} "
+            f"from prior track state"
+        )
         return True
 
     def apply_ocr_vote(self, plate: str | None, status: str, confidence: float) -> None:
-        """Stabilize plate text across frames; avoid locking on a single bad read."""
-        from plate_text import is_known_ph_format, looks_like_plate_text, reconcile_partial_plates
+        """Stabilize plate text across frames; never overwrite a locked plate."""
+        from plate_text import (
+            is_known_ph_format,
+            looks_like_plate_text,
+            prefer_stable_car_plate,
+            reconcile_partial_plates,
+        )
 
-        if self.plate_status == "ok" and self.plate:
+        # HARD LOCK — ignore everything after lock (including failures / outliers).
+        if self.is_plate_locked():
+            print(f"[OCR] OCR skipped: plate already locked ({self.plate})")
             return
         if self.plate_status in ("unreadable", "not_read"):
             return
 
-        self.ocr_confidence = max(self.ocr_confidence, float(confidence or 0.0))
+        conf = float(confidence or 0.0)
+        self.ocr_confidence = max(self.ocr_confidence, conf)
+
         if status == "ok" and plate:
             known = is_known_ph_format(plate)
             loose = looks_like_plate_text(plate)
@@ -289,66 +379,98 @@ class TrackMemory:
                 self.tick_plate_deadline()
                 return
 
-            weight = max(1, int(round(float(confidence or 0.0) * 4)))
+            # Demote overlong outliers (EBD8147) when a stable shorter plate is supported.
+            plate = prefer_stable_car_plate(plate, list(self.plate_votes.keys()) + [plate]) or plate
+            known = is_known_ph_format(plate)
+            loose = looks_like_plate_text(plate)
+
+            weight = max(1, int(round(conf * 4)))
             if known:
-                weight += 1
+                weight += 2
+            if conf >= PLATE_LOCK_CONFIDENCE:
+                weight += 2
             self.plate_votes[plate] = self.plate_votes.get(plate, 0) + weight
+            self.plate_vote_scores[plate] = self.plate_vote_scores.get(plate, 0.0) + conf
 
             # Cross-frame bull-bar merge (EBD81 + EBD84 → EBD814).
             merged = reconcile_partial_plates(list(self.plate_votes.keys()) + [plate])
-            if merged and is_known_ph_format(merged) and merged not in self.plate_votes:
-                self.plate_votes[merged] = self.plate_votes.get(merged, 0) + max(2, weight)
+            if merged:
+                merged = prefer_stable_car_plate(merged, list(self.plate_votes.keys()) + [merged, plate]) or merged
+            if merged and is_known_ph_format(merged):
+                if merged not in self.plate_votes:
+                    self.plate_votes[merged] = self.plate_votes.get(merged, 0) + max(3, weight)
+                    self.plate_vote_scores[merged] = self.plate_vote_scores.get(merged, 0.0) + conf
                 plate = merged
                 known = True
-                loose = True
 
-            votes = self.plate_votes[plate]
+            # Pick leader by weighted votes, then score; never prefer overlong extension.
+            leader = prefer_stable_car_plate(
+                max(self.plate_votes.items(), key=lambda kv: (kv[1], self.plate_vote_scores.get(kv[0], 0.0)))[0],
+                list(self.plate_votes.keys()),
+            ) or plate
+            votes = self.plate_votes.get(leader, 0)
             total_votes = sum(self.plate_votes.values())
             consensus = votes / max(total_votes, 1)
+            leader_conf = self.plate_vote_scores.get(leader, 0.0) / max(1, self.plate_votes.get(leader, 1))
+            leader_known = is_known_ph_format(leader)
 
+            print(
+                f"[OCR] attempt {self.ocr_attempts}/{OCR_MAX_ATTEMPTS} "
+                f"raw={plate!r} conf={conf:.2f} leader={leader!r} "
+                f"votes={votes}/{total_votes} ({consensus:.0%})"
+            )
+
+            # A) Exceptional single strong known-PH read
             high_conf_lock = (
-                votes >= 1
-                and confidence >= OCR_HIGH_CONF_LOCK
+                leader_known
+                and conf >= PLATE_LOCK_CONFIDENCE
+                and plate == leader
                 and known
             )
+            # B) Multi-frame consensus on known PH (or strong plate-like)
             consensus_lock = (
                 votes >= PLATE_VOTE_NEEDED
-                and (len(self.plate_votes) == 1 or consensus >= PLATE_VOTE_CONSENSUS_RATIO)
-                and (known or (loose and confidence >= 0.25))
+                and consensus >= PLATE_VOTE_CONSENSUS_RATIO
+                and leader_known
+                and leader_conf >= max(0.35, PLATE_LOCK_CONFIDENCE - 0.40)
             )
-            format_lock = (
-                known
-                and votes >= 1
-                and confidence >= max(0.22, OCR_HIGH_CONF_LOCK - 0.20)
+            # C) Two strong matching known-PH reads (slightly below absolute lock conf)
+            dual_strong = (
+                leader_known
+                and self.plate_votes.get(leader, 0) >= max(2, PLATE_VOTE_NEEDED - 1)
+                and leader_conf >= max(0.55, PLATE_LOCK_CONFIDENCE - 0.25)
+                and consensus >= 0.5
             )
 
-            if high_conf_lock or consensus_lock or format_lock:
-                if self.plate != plate:
-                    self.clear_owner()
-                self.plate = plate
-                self.plate_status = "ok"
-                self.unreadable_votes = 0
-                print(
-                    f"[OCR] VOTE_LOCK plate={plate!r} conf={confidence:.2f} "
-                    f"known_ph={known} votes={votes}"
+            if high_conf_lock:
+                self.lock_plate(leader, conf, f"high_conf>={PLATE_LOCK_CONFIDENCE:.2f}")
+                return
+            if consensus_lock:
+                self.lock_plate(
+                    leader,
+                    leader_conf,
+                    f"{votes} matching votes ({consensus:.0%} consensus)",
                 )
                 return
+            if dual_strong:
+                self.lock_plate(leader, leader_conf, "strong matching results")
+                return
 
-            # Non-locking ok read still counts toward attempt budget via submit.
             self.tick_plate_deadline()
             return
 
         if status == "unreadable":
+            # Failures never unlock; only advance toward terminal while still pending.
             self.unreadable_votes += 1
-            if self.plate_status != "ok" and self.unreadable_votes >= PLATE_VOTE_NEEDED + 1:
+            if self.unreadable_votes >= PLATE_VOTE_NEEDED + 2 and not self.plate_votes:
                 self.plate = None
                 self.plate_status = "unreadable"
+                self.plate_lock_reason = "unreadable"
                 self.clear_owner()
             else:
                 self.tick_plate_deadline()
             return
 
-        # empty / other — still advance toward not_read
         self.tick_plate_deadline()
 
 
@@ -358,15 +480,34 @@ class ParkingIntelligence:
         self._debounce: dict[tuple, float] = {}
         self.active_events: list[dict[str, Any]] = []
 
-    def touch_track(self, track_id: int, now: float | None = None) -> TrackMemory:
+    def touch_track(
+        self,
+        track_id: int,
+        now: float | None = None,
+        xyxy: tuple[int, int, int, int] | None = None,
+    ) -> TrackMemory:
         now = now if now is not None else time.time()
         mem = self.tracks.get(track_id)
+        created = mem is None
         if mem is None:
             mem = TrackMemory(first_seen=now, last_seen=now, hit_streak=1)
             self.tracks[track_id] = mem
         else:
             mem.note_seen(now)
-        mem.tick_plate_deadline(now)
+        if xyxy is not None:
+            mem.last_xyxy = tuple(int(v) for v in xyxy[:4])
+        # Track ID churn: absorb locked / in-progress OCR from a nearby box.
+        if (created or not mem.is_plate_locked()) and xyxy is not None:
+            donor = self.find_track_near_xyxy(
+                xyxy,
+                pending_only=False,
+                exclude_id=int(track_id),
+                prefer_locked=True,
+            )
+            if donor is not None:
+                mem.absorb_plate_state(donor)
+        if not mem.is_plate_locked():
+            mem.tick_plate_deadline(now)
         return mem
 
     def find_track_near_xyxy(
@@ -374,10 +515,13 @@ class ParkingIntelligence:
         xyxy: tuple[int, int, int, int] | list[int] | None,
         pending_only: bool = True,
         min_iou: float | None = None,
+        exclude_id: int | None = None,
+        prefer_locked: bool = False,
     ) -> TrackMemory | None:
         """
         Reattach an async OCR result when the tracker ID changed mid-OCR.
         Prefer pending tracks with highest IoU against the submit-time bbox.
+        When prefer_locked=True, favor tracks that already have a locked plate.
         """
         if xyxy is None:
             return None
@@ -389,8 +533,10 @@ class ParkingIntelligence:
             return None
         thresh = float(min_iou) if min_iou is not None else TRACK_MATCH_IOU
         best_mem: TrackMemory | None = None
-        best_iou = thresh
-        for mem in self.tracks.values():
+        best_key = (-1.0, -1.0)  # (locked_bonus, iou)
+        for tid, mem in self.tracks.items():
+            if exclude_id is not None and int(tid) == int(exclude_id):
+                continue
             if pending_only and mem.plate_status != "pending":
                 continue
             if mem.is_plate_terminal() and pending_only:
@@ -399,8 +545,12 @@ class ParkingIntelligence:
             if prev is None:
                 continue
             iou = _iou_xyxy(box, prev)
-            if iou >= best_iou:
-                best_iou = iou
+            if iou < thresh:
+                continue
+            locked_bonus = 1.0 if (prefer_locked and mem.is_plate_locked()) else 0.0
+            key = (locked_bonus, iou)
+            if key > best_key:
+                best_key = key
                 best_mem = mem
         return best_mem
 
@@ -468,15 +618,18 @@ class ParkingIntelligence:
             plate_status = v.get("plate_status") or "pending"
             if tid is not None:
                 seen_tracks.add(int(tid))
-                mem = self.touch_track(int(tid), now)
-                if plate and plate_status == "ok":
-                    mem.plate = plate
-                    mem.plate_status = "ok"
+                mem = self.touch_track(int(tid), now, xyxy=tuple(int(x) for x in xyxy))
+                # Never let a stale vehicle payload downgrade a locked plate.
+                if mem.is_plate_locked():
+                    pass
+                elif plate and plate_status == "ok":
+                    mem.lock_plate(str(plate), float(v.get("ocr_confidence") or 0.5), "analyze_payload")
                 elif plate_status == "unreadable" and mem.plate_status != "ok":
                     mem.plate_status = "unreadable"
                     mem.plate = None
                 elif plate_status == "not_read" and mem.plate_status == "pending":
                     mem.plate_status = "not_read"
+                    mem.plate = None
                     mem.plate = None
                 mem.tick_plate_deadline(now)
 
