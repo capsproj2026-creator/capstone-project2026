@@ -13,8 +13,12 @@ from geometry import assign_zones_for_box, has_calibrated_slots, usable_zones_fo
 OVERTIME_MINUTES = float(os.getenv("AI_PARKING_OVERTIME_MINUTES", "30"))
 DEBOUNCE_MINUTES = float(os.getenv("AI_PARKING_VIOLATION_DEBOUNCE_MINUTES", "10"))
 IOU_THRESHOLD = float(os.getenv("AI_PARKING_ZONE_IOU", "0.08"))
-# Keep lost tracks briefly so ByteTrack ID flicker does not wipe plate memory / re-OCR.
+# Keep lost tracker aliases briefly (IoU tracker max age).
 TRACK_HOLD_SEC = float(os.getenv("AI_PARKING_TRACK_HOLD_SEC", "20.0"))
+# Keep recognition sessions alive after tracker miss so ID churn can reattach.
+TRACK_LOST_GRACE_SEC = float(
+    os.getenv("AI_PARKING_TRACK_LOST_GRACE_SEC", str(TRACK_HOLD_SEC))
+)
 # Require this many matching OCR reads before locking a plate on a track.
 PLATE_VOTE_NEEDED = int(os.getenv("AI_PARKING_PLATE_VOTE_NEEDED", "3"))
 # Exceptional single-frame lock (known PH format only).
@@ -25,6 +29,9 @@ PLATE_LOCK_CONFIDENCE = float(
 )
 PLATE_VOTE_CONSENSUS_RATIO = float(os.getenv("AI_PARKING_PLATE_VOTE_CONSENSUS_RATIO", "0.55"))
 TRACK_MATCH_IOU = float(os.getenv("AI_PARKING_TRACK_MATCH_IOU", "0.25"))
+# Center-distance fallback when IoU is weak (fraction of bbox diagonal).
+TRACK_MATCH_CENTER_FRAC = float(os.getenv("AI_PARKING_TRACK_MATCH_CENTER_FRAC", "0.22"))
+TRACK_MATCH_SIZE_RATIO = float(os.getenv("AI_PARKING_TRACK_MATCH_SIZE_RATIO", "0.45"))
 # Cap OCR retries / pending "Reading plate…" time so tracks reach a terminal state.
 OCR_MAX_ATTEMPTS = int(os.getenv("AI_PARKING_OCR_MAX_ATTEMPTS", "6"))
 OCR_PENDING_TIMEOUT_SEC = float(os.getenv("AI_PARKING_OCR_PENDING_TIMEOUT_SEC", "12"))
@@ -54,6 +61,72 @@ def _iou_xyxy(a, b) -> float:
     area_b = max(0, bx2 - bx1) * max(0, by2 - by1)
     union = area_a + area_b - inter
     return inter / union if union > 0 else 0.0
+
+
+def _center_xyxy(a) -> tuple[float, float]:
+    return ((a[0] + a[2]) / 2.0, (a[1] + a[3]) / 2.0)
+
+
+def _diag_xyxy(a) -> float:
+    return max(1.0, ((a[2] - a[0]) ** 2 + (a[3] - a[1]) ** 2) ** 0.5)
+
+
+def _area_xyxy(a) -> float:
+    return max(0.0, float(a[2] - a[0]) * float(a[3] - a[1]))
+
+
+def _size_ratio(a, b) -> float:
+    aa, bb = _area_xyxy(a), _area_xyxy(b)
+    if aa <= 0 or bb <= 0:
+        return 0.0
+    return min(aa, bb) / max(aa, bb)
+
+
+def _mem_ref_boxes(mem: "TrackMemory") -> list[tuple[int, int, int, int]]:
+    """Prefer infer-frame last_xyxy; also try OCR-frame box (scale may differ)."""
+    out: list[tuple[int, int, int, int]] = []
+    for prev in (getattr(mem, "last_xyxy", None), getattr(mem, "last_ocr_xyxy", None)):
+        if prev is None:
+            continue
+        try:
+            box = tuple(int(v) for v in prev[:4])
+        except (TypeError, ValueError):
+            continue
+        if len(box) == 4 and box not in out:
+            out.append(box)  # type: ignore[arg-type]
+    return out
+
+
+def _spatial_match_score(
+    box: tuple[int, int, int, int],
+    mem: "TrackMemory",
+) -> tuple[float, float, float, bool]:
+    """
+    Returns (score, best_iou, best_center_dist_px, matched).
+    score is higher for stronger matches; matched means reattach-worthy.
+    """
+    refs = _mem_ref_boxes(mem)
+    if not refs:
+        return (-1.0, 0.0, 1e9, False)
+    best_iou = 0.0
+    best_dist = 1e9
+    best_size = 0.0
+    cx, cy = _center_xyxy(box)
+    for ref in refs:
+        best_iou = max(best_iou, _iou_xyxy(box, ref))
+        rx, ry = _center_xyxy(ref)
+        dist = ((cx - rx) ** 2 + (cy - ry) ** 2) ** 0.5
+        if dist < best_dist:
+            best_dist = dist
+            best_size = _size_ratio(box, ref)
+    diag = _diag_xyxy(box)
+    center_ok = best_dist <= max(12.0, TRACK_MATCH_CENTER_FRAC * diag)
+    size_ok = best_size >= TRACK_MATCH_SIZE_RATIO
+    iou_ok = best_iou >= TRACK_MATCH_IOU
+    matched = iou_ok or (center_ok and size_ok)
+    # Prefer high IoU, then close center, then locked plates handled by caller.
+    score = best_iou * 10.0 - (best_dist / max(diag, 1.0)) + best_size
+    return (score, best_iou, best_dist, matched)
 
 
 class SimpleIoUTracker:
@@ -103,6 +176,11 @@ class SimpleIoUTracker:
 class TrackMemory:
     first_seen: float
     last_seen: float = 0.0
+    recognition_session_id: int = 0
+    current_tracker_id: int | None = None
+    previous_tracker_ids: list[int] = field(default_factory=list)
+    camera_id: str = ""
+    vehicle_type: str | None = None
     slot_id: str | None = None
     slot_since: float | None = None
     plate: str | None = None
@@ -152,6 +230,10 @@ class TrackMemory:
     def note_seen(self, now: float) -> None:
         self.last_seen = now
         self.hit_streak += 1
+
+    def session_label(self) -> str:
+        sid = int(self.recognition_session_id or 0)
+        return f"VehicleSession-{sid:04d}" if sid else "VehicleSession-????"
 
     def update_motion(self, xyxy: tuple[int, int, int, int], now: float) -> str:
         """Classify vehicle as moving vs parked from bbox center drift."""
@@ -475,39 +557,210 @@ class TrackMemory:
 
 
 class ParkingIntelligence:
-    def __init__(self):
+    def __init__(self, camera_id: str = ""):
+        # tracker_id -> recognition session (multiple IDs may alias the same object)
         self.tracks: dict[int, TrackMemory] = {}
+        # Stable recognition sessions (physical vehicle identity)
+        self.sessions: dict[int, TrackMemory] = {}
+        self._next_session_id = 1
+        self.camera_id = str(camera_id or "")
         self._debounce: dict[tuple, float] = {}
         self.active_events: list[dict[str, Any]] = []
+
+    def _unique_sessions(self) -> list[TrackMemory]:
+        seen: set[int] = set()
+        out: list[TrackMemory] = []
+        for mem in self.sessions.values():
+            mid = id(mem)
+            if mid in seen:
+                continue
+            seen.add(mid)
+            out.append(mem)
+        for mem in self.tracks.values():
+            mid = id(mem)
+            if mid in seen:
+                continue
+            seen.add(mid)
+            out.append(mem)
+        return out
+
+    def _bind_tracker(self, track_id: int, mem: TrackMemory) -> None:
+        tid = int(track_id)
+        prev = mem.current_tracker_id
+        if prev is not None and int(prev) != tid:
+            if int(prev) not in mem.previous_tracker_ids:
+                mem.previous_tracker_ids.append(int(prev))
+            # Drop superseded alias so OCR/UI resolve through the live tracker id.
+            old = self.tracks.get(int(prev))
+            if old is mem:
+                del self.tracks[int(prev)]
+        mem.current_tracker_id = tid
+        self.tracks[tid] = mem
+        if mem.recognition_session_id:
+            self.sessions[int(mem.recognition_session_id)] = mem
+
+    def find_session_near_xyxy(
+        self,
+        xyxy: tuple[int, int, int, int] | list[int] | None,
+        *,
+        exclude_tracker_id: int | None = None,
+        cls_id: int | None = None,
+        vehicle_type: str | None = None,
+        within_grace: bool = True,
+        now: float | None = None,
+        prefer_locked: bool = True,
+    ) -> tuple[TrackMemory | None, dict[str, Any]]:
+        """Spatially match a bbox to an existing recognition session."""
+        meta: dict[str, Any] = {"iou": 0.0, "center_distance": 0.0, "matched": False}
+        if xyxy is None:
+            return None, meta
+        try:
+            box = tuple(int(v) for v in xyxy[:4])
+        except (TypeError, ValueError):
+            return None, meta
+        if len(box) != 4:
+            return None, meta
+        now = now if now is not None else time.time()
+        best_mem: TrackMemory | None = None
+        best_key = (-1.0, -1.0, -1.0)  # locked_bonus, score, iou
+        best_iou = 0.0
+        best_dist = 0.0
+
+        for mem in self._unique_sessions():
+            if within_grace and TRACK_LOST_GRACE_SEC > 0:
+                age = now - float(mem.last_seen or mem.first_seen or now)
+                if age > TRACK_LOST_GRACE_SEC:
+                    continue
+            if exclude_tracker_id is not None and mem.current_tracker_id is not None:
+                if int(mem.current_tracker_id) == int(exclude_tracker_id):
+                    # Still allow matching this session when the exclude id is a stale alias
+                    # that already points here — handled by caller creating a new id.
+                    pass
+            if exclude_tracker_id is not None and self.tracks.get(int(exclude_tracker_id)) is mem:
+                continue
+            if cls_id is not None and mem.cls_id is not None and int(mem.cls_id) != int(cls_id):
+                # Soft preference only — do not hard-reject (class flicker truck/car).
+                pass
+            if vehicle_type and mem.vehicle_type and vehicle_type != mem.vehicle_type:
+                pass
+
+            score, iou, dist, matched = _spatial_match_score(box, mem)
+            if not matched:
+                continue
+            locked_bonus = 1.0 if (prefer_locked and mem.is_plate_locked()) else 0.0
+            # Prefer sessions with any OCR progress over empty ones.
+            progress = 1.0 if (mem.is_plate_locked() or mem.plate_votes or mem.ocr_attempts > 0) else 0.0
+            key = (locked_bonus, progress, score, iou)
+            if key > best_key:
+                best_key = key
+                best_mem = mem
+                best_iou = iou
+                best_dist = dist
+
+        if best_mem is None:
+            return None, meta
+        meta = {
+            "iou": round(best_iou, 3),
+            "center_distance": round(best_dist, 1),
+            "matched": True,
+            "session_id": best_mem.recognition_session_id,
+        }
+        return best_mem, meta
 
     def touch_track(
         self,
         track_id: int,
         now: float | None = None,
         xyxy: tuple[int, int, int, int] | None = None,
+        *,
+        vehicle_type: str | None = None,
+        cls_id: int | None = None,
+        camera_id: str | None = None,
     ) -> TrackMemory:
         now = now if now is not None else time.time()
-        mem = self.tracks.get(track_id)
-        created = mem is None
-        if mem is None:
-            mem = TrackMemory(first_seen=now, last_seen=now, hit_streak=1)
-            self.tracks[track_id] = mem
-        else:
+        tid = int(track_id)
+        cam = str(camera_id if camera_id is not None else self.camera_id or "")
+
+        mem = self.tracks.get(tid)
+        if mem is not None:
             mem.note_seen(now)
+            mem.current_tracker_id = tid
+            if cam:
+                mem.camera_id = cam
+            if vehicle_type:
+                mem.vehicle_type = vehicle_type
+            if cls_id is not None:
+                mem.cls_id = int(cls_id)
+            if xyxy is not None:
+                mem.last_xyxy = tuple(int(v) for v in xyxy[:4])
+            if not mem.is_plate_locked():
+                mem.tick_plate_deadline(now)
+            return mem
+
+        # New tracker ID - try to reattach to an existing recognition session.
         if xyxy is not None:
-            mem.last_xyxy = tuple(int(v) for v in xyxy[:4])
-        # Track ID churn: absorb locked / in-progress OCR from a nearby box.
-        if (created or not mem.is_plate_locked()) and xyxy is not None:
-            donor = self.find_track_near_xyxy(
+            donor, meta = self.find_session_near_xyxy(
                 xyxy,
-                pending_only=False,
-                exclude_id=int(track_id),
+                exclude_tracker_id=tid,
+                cls_id=cls_id,
+                vehicle_type=vehicle_type,
+                within_grace=True,
+                now=now,
                 prefer_locked=True,
             )
             if donor is not None:
-                mem.absorb_plate_state(donor)
-        if not mem.is_plate_locked():
-            mem.tick_plate_deadline(now)
+                old_tid = donor.current_tracker_id
+                self._bind_tracker(tid, donor)
+                donor.note_seen(now)
+                if cam:
+                    donor.camera_id = cam
+                if vehicle_type:
+                    donor.vehicle_type = vehicle_type
+                if cls_id is not None:
+                    donor.cls_id = int(cls_id)
+                donor.last_xyxy = tuple(int(v) for v in xyxy[:4])
+                cam_tag = cam or donor.camera_id or "CAM"
+                print(
+                    f"[{cam_tag}] Track ID changed: #{old_tid} -> #{tid}\n"
+                    f"[{cam_tag}] Session #{donor.recognition_session_id} REATTACHED\n"
+                    f"[{cam_tag}] Reason: IoU={meta.get('iou')}, "
+                    f"center_distance={meta.get('center_distance')}px"
+                )
+                if donor.is_plate_locked():
+                    print(
+                        f"[{cam_tag}] Track #{tid}\n"
+                        f"[{cam_tag}] Session #{donor.recognition_session_id}\n"
+                        f"[{cam_tag}] Plate={donor.plate}\n"
+                        f"[{cam_tag}] OCR=SKIPPED\n"
+                        f"[{cam_tag}] Reason=PLATE_ALREADY_LOCKED"
+                    )
+                elif not donor.is_plate_locked():
+                    donor.tick_plate_deadline(now)
+                return donor
+
+        # Genuinely new physical vehicle / no spatial match.
+        sid = self._next_session_id
+        self._next_session_id += 1
+        mem = TrackMemory(
+            first_seen=now,
+            last_seen=now,
+            hit_streak=1,
+            recognition_session_id=sid,
+            current_tracker_id=tid,
+            camera_id=cam,
+            vehicle_type=vehicle_type,
+            cls_id=int(cls_id) if cls_id is not None else None,
+        )
+        if xyxy is not None:
+            mem.last_xyxy = tuple(int(v) for v in xyxy[:4])
+        self.sessions[sid] = mem
+        self.tracks[tid] = mem
+        cam_tag = cam or "CAM"
+        print(
+            f"[{cam_tag}] Track #{tid}\n"
+            f"[{cam_tag}] No matching session\n"
+            f"[{cam_tag}] New recognition session created #{sid} ({mem.session_label()})"
+        )
         return mem
 
     def find_track_near_xyxy(
@@ -534,29 +787,67 @@ class ParkingIntelligence:
         thresh = float(min_iou) if min_iou is not None else TRACK_MATCH_IOU
         best_mem: TrackMemory | None = None
         best_key = (-1.0, -1.0)  # (locked_bonus, iou)
-        for tid, mem in self.tracks.items():
-            if exclude_id is not None and int(tid) == int(exclude_id):
+        for mem in self._unique_sessions():
+            if exclude_id is not None and mem.current_tracker_id is not None:
+                if int(mem.current_tracker_id) == int(exclude_id):
+                    continue
+            if exclude_id is not None and self.tracks.get(int(exclude_id)) is mem:
                 continue
             if pending_only and mem.plate_status != "pending":
                 continue
             if mem.is_plate_terminal() and pending_only:
                 continue
-            prev = mem.last_ocr_xyxy or mem.last_xyxy
-            if prev is None:
-                continue
-            iou = _iou_xyxy(box, prev)
-            if iou < thresh:
+            score, iou, _dist, matched = _spatial_match_score(box, mem)
+            if min_iou is not None:
+                if iou < thresh:
+                    continue
+            elif not matched and iou < thresh:
                 continue
             locked_bonus = 1.0 if (prefer_locked and mem.is_plate_locked()) else 0.0
-            key = (locked_bonus, iou)
+            key = (locked_bonus, iou, score)
             if key > best_key:
                 best_key = key
                 best_mem = mem
         return best_mem
 
+    def prune_stale_sessions(self, seen_tracks: set[int], now: float | None = None) -> None:
+        """Drop tracker aliases not seen this frame; expire sessions after grace."""
+        now = now if now is not None else time.time()
+        grace = max(0.5, float(TRACK_LOST_GRACE_SEC))
+
+        # Remove superseded / unseen tracker aliases (session may remain).
+        for tid in list(self.tracks.keys()):
+            if tid in seen_tracks:
+                continue
+            mem = self.tracks.get(tid)
+            if mem is None:
+                continue
+            if mem.current_tracker_id is not None and int(mem.current_tracker_id) != int(tid):
+                del self.tracks[tid]
+                continue
+            # Keep alias briefly so in-flight OCR keyed by old id still resolves.
+            age = now - float(mem.last_seen or mem.first_seen or now)
+            if age > min(2.0, grace):
+                del self.tracks[tid]
+
+        # Expire recognition sessions that have not been seen within grace.
+        for sid, mem in list(self.sessions.items()):
+            age = now - float(mem.last_seen or mem.first_seen or now)
+            if age <= grace:
+                continue
+            for tid, m in list(self.tracks.items()):
+                if m is mem:
+                    del self.tracks[tid]
+            del self.sessions[sid]
+            cam_tag = mem.camera_id or "CAM"
+            print(
+                f"[{cam_tag}] Session #{sid} expired "
+                f"(grace={grace:.1f}s, last_plate={mem.plate!r})"
+            )
+
     def tick_all_plate_deadlines(self, now: float | None = None) -> None:
         now = now if now is not None else time.time()
-        for mem in self.tracks.values():
+        for mem in self._unique_sessions():
             mem.tick_plate_deadline(now)
 
     def _should_emit(self, key: tuple) -> bool:
@@ -618,7 +909,13 @@ class ParkingIntelligence:
             plate_status = v.get("plate_status") or "pending"
             if tid is not None:
                 seen_tracks.add(int(tid))
-                mem = self.touch_track(int(tid), now, xyxy=tuple(int(x) for x in xyxy))
+                mem = self.touch_track(
+                    int(tid),
+                    now,
+                    xyxy=tuple(int(x) for x in xyxy),
+                    vehicle_type=v.get("class") or v.get("vehicle_type"),
+                    cls_id=v.get("cls_id"),
+                )
                 # Never let a stale vehicle payload downgrade a locked plate.
                 if mem.is_plate_locked():
                     pass
@@ -629,7 +926,6 @@ class ParkingIntelligence:
                     mem.plate = None
                 elif plate_status == "not_read" and mem.plate_status == "pending":
                     mem.plate_status = "not_read"
-                    mem.plate = None
                     mem.plate = None
                 mem.tick_plate_deadline(now)
 
@@ -702,13 +998,8 @@ class ParkingIntelligence:
                     if evt:
                         events.append(evt)
 
-        # Soft-prune stale tracks (hold briefly to survive tracker flicker / brief occlusion).
-        stale = [
-            t for t, mem in self.tracks.items()
-            if t not in seen_tracks and (now - (mem.last_seen or mem.first_seen)) > TRACK_HOLD_SEC
-        ]
-        for t in stale:
-            del self.tracks[t]
+        # Soft-prune: keep sessions through grace; do not treat tracker ID as identity.
+        self.prune_stale_sessions(seen_tracks, now)
 
         slot_statuses: list[dict[str, Any]] = []
         if use_poly:

@@ -660,8 +660,8 @@ class AsyncPlateQueue:
             mem.last_ocr_at = now
             mem.cls_id = cls_id
             mem.last_plate_crop = crop
+            # OCR-frame box only — never overwrite infer-frame last_xyxy (breaks reattach).
             mem.last_ocr_xyxy = xyxy_i
-            mem.last_xyxy = xyxy_i
             mem.mark_ocr_attempt(now)
 
         try:
@@ -691,8 +691,10 @@ class AsyncPlateQueue:
                 read = self.ocr.read_crop(crop, cls_id=cls_id, fast=OCR_FAST)
                 mem = intelligence.tracks.get(track_id)
                 if mem is None and xyxy is not None and hasattr(intelligence, "find_track_near_xyxy"):
-                    # Track IDs often change while CPU OCR runs; reattach by bbox overlap.
-                    mem = intelligence.find_track_near_xyxy(xyxy, pending_only=True)
+                    # Track IDs often change while CPU OCR runs; reattach by bbox / session.
+                    mem = intelligence.find_track_near_xyxy(
+                        xyxy, pending_only=False, prefer_locked=True
+                    )
                 if mem is not None:
                     mem.last_plate_crop = crop
                     before = mem.plate_status
@@ -702,8 +704,9 @@ class AsyncPlateQueue:
                     ch = crop.shape[0] if hasattr(crop, "shape") else 0
                     cw = crop.shape[1] if hasattr(crop, "shape") else 0
                     known = "YES" if (read.plate and is_known_ph_format(read.plate)) else "NO"
+                    sid = getattr(mem, "recognition_session_id", None)
                     print(
-                        f"[{camera_id}] Track #{track_id} "
+                        f"[{camera_id}] Track #{track_id} Session #{sid} "
                         f"OCR={read.plate!r} conf={read.confidence:.2f} valid_ph={known} "
                         f"vote={before}->{mem.plate_status} plate={mem.plate!r} "
                         f"crop={cw}x{ch} ms={ms}"

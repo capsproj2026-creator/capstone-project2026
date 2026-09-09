@@ -95,20 +95,23 @@ class PlateDeadlineTests(unittest.TestCase):
         self.assertTrue(mem.is_plate_terminal())
 
     def test_reattach_absorbs_locked_plate(self):
-        intel = ParkingIntelligence()
-        old = intel.touch_track(15, xyxy=(100, 100, 300, 300))
+        intel = ParkingIntelligence(camera_id="CAM-2")
+        old = intel.touch_track(15, xyxy=(100, 100, 300, 300), vehicle_type="truck")
         old.lock_plate("EBD814", 0.92, "test")
         old.owner_name = "Joshua Fuertes Sabater"
         old.owner_label = "Joshua Fuertes Sabater"
         old.registered = True
         old.lookup_done_at = time.time()
         old.lookup_plate = "EBD814"
-        # Tracker ID changes to 16 for same box.
-        new = intel.touch_track(16, xyxy=(110, 110, 290, 290))
+        sid = old.recognition_session_id
+        # Tracker ID changes to 16 for same box — same recognition session object.
+        new = intel.touch_track(16, xyxy=(110, 110, 290, 290), vehicle_type="truck")
+        self.assertIs(new, old)
+        self.assertEqual(new.recognition_session_id, sid)
         self.assertEqual(new.plate_status, "ok")
         self.assertEqual(new.plate, "EBD814")
         self.assertEqual(new.owner_name, "Joshua Fuertes Sabater")
-        # Submit must no-op on absorbed lock.
+        # Submit must no-op on locked session.
         from plate_ocr import AsyncPlateQueue
 
         class FakeOCR:
@@ -121,6 +124,69 @@ class PlateDeadlineTests(unittest.TestCase):
         before = new.ocr_attempts
         q.submit("CAM-2", 16, frame, (110, 110, 290, 290), intel, every_sec=0.0)
         self.assertEqual(new.ocr_attempts, before)
+
+    def test_track_id_churn_keeps_locked_session(self):
+        """Acceptance: #9 → #15 → #2 must keep plate LOCKED without restarting OCR."""
+        intel = ParkingIntelligence(camera_id="CAM-2")
+        now = time.time()
+        a = intel.touch_track(9, now, xyxy=(270, 100, 1025, 790), vehicle_type="truck")
+        a.lock_plate("EBD814", 0.95, "test")
+        a.owner_label = "Joshua Fuertes Sabater"
+        a.lookup_done_at = now
+        a.lookup_plate = "EBD814"
+        a.registered = True
+        sid = a.recognition_session_id
+
+        # Simulate miss: prune aliases but keep session in grace.
+        intel.prune_stale_sessions(seen_tracks=set(), now=now + 0.5)
+        self.assertIn(sid, intel.sessions)
+
+        b = intel.touch_track(15, now + 0.6, xyxy=(273, 102, 1024, 791), vehicle_type="truck")
+        self.assertIs(b, a)
+        self.assertEqual(b.plate, "EBD814")
+        self.assertEqual(b.plate_status, "ok")
+        self.assertEqual(b.current_tracker_id, 15)
+
+        intel.prune_stale_sessions(seen_tracks=set(), now=now + 1.0)
+        c = intel.touch_track(2, now + 1.1, xyxy=(268, 98, 1020, 788), vehicle_type="truck")
+        self.assertIs(c, a)
+        self.assertEqual(c.recognition_session_id, sid)
+        self.assertEqual(c.plate, "EBD814")
+        self.assertEqual(c.owner_label, "Joshua Fuertes Sabater")
+        # OCR deadline / not_read must never clear a lock after churn.
+        c.ocr_attempts = 99
+        c.tick_plate_deadline(now + 1.2)
+        self.assertEqual(c.plate_status, "ok")
+        self.assertEqual(c.plate, "EBD814")
+
+    def test_new_vehicle_after_session_expire(self):
+        from parking_rules import TRACK_LOST_GRACE_SEC
+
+        intel = ParkingIntelligence(camera_id="CAM-2")
+        now = time.time()
+        old = intel.touch_track(9, now, xyxy=(270, 100, 1025, 790), vehicle_type="truck")
+        old.lock_plate("EBD814", 0.95, "test")
+        sid = old.recognition_session_id
+        # Expire session.
+        intel.prune_stale_sessions(seen_tracks=set(), now=now + TRACK_LOST_GRACE_SEC + 1.0)
+        self.assertNotIn(sid, intel.sessions)
+        # Different physical vehicle (far box) gets a new session — not old plate.
+        neu = intel.touch_track(
+            3, now + TRACK_LOST_GRACE_SEC + 1.5, xyxy=(50, 50, 180, 160), vehicle_type="car"
+        )
+        self.assertNotEqual(neu.recognition_session_id, sid)
+        self.assertNotEqual(neu.plate, "EBD814")
+        self.assertEqual(neu.plate_status, "pending")
+
+    def test_reattach_survives_ocr_scale_mismatch(self):
+        """last_ocr_xyxy may be 2x infer coords; reattach must still use last_xyxy."""
+        intel = ParkingIntelligence(camera_id="CAM-2")
+        old = intel.touch_track(9, xyxy=(100, 100, 300, 300), vehicle_type="truck")
+        old.lock_plate("EBD814", 0.93, "test")
+        old.last_ocr_xyxy = (200, 200, 600, 600)  # OCR-frame scale
+        new = intel.touch_track(15, xyxy=(105, 105, 295, 295), vehicle_type="truck")
+        self.assertIs(new, old)
+        self.assertEqual(new.plate, "EBD814")
 
 
 class PlateTextTests(unittest.TestCase):

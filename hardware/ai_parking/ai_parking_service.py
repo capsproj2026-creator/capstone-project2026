@@ -654,13 +654,34 @@ def parse_tracks(
         oy2 = int(y2 * scale_ocr)
 
         if track_id is not None:
-            mem = intelligence.touch_track(track_id, now, xyxy=(x1, y1, x2, y2))
+            mem = intelligence.touch_track(
+                track_id,
+                now,
+                xyxy=(x1, y1, x2, y2),
+                vehicle_type=name,
+                cls_id=row.get("cls_id"),
+                camera_id=camera_id,
+            )
             plate = mem.plate
             plate_status = mem.plate_status
             ocr_confidence = mem.ocr_confidence
             motion_state = mem.update_motion((x1, y1, x2, y2), now)
             mem.last_ocr_xyxy = (ox1, oy1, ox2, oy2)
             mem.cls_id = row.get("cls_id")
+            mem.vehicle_type = name
+            # Periodic lifecycle debug (same physical vehicle / session).
+            if (now - getattr(mem, "_last_session_log_at", 0.0)) > 2.5:
+                mem._last_session_log_at = now  # type: ignore[attr-defined]
+                cx = int((x1 + x2) / 2)
+                cy = int((y1 + y2) / 2)
+                print(
+                    f"[{camera_id or 'CAM'}] Track #{track_id} "
+                    f"Session #{mem.recognition_session_id} "
+                    f"Vehicle={name} Plate={plate or 'NONE'} "
+                    f"Status={str(plate_status or 'pending').upper()} "
+                    f"bbox=({x1},{y1},{x2},{y2}) center=({cx},{cy}) "
+                    f"ocr_attempts={mem.ocr_attempts}"
+                )
             try:
                 fh, fw = ocr_src.shape[:2]
                 pad_x = max(2, int((ox2 - ox1) * 0.04))
@@ -707,7 +728,10 @@ def parse_tracks(
             elif plate_queue is not None and mem.is_plate_locked():
                 # One-line skip (rate-limit via last_ocr_at reuse).
                 if (now - getattr(mem, "last_ocr_at", 0)) > 5.0:
-                    print(f"[{camera_id}] Track #{track_id} OCR skipped: plate already locked ({mem.plate})")
+                    print(
+                        f"[{camera_id}] Track #{track_id} Session #{mem.recognition_session_id} "
+                        f"Plate={mem.plate} OCR=SKIPPED Reason=PLATE_ALREADY_LOCKED"
+                    )
                     mem.last_ocr_at = now
             # Refresh after possible prior async result
             plate = mem.plate
@@ -751,6 +775,11 @@ def parse_tracks(
             "plate_status": plate_status,
             "xyxy": [nx1, ny1, nx2, ny2],
         }
+        if track_id is not None:
+            mem_sid = intelligence.tracks.get(int(track_id))
+            if mem_sid is not None and getattr(mem_sid, "recognition_session_id", None):
+                det["recognition_session_id"] = mem_sid.recognition_session_id
+                det["ocr_attempts"] = int(getattr(mem_sid, "ocr_attempts", 0) or 0)
         if plate:
             det["plate"] = plate
             det["ocr_text"] = plate
@@ -1478,7 +1507,9 @@ class CameraWorker:
         self.device = device
         self.model_lock = model_lock
         self.plate_queue = plate_queue
-        self.intelligence = ParkingIntelligence()
+        self.intelligence = ParkingIntelligence(
+            camera_id=str(getattr(config, "camera_id", "") or "")
+        )
         self.tracker = SimpleIoUTracker()
         self.scene = SharedSceneState()
         self.state = StreamState()
