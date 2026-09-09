@@ -11,10 +11,21 @@ use App\Models\VisitorRfidCard;
 use App\Models\ViolationLog;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Cache;
 
 class DashboardStatsService
 {
+    /** Short TTL so dashboards stay snappy over Atlas without feeling stale. */
+    private const DASHBOARD_CACHE_SECONDS = 20;
+
     public function adminStats(): array
+    {
+        return Cache::remember('dashboard:admin_stats', self::DASHBOARD_CACHE_SECONDS, function () {
+            return $this->computeAdminStats();
+        });
+    }
+
+    private function computeAdminStats(): array
     {
         $today = Carbon::today();
         $weekStart = Carbon::today()->startOfWeek(Carbon::MONDAY);
@@ -146,6 +157,13 @@ class DashboardStatsService
     }
 
     public function guardStats(): array
+    {
+        return Cache::remember('dashboard:guard_stats', self::DASHBOARD_CACHE_SECONDS, function () {
+            return $this->computeGuardStats();
+        });
+    }
+
+    private function computeGuardStats(): array
     {
         $today = Carbon::today();
         $slots = ParkingSlot::query()->get(['status']);

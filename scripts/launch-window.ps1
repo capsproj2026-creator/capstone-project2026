@@ -40,18 +40,18 @@ Write-Host ("=== $Title ===") -ForegroundColor Cyan
 $envFile = Join-Path $WorkingDirectory ".env"
 $cmdLine = $CommandArgs -join " "
 if ((Test-Path $envFile) -and ($cmdLine -match "artisan serve")) {
-    $isWindows = ($null -ne $IsWindows -and $IsWindows) -or ($env:OS -match "Windows")
-    if ($isWindows) {
-        Write-Host "Note: php artisan serve is single-threaded on Windows. Keep AI POST interval >= 5s." -ForegroundColor DarkYellow
-    } else {
-        foreach ($line in Get-Content $envFile) {
-            if ($line -match '^\s*PHP_CLI_SERVER_WORKERS\s*=\s*(\d+)') {
-                $env:PHP_CLI_SERVER_WORKERS = $Matches[1]
-                Write-Host "PHP_CLI_SERVER_WORKERS=$($Matches[1])" -ForegroundColor DarkGray
-                break
-            }
+    $workers = $null
+    foreach ($line in Get-Content $envFile) {
+        if ($line -match '^\s*#?\s*PHP_CLI_SERVER_WORKERS\s*=\s*(\d+)') {
+            $workers = $Matches[1]
+            break
         }
     }
+    if (-not $workers -or [int]$workers -lt 1) {
+        $workers = "4"
+    }
+    $env:PHP_CLI_SERVER_WORKERS = $workers
+    Write-Host "PHP_CLI_SERVER_WORKERS=$workers (parallel browser + AI requests)" -ForegroundColor DarkGray
 }
 
 if (-not $CommandArgs -or $CommandArgs.Count -eq 0) {
