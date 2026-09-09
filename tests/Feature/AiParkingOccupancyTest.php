@@ -580,6 +580,33 @@ class AiParkingOccupancyTest extends TestCase
         $this->assertNull($det['owner_name']);
     }
 
+    public function test_occupancy_marks_not_read_plate_without_inventing_text(): void
+    {
+        $response = $this->withHeaders(['X-AI-TOKEN' => self::TOKEN])
+            ->postJson('/api/ai-parking/occupancy', [
+                'camera_id' => 'CAM-AI-1',
+                'area_id' => self::FIXTURE_A,
+                'vehicle_count' => 1,
+                'detections' => [
+                    [
+                        'class' => 'car',
+                        'confidence' => 0.9,
+                        'plate_status' => 'not_read',
+                        'ocr_confidence' => 0.15,
+                        'track_id' => 11,
+                        'plate' => 'GARBAGE',
+                    ],
+                ],
+            ])
+            ->assertOk();
+
+        $det = $response->json('data.detections.0');
+        $this->assertSame('not_read', $det['plate_status']);
+        $this->assertSame('Plate Not Read', $det['plate_label']);
+        $this->assertNull($det['plate']);
+        $this->assertNull($det['owner_name']);
+    }
+
     public function test_occupancy_accepts_xyxy_without_breaking_legacy_payload(): void
     {
         $this->withHeaders(['X-AI-TOKEN' => self::TOKEN])

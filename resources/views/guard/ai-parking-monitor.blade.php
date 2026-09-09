@@ -30,7 +30,7 @@
                 }
                 // Latest Detections: only show rows that already have a plate number.
                 $plate = trim((string) ($det['plate'] ?? ''));
-                if ($plate === '' || strtolower((string) ($det['plate_status'] ?? '')) === 'unreadable') {
+                if ($plate === '' || in_array(strtolower((string) ($det['plate_status'] ?? '')), ['unreadable', 'not_read'], true)) {
                     continue;
                 }
                 $det['_camera'] = $det['_camera'] ?? $snapCamId;
@@ -43,7 +43,7 @@
                     continue;
                 }
                 $plate = trim((string) ($det['plate'] ?? ''));
-                if ($plate === '' || strtolower((string) ($det['plate_status'] ?? '')) === 'unreadable') {
+                if ($plate === '' || in_array(strtolower((string) ($det['plate_status'] ?? '')), ['unreadable', 'not_read'], true)) {
                     continue;
                 }
                 $det['_camera'] = $det['_camera'] ?? ($primaryAi['camera_id'] ?? '');
@@ -199,7 +199,7 @@
                     @forelse ($latestDetections as $det)
                         @php
                             $detCam = $det['_camera'] ?? ($primaryAi['camera_id'] ?? '');
-                            $plate = ($det['plate_status'] ?? '') === 'unreadable' ? null : ($det['plate'] ?? null);
+                            $plate = in_array(($det['plate_status'] ?? ''), ['unreadable', 'not_read'], true) ? null : ($det['plate'] ?? null);
                             $ownerName = $det['owner_name'] ?? null;
                             $ownerRole = $det['role'] ?? $det['owner_role'] ?? null;
                         @endphp
@@ -238,6 +238,8 @@
                                 <p class="font-mono text-base font-bold tracking-wide text-indigo-800">
                                     @if (($det['plate_status'] ?? '') === 'unreadable')
                                         <span class="font-sans text-sm font-semibold text-slate-500">Plate Unreadable</span>
+                                    @elseif (($det['plate_status'] ?? '') === 'not_read')
+                                        <span class="font-sans text-sm font-semibold text-slate-500">Plate Not Read</span>
                                     @elseif ($plate)
                                         {{ $plate }}
                                     @else
@@ -259,7 +261,7 @@
                                 @php
                                     $ownerBadge = $ownerName
                                         ?: (($det['owner_label'] ?? null) ?: null)
-                                        ?: (($plate || ($det['plate_status'] ?? '') === 'unreadable') ? 'Unknown' : '…');
+                                        ?: (($plate || in_array(($det['plate_status'] ?? ''), ['unreadable', 'not_read'], true)) ? 'Unknown' : '…');
                                     $isKnownOwner = filled($ownerName);
                                 @endphp
                                 @if (! empty($det['track_id']))
@@ -432,7 +434,7 @@
 
     const ownerBadgeFor = (det) => {
         const ownerName = (det.owner_name || '').trim();
-        const hasPlate = !!det.plate || det.plate_status === 'unreadable';
+        const hasPlate = !!det.plate || det.plate_status === 'unreadable' || det.plate_status === 'not_read';
         const ownerBadge = ownerName
             || (det.owner_label && det.owner_label !== 'Unknown Vehicle' ? det.owner_label : '')
             || (hasPlate ? 'Unknown' : '…');
@@ -460,6 +462,8 @@
         const plateEl = left.querySelector('[data-det-plate]');
         if (det.plate_status === 'unreadable') {
             plateEl.innerHTML = '<span class="font-sans text-sm font-semibold text-slate-500">Plate Unreadable</span>';
+        } else if (det.plate_status === 'not_read') {
+            plateEl.innerHTML = '<span class="font-sans text-sm font-semibold text-slate-500">Plate Not Read</span>';
         } else if (det.plate) {
             plateEl.textContent = det.plate;
         } else {
@@ -757,6 +761,7 @@
         if (det.motion_state === 'parked') bits.push('Parked');
         else if (det.motion_state === 'idle') bits.push('Settling');
         if (det.plate_status === 'unreadable') bits.push('Plate Unreadable');
+        else if (det.plate_status === 'not_read') bits.push('Plate Not Read');
         else if (det.registered && det.owner_name) bits.push([det.owner_name, det.plate].filter(Boolean).join(' · '));
         else if (det.plate) bits.push(`Unknown · ${det.plate}`);
         else bits.push('Reading plate…');
@@ -870,7 +875,7 @@
             const hasPlateNumber = (det) => {
                 const plate = String(det?.plate || '').trim();
                 if (!plate) return false;
-                if (String(det?.plate_status || '').toLowerCase() === 'unreadable') return false;
+                if (['unreadable', 'not_read'].includes(String(det?.plate_status || '').toLowerCase())) return false;
                 return true;
             };
 

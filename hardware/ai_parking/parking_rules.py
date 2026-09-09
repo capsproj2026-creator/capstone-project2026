@@ -16,10 +16,20 @@ IOU_THRESHOLD = float(os.getenv("AI_PARKING_ZONE_IOU", "0.08"))
 # Keep lost tracks briefly so ByteTrack ID flicker does not wipe plate memory / re-OCR.
 TRACK_HOLD_SEC = float(os.getenv("AI_PARKING_TRACK_HOLD_SEC", "20.0"))
 # Require this many matching OCR reads before locking a plate on a track.
-PLATE_VOTE_NEEDED = int(os.getenv("AI_PARKING_PLATE_VOTE_NEEDED", "1"))
+PLATE_VOTE_NEEDED = int(os.getenv("AI_PARKING_PLATE_VOTE_NEEDED", "2"))
 OCR_HIGH_CONF_LOCK = float(os.getenv("AI_PARKING_OCR_HIGH_CONF_LOCK", "0.55"))
 PLATE_VOTE_CONSENSUS_RATIO = float(os.getenv("AI_PARKING_PLATE_VOTE_CONSENSUS_RATIO", "0.55"))
 TRACK_MATCH_IOU = float(os.getenv("AI_PARKING_TRACK_MATCH_IOU", "0.25"))
+# Cap OCR retries / pending "Reading plate…" time so tracks reach a terminal state.
+OCR_MAX_ATTEMPTS = int(os.getenv("AI_PARKING_OCR_MAX_ATTEMPTS", "6"))
+OCR_PENDING_TIMEOUT_SEC = float(os.getenv("AI_PARKING_OCR_PENDING_TIMEOUT_SEC", "12"))
+# Prefer plate-YOLO/OpenCV crop only; skip EasyOCR on huge bumper bands when no plate ROI.
+OCR_PLATE_ONLY = os.getenv("AI_PARKING_OCR_PLATE_ONLY", "1").strip().lower() in (
+    "1",
+    "true",
+    "yes",
+    "on",
+)
 # Normalized center movement (px/sec ÷ bbox diagonal). Below = parked, above = moving.
 MOTION_SPEED_THRESH = float(os.getenv("AI_PARKING_MOTION_SPEED_THRESH", "0.12"))
 MOTION_PARK_SEC = float(os.getenv("AI_PARKING_MOTION_PARK_SEC", "0.8"))
@@ -91,11 +101,13 @@ class TrackMemory:
     slot_id: str | None = None
     slot_since: float | None = None
     plate: str | None = None
-    # pending | ok | unreadable
+    # pending | ok | unreadable | not_read
     plate_status: str = "pending"
     ocr_confidence: float = 0.0
     plate_votes: dict[str, int] = field(default_factory=dict)
     unreadable_votes: int = 0
+    ocr_attempts: int = 0
+    ocr_started_at: float = 0.0
     last_ocr_at: float = 0.0
     last_ocr_xyxy: tuple[int, int, int, int] | None = None
     last_plate_crop: Any = None
@@ -221,15 +233,52 @@ class TrackMemory:
     def overlay_owner_line(self) -> str | None:
         if self.plate_status == "unreadable":
             return "Plate Unreadable"
+        if self.plate_status == "not_read":
+            return "Plate Not Read"
         if self.plate_status != "ok" or not self.plate:
             return None
         if self.lookup_done_at > 0 and self.lookup_plate == self.plate:
             return self.owner_label or ("Unknown" if not self.registered else None)
         return None
 
+    def is_plate_terminal(self) -> bool:
+        return self.plate_status in ("ok", "unreadable", "not_read")
+
+    def mark_ocr_attempt(self, now: float | None = None) -> None:
+        now = now if now is not None else time.time()
+        if self.ocr_started_at <= 0:
+            self.ocr_started_at = now
+        self.ocr_attempts += 1
+
+    def tick_plate_deadline(self, now: float | None = None) -> bool:
+        """
+        Force pending → not_read when attempts/timeout are exhausted.
+        Returns True if status changed to not_read.
+        """
+        if self.plate_status != "pending":
+            return False
+        now = now if now is not None else time.time()
+        timed_out = (
+            self.ocr_started_at > 0
+            and OCR_PENDING_TIMEOUT_SEC > 0
+            and (now - self.ocr_started_at) >= OCR_PENDING_TIMEOUT_SEC
+        )
+        attempts_exhausted = OCR_MAX_ATTEMPTS > 0 and self.ocr_attempts >= OCR_MAX_ATTEMPTS
+        if not timed_out and not attempts_exhausted:
+            return False
+        self.plate = None
+        self.plate_status = "not_read"
+        self.clear_owner()
+        return True
+
     def apply_ocr_vote(self, plate: str | None, status: str, confidence: float) -> None:
         """Stabilize plate text across frames; avoid locking on a single bad read."""
         from plate_text import is_known_ph_format
+
+        if self.plate_status == "ok" and self.plate:
+            return
+        if self.plate_status in ("unreadable", "not_read"):
+            return
 
         self.ocr_confidence = max(self.ocr_confidence, float(confidence or 0.0))
         if status == "ok" and plate:
@@ -264,6 +313,17 @@ class TrackMemory:
                 self.plate = plate
                 self.plate_status = "ok"
                 self.unreadable_votes = 0
+                return
+
+            # Non-locking ok read still counts toward attempt budget via submit;
+            # soft-fail toward unreadable when format never wins.
+            self.unreadable_votes += 1
+            if self.unreadable_votes >= PLATE_VOTE_NEEDED + 2:
+                self.plate = None
+                self.plate_status = "unreadable"
+                self.clear_owner()
+            else:
+                self.tick_plate_deadline()
             return
 
         if status == "unreadable":
@@ -273,6 +333,12 @@ class TrackMemory:
                 self.plate = None
                 self.plate_status = "unreadable"
                 self.clear_owner()
+            else:
+                self.tick_plate_deadline()
+            return
+
+        # empty / other — still advance toward not_read
+        self.tick_plate_deadline()
 
 
 class ParkingIntelligence:
@@ -289,7 +355,48 @@ class ParkingIntelligence:
             self.tracks[track_id] = mem
         else:
             mem.note_seen(now)
+        mem.tick_plate_deadline(now)
         return mem
+
+    def find_track_near_xyxy(
+        self,
+        xyxy: tuple[int, int, int, int] | list[int] | None,
+        pending_only: bool = True,
+        min_iou: float | None = None,
+    ) -> TrackMemory | None:
+        """
+        Reattach an async OCR result when the tracker ID changed mid-OCR.
+        Prefer pending tracks with highest IoU against the submit-time bbox.
+        """
+        if xyxy is None:
+            return None
+        try:
+            box = tuple(int(v) for v in xyxy[:4])
+        except (TypeError, ValueError):
+            return None
+        if len(box) != 4:
+            return None
+        thresh = float(min_iou) if min_iou is not None else TRACK_MATCH_IOU
+        best_mem: TrackMemory | None = None
+        best_iou = thresh
+        for mem in self.tracks.values():
+            if pending_only and mem.plate_status != "pending":
+                continue
+            if mem.is_plate_terminal() and pending_only:
+                continue
+            prev = mem.last_ocr_xyxy or mem.last_xyxy
+            if prev is None:
+                continue
+            iou = _iou_xyxy(box, prev)
+            if iou >= best_iou:
+                best_iou = iou
+                best_mem = mem
+        return best_mem
+
+    def tick_all_plate_deadlines(self, now: float | None = None) -> None:
+        now = now if now is not None else time.time()
+        for mem in self.tracks.values():
+            mem.tick_plate_deadline(now)
 
     def _should_emit(self, key: tuple) -> bool:
         now = time.time()
@@ -357,6 +464,10 @@ class ParkingIntelligence:
                 elif plate_status == "unreadable" and mem.plate_status != "ok":
                     mem.plate_status = "unreadable"
                     mem.plate = None
+                elif plate_status == "not_read" and mem.plate_status == "pending":
+                    mem.plate_status = "not_read"
+                    mem.plate = None
+                mem.tick_plate_deadline(now)
 
             matched_slots = []
             matched_rules = []

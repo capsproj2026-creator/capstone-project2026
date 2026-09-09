@@ -33,6 +33,8 @@ class AiDetectionPresenter
 
         if (($det['plate_status'] ?? '') === 'unreadable') {
             $bits[] = 'Plate Unreadable';
+        } elseif (($det['plate_status'] ?? '') === 'not_read') {
+            $bits[] = 'Plate Not Read';
         } elseif (! empty($det['registered']) && ! empty($det['owner_name'])) {
             $parts = [];
             if (! empty($det['is_visitor']) || strcasecmp((string) ($det['role'] ?? ''), 'Visitor') === 0) {

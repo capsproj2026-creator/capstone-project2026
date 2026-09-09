@@ -490,8 +490,15 @@ def _sync_detection_from_mem(det: dict, mem) -> None:
     det["plate_status"] = mem.plate_status
     if mem.plate_status == "ok" and mem.plate:
         det["plate"] = mem.plate
+        det.pop("plate_label", None)
     else:
         det.pop("plate", None)
+        if mem.plate_status == "unreadable":
+            det["plate_label"] = "Plate Unreadable"
+        elif mem.plate_status == "not_read":
+            det["plate_label"] = "Plate Not Read"
+        else:
+            det.pop("plate_label", None)
     if mem.ocr_confidence > 0:
         det["ocr_confidence"] = round(float(mem.ocr_confidence), 3)
     else:
@@ -548,6 +555,8 @@ def refresh_plates_from_tracks(
             if mem is not None:
                 plate_status = mem.plate_status
                 plate = mem.plate if plate_status == "ok" else None
+                if plate_status == "pending" and getattr(mem, "ocr_attempts", 0) <= 0:
+                    plate_status = "detecting"
                 owner_label = mem.overlay_owner_line() or owner_label
                 motion_state = mem.motion_state
                 vehicle_details = mem.vehicle_details or vehicle_details
@@ -743,10 +752,14 @@ def parse_tracks(
             det["plate_text"] = plate
         if ocr_confidence > 0:
             det["ocr_confidence"] = round(float(ocr_confidence), 3)
-        if plate_status == "unreadable":
+        if plate_status == "unreadable" or plate_status == "not_read":
             det["plate"] = None
             det["ocr_text"] = None
             det["plate_text"] = None
+            if plate_status == "not_read":
+                det["plate_label"] = "Plate Not Read"
+            elif plate_status == "unreadable":
+                det["plate_label"] = "Plate Unreadable"
         if track_id is not None:
             mem_crop = intelligence.tracks.get(int(track_id))
             if mem_crop is not None and getattr(mem_crop, "last_plate_crop", None) is not None:
@@ -768,7 +781,13 @@ def parse_tracks(
         _attach_motion(det, motion_state)
 
         detections.append(det)
-        annotated_boxes.append((x1, y1, x2, y2, name, conf, track_id, plate, plate_status, owner_label, motion_state, vehicle_details))
+        # Overlay-only: avoid "Reading plate…" until OCR has actually started.
+        overlay_status = plate_status
+        if track_id is not None and plate_status == "pending":
+            mem_ov = intelligence.tracks.get(int(track_id))
+            if mem_ov is not None and getattr(mem_ov, "ocr_attempts", 0) <= 0:
+                overlay_status = "detecting"
+        annotated_boxes.append((x1, y1, x2, y2, name, conf, track_id, plate, overlay_status, owner_label, motion_state, vehicle_details))
         vehicles.append({
             "xyxy": (x1, y1, x2, y2),
             "track_id": track_id,
@@ -850,10 +869,14 @@ def _draw_box_labels(annotated, x1, y1, x2, y2, name, conf, track_id, plate, pla
         lines.append("PARKED")
     if plate_status == "unreadable":
         lines.append("PLATE UNREADABLE")
+    elif plate_status == "not_read":
+        lines.append("PLATE NOT READ")
     elif plate:
         lines.append(str(plate))
         if owner_label:
             lines.append(str(owner_label)[:32])
+    elif plate_status == "detecting":
+        lines.append("Detecting…")
     elif track_id is not None:
         lines.append("Reading plate…")
     _draw_label_block(annotated, x1, y1, lines[:4], color, lite=lite)
@@ -1757,7 +1780,7 @@ class CameraWorker:
         # Only one track per infer tick — never walk the whole fleet with blocking OCR.
         candidates = []
         for tid, mem in list(self.intelligence.tracks.items()):
-            if mem.plate_status == "ok" and mem.plate:
+            if mem.is_plate_terminal():
                 continue
             if (now - mem.first_seen) < 0.4:
                 continue
@@ -1774,6 +1797,7 @@ class CameraWorker:
         candidates.sort(key=lambda item: float(getattr(item[1], "first_seen", 0.0) or 0.0))
         _tid, mem = candidates[0]
         mem.last_sync_ocr_at = now
+        mem.mark_ocr_attempt(now)
         read = ocr.read_plate(
             frame,
             mem.last_ocr_xyxy,
@@ -1786,6 +1810,7 @@ class CameraWorker:
         if crop is not None:
             mem.last_plate_crop = crop
         mem.apply_ocr_vote(read.plate, read.status, read.confidence)
+        mem.tick_plate_deadline(now)
         if mem.needs_owner_lookup():
             lookup_plate_async(mem)
 
@@ -1920,6 +1945,7 @@ class CameraWorker:
                 person_count, vehicle_count = self._held_counts
 
             self._try_sync_plate_ocr(frame, now)
+            self.intelligence.tick_all_plate_deadlines(now)
             annotated_boxes = refresh_plates_from_tracks(
                 detections, vehicles, annotated_boxes, self.intelligence
             )

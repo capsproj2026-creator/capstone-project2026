@@ -590,7 +590,7 @@ class AiParkingOccupancyService
                 continue;
             }
             $status = strtolower(trim((string) ($row['plate_status'] ?? '')));
-            if ($status === 'unreadable') {
+            if ($status === 'unreadable' || $status === 'not_read') {
                 continue;
             }
             if (trim((string) ($row['plate'] ?? '')) !== '') {
@@ -621,6 +621,26 @@ class AiParkingOccupancyService
                 $row['plate'] = null;
                 $row['plate_status'] = 'unreadable';
                 $row['plate_label'] = 'Plate Unreadable';
+                $row['owner_name'] = null;
+                $row['owner_label'] = 'Unknown';
+                $row['owner_id_number'] = null;
+                $row['owner_role'] = null;
+                $row['role'] = null;
+                $row['user_id'] = null;
+                $row['registered'] = null;
+                $row['vehicle_details'] = null;
+                $row['department'] = null;
+                $row['registration_status'] = null;
+                $row['ocr_text'] = null;
+                $row['plate_text'] = null;
+
+                return $row;
+            }
+
+            if ($status === 'not_read' || strcasecmp($plate, 'NOT_READ') === 0) {
+                $row['plate'] = null;
+                $row['plate_status'] = 'not_read';
+                $row['plate_label'] = 'Plate Not Read';
                 $row['owner_name'] = null;
                 $row['owner_label'] = 'Unknown';
                 $row['owner_id_number'] = null;
