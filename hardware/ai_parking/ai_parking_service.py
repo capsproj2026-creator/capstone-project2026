@@ -37,8 +37,10 @@ load_project_env()
 
 from parking_rules import ParkingIntelligence, SimpleIoUTracker
 from plate_ocr import OCR_EVERY_SEC, OCR_SYNC_ENABLED, OCR_SYNC_EVERY_SEC, AsyncPlateQueue, PlateOCR
+from plate_text import _clean_raw
 from monitor_scan import encode_crop_jpeg, encode_crop_jpeg_bytes, enhance_monitor_frame, scan_visible_region
 from yolo_models import ensure_model, resolve_model_name, resolve_model_path
+import re
 
 # Default; open_rtsp() may override per-camera under OPEN_LOCK.
 os.environ.setdefault("OPENCV_FFMPEG_CAPTURE_OPTIONS", "rtsp_transport;tcp")
@@ -1291,16 +1293,40 @@ class MjpegHandler(BaseHTTPRequestHandler):
         if not expected:
             return True
         got = (self.headers.get("X-AI-TOKEN") or "").strip()
-        return got == expected
+        if got == expected:
+            return True
+        # Localhost monitor UI may call /correct-plate without embedding the API token.
+        path = self.path.split("?", 1)[0]
+        if path == "/correct-plate":
+            client = str(self.client_address[0] if self.client_address else "")
+            if client in {"127.0.0.1", "::1", "localhost"}:
+                return True
+        return False
 
     def _send_json(self, code: int, payload: dict) -> None:
         body = json.dumps(payload).encode("utf-8")
         self.send_response(code)
         self.send_header("Content-Type", "application/json")
         self.send_header("Cache-Control", "no-store")
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Access-Control-Allow-Methods", "POST, OPTIONS")
+        self.send_header("Access-Control-Allow-Headers", "Content-Type, Accept, X-AI-TOKEN")
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)
+
+    def do_OPTIONS(self):
+        path = self.path.split("?", 1)[0]
+        if path not in ("/correct-plate", "/test-scan"):
+            self.send_error(404)
+            return
+        self.send_response(204)
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Access-Control-Allow-Methods", "POST, OPTIONS")
+        self.send_header("Access-Control-Allow-Headers", "Content-Type, Accept, X-AI-TOKEN")
+        self.send_header("Access-Control-Max-Age", "600")
+        self.send_header("Content-Length", "0")
+        self.end_headers()
 
     def _read_json_body(self, max_bytes: int = 32768):
         try:
@@ -1443,9 +1469,21 @@ class MjpegHandler(BaseHTTPRequestHandler):
         except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError):
             return
 
+    def _resolve_worker(self, camera_id: str):
+        worker = CAMERA_WORKERS.get(camera_id)
+        if worker is None:
+            want = str(camera_id or "").upper()
+            for cid, candidate in CAMERA_WORKERS.items():
+                if str(cid).upper() == want:
+                    worker = candidate
+                    break
+        if worker is None and len(CAMERA_WORKERS) == 1:
+            worker = next(iter(CAMERA_WORKERS.values()))
+        return worker
+
     def do_POST(self):
         path = self.path.split("?", 1)[0]
-        if path != "/test-scan":
+        if path not in ("/test-scan", "/correct-plate"):
             self.send_error(404)
             return
         if not self._ai_authorized():
@@ -1453,19 +1491,23 @@ class MjpegHandler(BaseHTTPRequestHandler):
             return
         payload = self._read_json_body() or {}
         camera_id = str(payload.get("camera_id") or "").strip()
-        view = payload.get("view") if isinstance(payload.get("view"), dict) else {}
-        worker = CAMERA_WORKERS.get(camera_id)
-        if worker is None:
-            want = camera_id.upper()
-            for cid, candidate in CAMERA_WORKERS.items():
-                if str(cid).upper() == want:
-                    worker = candidate
-                    break
-        if worker is None and len(CAMERA_WORKERS) == 1:
-            worker = next(iter(CAMERA_WORKERS.values()))
+        worker = self._resolve_worker(camera_id)
         if worker is None:
             self._send_json(404, {"ok": False, "saved": False, "message": "Unknown camera."})
             return
+
+        if path == "/correct-plate":
+            result = worker.correct_plate(
+                track_id=payload.get("track_id"),
+                plate=str(payload.get("plate") or ""),
+                session_id=payload.get("recognition_session_id") or payload.get("session_id"),
+            )
+            result["camera_id"] = worker.config.camera_id
+            code = 200 if result.get("ok") else 422
+            self._send_json(code, result)
+            return
+
+        view = payload.get("view") if isinstance(payload.get("view"), dict) else {}
         result = worker.test_scan_view(view)
         result["saved"] = False
         result["camera_id"] = worker.config.camera_id
@@ -1803,6 +1845,145 @@ class CameraWorker:
                 vehicle_crops[int(tid)] = encoded_plate
         self.state.set_plate_crops(plate_crops)
         self.state.set_vehicle_crops(vehicle_crops)
+
+    def correct_plate(
+        self,
+        track_id=None,
+        plate: str = "",
+        session_id=None,
+    ) -> dict:
+        """Guard override: hard-lock a plate on the live recognition session."""
+        cleaned = re.sub(r"[^A-Z0-9]", "", _clean_raw(plate or ""))
+        if len(cleaned) < 4:
+            return {"ok": False, "message": "Plate must be at least 4 characters.", "plate": cleaned or None}
+
+        mem = None
+        tid = None
+        try:
+            if track_id is not None and str(track_id).strip() != "":
+                tid = int(track_id)
+                mem = self.intelligence.tracks.get(tid)
+        except (TypeError, ValueError):
+            tid = None
+
+        sid = None
+        try:
+            if session_id is not None and str(session_id).strip() != "":
+                sid = int(session_id)
+        except (TypeError, ValueError):
+            sid = None
+
+        if mem is None and sid is not None:
+            mem = self.intelligence.sessions.get(sid)
+
+        if mem is None and tid is None and sid is None:
+            return {"ok": False, "message": "Track or session id is required.", "plate": cleaned}
+
+        if mem is None:
+            return {
+                "ok": False,
+                "message": "Vehicle track not found on this camera (it may have left the frame).",
+                "plate": cleaned,
+                "track_id": tid,
+                "recognition_session_id": sid,
+            }
+
+        mem.lock_plate(cleaned, 1.0, "manual_guard")
+        # Force a fresh owner lookup so the overlay can show the name under the plate.
+        mem.lookup_done_at = 0.0
+        mem.lookup_pending = False
+        mem.lookup_plate = None
+        try:
+            from plate_owner_lookup import lookup_plate_async
+
+            lookup_plate_async(mem)
+        except Exception as exc:
+            print(f"[{self.config.camera_id}] manual plate owner lookup failed: {exc}")
+
+        # Patch currently held boxes so the next MJPEG frames show the plate immediately.
+        self._apply_manual_plate_to_held(mem, cleaned)
+
+        print(
+            f"[{self.config.camera_id}] MANUAL PLATE {cleaned} "
+            f"-> track #{mem.current_tracker_id} session #{mem.recognition_session_id}"
+        )
+        return {
+            "ok": True,
+            "message": "Plate locked on AI tracker.",
+            "plate": cleaned,
+            "track_id": mem.current_tracker_id if mem.current_tracker_id is not None else tid,
+            "recognition_session_id": int(mem.recognition_session_id or 0) or sid,
+        }
+
+    def _apply_manual_plate_to_held(self, mem, plate: str) -> None:
+        """Update held detections/boxes so the live overlay shows the guard plate now."""
+        tid = mem.current_tracker_id
+        owner = mem.overlay_owner_line()
+        sid = int(mem.recognition_session_id or 0)
+
+        def _match_tid(value) -> bool:
+            try:
+                return tid is not None and int(value) == int(tid)
+            except (TypeError, ValueError):
+                return False
+
+        def _match_sid(value) -> bool:
+            try:
+                return sid > 0 and int(value) == sid
+            except (TypeError, ValueError):
+                return False
+
+        for det in self._held_detections:
+            if not isinstance(det, dict):
+                continue
+            if _match_tid(det.get("track_id")) or _match_sid(det.get("recognition_session_id")):
+                det["plate"] = plate
+                det["ocr_text"] = plate
+                det["plate_text"] = plate
+                det["plate_status"] = "ok"
+                det["plate_corrected"] = True
+                if owner:
+                    det["owner_label"] = owner
+
+        patched_boxes = []
+        for box in self._held_boxes:
+            x1, y1, x2, y2, name, conf, track_id, _plate, _status, owner_label, motion_state, vehicle_details = _unpack_box(box)
+            if _match_tid(track_id):
+                owner_label = owner or owner_label
+                patched_boxes.append(
+                    (x1, y1, x2, y2, name, conf, track_id, plate, "ok", owner_label, motion_state, vehicle_details)
+                )
+            else:
+                patched_boxes.append(box)
+        self._held_boxes = patched_boxes
+
+        for veh in self._held_vehicles:
+            if not isinstance(veh, dict):
+                continue
+            if _match_tid(veh.get("track_id")):
+                veh["plate"] = plate
+                veh["plate_status"] = "ok"
+
+        # Refresh scene snapshot used by the AI overlay encoder.
+        try:
+            snap = self.scene.snapshot() if hasattr(self.scene, "snapshot") else None
+            if isinstance(snap, dict):
+                snap["annotated_boxes"] = list(self._held_boxes)
+                snap["detections"] = list(self._held_detections)
+                self.scene.update(
+                    annotated_boxes=self._held_boxes,
+                    person_count=snap.get("person_count", 0),
+                    vehicle_count=snap.get("vehicle_count", 0),
+                    occupied_slots=snap.get("occupied_slots") or set(),
+                    active_events=snap.get("active_events") or [],
+                    use_poly=bool(snap.get("use_poly")),
+                    detections=self._held_detections,
+                    slot_statuses=snap.get("slot_statuses") or [],
+                    events=snap.get("events") or [],
+                    source_shape=snap.get("source_shape"),
+                )
+        except Exception:
+            pass
 
     def test_scan_view(self, view: dict | None) -> dict:
         """OCR the zoomed monitor region. Does not post occupancy or write Laravel DB."""

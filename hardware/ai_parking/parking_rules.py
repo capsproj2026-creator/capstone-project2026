@@ -377,7 +377,8 @@ class TrackMemory:
 
     def lock_plate(self, plate: str, confidence: float, reason: str) -> None:
         """Hard-lock plate; subsequent OCR must be ignored."""
-        if self.is_plate_locked() and self.plate == plate:
+        manual = str(reason or "").startswith("manual")
+        if self.is_plate_locked() and self.plate == plate and not manual:
             self.ocr_confidence = max(self.ocr_confidence, float(confidence or 0.0))
             return
         if self.plate != plate:
@@ -388,6 +389,10 @@ class TrackMemory:
         self.plate_locked_at = time.time()
         self.plate_lock_reason = reason
         self.unreadable_votes = 0
+        # Manual guard overrides must stick even if OCR later votes differently.
+        if manual:
+            self.plate_votes = {plate: max(99, int(self.plate_votes.get(plate, 0) or 0))}
+            self.plate_vote_scores = {plate: max(99.0, float(self.plate_vote_scores.get(plate, 0.0) or 0.0))}
         print(
             f"[OCR] PLATE LOCKED: {plate} conf={confidence:.2f} reason={reason} "
             f"attempts={self.ocr_attempts}"

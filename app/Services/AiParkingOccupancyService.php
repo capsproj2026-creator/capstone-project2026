@@ -6,6 +6,7 @@ use App\Models\ParkingArea;
 use App\Models\ParkingSlot;
 use App\Support\PlateLookup;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Http;
 
 class AiParkingOccupancyService
 {
@@ -430,12 +431,17 @@ class AiParkingOccupancyService
      *
      * @return array<string, mixed>
      */
-    public function correctPlate(string $cameraId, ?int $trackId, string $plate, ?int $userId = null): array
-    {
+    public function correctPlate(
+        string $cameraId,
+        ?int $trackId,
+        string $plate,
+        ?int $userId = null,
+        ?int $recognitionSessionId = null
+    ): array {
         $cameraId = strtoupper(trim($cameraId));
         $normalized = PlateLookup::normalize($plate);
-        if ($normalized === '' || $trackId === null) {
-            throw new \InvalidArgumentException('Camera, track, and plate are required.');
+        if ($normalized === '' || ($trackId === null && $recognitionSessionId === null)) {
+            throw new \InvalidArgumentException('Camera, track (or session), and plate are required.');
         }
 
         $key = $this->correctionsKey($cameraId);
@@ -443,11 +449,19 @@ class AiParkingOccupancyService
         if (! is_array($map)) {
             $map = [];
         }
-        $map[(string) $trackId] = [
+        $entry = [
             'plate' => $normalized,
             'user_id' => $userId,
             'at' => now()->toIso8601String(),
+            'session_id' => $recognitionSessionId,
+            'track_id' => $trackId,
         ];
+        if ($trackId !== null) {
+            $map[(string) $trackId] = $entry;
+        }
+        if ($recognitionSessionId !== null && $recognitionSessionId > 0) {
+            $map['session:'.$recognitionSessionId] = $entry;
+        }
         Cache::put($key, $map, now()->addHours(2));
 
         $snap = $this->latestSnapshot($cameraId);
@@ -465,8 +479,11 @@ class AiParkingOccupancyService
             }
         }
 
+        $this->pushPlateCorrectionToAiService($cameraId, $trackId, $normalized, $recognitionSessionId);
+
         $identity = PlateLookup::identity($normalized);
         $identity['track_id'] = $trackId;
+        $identity['recognition_session_id'] = $recognitionSessionId;
         $identity['camera_id'] = $cameraId;
         $identity['plate_corrected'] = true;
 
@@ -491,21 +508,63 @@ class AiParkingOccupancyService
                 continue;
             }
             $tid = isset($det['track_id']) ? (string) $det['track_id'] : '';
-            if ($tid === '' || ! isset($map[$tid]['plate'])) {
+            $sid = isset($det['recognition_session_id']) ? (string) $det['recognition_session_id'] : '';
+            $entry = null;
+            if ($tid !== '' && isset($map[$tid]) && is_array($map[$tid])) {
+                $entry = $map[$tid];
+            } elseif ($sid !== '' && isset($map['session:'.$sid]) && is_array($map['session:'.$sid])) {
+                $entry = $map['session:'.$sid];
+            }
+            if ($entry === null || empty($entry['plate'])) {
                 continue;
             }
             if (empty($detections[$i]['ocr_text']) && ! empty($detections[$i]['plate'])) {
                 $detections[$i]['ocr_text'] = $detections[$i]['plate'];
             }
-            $detections[$i]['plate'] = $map[$tid]['plate'];
+            $detections[$i]['plate'] = $entry['plate'];
             $detections[$i]['plate_status'] = 'ok';
             $detections[$i]['plate_corrected'] = true;
-            if (! empty($map[$tid]['auto'])) {
+            if (! empty($entry['auto'])) {
                 $detections[$i]['plate_auto_corrected'] = true;
             }
         }
 
         return $detections;
+    }
+
+    /**
+     * Best-effort push so YOLO track memory hard-locks the guard override.
+     */
+    private function pushPlateCorrectionToAiService(
+        string $cameraId,
+        ?int $trackId,
+        string $plate,
+        ?int $recognitionSessionId = null
+    ): void {
+        try {
+            $base = app(AiParkingHealthService::class)->pythonServiceBaseUrl();
+        } catch (\Throwable) {
+            return;
+        }
+        if ($base === null) {
+            return;
+        }
+
+        $token = trim((string) config('services.ai_parking.api_token', ''));
+        try {
+            Http::connectTimeout(1)
+                ->timeout(3)
+                ->acceptJson()
+                ->withHeaders($token !== '' ? ['X-AI-TOKEN' => $token] : [])
+                ->post(rtrim($base, '/').'/correct-plate', array_filter([
+                    'camera_id' => $cameraId,
+                    'track_id' => $trackId,
+                    'recognition_session_id' => $recognitionSessionId,
+                    'plate' => $plate,
+                ], fn ($v) => $v !== null && $v !== ''));
+        } catch (\Throwable) {
+            // Laravel cache correction still applies on the next occupancy post.
+        }
     }
 
     /**

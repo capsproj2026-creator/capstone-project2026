@@ -158,7 +158,8 @@ class LiveCameraController extends Controller
     {
         $validated = $request->validate([
             'camera_id' => ['required', 'string', 'max:64'],
-            'track_id' => ['required', 'integer', 'min:0'],
+            'track_id' => ['nullable', 'integer', 'min:0'],
+            'recognition_session_id' => ['nullable', 'integer', 'min:1'],
             'plate' => ['required', 'string', 'min:4', 'max:32'],
         ]);
 
@@ -168,12 +169,24 @@ class LiveCameraController extends Controller
             return response()->json(['ok' => false, 'message' => 'Unknown camera.'], 422);
         }
 
+        $trackId = array_key_exists('track_id', $validated) && $validated['track_id'] !== null
+            ? (int) $validated['track_id']
+            : null;
+        $sessionId = array_key_exists('recognition_session_id', $validated) && $validated['recognition_session_id'] !== null
+            ? (int) $validated['recognition_session_id']
+            : null;
+
+        if ($trackId === null && $sessionId === null) {
+            return response()->json(['ok' => false, 'message' => 'Track id is required.'], 422);
+        }
+
         try {
             $identity = $ai->correctPlate(
                 $cameraId,
-                (int) $validated['track_id'],
+                $trackId,
                 $validated['plate'],
-                $request->user()?->id
+                $request->user()?->id,
+                $sessionId
             );
         } catch (\InvalidArgumentException $e) {
             return response()->json(['ok' => false, 'message' => $e->getMessage()], 422);

@@ -221,7 +221,7 @@ if (Test-Path $arduinoSync) {
     Write-Host "  Arduino Entry/Exit sketches synced to OneDrive" -ForegroundColor DarkGray
 }
 
-Start-ProjectWindow "Laravel" @("php", "artisan", "serve", "--host=0.0.0.0", "--port=8000")
+Start-ProjectWindow "Laravel" @("php", "artisan", "serve", "--host=0.0.0.0", "--port=8000", "--no-reload")
 Start-Sleep -Milliseconds 800
 
 $ngrokPublicUrl = $null

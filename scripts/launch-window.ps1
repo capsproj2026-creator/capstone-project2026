@@ -52,6 +52,12 @@ if ((Test-Path $envFile) -and ($cmdLine -match "artisan serve")) {
     }
     $env:PHP_CLI_SERVER_WORKERS = $workers
     Write-Host "PHP_CLI_SERVER_WORKERS=$workers (parallel browser + AI requests)" -ForegroundColor DarkGray
+    # PHP only honors PHP_CLI_SERVER_WORKERS when --no-reload is set.
+    if ($cmdLine -notmatch "--no-reload") {
+        $CommandArgs = @($CommandArgs) + @("--no-reload")
+        $cmdLine = $CommandArgs -join " "
+        Write-Host "Added --no-reload so worker pool is active" -ForegroundColor DarkGray
+    }
 }
 
 if (-not $CommandArgs -or $CommandArgs.Count -eq 0) {

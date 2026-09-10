@@ -126,7 +126,8 @@ if (-not $SkipWebStack) {
                 $laravelLaunch = @"
 `$Host.UI.RawUI.WindowTitle = 'Laravel'
 Set-Location -LiteralPath '$Root'
-php artisan serve --host=0.0.0.0 --port=8000
+`$env:PHP_CLI_SERVER_WORKERS = '4'
+php artisan serve --host=0.0.0.0 --port=8000 --no-reload
 "@
                 Start-Process powershell -WorkingDirectory $Root -ArgumentList @(
                     "-NoExit",
@@ -154,7 +155,8 @@ php artisan serve --host=0.0.0.0 --port=8000
         $laravelLaunch = @"
 `$Host.UI.RawUI.WindowTitle = 'Laravel'
 Set-Location -LiteralPath '$Root'
-php artisan serve --host=0.0.0.0 --port=8000
+`$env:PHP_CLI_SERVER_WORKERS = '4'
+php artisan serve --host=0.0.0.0 --port=8000 --no-reload
 "@
         Start-Process powershell -WorkingDirectory $Root -ArgumentList @(
             "-NoExit",
@@ -169,7 +171,7 @@ php artisan serve --host=0.0.0.0 --port=8000
         }
         if (-not $ready) {
             Write-Host "Laravel did not respond at $laravelUrl - open a Laravel window manually:" -ForegroundColor Red
-            Write-Host "  php artisan serve --host=0.0.0.0 --port=8000" -ForegroundColor DarkYellow
+            Write-Host "  php artisan serve --host=0.0.0.0 --port=8000 --no-reload" -ForegroundColor DarkYellow
             exit 1
         }
     }

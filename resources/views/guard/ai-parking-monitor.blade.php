@@ -57,6 +57,35 @@
                 $latestDetections[] = $det;
             }
         }
+
+        // Header totals cover every camera. Areas are deduped so two cameras on the
+        // same parking lot do not double-count its slots.
+        $totalAvailable = null;
+        $totalOccupied = null;
+        $totalParked = 0;
+        $countedAreas = [];
+        foreach ($snaps as $snapCamId => $snap) {
+            if (! is_array($snap)) {
+                continue;
+            }
+            $totalParked += (int) ($snap['parked_count'] ?? 0);
+            $areaKey = $snap['area_id'] ?? ('cam:'.$snapCamId);
+            if (isset($countedAreas[$areaKey])) {
+                continue;
+            }
+            $countedAreas[$areaKey] = true;
+            if (array_key_exists('available', $snap) && $snap['available'] !== null && $snap['available'] !== '') {
+                $totalAvailable = (int) $totalAvailable + (int) $snap['available'];
+            }
+            if (array_key_exists('occupied', $snap) && $snap['occupied'] !== null && $snap['occupied'] !== '') {
+                $totalOccupied = (int) $totalOccupied + (int) $snap['occupied'];
+            }
+        }
+        if ($countedAreas === [] && is_array($primaryAi)) {
+            $totalAvailable = $primaryAi['available'] ?? null;
+            $totalOccupied = $primaryAi['occupied'] ?? null;
+            $totalParked = (int) ($primaryAi['parked_count'] ?? 0);
+        }
     @endphp
 
     @if ($cameras->isEmpty())
@@ -71,15 +100,15 @@
             </div>
             <div class="rounded-xl border border-sky-200 bg-sky-50 p-4 shadow-sm">
                 <p class="text-xs font-medium text-sky-700">Parked</p>
-                <p id="ai-parked-count" class="mt-1 text-2xl font-bold text-sky-800">{{ $primaryAi['parked_count'] ?? 0 }}</p>
+                <p id="ai-parked-count" class="mt-1 text-2xl font-bold text-sky-800">{{ $totalParked }}</p>
             </div>
             <div class="rounded-xl border border-green-200 bg-green-50 p-4 shadow-sm">
-                <p class="text-xs font-medium text-green-700">Available (AI)</p>
-                <p id="ai-available" class="mt-1 text-2xl font-bold text-green-800">{{ $primaryAi['available'] ?? '—' }}</p>
+                <p class="text-xs font-medium text-green-700">Available</p>
+                <p id="ai-available" class="mt-1 text-2xl font-bold text-green-800">{{ $totalAvailable ?? '—' }}</p>
             </div>
             <div class="rounded-xl border border-red-200 bg-red-50 p-4 shadow-sm">
-                <p class="text-xs font-medium text-red-700">Occupied (AI)</p>
-                <p id="ai-occupied" class="mt-1 text-2xl font-bold text-red-800">{{ $primaryAi['occupied'] ?? '—' }}</p>
+                <p class="text-xs font-medium text-red-700">Occupied</p>
+                <p id="ai-occupied" class="mt-1 text-2xl font-bold text-red-800">{{ $totalOccupied ?? '—' }}</p>
             </div>
             <div class="rounded-xl border border-blue-200 bg-blue-50 p-4 shadow-sm">
                 <p class="text-xs font-medium text-blue-700">Last Update</p>
@@ -290,6 +319,7 @@
                                         data-correct-plate
                                         data-camera="{{ $detCam }}"
                                         data-track="{{ $det['track_id'] }}"
+                                        data-session="{{ $det['recognition_session_id'] ?? '' }}"
                                         data-plate="{{ $plate ?? '' }}"
                                         data-manual="{{ $needsManualPlate ? '1' : '0' }}"
                                     >{{ $ownerBadge }}</button>
@@ -353,17 +383,20 @@
     @endif
 
     <div id="plate-correct-modal" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/50 p-4" role="dialog" aria-modal="true">
-        <form id="plate-correct-form" class="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
-            <h3 class="text-lg font-bold text-gray-900" id="plate-correct-title">Enter plate number</h3>
-            <p class="mt-1 text-sm text-gray-500" id="plate-correct-help">Lookup uses the same registered-vehicle database as automatic OCR.</p>
+        <form id="plate-correct-form" class="w-full max-w-md rounded-2xl border border-gray-200 bg-white p-6 shadow-xl dark:border-slate-700 dark:bg-slate-900">
+            <h3 class="text-lg font-bold text-gray-900 dark:text-white" id="plate-correct-title">Enter plate number</h3>
+            <p class="mt-1 text-sm text-gray-500 dark:text-slate-400" id="plate-correct-help">Lookup uses the same registered-vehicle database as automatic OCR.</p>
             <input type="hidden" id="plate-correct-camera">
             <input type="hidden" id="plate-correct-track">
-            <label class="mt-4 block text-sm font-medium text-gray-700" for="plate-correct-value">Plate</label>
-            <input id="plate-correct-value" type="text" required minlength="4" maxlength="32" class="mt-1 w-full rounded-xl border border-gray-200 px-3 py-2 font-mono text-sm uppercase" placeholder="ABC1234 or 0501-0401328">
-            <p id="plate-correct-error" class="mt-2 hidden text-sm text-red-600"></p>
+            <input type="hidden" id="plate-correct-session">
+            <label class="mt-4 block text-sm font-medium text-gray-700 dark:text-slate-300" for="plate-correct-value">Plate</label>
+            <div class="relative mt-1">
+                <input id="plate-correct-value" type="text" required minlength="4" maxlength="32" autocomplete="off" class="w-full rounded-xl border border-gray-200 bg-white px-3 py-2 font-mono text-sm uppercase text-gray-900 dark:border-slate-600 dark:bg-slate-800 dark:text-white" placeholder="ABC1234 or 0501-0401328">
+            </div>
+            <p id="plate-correct-error" class="mt-2 hidden text-sm text-red-600 dark:text-red-400"></p>
             <div class="mt-5 flex justify-end gap-2">
-                <button type="button" id="plate-correct-cancel" class="rounded-xl border border-gray-200 px-4 py-2 text-sm font-semibold text-gray-700">Cancel</button>
-                <button type="submit" class="rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white">Save plate</button>
+                <button type="button" id="plate-correct-cancel" class="rounded-xl border border-gray-200 px-4 py-2 text-sm font-semibold text-gray-700 dark:border-slate-600 dark:text-slate-200">Cancel</button>
+                <button type="submit" id="plate-correct-save" class="rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-60">Save plate</button>
             </div>
         </form>
     </div>
@@ -539,6 +572,11 @@
             corr.dataset.camera = camId;
             corr.dataset.track = String(det.track_id);
             corr.dataset.plate = det.plate || '';
+            if (det.recognition_session_id != null) {
+                corr.dataset.session = String(det.recognition_session_id);
+            } else {
+                delete corr.dataset.session;
+            }
             corr.dataset.manual = needsManualPlate ? '1' : '0';
         } else {
             if (!corr || corr.tagName === 'BUTTON') {
@@ -904,11 +942,31 @@
                 updateCameraStats(id, online, findByCamera(cams, id));
             });
 
-            Object.entries(cams).forEach(([id, snap]) => {
-                if (id === (ai?.camera_id || '') || Object.keys(cams).length === 1) {
-                    if (parkedCount) parkedCount.textContent = String(snap.parked_count ?? 0);
+            // Header totals span every camera; areas are deduped so shared lots
+            // are not counted twice.
+            const totals = { available: null, occupied: null, parked: 0 };
+            const countedAreas = new Set();
+            Object.entries(cams).forEach(([camId, snap]) => {
+                if (!snap || typeof snap !== 'object') return;
+                totals.parked += Number(snap.parked_count ?? 0) || 0;
+                const areaKey = snap.area_id != null ? `area:${snap.area_id}` : `cam:${camId}`;
+                if (countedAreas.has(areaKey)) return;
+                countedAreas.add(areaKey);
+                if (snap.available != null && snap.available !== '') {
+                    totals.available = (totals.available ?? 0) + (Number(snap.available) || 0);
+                }
+                if (snap.occupied != null && snap.occupied !== '') {
+                    totals.occupied = (totals.occupied ?? 0) + (Number(snap.occupied) || 0);
                 }
             });
+            if (countedAreas.size === 0 && ai) {
+                totals.available = ai.available ?? null;
+                totals.occupied = ai.occupied ?? null;
+                totals.parked = Number(ai.parked_count ?? 0) || 0;
+            }
+            if (available) available.textContent = totals.available ?? '—';
+            if (occupied) occupied.textContent = totals.occupied ?? '—';
+            if (parkedCount) parkedCount.textContent = String(totals.parked);
 
             const isVisibleDet = (det) => {
                 if (!det) return false;
@@ -938,11 +996,8 @@
 
             if (!ai && allDets.length === 0) return;
 
-            if (ai) {
-                if (available) available.textContent = ai.available ?? '—';
-                if (occupied) occupied.textContent = ai.occupied ?? '—';
-                if (parkedCount) parkedCount.textContent = String(ai.parked_count ?? 0);
-                if (updatedAt) updatedAt.textContent = ai.updated_at_label || data.updated_at;
+            if (ai && updatedAt) {
+                updatedAt.textContent = ai.updated_at_label || data.updated_at;
             }
             if (detCount) detCount.textContent = String(allDets.length);
 
@@ -992,11 +1047,22 @@
     const plateModal = document.getElementById('plate-correct-modal');
     const plateForm = document.getElementById('plate-correct-form');
     const plateErr = document.getElementById('plate-correct-error');
+    const plateSaveBtn = document.getElementById('plate-correct-save');
 
     const closePlateModal = () => {
         plateModal?.classList.add('hidden');
         plateModal?.classList.remove('flex');
         plateErr?.classList.add('hidden');
+        if (plateSaveBtn) {
+            plateSaveBtn.disabled = false;
+            plateSaveBtn.textContent = 'Save plate';
+        }
+    };
+
+    const showPlateError = (msg) => {
+        if (!plateErr) return;
+        plateErr.textContent = msg || 'Could not save plate.';
+        plateErr.classList.remove('hidden');
     };
 
     document.addEventListener('click', (e) => {
@@ -1004,6 +1070,7 @@
         if (!btn) return;
         document.getElementById('plate-correct-camera').value = btn.dataset.camera || '';
         document.getElementById('plate-correct-track').value = btn.dataset.track || '';
+        document.getElementById('plate-correct-session').value = btn.dataset.session || '';
         document.getElementById('plate-correct-value').value = btn.dataset.plate || '';
         const manual = btn.dataset.manual === '1';
         const title = document.getElementById('plate-correct-title');
@@ -1014,6 +1081,7 @@
                 ? 'OCR could not read this plate. Enter it manually — lookup uses the same registered-vehicle database.'
                 : 'Override a bad OCR read. Owner is looked up automatically from the database.';
         }
+        plateErr?.classList.add('hidden');
         plateModal?.classList.remove('hidden');
         plateModal?.classList.add('flex');
         document.getElementById('plate-correct-value')?.focus();
@@ -1024,7 +1092,81 @@
 
     plateForm?.addEventListener('submit', async (e) => {
         e.preventDefault();
-        if (!correctUrl) return;
+        if (!correctUrl && !aiCropOrigin) {
+            showPlateError('Save URL is missing. Refresh the page and try again.');
+            return;
+        }
+        const cameraId = (document.getElementById('plate-correct-camera')?.value || '').trim();
+        const trackRaw = (document.getElementById('plate-correct-track')?.value || '').trim();
+        const sessionRaw = (document.getElementById('plate-correct-session')?.value || '').trim();
+        const plateRaw = (document.getElementById('plate-correct-value')?.value || '').trim();
+        const plate = plateRaw.toUpperCase().replace(/[^A-Z0-9]/g, '');
+        const trackId = trackRaw === '' ? null : Number(trackRaw);
+        const sessionId = sessionRaw === '' ? null : Number(sessionRaw);
+
+        if (!cameraId) {
+            showPlateError('Missing camera for this detection.');
+            return;
+        }
+        if ((trackId == null || Number.isNaN(trackId)) && (sessionId == null || Number.isNaN(sessionId))) {
+            showPlateError('Missing vehicle track. Wait for a fresh detection and try again.');
+            return;
+        }
+        if (plate.length < 4) {
+            showPlateError('Enter at least 4 letters/digits for the plate.');
+            return;
+        }
+
+        if (plateSaveBtn) {
+            plateSaveBtn.disabled = true;
+            plateSaveBtn.textContent = 'Saving…';
+        }
+        plateErr?.classList.add('hidden');
+
+        const body = { camera_id: cameraId, plate };
+        if (trackId != null && !Number.isNaN(trackId)) body.track_id = trackId;
+        if (sessionId != null && !Number.isNaN(sessionId)) body.recognition_session_id = sessionId;
+
+        let aiLocked = false;
+        // Lock on the AI service first (threaded) so OCR stops fighting even if Laravel is busy.
+        if (aiCropOrigin) {
+            const aiController = new AbortController();
+            const aiTimer = window.setTimeout(() => aiController.abort(), 5000);
+            try {
+                const aiRes = await fetch(`${String(aiCropOrigin).replace(/\/$/, '')}/correct-plate`, {
+                    method: 'POST',
+                    headers: {
+                        Accept: 'application/json',
+                        'Content-Type': 'application/json',
+                    },
+                    signal: aiController.signal,
+                    body: JSON.stringify(body),
+                });
+                const aiData = await aiRes.json().catch(() => ({}));
+                aiLocked = aiRes.ok && !!aiData.ok;
+            } catch (_) {
+                aiLocked = false;
+            } finally {
+                window.clearTimeout(aiTimer);
+            }
+        }
+
+        if (!correctUrl) {
+            if (aiLocked) {
+                closePlateModal();
+                refresh();
+            } else {
+                showPlateError('Could not lock plate on the AI camera service.');
+            }
+            if (plateSaveBtn) {
+                plateSaveBtn.disabled = false;
+                plateSaveBtn.textContent = 'Save plate';
+            }
+            return;
+        }
+
+        const controller = new AbortController();
+        const timer = window.setTimeout(() => controller.abort(), 12000);
         try {
             const res = await fetch(correctUrl, {
                 method: 'POST',
@@ -1032,28 +1174,43 @@
                     Accept: 'application/json',
                     'Content-Type': 'application/json',
                     'X-CSRF-TOKEN': csrf,
+                    'X-Requested-With': 'XMLHttpRequest',
                 },
                 credentials: 'same-origin',
-                body: JSON.stringify({
-                    camera_id: document.getElementById('plate-correct-camera')?.value,
-                    track_id: Number(document.getElementById('plate-correct-track')?.value),
-                    plate: document.getElementById('plate-correct-value')?.value,
-                }),
+                signal: controller.signal,
+                body: JSON.stringify(body),
             });
             const data = await res.json().catch(() => ({}));
             if (!res.ok) {
-                if (plateErr) {
-                    plateErr.textContent = data.message || 'Could not save plate.';
-                    plateErr.classList.remove('hidden');
+                if (aiLocked) {
+                    // Plate is locked on YOLO; owner badge will catch up on next occupancy.
+                    closePlateModal();
+                    refresh();
+                    return;
                 }
+                const fieldMsg = data?.errors
+                    ? Object.values(data.errors).flat().find(Boolean)
+                    : null;
+                showPlateError(fieldMsg || data.message || 'Could not save plate.');
                 return;
             }
             closePlateModal();
             refresh();
         } catch (err) {
-            if (plateErr) {
-                plateErr.textContent = 'Network error.';
-                plateErr.classList.remove('hidden');
+            if (aiLocked) {
+                closePlateModal();
+                refresh();
+                return;
+            }
+            const timedOut = err && (err.name === 'AbortError' || /aborted/i.test(String(err.message || '')));
+            showPlateError(timedOut
+                ? 'Save timed out — Laravel may be busy. Wait a few seconds and try again.'
+                : 'Network error. Check that the website is responding, then try again.');
+        } finally {
+            window.clearTimeout(timer);
+            if (plateSaveBtn) {
+                plateSaveBtn.disabled = false;
+                plateSaveBtn.textContent = 'Save plate';
             }
         }
     });
