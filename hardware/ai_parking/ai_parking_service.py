@@ -508,6 +508,9 @@ def _sync_detection_from_mem(det: dict, mem) -> None:
         det["owner_name"] = mem.owner_name
     if owner_label:
         det["owner_label"] = owner_label
+    if mem.owner_role:
+        det["owner_role"] = mem.owner_role
+        det["role"] = mem.owner_role
     if mem.vehicle_details:
         det["vehicle_details"] = mem.vehicle_details
     if mem.department:
@@ -516,6 +519,8 @@ def _sync_detection_from_mem(det: dict, mem) -> None:
         det["registration_status"] = mem.registration_status
     if mem.registered is not None:
         det["registered"] = mem.registered
+    if getattr(mem, "recognition_session_id", None):
+        det["recognition_session_id"] = mem.recognition_session_id
     if mem.motion_state:
         _attach_motion(det, mem.motion_state)
 
@@ -747,6 +752,7 @@ def parse_tracks(
 
         owner_label = None
         owner_name = None
+        owner_role = None
         vehicle_details = None
         department = None
         registration_status = None
@@ -756,6 +762,7 @@ def parse_tracks(
             if mem is not None:
                 owner_label = mem.overlay_owner_line()
                 owner_name = mem.owner_name
+                owner_role = mem.owner_role
                 vehicle_details = mem.vehicle_details
                 department = mem.department
                 registration_status = mem.registration_status
@@ -804,6 +811,9 @@ def parse_tracks(
             det["owner_name"] = owner_name
         if owner_label:
             det["owner_label"] = owner_label
+        if owner_role:
+            det["owner_role"] = owner_role
+            det["role"] = owner_role
         if vehicle_details:
             det["vehicle_details"] = vehicle_details
         if department:

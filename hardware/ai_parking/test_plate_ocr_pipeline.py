@@ -54,6 +54,13 @@ class PlateDeadlineTests(unittest.TestCase):
         self.assertTrue(changed)
         self.assertEqual(mem.plate_status, "not_read")
 
+    def test_known_ph_locks_with_realistic_easyocr_confidence(self):
+        """Regression: leader_conf must use hit counts, not vote weights (was blocking all locks)."""
+        mem = TrackMemory(first_seen=time.time())
+        mem.apply_ocr_vote("EBD814", "ok", 0.55)
+        self.assertEqual(mem.plate_status, "ok", "0.55 known-PH should lock via single_solid")
+        self.assertEqual(mem.plate, "EBD814")
+
     def test_apply_ocr_vote_ignores_after_ok(self):
         mem = TrackMemory(first_seen=time.time())
         mem.lock_plate("EBD814", 0.95, "test")

@@ -272,8 +272,9 @@ class PlateOCR:
         best_score = 0.0
         best_any_score = 0.0
         raw_texts: list[str] = []
-        # Accept a strong PH-format hit early so we do not burn the whole variant list.
-        early_lock = max(OCR_MIN_CONF, OCR_HIGH_CONF_LOCK - (0.10 if fast or quick else 0.0))
+        # Accept a solid known-PH hit early so CPU OCR does not burn every variant.
+        # Typical clear-plate EasyOCR scores are 0.50–0.80 (not 0.90).
+        early_lock = max(OCR_MIN_CONF, 0.48 if (fast or quick) else max(0.55, OCR_HIGH_CONF_LOCK - 0.25))
         for _label, img in self._ocr_variants(crop, quick=quick, fast=fast):
             try:
                 results = self._readtext(img, fast=fast or quick)
@@ -436,12 +437,11 @@ class PlateOCR:
         print(f"[OCR] Plate detector: {plate_meta}")
 
         targets = PlateOCR._targeted_plate_rois(crop, cls_id=cls_id)
-        # Prefer bounded lower bands first — plate YOLO often clips the last digit
-        # (CAM-2 EBD814 → EBD81) and can invent false 2-letter plates (EB248).
+        # Plate-first: YOLO/OpenCV plate crop first, then lower-band fallbacks.
         ordered: list = []
+        ordered.extend(out)
         if use_plate_only or targets:
             ordered.extend(targets[:3] if not fast else targets[:2])
-        ordered.extend(out)
         # de-dupe by shape id
         uniq: list = []
         seen_ids: set[int] = set()
@@ -453,6 +453,9 @@ class PlateOCR:
             uniq.append(roi)
 
         if uniq:
+            # Fast path: plate YOLO hit alone is enough when present.
+            if fast and out:
+                return (out + uniq)[:2]
             return uniq[:3] if fast else uniq[:4]
 
         if use_plate_only:
@@ -539,16 +542,19 @@ class PlateOCR:
                 for sub in subs:
                     b, s, any_s = self._scan_variants(sub, quick=True, fast=True)
                     _note(b, s, any_s)
+                    # Known PH at typical EasyOCR confidence — stop extra subs.
+                    if best and is_known_ph_format(best) and best_score >= max(OCR_MIN_CONF, 0.48):
+                        break
                     if best and is_known_ph_format(best) and best_score >= max(OCR_MIN_CONF, OCR_HIGH_CONF_LOCK - 0.05):
                         break
-                if not (best and is_known_ph_format(best) and best_score >= max(OCR_MIN_CONF, OCR_HIGH_CONF_LOCK - 0.05)):
+                if not (best and is_known_ph_format(best) and best_score >= max(OCR_MIN_CONF, 0.48)):
                     if best_any_score >= OCR_UNREADABLE_BELOW or best is not None:
                         for sub in self._sub_crops(
                             crop, cls_id=cls_id, fast=False, plate_only=use_plate_only
                         )[:2]:
                             b, s, any_s = self._scan_variants(sub, quick=True, fast=False)
                             _note(b, s, any_s)
-                            if best and is_known_ph_format(best) and best_score >= max(OCR_MIN_CONF, OCR_HIGH_CONF_LOCK - 0.05):
+                            if best and is_known_ph_format(best) and best_score >= max(OCR_MIN_CONF, 0.48):
                                 break
             else:
                 quick_crop = subs[0]
@@ -584,13 +590,29 @@ class PlateOCR:
         ms = int((time.perf_counter() - t0) * 1000)
         known = bool(best and is_known_ph_format(best))
         loose = bool(best and looks_like_plate_text(best))
+        cam = getattr(self, "_debug_camera_id", "CAM")
+        tid = getattr(self, "_debug_track_id", None)
+        sub_meta = (
+            f"{first_sub.shape[1]}x{first_sub.shape[0]}"
+            if first_sub is not None and hasattr(first_sub, "shape")
+            else "?"
+        )
         if best and best_score >= OCR_MIN_CONF and (known or loose):
+            print(
+                f"[{cam}][Track #{tid}] PlateCrop={sub_meta} "
+                f"RawOCR={best!r} Normalized={best} Valid={'YES' if known else 'LOOSE'} "
+                f"conf={best_score:.2f} OCR={ms}ms"
+            )
             print(
                 f"[OCR] OCR_SUCCESS plate={best!r} conf={best_score:.2f} "
                 f"validation={'PASS' if known else 'LOOSE'} ms={ms} crop={crop_meta}"
             )
             return PlateRead(plate=best, confidence=round(min(best_score, 1.0), 3), status="ok")
 
+        print(
+            f"[{cam}][Track #{tid}] PlateCrop={sub_meta} "
+            f"RawOCR={best!r} Valid=NO conf={best_any_score:.2f} OCR={ms}ms Reason=LOW_CONFIDENCE"
+        )
         print(
             f"[OCR] OCR_FAILED plate={best!r} conf={best_any_score:.2f} "
             f"validation=FAIL ms={ms} crop={crop_meta}"

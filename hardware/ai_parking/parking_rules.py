@@ -189,6 +189,7 @@ class TrackMemory:
     ocr_confidence: float = 0.0
     plate_votes: dict[str, int] = field(default_factory=dict)
     plate_vote_scores: dict[str, float] = field(default_factory=dict)
+    plate_vote_counts: dict[str, int] = field(default_factory=dict)
     unreadable_votes: int = 0
     ocr_attempts: int = 0
     ocr_started_at: float = 0.0
@@ -406,6 +407,7 @@ class TrackMemory:
         self.ocr_confidence = donor.ocr_confidence
         self.plate_votes = dict(donor.plate_votes)
         self.plate_vote_scores = dict(donor.plate_vote_scores)
+        self.plate_vote_counts = dict(getattr(donor, "plate_vote_counts", {}) or {})
         self.unreadable_votes = donor.unreadable_votes
         self.ocr_attempts = max(self.ocr_attempts, donor.ocr_attempts)
         self.ocr_started_at = donor.ocr_started_at or self.ocr_started_at
@@ -473,6 +475,7 @@ class TrackMemory:
                 weight += 2
             self.plate_votes[plate] = self.plate_votes.get(plate, 0) + weight
             self.plate_vote_scores[plate] = self.plate_vote_scores.get(plate, 0.0) + conf
+            self.plate_vote_counts[plate] = self.plate_vote_counts.get(plate, 0) + 1
 
             # Cross-frame bull-bar merge (EBD81 + EBD84 → EBD814).
             merged = reconcile_partial_plates(list(self.plate_votes.keys()) + [plate])
@@ -482,6 +485,7 @@ class TrackMemory:
                 if merged not in self.plate_votes:
                     self.plate_votes[merged] = self.plate_votes.get(merged, 0) + max(3, weight)
                     self.plate_vote_scores[merged] = self.plate_vote_scores.get(merged, 0.0) + conf
+                    self.plate_vote_counts[merged] = self.plate_vote_counts.get(merged, 0) + 1
                 plate = merged
                 known = True
 
@@ -490,16 +494,19 @@ class TrackMemory:
                 max(self.plate_votes.items(), key=lambda kv: (kv[1], self.plate_vote_scores.get(kv[0], 0.0)))[0],
                 list(self.plate_votes.keys()),
             ) or plate
-            votes = self.plate_votes.get(leader, 0)
-            total_votes = sum(self.plate_votes.values())
-            consensus = votes / max(total_votes, 1)
-            leader_conf = self.plate_vote_scores.get(leader, 0.0) / max(1, self.plate_votes.get(leader, 1))
+            vote_weight = self.plate_votes.get(leader, 0)
+            total_weight = sum(self.plate_votes.values())
+            consensus = vote_weight / max(total_weight, 1)
+            # Mean OCR confidence (NOT weight — dividing by weight blocked all locks).
+            hit_count = max(1, int(self.plate_vote_counts.get(leader, 0) or 0))
+            leader_conf = self.plate_vote_scores.get(leader, 0.0) / float(hit_count)
             leader_known = is_known_ph_format(leader)
 
             print(
                 f"[OCR] attempt {self.ocr_attempts}/{OCR_MAX_ATTEMPTS} "
                 f"raw={plate!r} conf={conf:.2f} leader={leader!r} "
-                f"votes={votes}/{total_votes} ({consensus:.0%})"
+                f"hits={hit_count} weight={vote_weight}/{total_weight} "
+                f"({consensus:.0%}) mean_conf={leader_conf:.2f}"
             )
 
             # A) Exceptional single strong known-PH read
@@ -509,19 +516,27 @@ class TrackMemory:
                 and plate == leader
                 and known
             )
-            # B) Multi-frame consensus on known PH (or strong plate-like)
+            # B) Multi-frame consensus on known PH (use hit counts, not weights)
             consensus_lock = (
-                votes >= PLATE_VOTE_NEEDED
+                hit_count >= PLATE_VOTE_NEEDED
                 and consensus >= PLATE_VOTE_CONSENSUS_RATIO
                 and leader_known
                 and leader_conf >= max(0.35, PLATE_LOCK_CONFIDENCE - 0.40)
             )
-            # C) Two strong matching known-PH reads (slightly below absolute lock conf)
+            # C) Two matching known-PH reads with solid mean confidence
             dual_strong = (
                 leader_known
-                and self.plate_votes.get(leader, 0) >= max(2, PLATE_VOTE_NEEDED - 1)
-                and leader_conf >= max(0.55, PLATE_LOCK_CONFIDENCE - 0.25)
+                and hit_count >= 2
+                and leader_conf >= max(0.40, PLATE_LOCK_CONFIDENCE - 0.45)
                 and consensus >= 0.5
+            )
+            # D) One clear known-PH read (typical EasyOCR 0.50–0.80 on good crops)
+            single_solid = (
+                leader_known
+                and known
+                and plate == leader
+                and hit_count >= 1
+                and conf >= max(0.50, min(0.70, PLATE_LOCK_CONFIDENCE - 0.35))
             )
 
             if high_conf_lock:
@@ -531,11 +546,14 @@ class TrackMemory:
                 self.lock_plate(
                     leader,
                     leader_conf,
-                    f"{votes} matching votes ({consensus:.0%} consensus)",
+                    f"{hit_count} matching hits ({consensus:.0%} consensus)",
                 )
                 return
             if dual_strong:
                 self.lock_plate(leader, leader_conf, "strong matching results")
+                return
+            if single_solid:
+                self.lock_plate(leader, conf, f"known_ph_solid conf>={conf:.2f}")
                 return
 
             self.tick_plate_deadline()

@@ -277,16 +277,21 @@
                                         ?: (($det['owner_label'] ?? null) ?: null)
                                         ?: (($plate || in_array(($det['plate_status'] ?? ''), ['unreadable', 'not_read'], true)) ? 'Unknown' : '…');
                                     $isKnownOwner = filled($ownerName);
+                                    $needsManualPlate = in_array(($det['plate_status'] ?? ''), ['unreadable', 'not_read'], true) && ! $plate;
+                                    if ($needsManualPlate) {
+                                        $ownerBadge = 'Enter Plate Number';
+                                    }
                                 @endphp
                                 @if (! empty($det['track_id']))
                                     <button
                                         type="button"
-                                        class="max-w-[9rem] truncate rounded-lg border px-2 py-1 text-[11px] font-semibold {{ $isKnownOwner ? 'border-emerald-200 bg-emerald-50 text-emerald-800 hover:bg-emerald-100' : 'border-slate-200 bg-slate-50 text-slate-600 hover:bg-slate-100' }}"
-                                        title="{{ $isKnownOwner ? 'Registered owner — click to fix plate if wrong' : 'Not in database — click to enter plate' }}"
+                                        class="max-w-[9rem] truncate rounded-lg border px-2 py-1 text-[11px] font-semibold {{ $isKnownOwner ? 'border-emerald-200 bg-emerald-50 text-emerald-800 hover:bg-emerald-100' : ($needsManualPlate ? 'border-amber-200 bg-amber-50 text-amber-800 hover:bg-amber-100' : 'border-slate-200 bg-slate-50 text-slate-600 hover:bg-slate-100') }}"
+                                        title="{{ $needsManualPlate ? 'Enter plate manually — same DB lookup as OCR' : ($isKnownOwner ? 'Registered owner — click to fix plate if wrong' : 'Not in database — click to enter plate') }}"
                                         data-correct-plate
                                         data-camera="{{ $detCam }}"
                                         data-track="{{ $det['track_id'] }}"
                                         data-plate="{{ $plate ?? '' }}"
+                                        data-manual="{{ $needsManualPlate ? '1' : '0' }}"
                                     >{{ $ownerBadge }}</button>
                                 @else
                                     <span class="max-w-[9rem] truncate rounded-lg border px-2 py-1 text-[11px] font-semibold {{ $isKnownOwner ? 'border-emerald-200 bg-emerald-50 text-emerald-800' : 'border-slate-200 bg-slate-50 text-slate-600' }}">{{ $ownerBadge }}</span>
@@ -349,8 +354,8 @@
 
     <div id="plate-correct-modal" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/50 p-4" role="dialog" aria-modal="true">
         <form id="plate-correct-form" class="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
-            <h3 class="text-lg font-bold text-gray-900">Fix plate number</h3>
-            <p class="mt-1 text-sm text-gray-500">Override a bad OCR read. Owner is looked up automatically from the database.</p>
+            <h3 class="text-lg font-bold text-gray-900" id="plate-correct-title">Enter plate number</h3>
+            <p class="mt-1 text-sm text-gray-500" id="plate-correct-help">Lookup uses the same registered-vehicle database as automatic OCR.</p>
             <input type="hidden" id="plate-correct-camera">
             <input type="hidden" id="plate-correct-track">
             <label class="mt-4 block text-sm font-medium text-gray-700" for="plate-correct-value">Plate</label>
@@ -412,8 +417,8 @@
         const dataUri = det.thumb_jpeg_base64
             ? ('data:image/jpeg;base64,' + det.thumb_jpeg_base64)
             : '';
-        // Prefer stable crop URL so we do not rebuild/reload the <img> every poll.
-        const stableSrc = vehicleUrl || plateUrl || dataUri;
+        // Prefer embedded thumb first (survives track-id churn / crop 404s), then live crop URLs.
+        const stableSrc = dataUri || vehicleUrl || plateUrl;
         let crop = li.querySelector('[data-det-thumb]');
         if (!stableSrc) {
             if (crop) crop.remove();
@@ -433,15 +438,24 @@
             crop.alt = 'Vehicle';
             crop.dataset.detThumb = '1';
             crop.className = 'h-20 w-28 shrink-0 rounded-lg border border-gray-200 bg-slate-900 object-cover';
-            crop.addEventListener('error', () => window.aiDetThumbFallback(crop));
+            crop.addEventListener('error', () => {
+                if (crop.dataset.fallbackTried !== '1' && dataUri && crop.src !== dataUri) {
+                    crop.dataset.fallbackTried = '1';
+                    crop.src = dataUri;
+                    return;
+                }
+                window.aiDetThumbFallback(crop);
+            });
             li.prepend(crop);
         }
         if (plateUrl) crop.dataset.plateCrop = plateUrl;
         if (vehicleUrl) crop.dataset.vehicleCrop = vehicleUrl;
+        if (dataUri) crop.dataset.dataUri = dataUri;
         // Only set src when the track/URL actually changes — prevents blink on every refresh.
         if (crop.dataset.stableSrc !== stableSrc) {
             crop.dataset.stableSrc = stableSrc;
             crop.dataset.fallbackDone = '0';
+            crop.dataset.fallbackTried = '0';
             crop.src = stableSrc;
         }
     };
@@ -492,6 +506,8 @@
         roleEl.textContent = bits.join(' · ');
 
         const { ownerBadge, isKnownOwner } = ownerBadgeFor(det);
+        const needsManualPlate = (det.plate_status === 'not_read' || det.plate_status === 'unreadable') && !det.plate;
+        const badgeText = needsManualPlate ? 'Enter Plate Number' : ownerBadge;
         let right = li.querySelector('[data-det-right]');
         if (!right) {
             right = document.createElement('div');
@@ -511,14 +527,19 @@
             }
             corr.className = isKnownOwner
                 ? 'max-w-[9rem] truncate rounded-lg border border-emerald-200 bg-emerald-50 px-2 py-1 text-[11px] font-semibold text-emerald-800 hover:bg-emerald-100'
-                : 'max-w-[9rem] truncate rounded-lg border border-slate-200 bg-slate-50 px-2 py-1 text-[11px] font-semibold text-slate-600 hover:bg-slate-100';
-            corr.textContent = ownerBadge;
-            corr.title = isKnownOwner
-                ? 'Registered owner — click to fix plate if wrong'
-                : 'Not in database — click to enter plate';
+                : (needsManualPlate
+                    ? 'max-w-[9rem] truncate rounded-lg border border-amber-200 bg-amber-50 px-2 py-1 text-[11px] font-semibold text-amber-800 hover:bg-amber-100'
+                    : 'max-w-[9rem] truncate rounded-lg border border-slate-200 bg-slate-50 px-2 py-1 text-[11px] font-semibold text-slate-600 hover:bg-slate-100');
+            corr.textContent = badgeText;
+            corr.title = needsManualPlate
+                ? 'Enter plate manually — same DB lookup as OCR'
+                : (isKnownOwner
+                    ? 'Registered owner — click to fix plate if wrong'
+                    : 'Not in database — click to enter plate');
             corr.dataset.camera = camId;
             corr.dataset.track = String(det.track_id);
             corr.dataset.plate = det.plate || '';
+            corr.dataset.manual = needsManualPlate ? '1' : '0';
         } else {
             if (!corr || corr.tagName === 'BUTTON') {
                 corr?.remove();
@@ -984,6 +1005,15 @@
         document.getElementById('plate-correct-camera').value = btn.dataset.camera || '';
         document.getElementById('plate-correct-track').value = btn.dataset.track || '';
         document.getElementById('plate-correct-value').value = btn.dataset.plate || '';
+        const manual = btn.dataset.manual === '1';
+        const title = document.getElementById('plate-correct-title');
+        const help = document.getElementById('plate-correct-help');
+        if (title) title.textContent = manual ? 'Enter plate number' : 'Fix plate number';
+        if (help) {
+            help.textContent = manual
+                ? 'OCR could not read this plate. Enter it manually — lookup uses the same registered-vehicle database.'
+                : 'Override a bad OCR read. Owner is looked up automatically from the database.';
+        }
         plateModal?.classList.remove('hidden');
         plateModal?.classList.add('flex');
         document.getElementById('plate-correct-value')?.focus();
