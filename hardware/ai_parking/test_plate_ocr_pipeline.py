@@ -85,6 +85,30 @@ class PlateDeadlineTests(unittest.TestCase):
         self.assertFalse(mem.maybe_retry_not_read())
         self.assertEqual(mem.plate_status, "not_read")
 
+    def test_guard_manual_entry_wins_after_retries_exhausted_else_stays_not_read(self):
+        """End-to-end: once OCR retries are exhausted, the vehicle must stay
+        'Plate Not Read' unless/until a guard manually enters a plate — at which
+        point the guard's plate wins immediately and permanently."""
+        mem = TrackMemory(first_seen=time.time())
+        mem.plate_status = "not_read"
+        mem.reopen_count = OCR_MAX_REOPENS  # retry budget fully used up
+        mem.not_read_at = time.time() - (OCR_RETRY_COOLDOWN_SEC + 1.0)
+
+        # No guard input yet -> must stay exactly as "Plate Not Read".
+        self.assertFalse(mem.maybe_retry_not_read())
+        self.assertEqual(mem.plate_status, "not_read")
+        self.assertIsNone(mem.plate)
+
+        # Guard types in the plate manually (mirrors AiParkingService.correct_plate).
+        mem.lock_plate("ABC1234", 1.0, "manual_guard")
+        self.assertEqual(mem.plate_status, "ok")
+        self.assertEqual(mem.plate, "ABC1234")
+
+        # Even if the retry check runs again later, it must never undo the guard's plate.
+        self.assertFalse(mem.maybe_retry_not_read())
+        self.assertEqual(mem.plate_status, "ok")
+        self.assertEqual(mem.plate, "ABC1234")
+
     def test_maybe_retry_never_reopens_a_locked_plate(self):
         mem = TrackMemory(first_seen=time.time())
         mem.lock_plate("EBD814", 0.9, "high_conf")
