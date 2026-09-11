@@ -65,7 +65,18 @@ def lookup_plate_async(mem: "TrackMemory", on_done: Optional[Callable[[], None]]
             data = lookup_plate(plate)
             # Track may have changed plate while we waited.
             if mem.plate == plate and mem.plate_status == "ok":
-                mem.apply_owner_lookup(data)
+                # `lookup_plate()` returns None ONLY on network/HTTP/parse failure —
+                # Laravel's /plate-lookup endpoint always returns a data dict (with
+                # registered=false) for a genuinely unregistered plate, never null.
+                # So caching None as "Unknown" here would permanently freeze the
+                # overlay on a transient network hiccup even though Laravel's own
+                # server-side lookup (used for Latest Detections) succeeds fine.
+                # Leave lookup_pending/lookup_done_at untouched so it retries later.
+                if data is not None:
+                    mem.apply_owner_lookup(data)
+                else:
+                    mem.lookup_pending = False
+                    print(f"Plate lookup: no response for {plate!r} — will retry")
             else:
                 mem.lookup_pending = False
         except Exception as e:
