@@ -7,7 +7,9 @@ import unittest
 
 from parking_rules import (
     OCR_MAX_ATTEMPTS,
+    OCR_MAX_REOPENS,
     OCR_PENDING_TIMEOUT_SEC,
+    OCR_RETRY_COOLDOWN_SEC,
     ParkingIntelligence,
     TrackMemory,
 )
@@ -53,6 +55,42 @@ class PlateDeadlineTests(unittest.TestCase):
         changed = mem.tick_plate_deadline()
         self.assertTrue(changed)
         self.assertEqual(mem.plate_status, "not_read")
+
+    def test_not_read_reopens_for_retry_after_cooldown(self):
+        """A vehicle stuck on PLATE NOT READ must get another OCR pass instead of
+        freezing forever, as long as it's still in frame and under the reopen cap."""
+        mem = TrackMemory(first_seen=time.time())
+        mem.ocr_started_at = time.time() - (OCR_PENDING_TIMEOUT_SEC + 1.0)
+        mem.ocr_attempts = 1
+        self.assertTrue(mem.tick_plate_deadline())
+        self.assertEqual(mem.plate_status, "not_read")
+
+        # Too soon — cooldown not elapsed yet.
+        self.assertFalse(mem.maybe_retry_not_read())
+        self.assertEqual(mem.plate_status, "not_read")
+
+        # Cooldown elapsed -> reopen for another attempt.
+        mem.not_read_at = time.time() - (OCR_RETRY_COOLDOWN_SEC + 1.0)
+        self.assertTrue(mem.maybe_retry_not_read())
+        self.assertEqual(mem.plate_status, "pending")
+        self.assertEqual(mem.ocr_attempts, 0)
+        self.assertEqual(mem.reopen_count, 1)
+
+    def test_not_read_reopen_cap_is_bounded(self):
+        """A genuinely unreadable plate must not retry forever."""
+        mem = TrackMemory(first_seen=time.time())
+        mem.plate_status = "not_read"
+        mem.reopen_count = OCR_MAX_REOPENS
+        mem.not_read_at = time.time() - (OCR_RETRY_COOLDOWN_SEC + 1.0)
+        self.assertFalse(mem.maybe_retry_not_read())
+        self.assertEqual(mem.plate_status, "not_read")
+
+    def test_maybe_retry_never_reopens_a_locked_plate(self):
+        mem = TrackMemory(first_seen=time.time())
+        mem.lock_plate("EBD814", 0.9, "high_conf")
+        self.assertFalse(mem.maybe_retry_not_read())
+        self.assertEqual(mem.plate_status, "ok")
+        self.assertEqual(mem.plate, "EBD814")
 
     def test_known_ph_locks_with_realistic_easyocr_confidence(self):
         """Regression: leader_conf must use hit counts, not vote weights (was blocking all locks)."""

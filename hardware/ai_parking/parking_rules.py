@@ -35,6 +35,11 @@ TRACK_MATCH_SIZE_RATIO = float(os.getenv("AI_PARKING_TRACK_MATCH_SIZE_RATIO", "0
 # Cap OCR retries / pending "Reading plate…" time so tracks reach a terminal state.
 OCR_MAX_ATTEMPTS = int(os.getenv("AI_PARKING_OCR_MAX_ATTEMPTS", "6"))
 OCR_PENDING_TIMEOUT_SEC = float(os.getenv("AI_PARKING_OCR_PENDING_TIMEOUT_SEC", "12"))
+# A "PLATE NOT READ" vehicle that is still sitting in frame gets another OCR pass
+# after this cooldown, instead of staying stuck forever. Bounded by MAX_REOPENS so
+# a genuinely unreadable/damaged plate does not retry endlessly.
+OCR_RETRY_COOLDOWN_SEC = float(os.getenv("AI_PARKING_OCR_RETRY_COOLDOWN_SEC", "15"))
+OCR_MAX_REOPENS = int(os.getenv("AI_PARKING_OCR_MAX_REOPENS", "6"))
 # Prefer plate-YOLO/OpenCV crop only; skip EasyOCR on huge bumper bands when no plate ROI.
 OCR_PLATE_ONLY = os.getenv("AI_PARKING_OCR_PLATE_ONLY", "1").strip().lower() in (
     "1",
@@ -193,6 +198,8 @@ class TrackMemory:
     unreadable_votes: int = 0
     ocr_attempts: int = 0
     ocr_started_at: float = 0.0
+    not_read_at: float = 0.0
+    reopen_count: int = 0
     plate_locked_at: float = 0.0
     plate_lock_reason: str | None = None
     last_ocr_at: float = 0.0
@@ -368,10 +375,35 @@ class TrackMemory:
         self.plate_status = "not_read"
         self.plate_locked_at = 0.0
         self.plate_lock_reason = "timeout_or_max_attempts"
+        self.not_read_at = now
         self.clear_owner()
         print(
             f"[OCR] PLATE NOT READ attempts={self.ocr_attempts}/{OCR_MAX_ATTEMPTS} "
             f"timeout={OCR_PENDING_TIMEOUT_SEC}s"
+        )
+        return True
+
+    def maybe_retry_not_read(self, now: float | None = None) -> bool:
+        """Give a vehicle stuck on 'PLATE NOT READ' another OCR pass while it is
+        still sitting in frame, instead of freezing forever after one bad attempt
+        run. Bounded by OCR_MAX_REOPENS so a genuinely unreadable/damaged plate
+        does not retry endlessly and never touches an already-locked plate."""
+        if self.plate_status != "not_read":
+            return False
+        if OCR_MAX_REOPENS <= 0 or self.reopen_count >= OCR_MAX_REOPENS:
+            return False
+        now = now if now is not None else time.time()
+        if self.not_read_at <= 0 or (now - self.not_read_at) < OCR_RETRY_COOLDOWN_SEC:
+            return False
+        self.plate_status = "pending"
+        self.ocr_attempts = 0
+        self.ocr_started_at = now
+        self.unreadable_votes = 0
+        self.not_read_at = 0.0
+        self.reopen_count += 1
+        print(
+            f"[OCR] Retry #{self.reopen_count}/{OCR_MAX_REOPENS}: reopening "
+            f"PLATE NOT READ for another OCR pass"
         )
         return True
 

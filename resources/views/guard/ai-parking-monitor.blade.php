@@ -205,21 +205,6 @@
                             </div>
                             <span class="shrink-0 rounded bg-blue-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-blue-700">AI</span>
                         </div>
-                        <p
-                            class="js-cam-stats mt-2 text-xs text-gray-500 {{ $showStats ? '' : 'hidden' }}"
-                            data-camera="{{ $camId }}"
-                        >
-                            Free:
-                            <span class="js-cam-available font-semibold text-green-700" data-camera="{{ $camId }}">{{ $free ?? '—' }}</span><span class="js-cam-capacity text-gray-400" data-camera="{{ $camId }}">@if ($capacity !== null)/{{ $capacity }}@endif</span>
-                            · Used:
-                            <span class="js-cam-occupied font-semibold text-red-700" data-camera="{{ $camId }}">{{ $used ?? '—' }}</span>
-                            · Vehicles:
-                            <span class="js-cam-vehicles font-semibold text-gray-800" data-camera="{{ $camId }}">{{ $vehicles ?? '—' }}</span>
-                        </p>
-                        <p
-                            class="js-cam-plate mt-1 truncate text-xs font-medium text-indigo-700 {{ ($showStats && $plateLine !== '') ? '' : 'hidden' }}"
-                            data-camera="{{ $camId }}"
-                        >{{ $plateLine }}</p>
                     </div>
                 </article>
             @endforeach

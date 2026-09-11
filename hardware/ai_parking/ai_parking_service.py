@@ -713,6 +713,8 @@ def parse_tracks(
                             pass
             except Exception:
                 pass
+            if plate_queue is not None:
+                mem.maybe_retry_not_read(now)
             if plate_queue is not None and not mem.is_plate_terminal():
                 ocr_ok = not OCR_PARKED_ONLY or motion_state in (None, "parked", "idle")
                 # Prefer real vehicles for OCR; still allow mid-size parked cars/multicabs.
@@ -918,9 +920,9 @@ def _draw_box_labels(annotated, x1, y1, x2, y2, name, conf, track_id, plate, pla
     elif plate_status == "not_read":
         lines.append("PLATE NOT READ")
     elif plate:
+        # Detection box shows the plate number only. Owner/role is intentionally
+        # NOT drawn here — it belongs in the Latest Detections panel only.
         lines.append(str(plate))
-        if owner_label:
-            lines.append(str(owner_label)[:32])
     elif plate_status == "detecting":
         lines.append("Detecting…")
     elif track_id is not None:
