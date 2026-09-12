@@ -283,7 +283,7 @@
 @push('scripts')
 <script>
     (() => {
-        const IDLE_MS = 20000;
+        const IDLE_MS = 5000; // Show scan card briefly, then return to Waiting for RFID…
 
         const entries = document.getElementById('today-entries');
         const exits = document.getElementById('today-exits');
@@ -507,8 +507,8 @@
         const handleScan = (scan) => {
             if (!scan?.id) return;
             const scanId = String(scan.id);
-            // Same scan can arrive from Echo and from status poll — show once.
-            if (scanId === knownLatestId && !scanCard?.classList.contains('hidden')) {
+            // Same scan can arrive from Echo and status poll — never re-show after dismiss.
+            if (scanId === knownLatestId) {
                 if (entries && scan.today_entries != null) entries.textContent = scan.today_entries;
                 if (exits && scan.today_exits != null) exits.textContent = scan.today_exits;
                 return;
@@ -532,8 +532,15 @@
 
         showWaiting();
         setEsp32Status(@json($entryGateOnline));
+        // Remember the last DB scan so polls do not re-pop an old card on load.
+        // Only a *new* RFID tap (new id) shows the profile card.
         if (initialLatestScan?.id) {
-            handleScan(initialLatestScan);
+            knownLatestId = String(initialLatestScan.id);
+            lastScanAt = initialLatestScan.time || null;
+            if (lastUpdated && lastScanAt) {
+                lastUpdated.textContent = `Last scan ${lastScanAt}`;
+                lastUpdated.classList.remove('hidden');
+            }
         }
 
         const subscribeGateScans = (echo) => {

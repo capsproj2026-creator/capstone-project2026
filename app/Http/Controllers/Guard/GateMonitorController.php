@@ -20,7 +20,8 @@ class GateMonitorController extends Controller
         $logs = $this->filteredLogs($action);
         $latestLog = $logs->first();
         $initialLatestScan = null;
-        if ($latestLog && $latestLog->timestamp && $latestLog->timestamp->greaterThan(now()->subMinutes(5))) {
+        if ($latestLog) {
+            // Seed client knownLatestId only — do not auto-display an old card on page load.
             $initialLatestScan = \App\Support\GateScanPresenter::fromLog($latestLog, withStats: true);
         }
 
