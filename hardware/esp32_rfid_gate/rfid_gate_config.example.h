@@ -2,31 +2,22 @@
  * Copy to rfid_gate_config.h and edit before flashing.
  * rfid_gate_config.h is gitignored — never commit WiFi passwords or tokens.
  *
- * Preferred: install Arduino library "WiFiManager" (tzapu). After flash, join AP
- * "Gate-Setup" / password "capstone123" and enter Wi-Fi + Laravel PC IP in the portal.
- * Values are saved in flash — no reflash when switching home / hotspot / campus Wi-Fi.
- * Hold BOOT 2s at power-on (or 3s while running) to reopen the portal.
- *
- * Compile-time WIFI_SSID / API_HOST below are only defaults / fallback if WiFiManager
- * is not installed.
+ * Set WIFI_SSID / WIFI_PASSWORD / API_HOST below, then flash.
+ * WiFiManager phone portal is off (USE_WIFI_MANAGER 0).
  */
 #pragma once
 
-// ========== NETWORK (defaults; portal/NVS overrides when WiFiManager is installed) ==========
+// ========== NETWORK ==========
 #define WIFI_SSID     ""
 #define WIFI_PASSWORD ""
-// PC/server IPv4 default (ipconfig). Portal can change this without reflashing.
+// PC/server IPv4 (ipconfig). Laravel: php artisan serve --host=0.0.0.0 --port=8000
 #define API_HOST       "192.168.1.110"
 #define API_PORT       8000
 #define API_BASE       "http://192.168.1.110:8000"
 #define RFID_API_TOKEN "capstone-rfid-dev-token-change-me"
 
-// 1 = use phone portal (recommended). 0 = only compile-time WIFI_SSID / WIFI_PASSWORD.
-#ifndef USE_WIFI_MANAGER
-#define USE_WIFI_MANAGER 1
-#endif
-#define WIFI_PORTAL_AP_NAME "Gate-Setup"
-#define WIFI_PORTAL_AP_PASS "capstone123"
+// 0 = WIFI_SSID from this file only. 1 = optional WiFiManager phone portal.
+#define USE_WIFI_MANAGER 0
 
 #ifndef GATE_ID
 #define GATE_ID   "GATE-IN-1"

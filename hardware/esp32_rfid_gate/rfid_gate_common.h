@@ -5,8 +5,7 @@
  * Shared boom: wire the servo to the Entry ESP32 only. Exit uses ACTUATOR_NONE;
  * Laravel queues an open to Entry when Exit RFID is granted.
  *
- * Network: WiFiManager phone portal + NVS-saved Laravel host/port/token so you can
- * switch home Wi-Fi / hotspot / campus without reflashing. Hold BOOT 3s to reopen portal.
+ * Network: WIFI_SSID / API_HOST from rfid_gate_config.h (WiFiManager portal off by default).
  */
 #pragma once
 
@@ -25,7 +24,7 @@
 #endif
 
 #ifndef USE_WIFI_MANAGER
-#define USE_WIFI_MANAGER 1
+#define USE_WIFI_MANAGER 0
 #endif
 
 #if USE_WIFI_MANAGER
@@ -193,9 +192,22 @@ bool wifiManagerEnabled() {
 }
 
 void loadNetworkPrefs() {
+  // Always start from rfid_gate_config.h.
   runtimeApiHost = API_HOST;
   runtimeApiPort = (uint16_t) API_PORT;
   runtimeApiToken = RFID_API_TOKEN;
+
+  // When WiFiManager is off, ignore stale NVS from old portal saves
+  // (that is why boards kept calling 192.168.1.74 after reflash).
+  if (!wifiManagerEnabled()) {
+    // Clear old portal values so a later enable does not resurrect them.
+    if (gatePrefs.begin("gate", false)) {
+      gatePrefs.clear();
+      gatePrefs.end();
+    }
+    Serial.printf("API from config: %s\n", runtimeApiBase().c_str());
+    return;
+  }
 
   if (!gatePrefs.begin("gate", true)) {
     return;
@@ -385,7 +397,7 @@ void logLanDiagnostic() {
     Serial.println("PC unreachable from ESP32. On the PC run allow-laravel-firewall.bat (Admin).");
     Serial.printf("On phone (same Wi-Fi) open: http://%s:%u\n", runtimeApiHost.c_str(), runtimeApiPort);
     Serial.println("If phone fails too: disable router AP isolation / guest Wi-Fi.");
-    Serial.println("Wrong network? Hold BOOT 3s to reopen Gate-Setup portal and enter new Wi-Fi + PC IP.");
+    Serial.println("Wrong network? Edit WIFI_SSID / API_HOST in rfid_gate_config.h and re-flash.");
   }
 }
 
@@ -395,10 +407,10 @@ void printWifiFailureHelp() {
   Serial.println((int)st);
   switch (st) {
     case WL_NO_SSID_AVAIL:
-      Serial.println("WiFi: SSID not found — open Gate-Setup portal (hold BOOT 3s) and pick the network.");
+      Serial.println("WiFi: SSID not found — check WIFI_SSID in rfid_gate_config.h (2.4 GHz only).");
       break;
     case WL_CONNECT_FAILED:
-      Serial.println("WiFi: password rejected — reopen portal and re-enter password.");
+      Serial.println("WiFi: password rejected — check WIFI_PASSWORD in rfid_gate_config.h.");
       break;
     case WL_DISCONNECTED:
       Serial.println("WiFi: still disconnected — router may be off or out of range.");
@@ -429,7 +441,7 @@ void printWifiFailureHelp() {
     Serial.println("   1) ESP32 is 2.4 GHz only — enable 2.4 GHz on the router (or use a mixed SSID).");
     Serial.println("   2) External antenna screwed onto the board (IPEX/u.FL) if your module needs one.");
     Serial.println("   3) Move closer to the router; avoid metal boxes.");
-    Serial.println("   4) Install Arduino library 'WiFiManager' by tzapu, re-flash, join AP Gate-Setup.");
+    Serial.println("   4) Edit WIFI_SSID / WIFI_PASSWORD in rfid_gate_config.h and re-flash.");
     return;
   }
   String want = String(WIFI_SSID);
@@ -466,11 +478,11 @@ void connectWifiStartup() {
     return;
   }
 
-  Serial.println("NOTE: USE_WIFI_MANAGER is 0 — using WIFI_SSID from rfid_gate_config.h only.");
+  Serial.println("Using WIFI_SSID / WIFI_PASSWORD from rfid_gate_config.h (no portal).");
 
-  // Legacy compile-time Wi-Fi.
+  // Compile-time Wi-Fi from rfid_gate_config.h.
   if (String(WIFI_SSID).length() == 0) {
-    Serial.println("ERROR: WIFI_SSID empty. Set it in rfid_gate_config.h or enable USE_WIFI_MANAGER.");
+    Serial.println("ERROR: WIFI_SSID empty. Set it in rfid_gate_config.h and re-flash.");
     return;
   }
 
@@ -655,7 +667,7 @@ void setupGateHardware() {
     Serial.println("ROLE: EXIT — RC522 only. No servo. Laravel tells Entry ESP32 to open the boom.");
   }
 #endif
-  Serial.println("Normal use: power only. Hold BOOT 2s at power-on or 3s while running to open Gate-Setup portal.");
+  Serial.println("Normal use: power only. Wi-Fi/API come from rfid_gate_config.h.");
 }
 
 void loopGateClient() {
@@ -712,7 +724,7 @@ void loopGateClient() {
   digitalWrite(PIN_GREEN, LOW);
 
   if (!wifiOk) {
-    Serial.println("WiFi down — UID seen but not sent. Hold BOOT 3s for Gate-Setup portal.");
+    Serial.println("WiFi down — UID seen but not sent. Check WIFI_SSID in rfid_gate_config.h.");
     mfrc522.PICC_HaltA();
     mfrc522.PCD_StopCrypto1();
     return;
@@ -939,7 +951,7 @@ void denyAccess(const ScanResult &result) {
   } else if (result.code == "card_not_registered") {
     Serial.println("HINT: Admin -> RFID Assignment -> set UID to this card.");
   } else if (result.code == "network_error") {
-    Serial.println("HINT: Exit board must use same Wi-Fi + API host as Entry (or same Gate-Setup values).");
+    Serial.println("HINT: Exit board must use the same WIFI_SSID + API_HOST as Entry in rfid_gate_config.h.");
   }
 }
 

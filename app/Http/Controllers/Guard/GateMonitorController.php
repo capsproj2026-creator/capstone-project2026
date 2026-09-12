@@ -18,10 +18,16 @@ class GateMonitorController extends Controller
     {
         $action = $this->actionFromRequest($request);
         $logs = $this->filteredLogs($action);
+        $latestLog = $logs->first();
+        $initialLatestScan = null;
+        if ($latestLog && $latestLog->timestamp && $latestLog->timestamp->greaterThan(now()->subMinutes(5))) {
+            $initialLatestScan = \App\Support\GateScanPresenter::fromLog($latestLog, withStats: true);
+        }
 
         return view('guard.gate-monitor', [
             'recentLogs' => $logs,
-            'latestLog' => $logs->first(),
+            'latestLog' => $latestLog,
+            'initialLatestScan' => $initialLatestScan,
             'todayEntries' => app(GateLogService::class)->todayCount('Entry'),
             'todayExits' => app(GateLogService::class)->todayCount('Exit'),
             'filterAction' => $action,
@@ -36,9 +42,26 @@ class GateMonitorController extends Controller
 
     public function status(GateHardwareService $hardware): JsonResponse
     {
+        $latestLog = GateLog::query()
+            ->with(['user.role', 'visitor'])
+            ->orderByDesc('timestamp')
+            ->first();
+
+        $latestScan = null;
+        if ($latestLog) {
+            // Only surface scans from the last few minutes so an old log does not
+            // keep re-popping the profile card on every poll.
+            $ts = $latestLog->timestamp;
+            $fresh = $ts && $ts->greaterThan(now()->subMinutes(5));
+            if ($fresh) {
+                $latestScan = \App\Support\GateScanPresenter::fromLog($latestLog, withStats: true);
+            }
+        }
+
         return response()->json([
             'ok' => true,
             'gates' => $hardware->statuses(),
+            'latest_scan' => $latestScan,
         ]);
     }
 

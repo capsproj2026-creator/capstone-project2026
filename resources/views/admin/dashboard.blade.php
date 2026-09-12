@@ -26,7 +26,7 @@
             $secondStrikeUsersPayload = $usersWithSecondStrike->map(static function ($u) {
                 return [
                     'id' => (string) $u->id,
-                    'name' => $u->name,
+                    'name' => $u->displayName(),
                     'id_number' => $u->id_number,
                     'role' => strtolower($u->displayRoleLabel()),
                     'updated_at' => optional($u->updated_at)?->toIso8601String(),
@@ -62,7 +62,7 @@
 
                 countEl.textContent = String(fresh.length);
                 listEl.innerHTML = fresh.map((u) =>
-                    `<li>• ${u.name} (${u.id_number || '—'}) — ${u.role || 'user'}</li>`
+                    `<li>• ${u.name || 'Unknown'} (${u.id_number || '—'}) — ${u.role || 'user'}</li>`
                 ).join('');
                 alertEl.classList.remove('hidden');
                 alertEl.classList.add('flex');

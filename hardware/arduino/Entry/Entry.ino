@@ -5,8 +5,7 @@
  *   - RC522 RFID reader (Entry lane)
  *   - Servo boom on GPIO 14 (the ONLY servo — shared for Entry + Exit)
  *
- * Network: WiFiManager portal (AP "Gate-Setup" / password "capstone123").
- * Hold BOOT 3s while running (or 2s at power-on) to reopen the portal.
+ * Network: set WIFI_SSID / WIFI_PASSWORD / API_HOST in rfid_gate_config.h, then flash.
  *
  * The second ESP32 uses Exit.ino (RFID only, no servo).
  * Exit grants still open THIS servo via Laravel heartbeat.

@@ -28,6 +28,12 @@ class AiParkingViolationService
         'unauthorized' => 'Unauthorized Parking',
     ];
 
+    /** Violation types that are limited to one citation per calendar day per user/vehicle. */
+    private const ONCE_PER_DAY_TYPES = [
+        'Wrong Parking',
+        'Unauthorized Parking',
+    ];
+
     /**
      * @param  list<array<string, mixed>>  $events
      * @return list<array<string, mixed>>
@@ -91,43 +97,79 @@ class AiParkingViolationService
             $vehicleDetails = $identity['vehicle_details'];
         }
 
-        // Unauthorized: unknown plate → UI only (no user to cite)
+        // Unauthorized: unknown plate → notify guards once/day, no user citation
         if ($type === 'unauthorized' && ! $user) {
+            $guardNotified = $this->notifyGuardsOncePerDay(
+                plate: $plate,
+                violationType: $violationType,
+                title: "AI Alert: {$violationType}",
+                message: "Camera {$cameraId} detected unregistered plate {$plate}"
+                    .($areaName ? " at {$areaName}" : '')
+                    .'. No registered owner — review on AI Parking Monitor.',
+            );
+
             return [
                 'status' => 'queued_ui_only',
                 'reason' => 'unknown_plate',
                 'type' => $type,
                 'plate' => $plate,
                 'zone_id' => $zoneId,
+                'guard_notified' => $guardNotified,
             ];
         }
 
-        // Other violation types without a registered plate → UI only
+        // Other violation types without a registered plate → UI only + guard alert once/day
         if (! $user) {
+            $guardNotified = false;
+            if (in_array($violationType, self::ONCE_PER_DAY_TYPES, true)) {
+                $guardNotified = $this->notifyGuardsOncePerDay(
+                    plate: $plate,
+                    violationType: $violationType,
+                    title: "AI Alert: {$violationType}",
+                    message: "Camera {$cameraId} detected {$violationType} for plate {$plate}"
+                        .($areaName ? " at {$areaName}" : '')
+                        .'. Plate is not registered.',
+                );
+            }
+
             return [
                 'status' => 'queued_ui_only',
                 'reason' => 'plate_not_registered',
                 'type' => $type,
                 'plate' => $plate,
                 'zone_id' => $zoneId,
+                'guard_notified' => $guardNotified,
             ];
         }
 
-        // Debounce at DB level: same user + type within N minutes
-        $debounceMinutes = (int) config('services.ai_parking.violation_debounce_minutes', 10);
-        $recent = ViolationLog::query()
-            ->where('user_id', $user->id)
-            ->where('violation_type', $violationType)
-            ->where('created_at', '>=', now()->subMinutes(max(1, $debounceMinutes)))
-            ->exists();
+        // Wrong / Unauthorized: one citation per calendar day per user or plate.
+        if ($this->shouldLimitOncePerDay($violationType)) {
+            if ($this->alreadyCitedToday($user->id, $plate, $violationType)) {
+                return [
+                    'status' => 'debounced',
+                    'reason' => 'once_per_day',
+                    'type' => $type,
+                    'plate' => $plate,
+                    'user_id' => $user->id,
+                ];
+            }
+        } else {
+            // Overtime (and any other types): short minute debounce
+            $debounceMinutes = (int) config('services.ai_parking.violation_debounce_minutes', 10);
+            $recent = ViolationLog::query()
+                ->where('user_id', $user->id)
+                ->where('violation_type', $violationType)
+                ->where('created_at', '>=', now()->subMinutes(max(1, $debounceMinutes)))
+                ->exists();
 
-        if ($recent) {
-            return [
-                'status' => 'debounced',
-                'type' => $type,
-                'plate' => $plate,
-                'user_id' => $user->id,
-            ];
+            if ($recent) {
+                return [
+                    'status' => 'debounced',
+                    'type' => $type,
+                    'plate' => $plate,
+                    'user_id' => $user->id,
+                ];
+            }
         }
 
         // For unauthorized on a known user: only if locked / gate denied
@@ -189,6 +231,15 @@ class AiParkingViolationService
             'created_at' => now(),
         ]);
 
+        $ownerLabel = $user->displayName();
+        $this->notifyGuards(
+            title: "AI Violation: {$violationType}",
+            message: "Camera {$cameraId} cited {$plate} ({$ownerLabel})"
+                .($areaName ? " at {$areaName}" : '')
+                .". {$violationType}. Strikes: {$newStrikes}/".User::MAX_STRIKES.'.',
+            violationLogId: (string) $log->getKey(),
+        );
+
         try {
             Mail::to($user->email)->send(new VehicleViolationMail(
                 plateNumber: $plate,
@@ -216,7 +267,78 @@ class AiParkingViolationService
             'evidence_photos' => $evidencePath ? [$evidencePath] : null,
             'camera_id' => $cameraId,
             'area_id' => $areaId,
+            'guard_notified' => true,
         ];
+    }
+
+    private function shouldLimitOncePerDay(string $violationType): bool
+    {
+        if (! filter_var(config('services.ai_parking.violation_once_per_day', true), FILTER_VALIDATE_BOOLEAN)) {
+            return false;
+        }
+
+        return in_array($violationType, self::ONCE_PER_DAY_TYPES, true);
+    }
+
+    private function alreadyCitedToday(int $userId, string $plate, string $violationType): bool
+    {
+        $start = now()->startOfDay();
+
+        return ViolationLog::query()
+            ->where('violation_type', $violationType)
+            ->where('created_at', '>=', $start)
+            ->where(function ($q) use ($userId, $plate) {
+                $q->where('user_id', $userId);
+                if ($plate !== '') {
+                    $q->orWhere('plate_number', $plate);
+                }
+            })
+            ->exists();
+    }
+
+    /**
+     * Notify all active guards (type Parking so it appears in guard notification UI).
+     */
+    private function notifyGuards(string $title, string $message, ?string $violationLogId = null): void
+    {
+        $guardIds = User::query()
+            ->where('user_role_id', NavigationService::ROLE_GUARD)
+            ->where('status', User::STATUS_GRANTED)
+            ->pluck('id');
+
+        foreach ($guardIds as $guardId) {
+            Notification::query()->create([
+                'user_id' => (int) $guardId,
+                'sender_id' => null,
+                'title' => $title,
+                'message' => $message,
+                'type' => 'Parking',
+                'violation_log_id' => $violationLogId,
+                'is_read' => false,
+                'created_at' => now(),
+            ]);
+        }
+    }
+
+    /**
+     * Guard alert for plates without a citation (unknown / unregistered), once per day.
+     */
+    private function notifyGuardsOncePerDay(
+        string $plate,
+        string $violationType,
+        string $title,
+        string $message,
+    ): bool {
+        $dayKey = now()->toDateString();
+        $cacheKey = 'ai_parking:guard_alert:'.md5($violationType.'|'.$plate.'|'.$dayKey);
+        if (Cache::has($cacheKey)) {
+            return false;
+        }
+
+        $this->notifyGuards($title, $message);
+        Cache::put($cacheKey, 1, now()->endOfDay());
+
+        return true;
     }
 
     private function storeEvidenceJpeg(mixed $base64): ?string
@@ -262,7 +384,7 @@ class AiParkingViolationService
     public function unauthorizedFromDetections(array $detections, string $cameraId): array
     {
         $extra = [];
-        $debounceMinutes = (int) config('services.ai_parking.violation_debounce_minutes', 10);
+        $dayKey = now()->toDateString();
 
         foreach ($detections as $det) {
             if (! is_array($det)) {
@@ -276,14 +398,15 @@ class AiParkingViolationService
                 continue;
             }
 
-            $cacheKey = 'ai_parking:unauth:'.$plate;
+            // Emit at most once per plate per calendar day into the event stream.
+            $cacheKey = 'ai_parking:unauth_evt:'.$plate.':'.$dayKey;
             if (Cache::has($cacheKey)) {
                 continue;
             }
 
             $user = PlateLookup::findUser((string) ($det['plate'] ?? $plate));
             if (! $user) {
-                Cache::put($cacheKey, 1, now()->addMinutes(max(1, $debounceMinutes)));
+                Cache::put($cacheKey, 1, now()->endOfDay());
                 $extra[] = [
                     'type' => 'unauthorized',
                     'zone_id' => 'unknown',
@@ -291,6 +414,7 @@ class AiParkingViolationService
                     'plate' => $plate,
                     'confidence' => $det['confidence'] ?? 0.5,
                     'vehicle_details' => $det['vehicle_details'] ?? null,
+                    'camera_id' => $cameraId,
                 ];
 
                 continue;
@@ -299,7 +423,7 @@ class AiParkingViolationService
             $denied = $user->status === User::STATUS_LOCKED
                 || ($user->Gate_access ?? '') === User::GATE_ACCESS_DENIED;
             if ($denied) {
-                Cache::put($cacheKey, 1, now()->addMinutes(max(1, $debounceMinutes)));
+                Cache::put($cacheKey, 1, now()->endOfDay());
                 $extra[] = [
                     'type' => 'unauthorized',
                     'zone_id' => 'lot',
@@ -307,6 +431,7 @@ class AiParkingViolationService
                     'plate' => $plate,
                     'confidence' => $det['confidence'] ?? 0.5,
                     'vehicle_details' => $det['vehicle_details'] ?? null,
+                    'camera_id' => $cameraId,
                 ];
             }
         }

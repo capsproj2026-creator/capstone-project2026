@@ -2,10 +2,12 @@
 
 namespace Tests\Feature;
 
+use App\Models\Notification;
 use App\Models\ParkingArea;
 use App\Models\ParkingSlot;
 use App\Models\User;
 use App\Models\ViolationLog;
+use App\Services\NavigationService;
 use App\Support\PlateLookup;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\Http;
@@ -701,9 +703,57 @@ class AiParkingOccupancyTest extends TestCase
             $this->assertNotEmpty($log->evidence_photo);
             Storage::disk('private')->assertExists($log->evidence_photo);
             Storage::disk('public')->assertMissing($log->evidence_photo);
+
+            // Guards receive a Parking alert when the camera cites Wrong Parking.
+            $guard = User::query()
+                ->where('user_role_id', NavigationService::ROLE_GUARD)
+                ->where('status', User::STATUS_GRANTED)
+                ->first();
+            if ($guard) {
+                $guardNote = Notification::query()
+                    ->where('user_id', $guard->id)
+                    ->where('type', 'Parking')
+                    ->where('title', 'AI Violation: Wrong Parking')
+                    ->orderByDesc('created_at')
+                    ->first();
+                $this->assertNotNull($guardNote);
+            }
+
+            // Second camera event the same day must not create another citation.
+            $beforeCount = ViolationLog::query()->where('user_id', $owner->id)->count();
+            $this->withHeaders(['X-AI-TOKEN' => self::TOKEN])
+                ->postJson('/api/ai-parking/occupancy', [
+                    'camera_id' => 'CAM-AI-1',
+                    'vehicle_count' => 1,
+                    'detections' => [
+                        [
+                            'class' => 'car',
+                            'confidence' => 0.9,
+                            'plate' => 'CIT1111',
+                            'track_id' => 56,
+                        ],
+                    ],
+                    'events' => [
+                        [
+                            'type' => 'no_parking',
+                            'zone_id' => 'NP1',
+                            'track_id' => 56,
+                            'plate' => 'CIT1111',
+                            'confidence' => 0.9,
+                        ],
+                    ],
+                ])
+                ->assertOk();
+            $this->assertSame(
+                $beforeCount,
+                ViolationLog::query()->where('user_id', $owner->id)->count()
+            );
         } finally {
             PlateLookup::forgetIndex();
             if ($owner) {
+                Notification::query()->where('violation_log_id', '!=', null)
+                    ->where('message', 'like', '%CIT1111%')
+                    ->delete();
                 ViolationLog::query()->where('user_id', $owner->id)->delete();
                 $owner->delete();
             }

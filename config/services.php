@@ -81,7 +81,9 @@ return [
         'area_id' => (int) env('AI_PARKING_AREA_ID', env('AI_CAMERA_1_AREA_ID', 4)),
         'camera_ip' => env('AI_CAMERA_IP', env('AI_CAMERA_1_IP')),
         'overtime_minutes' => (int) env('AI_PARKING_OVERTIME_MINUTES', 30),
+        // Legacy short debounce; Wrong/Unauthorized Parking use once-per-calendar-day instead.
         'violation_debounce_minutes' => (int) env('AI_PARKING_VIOLATION_DEBOUNCE_MINUTES', 10),
+        'violation_once_per_day' => filter_var(env('AI_PARKING_VIOLATION_ONCE_PER_DAY', true), FILTER_VALIDATE_BOOLEAN),
         'ingest_stale_seconds' => (int) env('AI_PARKING_INGEST_STALE_SECONDS', 45),
 
         /*

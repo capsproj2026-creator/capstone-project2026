@@ -23,10 +23,13 @@ class VisitorService
      */
     public function register(array $data, ?User $actor = null): Visitor
     {
+        // Guard registration happens at the booth when the visitor arrives —
+        // record Time In immediately (RFID Entry is optional).
         $visitor = Visitor::query()->create(array_merge(
             $this->normalizedVisitorFields($data),
             [
-                'status' => Visitor::STATUS_WAITING,
+                'status' => Visitor::STATUS_INSIDE,
+                'time_in' => now(),
                 'registered_by' => $actor?->id,
                 'registration_source' => Visitor::SOURCE_GUARD,
                 'form_completed_at' => now(),
@@ -38,9 +41,18 @@ class VisitorService
         if ($uid !== '') {
             $this->assignRfid($visitor, $uid, $actor);
             $visitor->refresh();
+            if ($visitor->rfidCard) {
+                $visitor->rfidCard->update(['status' => VisitorRfidCard::STATUS_ACTIVE]);
+            }
         }
 
-        return $visitor;
+        $this->notifyStaff(
+            'Visitor checked in',
+            "{$visitor->displayName()} ({$visitor->plate_number}) registered at the gate. Purpose: {$visitor->purpose}.",
+            $visitor
+        );
+
+        return $visitor->fresh(['vehicleType', 'rfidCard']) ?? $visitor;
     }
 
     /**
@@ -282,6 +294,11 @@ class VisitorService
             $updates['rfid_uid'] = $usedUid;
             if ($visitor->status !== Visitor::STATUS_COMPLETED) {
                 $updates['status'] = Visitor::STATUS_COMPLETED;
+                // History needs time_in for Duration; RFID Entry normally sets it.
+                $updates['time_in'] = $visitor->time_in
+                    ?? $visitor->form_completed_at
+                    ?? $visitor->created_at
+                    ?? now();
                 $updates['time_out'] = $visitor->time_out ?? now();
             }
         } else {
@@ -330,6 +347,11 @@ class VisitorService
 
         $visitor->update([
             'status' => Visitor::STATUS_COMPLETED,
+            // Set time_in if the visitor never scanned Entry (manual "Mark as Exited").
+            'time_in' => $visitor->time_in
+                ?? $visitor->form_completed_at
+                ?? $visitor->created_at
+                ?? now(),
             'time_out' => $visitor->time_out ?? now(),
             'rfid_uid' => $usedUid,
         ]);

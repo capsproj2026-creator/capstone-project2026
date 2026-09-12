@@ -283,7 +283,7 @@
 @push('scripts')
 <script>
     (() => {
-        const IDLE_MS = 5000;
+        const IDLE_MS = 20000;
 
         const entries = document.getElementById('today-entries');
         const exits = document.getElementById('today-exits');
@@ -297,6 +297,7 @@
         const avatarImg = document.getElementById('scan-avatar-img');
         const avatarInitials = document.getElementById('scan-avatar-initials');
         const stage = document.getElementById('gate-monitor-stage');
+        const initialLatestScan = @json($initialLatestScan ?? null);
 
         let idleTimer = null;
         let knownLatestId = '';
@@ -505,7 +506,14 @@
 
         const handleScan = (scan) => {
             if (!scan?.id) return;
-            knownLatestId = String(scan.id);
+            const scanId = String(scan.id);
+            // Same scan can arrive from Echo and from status poll — show once.
+            if (scanId === knownLatestId && !scanCard?.classList.contains('hidden')) {
+                if (entries && scan.today_entries != null) entries.textContent = scan.today_entries;
+                if (exits && scan.today_exits != null) exits.textContent = scan.today_exits;
+                return;
+            }
+            knownLatestId = scanId;
             if (entries && scan.today_entries != null) {
                 entries.textContent = scan.today_entries;
             } else if (entries && scan.granted && scan.action === 'Entry') {
@@ -524,6 +532,9 @@
 
         showWaiting();
         setEsp32Status(@json($entryGateOnline));
+        if (initialLatestScan?.id) {
+            handleScan(initialLatestScan);
+        }
 
         const subscribeGateScans = (echo) => {
             if (!echo) {
@@ -656,6 +667,10 @@
                 if (!res.ok) return;
                 const data = await res.json();
                 paintGates(data.gates || []);
+                // HTTP fallback when Reverb/Echo drops — profile card still updates.
+                if (data.latest_scan?.id) {
+                    handleScan(data.latest_scan);
+                }
             } catch (e) {}
         };
 

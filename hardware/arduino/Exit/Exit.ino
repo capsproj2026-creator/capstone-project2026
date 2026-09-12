@@ -5,7 +5,7 @@
  *   - RC522 RFID reader only
  *   - Do NOT wire a servo here
  *
- * Network: same WiFiManager portal as Entry (AP "Gate-Setup").
+ * Network: same rfid_gate_config.h Wi-Fi + API as Entry (no WiFiManager portal).
  * When Exit is granted, Laravel queues open on GATE-IN-1.
  * The Entry ESP32 (with the servo) opens the boom on its next heartbeat.
  *

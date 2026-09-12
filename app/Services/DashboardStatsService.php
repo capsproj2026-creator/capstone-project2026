@@ -94,8 +94,9 @@ class DashboardStatsService
                 ->with('role')
                 ->where('strike_count', 2)
                 ->whereIn('user_role_id', [NavigationService::ROLE_STUDENT, NavigationService::ROLE_STAFF])
-                ->orderBy('name')
-                ->get(['id', 'name', 'id_number', 'user_role_id', 'strike_count']),
+                ->orderBy('Name')
+                // Include Name/fullname — legacy Mongo docs often omit lowercase "name".
+                ->get(['id', 'name', 'Name', 'fullname', 'id_number', 'user_role_id', 'strike_count', 'updated_at']),
             'recentViolations' => ViolationLog::query()
                 ->orderByDesc('created_at')
                 ->limit(2)

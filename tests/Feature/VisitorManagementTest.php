@@ -131,7 +131,7 @@ class VisitorManagementTest extends TestCase
                 'last_name' => 'Visitor',
                 'middle_name' => '',
                 'contact_number' => '09171234567',
-                'email' => null,
+                'email' => 'test.visitor.'.uniqid().'@example.com',
                 'purpose' => 'Meeting',
                 'office_to_visit' => 'CCS Dean',
                 'expected_exit_at' => $exitAt,
@@ -145,12 +145,13 @@ class VisitorManagementTest extends TestCase
         $visitor = Visitor::query()->where('rfid_uid', self::VISITOR_UID)->orderByDesc('id')->first();
         $this->assertNotNull($visitor);
         $this->visitorIds[] = (int) $visitor->id;
-        $this->assertSame(Visitor::STATUS_WAITING, $visitor->status);
+        $this->assertSame(Visitor::STATUS_INSIDE, $visitor->status);
+        $this->assertNotNull($visitor->time_in);
 
         $card = VisitorRfidCard::query()->where('rfid_uid', self::VISITOR_UID)->first();
         $this->assertNotNull($card);
         $this->cardIds[] = (int) $card->id;
-        $this->assertSame(VisitorRfidCard::STATUS_ASSIGNED, $card->status);
+        $this->assertSame(VisitorRfidCard::STATUS_ACTIVE, $card->status);
 
         $entry = $this->postJson('/api/rfid/scan', [
             'uid' => self::VISITOR_UID,
@@ -201,8 +202,10 @@ class VisitorManagementTest extends TestCase
 
         $this->visitorIds[] = (int) $visitor2->id;
         $this->assertSame(self::VISITOR_UID, $visitor2->rfid_uid);
+        $this->assertSame(Visitor::STATUS_INSIDE, $visitor2->status);
+        $this->assertNotNull($visitor2->time_in);
         $card->refresh();
-        $this->assertSame(VisitorRfidCard::STATUS_ASSIGNED, $card->status);
+        $this->assertSame(VisitorRfidCard::STATUS_ACTIVE, $card->status);
         $this->assertSame((int) $visitor2->id, (int) $card->visitor_id);
     }
 
