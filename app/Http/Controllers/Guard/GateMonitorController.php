@@ -47,7 +47,7 @@ class GateMonitorController extends Controller
     public function status(GateHardwareService $hardware): JsonResponse
     {
         $latestLog = GateLog::query()
-            ->with(['user.role', 'visitor'])
+            ->with(['user.role', 'user.vehicleType', 'visitor.vehicleType'])
             ->orderByDesc('timestamp')
             ->first();
 
@@ -63,7 +63,7 @@ class GateMonitorController extends Controller
         }
 
         $recent = GateLog::query()
-            ->with(['user.role', 'visitor'])
+            ->with(['user.role', 'user.vehicleType', 'visitor.vehicleType'])
             ->orderByDesc('timestamp')
             ->limit(10)
             ->get()
@@ -162,7 +162,7 @@ class GateMonitorController extends Controller
     private function filteredLogs(string $action, int $limit = 10): Collection
     {
         $query = GateLog::query()
-            ->with(['user.role', 'visitor'])
+            ->with(['user.role', 'user.vehicleType', 'visitor.vehicleType'])
             ->orderByDesc('timestamp');
 
         if ($action !== '') {

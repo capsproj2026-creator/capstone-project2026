@@ -5,6 +5,7 @@ namespace App\Support;
 use App\Models\GateLog;
 use App\Models\ViolationLog;
 use App\Services\GateLogService;
+use Illuminate\Support\Facades\Cache;
 
 class GateScanPresenter
 {
@@ -53,6 +54,9 @@ class GateScanPresenter
         }
 
         $plate = $isVisitor ? ($visitor->plate_number ?? null) : ($user?->plate_number ?? null);
+        $vehicleType = $isVisitor
+            ? ($visitor->vehicleType?->vehicle_name ?? null)
+            : ($user?->vehicleType?->vehicle_name ?? null);
         $violationInfo = self::violationInfoForScan(
             $user?->id,
             $plate,
@@ -84,6 +88,7 @@ class GateScanPresenter
             'purpose' => $isVisitor ? ($visitor->purpose ?? null) : null,
             'id_number' => $user?->id_number,
             'plate_number' => $plate,
+            'vehicle_type' => $vehicleType,
             'action' => $log->action,
             'result' => $log->result ?? 'Access Granted',
             'granted' => $granted,
@@ -118,9 +123,13 @@ class GateScanPresenter
     }
 
     /**
-     * Compact feed item for the Live Gate Monitor recent-logs panel.
+     * Compact feed item for the Live Gate Monitor In/Out Logs panel.
      *
-     * @return array{id: string, name: string, time: string|null, action: string|null, granted: bool, is_unauthorized: bool}
+     * @return array{
+     *   id: string, name: string, time: string|null, timestamp: string|null,
+     *   action: string|null, plate_number: string|null, vehicle_type: string|null,
+     *   granted: bool, is_unauthorized: bool, result: string|null, status_label: string|null
+     * }
      */
     public static function feedItem(GateLog $log): array
     {
@@ -130,9 +139,14 @@ class GateScanPresenter
             'id' => $full['id'],
             'name' => $full['name'],
             'time' => $full['time'],
+            'timestamp' => $full['timestamp'],
             'action' => $full['action'],
+            'plate_number' => $full['plate_number'] ?? null,
+            'vehicle_type' => $full['vehicle_type'] ?? null,
             'granted' => (bool) $full['granted'],
             'is_unauthorized' => (bool) ($full['is_unauthorized'] ?? false),
+            'result' => $full['result'] ?? null,
+            'status_label' => $full['status_label'] ?? null,
         ];
     }
 
@@ -151,6 +165,29 @@ class GateScanPresenter
     private static function violationInfoForScan(?int $userId, ?string $plate, int $strikeCount): array
     {
         $plateNorm = \App\Support\PlateLookup::normalize($plate);
+
+        // The Live Gate Monitor recomputes this for every recent log on every
+        // poll (and every recent-feed row), so a short cache avoids re-running
+        // the same ViolationLog lookup for the same person/plate many times a
+        // minute. Violation records change rarely enough that a few seconds of
+        // staleness here is unnoticeable.
+        $cacheKey = 'gate_scan:violation_info:'.($userId ?: '0').':'.$plateNorm.':'.$strikeCount;
+
+        return Cache::remember($cacheKey, now()->addSeconds(5), fn () => self::computeViolationInfo($userId, $plate, $plateNorm, $strikeCount));
+    }
+
+    /**
+     * @return array{
+     *   strike_count: int,
+     *   has_violations: bool,
+     *   violation_count: int,
+     *   violation_label: string|null,
+     *   latest_violation_type: string|null,
+     *   latest_violation_at: string|null
+     * }
+     */
+    private static function computeViolationInfo(?int $userId, ?string $plate, string $plateNorm, int $strikeCount): array
+    {
         $query = ViolationLog::query()->orderByDesc('created_at');
 
         if ($userId) {

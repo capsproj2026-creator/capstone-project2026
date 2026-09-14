@@ -7,6 +7,7 @@ use App\Models\GateLog;
 use App\Models\ParkingSlot;
 use App\Models\User;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Cache;
 use InvalidArgumentException;
 
 class GateLogService
@@ -92,26 +93,40 @@ class GateLogService
         return ParkingSlot::query()->where('status', 'Occupied')->count();
     }
 
+    /**
+     * Today's Entry/Exit count. The Live Gate Monitor polls this endpoint every
+     * few seconds from every open guard workstation, so the raw count query is
+     * cached for a couple of seconds to avoid hammering MongoDB with identical
+     * aggregation queries for data that only changes on an actual gate scan.
+     */
     public function todayCount(string $action): int
     {
-        $start = Carbon::today()->startOfDay();
-        $end = Carbon::today()->endOfDay();
+        $today = Carbon::today()->toDateString();
 
-        return GateLog::query()
-            ->where('action', $action)
-            ->where(function ($query) {
-                $query->whereNull('result')
-                    ->orWhere('result', '')
-                    ->orWhere('result', RfidAccessService::STATUS_GRANTED)
-                    ->orWhere('result', 'Granted')
-                    ->orWhere('result', 'Access Granted');
-            })
-            ->where(function ($query) use ($start, $end) {
-                $query->whereBetween('timestamp', [$start, $end])
-                    ->orWhere(function ($q) use ($start, $end) {
-                        $q->where('log_date', '>=', $start)->where('log_date', '<=', $end);
-                    });
-            })
-            ->count();
+        return Cache::remember(
+            "gate_log:today_count:{$action}:{$today}",
+            now()->addSeconds(2),
+            function () use ($action) {
+                $start = Carbon::today()->startOfDay();
+                $end = Carbon::today()->endOfDay();
+
+                return GateLog::query()
+                    ->where('action', $action)
+                    ->where(function ($query) {
+                        $query->whereNull('result')
+                            ->orWhere('result', '')
+                            ->orWhere('result', RfidAccessService::STATUS_GRANTED)
+                            ->orWhere('result', 'Granted')
+                            ->orWhere('result', 'Access Granted');
+                    })
+                    ->where(function ($query) use ($start, $end) {
+                        $query->whereBetween('timestamp', [$start, $end])
+                            ->orWhere(function ($q) use ($start, $end) {
+                                $q->where('log_date', '>=', $start)->where('log_date', '<=', $end);
+                            });
+                    })
+                    ->count();
+            }
+        );
     }
 }

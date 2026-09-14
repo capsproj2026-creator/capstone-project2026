@@ -81,7 +81,7 @@
     {{-- Approved Users list (no tabs) --}}
     <div class="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
         <div class="border-b border-gray-100 px-5 py-4 sm:px-6">
-            <h2 class="text-base font-semibold text-gray-900">Users</h2>
+            <h2 class="text-base font-semibold text-gray-900">Approved Users</h2>
             <p id="rfid-filter-label" class="mt-0.5 text-sm text-gray-500">{{ $filterLabels[$activeFilter] ?? 'All users' }}</p>
         </div>
 
@@ -311,40 +311,43 @@
                 </div>
 
                 <div class="mt-5">
-                    <label for="assign-rfid-uid" class="mb-1.5 block text-sm font-semibold text-gray-900">
+                    <label class="mb-1.5 block text-sm font-semibold text-gray-900">
                         RFID Tag UID <span class="text-red-500">*</span>
                     </label>
                     <p id="assign-rfid-current" class="mb-2 hidden text-xs text-emerald-700">
                         Currently linked — scan a new tag only if replacing it.
                     </p>
-                    <div class="relative">
-                        <span class="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400">
-                            <i data-lucide="hash" class="h-4 w-4"></i>
-                        </span>
-                        <input
-                            id="assign-rfid-uid"
-                            type="text"
-                            name="rfid_uid"
-                            required
-                            autocomplete="off"
-                            spellcheck="false"
-                            inputmode="text"
-                            data-no-clear
-                            placeholder="Tap card"
-                            class="w-full rounded-xl border border-blue-200 bg-white py-2.5 pl-10 pr-3 font-mono text-sm uppercase tracking-wide text-gray-900 placeholder:normal-case placeholder:tracking-normal placeholder:text-gray-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
-                        >
+
+                    {{-- No manual typing: UID is only ever populated by a real RC522/ESP32 scan
+                         (or a USB keyboard-wedge reader tap), never typed by the admin. --}}
+                    <input type="hidden" id="assign-rfid-uid" name="rfid_uid" data-no-clear>
+
+                    <div id="assign-rfid-scan-box" data-state="waiting" class="rounded-xl border-2 border-dashed border-blue-200 bg-blue-50/60 px-4 py-4 text-center transition-colors">
+                        {{-- Waiting --}}
+                        <div id="assign-rfid-state-waiting" class="flex flex-col items-center gap-1.5">
+                            <i data-lucide="loader-2" class="h-6 w-6 animate-spin text-blue-500"></i>
+                            <p class="text-sm font-semibold text-blue-800">Waiting for RFID scan…</p>
+                            <p class="text-xs text-blue-600">Tap the card on the RC522 reader connected to the gate ESP32.</p>
+                        </div>
+                        {{-- Detected --}}
+                        <div id="assign-rfid-state-detected" class="hidden flex-col items-center gap-1.5">
+                            <i data-lucide="check-circle-2" class="h-6 w-6 text-emerald-600"></i>
+                            <p class="text-sm font-semibold text-emerald-800">Card detected</p>
+                            <p id="assign-rfid-detected-uid" class="font-mono text-base font-bold tracking-wide text-gray-900">—</p>
+                            <button type="button" id="assign-rfid-rescan" class="mt-1 text-xs font-semibold text-blue-700 underline hover:text-blue-900">Scan a different card</button>
+                        </div>
+                        {{-- Failed / timeout --}}
+                        <div id="assign-rfid-state-failed" class="hidden flex-col items-center gap-1.5">
+                            <i data-lucide="alert-triangle" class="h-6 w-6 text-amber-600"></i>
+                            <p class="text-sm font-semibold text-amber-800">No card detected</p>
+                            <p class="text-xs text-amber-700">Check that the ESP32/RC522 gate reader is online, then try again.</p>
+                            <button type="button" id="assign-rfid-retry" class="mt-1 inline-flex items-center gap-1.5 rounded-lg border border-amber-300 bg-white px-3 py-1.5 text-xs font-semibold text-amber-800 hover:bg-amber-50">
+                                <i data-lucide="rotate-cw" class="h-3.5 w-3.5"></i>
+                                Try again
+                            </button>
+                        </div>
                     </div>
-                    <p id="assign-rfid-scan-hint" class="mt-1.5 text-xs text-gray-500">
-                        Scan the physical RFID card at the gate or USB reader while this dialog is open — no need to type. Example UID: <span class="font-mono font-semibold text-gray-700">5AB48FF8</span>
-                    </p>
-                    <button
-                        type="button"
-                        id="assign-rfid-use-latest"
-                        class="mt-2 inline-flex w-full items-center justify-center gap-2 rounded-xl border border-dashed border-blue-300 bg-blue-50/60 px-3 py-2 text-xs font-semibold text-blue-800 hover:bg-blue-50"
-                    >
-                        <i data-lucide="scan-line" class="h-3.5 w-3.5"></i>
-                        Use last unregistered gate scan UID
-                    </button>
+                    <p id="assign-rfid-scan-hint" class="mt-1.5 text-xs text-gray-500"></p>
                 </div>
 
                 <div class="mt-4 rounded-xl border border-blue-100 bg-blue-50 px-4 py-3 text-sm text-blue-800">
@@ -469,39 +472,78 @@
             return uid.length >= 6;
         };
 
-        const syncSubmitState = () => {
-            if (submitBtn) submitBtn.disabled = !isFullUid(input?.value || '');
+        // --- Scan state machine: waiting -> detected -> (assigned via submit) ---
+        //                                  \-> failed (timeout) -> waiting (retry)
+        const SCAN_TIMEOUT_MS = 45000;
+        let scanState = 'waiting';
+        const scanBox = document.getElementById('assign-rfid-scan-box');
+        const stateEls = {
+            waiting: document.getElementById('assign-rfid-state-waiting'),
+            detected: document.getElementById('assign-rfid-state-detected'),
+            failed: document.getElementById('assign-rfid-state-failed'),
+        };
+        const boxClasses = {
+            waiting: ['border-blue-200', 'bg-blue-50/60'],
+            detected: ['border-emerald-300', 'bg-emerald-50/60'],
+            failed: ['border-amber-300', 'bg-amber-50/60'],
         };
 
-        const setUidValue = (raw, source) => {
-            if (!input) return false;
-            if (!isFullUid(raw)) return false;
-            const uid = normalizeUid(raw);
-            input.value = uid;
-            syncSubmitState();
-            input.classList.add('ring-2', 'ring-emerald-400');
-            window.setTimeout(() => input.classList.remove('ring-2', 'ring-emerald-400'), 800);
-            if (scanHint) {
-                scanHint.innerHTML = source === 'gate'
-                    ? `Captured from gate scan: <span class="font-mono font-semibold">${uid}</span>`
-                    : `Captured from reader: <span class="font-mono font-semibold">${uid}</span>`;
-                scanHint.classList.remove('text-gray-400', 'text-amber-700');
-                scanHint.classList.add('text-emerald-700');
+        const syncSubmitState = () => {
+            if (submitBtn) submitBtn.disabled = !(scanState === 'detected' && isFullUid(input?.value || ''));
+        };
+
+        const setScanState = (state) => {
+            scanState = state;
+            if (scanBox) {
+                scanBox.dataset.state = state;
+                Object.values(boxClasses).flat().forEach((cls) => scanBox.classList.remove(cls));
+                (boxClasses[state] || []).forEach((cls) => scanBox.classList.add(cls));
             }
-            return true;
+            Object.entries(stateEls).forEach(([key, el]) => {
+                if (!el) return;
+                el.classList.toggle('hidden', key !== state);
+                el.classList.toggle('flex', key === state);
+            });
+            syncSubmitState();
+            if (window.lucide) window.lucide.createIcons();
         };
 
         let scanBuffer = '';
         let scanTimer = null;
         let gatePollTimer = null;
+        let waitTimeoutTimer = null;
         let lastGateLogId = '';
         // USB/keyboard-wedge readers often pause 50–150ms between characters.
         const USB_SCAN_GAP_MS = 400;
 
         const isModalOpen = () => modal && !modal.classList.contains('hidden');
 
+        const setUidValue = (raw, source) => {
+            if (!input) return false;
+            if (!isFullUid(raw)) return false;
+            // Once a card is detected, ignore further scans until the admin
+            // explicitly chooses "Scan a different card" — prevents a second
+            // stray tap from silently swapping the UID before submit.
+            if (scanState === 'detected') return false;
+            const uid = normalizeUid(raw);
+            input.value = uid;
+            if (waitTimeoutTimer) {
+                clearTimeout(waitTimeoutTimer);
+                waitTimeoutTimer = null;
+            }
+            const uidEl = document.getElementById('assign-rfid-detected-uid');
+            if (uidEl) uidEl.textContent = uid;
+            if (scanHint) {
+                scanHint.textContent = source === 'gate'
+                    ? 'Detected via the gate ESP32/RC522 reader.'
+                    : 'Detected via a connected USB card reader.';
+            }
+            setScanState('detected');
+            return true;
+        };
+
         const pullLatestGateUid = async () => {
-            if (!isModalOpen() || !latestUnregisteredUrl) return;
+            if (!isModalOpen() || scanState !== 'waiting' || !latestUnregisteredUrl) return;
             try {
                 const res = await fetch(latestUnregisteredUrl, {
                     headers: { Accept: 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
@@ -512,8 +554,7 @@
                 const data = await res.json();
                 if (!data?.uid || !isFullUid(data.uid)) return;
                 const logId = String(data.log_id || '');
-                const empty = !(input?.value || '').trim();
-                if (empty || (logId && logId !== lastGateLogId)) {
+                if (!logId || logId !== lastGateLogId) {
                     if (setUidValue(data.uid, 'gate')) {
                         lastGateLogId = logId || lastGateLogId;
                     }
@@ -521,10 +562,14 @@
             } catch (e) { /* ignore */ }
         };
 
+        // Echo (Reverb) already pushes the scan instantly — this poll is only a
+        // fallback for when the websocket connection is unavailable, so it does
+        // not need to be nearly as aggressive as a primary transport.
+        const GATE_POLL_MS = 1000;
         const startGatePoll = () => {
             stopGatePoll();
             pullLatestGateUid();
-            gatePollTimer = window.setInterval(pullLatestGateUid, 300);
+            gatePollTimer = window.setInterval(pullLatestGateUid, GATE_POLL_MS);
         };
 
         const stopGatePoll = () => {
@@ -532,6 +577,23 @@
                 clearInterval(gatePollTimer);
                 gatePollTimer = null;
             }
+        };
+
+        const startWaitTimeout = () => {
+            if (waitTimeoutTimer) clearTimeout(waitTimeoutTimer);
+            waitTimeoutTimer = window.setTimeout(() => {
+                if (scanState === 'waiting') setScanState('failed');
+            }, SCAN_TIMEOUT_MS);
+        };
+
+        /** Reset the widget to "Waiting for RFID scan…" and resume listening. */
+        const resetToWaiting = () => {
+            if (input) input.value = '';
+            lastGateLogId = '';
+            scanBuffer = '';
+            if (scanHint) scanHint.textContent = '';
+            setScanState('waiting');
+            startWaitTimeout();
         };
 
         const openModal = (btn) => {
@@ -545,25 +607,20 @@
             const currentHint = document.getElementById('assign-rfid-current');
             const hasExisting = Boolean((btn.dataset.rfid || '').trim());
             if (currentHint) currentHint.classList.toggle('hidden', !hasExisting);
-            scanBuffer = '';
-            lastGateLogId = '';
-            if (input) input.value = '';
-            if (scanHint) {
-                scanHint.innerHTML = 'Scan the physical RFID card at the gate or USB reader while this dialog is open — no need to type. Example UID: <span class="font-mono font-semibold text-gray-700">5AB48FF8</span>';
-                scanHint.classList.add('text-gray-500');
-                scanHint.classList.remove('text-emerald-700', 'text-amber-700', 'text-gray-400');
-            }
             if (submitBtn) submitBtn.textContent = btn.dataset.mode === 'update' ? 'Update & Notify' : 'Assign & Notify';
-            syncSubmitState();
+            resetToWaiting();
             modal?.classList.remove('hidden');
             modal?.classList.add('flex');
             if (window.lucide) window.lucide.createIcons();
-            window.setTimeout(() => input?.focus({ preventScroll: true }), 50);
             startGatePoll();
         };
 
         const closeModal = () => {
             stopGatePoll();
+            if (waitTimeoutTimer) {
+                clearTimeout(waitTimeoutTimer);
+                waitTimeoutTimer = null;
+            }
             modal?.classList.add('hidden');
             modal?.classList.remove('flex');
             if (form) form.reset();
@@ -572,7 +629,7 @@
                 clearTimeout(scanTimer);
                 scanTimer = null;
             }
-            syncSubmitState();
+            setScanState('waiting');
         };
 
         // USB / keyboard-wedge RFID: capture globally while modal is open.
@@ -582,6 +639,9 @@
                 closeModal();
                 return;
             }
+            // Ignore all keyboard input once a card is already detected/confirmed —
+            // forces "Scan a different card" instead of silently swapping the UID.
+            if (scanState !== 'waiting') return;
             if (e.ctrlKey || e.metaKey || e.altKey) return;
 
             if (e.key === 'Enter') {
@@ -651,28 +711,22 @@
         });
         document.getElementById('assign-rfid-close')?.addEventListener('click', closeModal);
         document.getElementById('assign-rfid-cancel')?.addEventListener('click', closeModal);
-        document.getElementById('assign-rfid-use-latest')?.addEventListener('click', async () => {
-            lastGateLogId = ''; // force refill from latest scan
-            if (input) input.value = '';
-            await pullLatestGateUid();
-            if (!(input?.value || '').trim() && scanHint) {
-                scanHint.textContent = 'No recent unregistered gate scan found. Tap the card at the Entry/Exit reader, wait 1 second, then try again.';
-                scanHint.classList.remove('text-gray-400', 'text-gray-500', 'text-emerald-700');
-                scanHint.classList.add('text-amber-700');
-            }
-            input?.focus({ preventScroll: true });
+        document.getElementById('assign-rfid-rescan')?.addEventListener('click', () => {
+            resetToWaiting();
+            startGatePoll();
+        });
+        document.getElementById('assign-rfid-retry')?.addEventListener('click', () => {
+            resetToWaiting();
+            startGatePoll();
         });
         modal?.addEventListener('click', (e) => { if (e.target === modal) closeModal(); });
-        input?.addEventListener('input', () => {
-            const cleaned = normalizeUid(input.value);
-            if (cleaned && cleaned !== input.value) {
-                const pos = input.selectionStart;
-                input.value = cleaned;
-                try { input.setSelectionRange(pos, pos); } catch (e) {}
-            }
-            syncSubmitState();
+
+        // Prevent double-submit while the redirect/flash round-trip completes.
+        form?.addEventListener('submit', () => {
+            if (submitBtn) submitBtn.disabled = true;
         });
-        syncSubmitState();
+
+        setScanState('waiting');
     });
 </script>
 @endpush

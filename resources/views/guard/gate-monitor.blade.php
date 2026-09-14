@@ -225,31 +225,50 @@
 
     <aside id="gate-recent-panel" class="flex max-h-[36rem] flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm lg:col-span-4 lg:max-h-none lg:min-h-[22rem]">
         <div class="border-b border-gray-100 px-4 py-3 sm:px-5">
-            <h3 class="text-sm font-semibold text-gray-900">Recent IN / OUT</h3>
+            <h3 class="text-sm font-semibold text-gray-900">In / Out Logs</h3>
             <p class="mt-0.5 text-xs text-gray-500">Last 10 gate scans (live)</p>
         </div>
-        <ul id="gate-recent-list" class="flex-1 space-y-1 overflow-y-auto p-2 sm:p-3" aria-live="polite">
+        <ul id="gate-recent-list" class="flex-1 space-y-1.5 overflow-y-auto p-2 sm:p-3" aria-live="polite">
             @forelse (($recentFeed ?? []) as $item)
+                @php
+                    $unk = ! empty($item['is_unauthorized']);
+                    $act = (string) ($item['action'] ?? '');
+                    $dirLabel = strcasecmp($act, 'Entry') === 0
+                        ? 'IN'
+                        : (strcasecmp($act, 'Exit') === 0 ? 'OUT' : (strcasecmp($act, 'Override') === 0 ? 'OPEN' : '—'));
+                    $dirClass = strcasecmp($act, 'Entry') === 0
+                        ? 'bg-emerald-50 text-emerald-700'
+                        : (strcasecmp($act, 'Exit') === 0
+                            ? 'bg-blue-50 text-blue-700'
+                            : (strcasecmp($act, 'Override') === 0 ? 'bg-amber-50 text-amber-700' : 'bg-gray-100 text-gray-600'));
+                    $resultLabel = $unk ? 'Unauthorized' : ((string) ($item['status_label'] ?? $item['result'] ?? ($item['granted'] ? 'Granted' : 'Denied')));
+                    $resultLower = strtolower($resultLabel);
+                    $resultClass = str_contains($resultLower, 'granted')
+                        ? 'bg-emerald-100 text-emerald-700'
+                        : (str_contains($resultLower, 'already')
+                            ? 'bg-amber-100 text-amber-700'
+                            : 'bg-red-100 text-red-700');
+                @endphp
                 <li
-                    class="flex items-center justify-between gap-2 rounded-xl px-3 py-2.5 text-sm {{ !empty($item['is_unauthorized']) ? 'border border-red-200 bg-red-50' : 'hover:bg-gray-50' }}"
+                    class="rounded-xl px-3 py-2.5 text-sm {{ $unk ? 'border border-red-200 bg-red-50' : 'border border-transparent hover:bg-gray-50' }}"
                     data-log-id="{{ $item['id'] }}"
                 >
-                    <div class="min-w-0">
-                        <p class="truncate font-semibold {{ !empty($item['is_unauthorized']) ? 'text-red-800' : 'text-gray-900' }}">{{ $item['name'] }}</p>
-                        <p class="text-xs text-gray-500">{{ $item['time'] ?? '—' }}</p>
+                    <div class="flex items-start justify-between gap-2">
+                        <div class="min-w-0">
+                            <p class="truncate font-semibold {{ $unk ? 'text-red-800' : 'text-gray-900' }}">{{ $item['name'] }}</p>
+                            <p class="truncate text-xs text-gray-500">
+                                {{ $item['plate_number'] ?? '—' }}
+                                @if (! empty($item['vehicle_type']))
+                                    · {{ $item['vehicle_type'] }}
+                                @endif
+                            </p>
+                        </div>
+                        <span class="shrink-0 rounded-full px-2 py-0.5 text-[10px] font-bold uppercase {{ $dirClass }}">{{ $dirLabel }}</span>
                     </div>
-                    @php
-                        $unk = ! empty($item['is_unauthorized']);
-                        $act = (string) ($item['action'] ?? '');
-                        $badgeClass = $unk
-                            ? 'bg-red-100 text-red-700'
-                            : (strcasecmp($act, 'Entry') === 0
-                                ? 'bg-emerald-50 text-emerald-700'
-                                : (strcasecmp($act, 'Exit') === 0
-                                    ? 'bg-blue-50 text-blue-700'
-                                    : 'bg-gray-100 text-gray-600'));
-                    @endphp
-                    <span class="shrink-0 rounded-full px-2.5 py-1 text-[11px] font-bold uppercase {{ $badgeClass }}">{{ $unk ? 'UNK' : ($act !== '' ? $act : '—') }}</span>
+                    <div class="mt-1.5 flex items-center justify-between gap-2">
+                        <p class="truncate text-[11px] text-gray-400">{{ $item['timestamp'] ?? ($item['time'] ?? '—') }}</p>
+                        <span class="shrink-0 truncate rounded-full px-2 py-0.5 text-[10px] font-semibold {{ $resultClass }}" title="{{ $resultLabel }}">{{ $resultLabel }}</span>
+                    </div>
                 </li>
             @empty
                 <li id="gate-recent-empty" class="px-3 py-10 text-center text-sm text-gray-500">No scans yet</li>
@@ -586,29 +605,23 @@
             lastScanAt = scan.time || lastScanAt;
             showScanCard(scan);
             // Optimistic update of the right-side feed before the next poll.
-            if (recentList) {
-                const existing = Array.from(recentList.querySelectorAll('[data-log-id]')).map((el) => el.getAttribute('data-log-id'));
-                if (!existing.includes(String(scan.id))) {
-                    const feedItem = {
-                        id: scan.id,
-                        name: scan.name || 'Unknown Tag',
-                        time: scan.time || '—',
-                        action: scan.action,
-                        granted: !!scan.granted,
-                        is_unauthorized: !!scan.is_unauthorized,
-                    };
-                    const current = [feedItem].concat(
-                        Array.from(recentList.querySelectorAll('[data-log-id]')).slice(0, 9).map((el) => ({
-                            id: el.getAttribute('data-log-id'),
-                            name: el.querySelector('.font-semibold')?.textContent || 'Unknown Tag',
-                            time: el.querySelector('.text-xs')?.textContent || '—',
-                            action: el.querySelector('.rounded-full')?.textContent || '—',
-                            granted: true,
-                            is_unauthorized: el.className.includes('bg-red-50'),
-                        }))
-                    );
-                    renderRecentLogs(current);
-                }
+            // `scan` is the full GateScanPresenter payload (Echo broadcast), so it
+            // already carries plate_number/vehicle_type/status_label — no DOM scraping needed.
+            if (!recentItems.some((it) => String(it.id) === String(scan.id))) {
+                const feedItem = {
+                    id: scan.id,
+                    name: scan.name || 'Unknown Tag',
+                    time: scan.time || '—',
+                    timestamp: scan.timestamp || scan.time || '—',
+                    action: scan.action,
+                    plate_number: scan.plate_number || null,
+                    vehicle_type: scan.vehicle_type || null,
+                    granted: !!scan.granted,
+                    is_unauthorized: !!scan.is_unauthorized,
+                    result: scan.result || null,
+                    status_label: scan.status_label || null,
+                };
+                renderRecentLogs([feedItem].concat(recentItems).slice(0, 10));
             }
             // A successful scan implies the board was online; heartbeat poll will confirm.
             setEsp32Status(true);
@@ -752,35 +765,59 @@
         };
 
         const recentList = document.getElementById('gate-recent-list');
-        const actionBadgeClass = (item) => {
-            if (item.is_unauthorized) return 'bg-red-100 text-red-700';
-            const a = String(item.action || '');
-            if (a.toLowerCase() === 'entry') return 'bg-emerald-50 text-emerald-700';
-            if (a.toLowerCase() === 'exit') return 'bg-blue-50 text-blue-700';
-            return 'bg-gray-100 text-gray-600';
+        // Cache of the last rendered rows so the Echo optimistic-update path can
+        // prepend a new scan without re-parsing DOM text (fragile + slower).
+        let recentItems = @json(($recentFeed ?? []));
+
+        const directionInfo = (item) => {
+            const a = String(item.action || '').toLowerCase();
+            if (a === 'entry') return { label: 'IN', cls: 'bg-emerald-50 text-emerald-700' };
+            if (a === 'exit') return { label: 'OUT', cls: 'bg-blue-50 text-blue-700' };
+            if (a === 'override') return { label: 'OPEN', cls: 'bg-amber-50 text-amber-700' };
+            return { label: '—', cls: 'bg-gray-100 text-gray-600' };
+        };
+
+        const resultInfo = (item) => {
+            if (item.is_unauthorized) return { label: 'Unauthorized', cls: 'bg-red-100 text-red-700' };
+            const label = String(item.status_label || item.result || (item.granted ? 'Granted' : 'Denied'));
+            const lower = label.toLowerCase();
+            const cls = lower.includes('granted')
+                ? 'bg-emerald-100 text-emerald-700'
+                : (lower.includes('already') ? 'bg-amber-100 text-amber-700' : 'bg-red-100 text-red-700');
+            return { label, cls };
         };
 
         const renderRecentLogs = (items) => {
-            if (!recentList || !Array.isArray(items)) return;
-            if (items.length === 0) {
+            recentItems = Array.isArray(items) ? items.slice(0, 10) : [];
+            if (!recentList) return;
+            if (recentItems.length === 0) {
                 recentList.innerHTML = '<li class="px-3 py-10 text-center text-sm text-gray-500">No scans yet</li>';
                 return;
             }
-            recentList.innerHTML = items.slice(0, 10).map((item) => {
+            recentList.innerHTML = recentItems.map((item) => {
                 const unk = !!item.is_unauthorized;
                 const rowClass = unk
                     ? 'border border-red-200 bg-red-50'
-                    : 'hover:bg-gray-50';
+                    : 'border border-transparent hover:bg-gray-50';
                 const nameClass = unk ? 'text-red-800' : 'text-gray-900';
-                const badge = unk ? 'UNK' : (item.action || '—');
                 const name = String(item.name || 'Unknown Tag').replace(/</g, '&lt;');
-                const time = String(item.time || '—').replace(/</g, '&lt;');
-                return `<li class="flex items-center justify-between gap-2 rounded-xl px-3 py-2.5 text-sm ${rowClass}" data-log-id="${item.id}">
-                    <div class="min-w-0">
-                        <p class="truncate font-semibold ${nameClass}">${name}</p>
-                        <p class="text-xs text-gray-500">${time}</p>
+                const when = String(item.timestamp || item.time || '—').replace(/</g, '&lt;');
+                const plate = String(item.plate_number || '—').replace(/</g, '&lt;');
+                const vehicle = item.vehicle_type ? ' · ' + String(item.vehicle_type).replace(/</g, '&lt;') : '';
+                const dir = directionInfo(item);
+                const res = resultInfo(item);
+                return `<li class="rounded-xl px-3 py-2.5 text-sm ${rowClass}" data-log-id="${item.id}">
+                    <div class="flex items-start justify-between gap-2">
+                        <div class="min-w-0">
+                            <p class="truncate font-semibold ${nameClass}">${name}</p>
+                            <p class="truncate text-xs text-gray-500">${plate}${vehicle}</p>
+                        </div>
+                        <span class="shrink-0 rounded-full px-2 py-0.5 text-[10px] font-bold uppercase ${dir.cls}">${dir.label}</span>
                     </div>
-                    <span class="shrink-0 rounded-full px-2.5 py-1 text-[11px] font-bold uppercase ${actionBadgeClass(item)}">${badge}</span>
+                    <div class="mt-1.5 flex items-center justify-between gap-2">
+                        <p class="truncate text-[11px] text-gray-400">${when}</p>
+                        <span class="shrink-0 truncate rounded-full px-2 py-0.5 text-[10px] font-semibold ${res.cls}" title="${res.label.replace(/"/g, '&quot;')}">${res.label}</span>
+                    </div>
                 </li>`;
             }).join('');
         };

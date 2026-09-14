@@ -173,9 +173,8 @@ YOLO does **not** run on every frame — about every `AI_PARKING_INFER_EVERY_SEC
 
 | Event | Violation type |
 |-------|----------------|
-| `no_parking`, `aisle_blocked`, `double_park` | Wrong Parking |
-| `overtime` | Overtime Parking |
-| `unauthorized` | Unauthorized Parking |
+| `no_parking`, `aisle_blocked`, `double_park`, `overtime` | Wrong Parking |
+| `unauthorized` (unknown/access-denied plate with a registered owner) | Wrong Parking |
 
 Citations require a **registered** plate (same as guard flow). UI labels:
 
