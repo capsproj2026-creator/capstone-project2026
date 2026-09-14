@@ -39,7 +39,7 @@ class ParkingZoneSnapshotTest extends TestCase
         $duran = $service->forAreaId(3);
         $this->assertNotNull($duran);
         $this->assertSame('images/parking/snapshot_duran.jpg', $duran['path']);
-        $this->assertSame('Duran Hall (Front)', $duran['label']);
+        $this->assertSame('Duran Hall Front', $duran['label']);
         $this->assertTrue($duran['calibrated']);
         $this->assertSame(2, $this->lotProfile('duran')['camera']);
         $this->assertSame(3, $this->lotProfile('duran')['area_id']);

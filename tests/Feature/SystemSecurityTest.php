@@ -167,4 +167,147 @@ class SystemSecurityTest extends TestCase
             'password' => 'password123',
         ])->assertSessionHasErrors(['email']);
     }
+
+    public function test_profile_update_cannot_escalate_role_or_gate_access(): void
+    {
+        $student = User::query()
+            ->whereIn('user_role_id', [3, 4])
+            ->where('status', User::STATUS_GRANTED)
+            ->first();
+
+        if (! $student) {
+            $this->markTestSkipped('No granted student/staff user found.');
+        }
+
+        if (! $student->hasVerifiedEmail()) {
+            $student->update(['email_verified_at' => now()]);
+        }
+
+        $originalRole = (int) $student->user_role_id;
+        $originalStatus = (string) $student->status;
+        $originalGate = (string) ($student->Gate_access ?? '');
+        $originalRfid = (string) ($student->rfid_uid ?? '');
+
+        $this->actingAs($student)
+            ->post(route('profile.update'), [
+                'update_profile' => '1',
+                'fullname' => $student->fullname ?? $student->name ?? 'Test User',
+                'phone_number' => $student->phone_number ?: '09171234567',
+                'email' => $student->email,
+                'address' => $student->address ?: 'TEST ADDRESS',
+                'user_role_id' => 1,
+                'status' => User::STATUS_GRANTED,
+                'Gate_access' => User::GATE_ACCESS_GRANTED,
+                'rfid_uid' => 'DEADBEEF',
+                'strike_count' => 0,
+            ])
+            ->assertRedirect();
+
+        $student->refresh();
+        $this->assertSame($originalRole, (int) $student->user_role_id);
+        $this->assertSame($originalStatus, (string) $student->status);
+        $this->assertSame($originalGate, (string) ($student->Gate_access ?? ''));
+        $this->assertSame($originalRfid, (string) ($student->rfid_uid ?? ''));
+    }
+
+    public function test_student_cannot_fetch_guard_violation_evidence_route(): void
+    {
+        $student = User::query()
+            ->whereIn('user_role_id', [3, 4])
+            ->where('status', User::STATUS_GRANTED)
+            ->first();
+
+        if (! $student) {
+            $this->markTestSkipped('No granted student/staff user found.');
+        }
+
+        if (! $student->hasVerifiedEmail()) {
+            $student->update(['email_verified_at' => now()]);
+        }
+
+        $log = \App\Models\ViolationLog::query()->orderByDesc('created_at')->first();
+        if (! $log) {
+            $this->markTestSkipped('No violation log found.');
+        }
+
+        $this->actingAs($student)
+            ->get(route('guard.violations.evidence', ['id' => (string) $log->getKey(), 'index' => 0]))
+            ->assertRedirect(route('user.dashboard'));
+    }
+
+    public function test_user_cannot_mark_another_users_notification_read(): void
+    {
+        $owner = User::query()
+            ->whereIn('user_role_id', [3, 4])
+            ->where('status', User::STATUS_GRANTED)
+            ->where('Gate_access', User::GATE_ACCESS_GRANTED)
+            ->where(function ($q) {
+                $q->whereNull('strike_count')->orWhere('strike_count', '<', User::MAX_STRIKES);
+            })
+            ->orderBy('id')
+            ->first();
+        $other = User::query()
+            ->whereIn('user_role_id', [3, 4])
+            ->where('status', User::STATUS_GRANTED)
+            ->where('Gate_access', User::GATE_ACCESS_GRANTED)
+            ->where(function ($q) {
+                $q->whereNull('strike_count')->orWhere('strike_count', '<', User::MAX_STRIKES);
+            })
+            ->where('id', '!=', $owner?->id)
+            ->orderBy('id')
+            ->first();
+
+        if (! $owner || ! $other) {
+            $this->markTestSkipped('Need two granted student/staff users.');
+        }
+
+        foreach ([$owner, $other] as $u) {
+            if (! $u->hasVerifiedEmail()) {
+                $u->update(['email_verified_at' => now()]);
+            }
+        }
+
+        $owner = $owner->fresh();
+        $other = $other->fresh();
+
+        $notification = \App\Models\Notification::query()->create([
+            'user_id' => (int) $owner->id,
+            'title' => 'Security checkup notification',
+            'message' => 'Owner-only notification',
+            'type' => 'System',
+            'is_read' => false,
+            'created_at' => now(),
+        ]);
+
+        $this->assertNotNull($notification->id);
+
+        // Foreign user scoped update must not touch the row.
+        $foreign = \App\Models\Notification::query()
+            ->where('user_id', (int) $other->id)
+            ->where('id', (int) $notification->id)
+            ->update(['is_read' => true]);
+        $this->assertSame(0, $foreign);
+
+        $this->flushSession();
+        $this->actingAs($other)
+            ->post(route('user.notifications.action', ['action' => 'mark_read']), [
+                'id' => (int) $notification->id,
+            ]);
+
+        $notification->refresh();
+        $this->assertFalse((bool) $notification->is_read, 'Foreign user must not mark another user notification read.');
+
+        $this->flushSession();
+        $this->actingAs($owner)
+            ->post(route('user.notifications.action', ['action' => 'mark_read']), [
+                'id' => (int) $notification->id,
+            ])
+            ->assertSessionHasNoErrors()
+            ->assertRedirect(route('user.notifications'));
+
+        $notification->refresh();
+        $this->assertTrue((bool) $notification->is_read, 'Owner must be able to mark their own notification read.');
+
+        \App\Models\Notification::query()->where('id', $notification->id)->delete();
+    }
 }

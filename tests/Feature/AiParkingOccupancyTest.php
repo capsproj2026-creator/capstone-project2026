@@ -907,9 +907,10 @@ class AiParkingOccupancyTest extends TestCase
             ->assertOk()
             ->getContent();
 
-        $this->assertStringContainsString('Scan plate', $html);
-        $this->assertStringContainsString('not saved to the database', $html);
+        $this->assertStringContainsString('Latest Detections', $html);
         $this->assertStringContainsString('camera-zoom-in', $html);
+        $this->assertStringContainsString('camera-zoom-out', $html);
+        $this->assertStringContainsString('Fix plate number', $html);
     }
 
     public function test_guard_plate_crop_proxies_jpeg_without_saving(): void

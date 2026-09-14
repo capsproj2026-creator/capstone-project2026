@@ -53,6 +53,7 @@ class RolePortalWalkthroughTest extends TestCase
             ['admin.dashboard'],
             ['admin.registrations'],
             ['admin.users'],
+            ['admin.plates'],
             ['admin.rfid'],
             ['admin.visitors.active'],
             ['admin.visitors.history'],

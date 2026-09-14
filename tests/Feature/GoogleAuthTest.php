@@ -24,7 +24,8 @@ class GoogleAuthTest extends TestCase
 
         $this->get(route('login'))
             ->assertOk()
-            ->assertDontSee('Continue with Google', false);
+            ->assertDontSee('CSPC Mail', false)
+            ->assertDontSee(route('auth.google'), false);
     }
 
     public function test_login_page_shows_google_button_when_configured(): void
@@ -34,7 +35,7 @@ class GoogleAuthTest extends TestCase
 
         $this->get(route('login'))
             ->assertOk()
-            ->assertSee('Continue with Google', false)
+            ->assertSee('CSPC Mail', false)
             ->assertSee(route('auth.google'), false);
     }
 

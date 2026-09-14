@@ -88,7 +88,7 @@ class NotificationController extends Controller
             abort(404);
         }
 
-        $guardId = Auth::id();
+        $guardId = (int) Auth::id();
 
         if ($action === 'mark_read') {
             $validated = $request->validate([
@@ -98,7 +98,7 @@ class NotificationController extends Controller
             Notification::query()
                 ->where('user_id', $guardId)
                 ->whereIn('type', self::GUARD_TYPES)
-                ->where('id', $validated['id'])
+                ->where('id', (int) $validated['id'])
                 ->update(['is_read' => true]);
         } elseif ($action === 'mark_all_read') {
             Notification::query()

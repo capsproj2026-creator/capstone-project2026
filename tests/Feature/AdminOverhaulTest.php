@@ -167,74 +167,55 @@ class AdminOverhaulTest extends TestCase
 
     public function test_settings_violations_tab_crud(): void
     {
+        \App\Support\TrafficViolations::syncToDatabase();
+
         $this->actingAs($this->admin)
             ->get(route('admin.settings', ['section' => 'violations']))
             ->assertOk()
             ->assertSee('Violation Types')
-            ->assertSee('Add Type')
+            ->assertSee('Wrong Parking')
             ->assertSee('Description:')
-            ->assertDontSee('Default Penalty')
-            ->assertDontSee('Save Violation Types');
+            ->assertSee('Save')
+            ->assertDontSee('Add Type')
+            ->assertDontSee('Default Penalty');
 
-        $suffix = (string) random_int(1000, 9999);
-        $name = 'Test Speeding '.$suffix;
-        $description = 'Vehicle exceeded the campus speed limit';
-
+        // Creating custom types is blocked by campus policy (fixed four official types).
         $this->actingAs($this->admin)
             ->from(route('admin.settings', ['section' => 'violations']))
             ->post(route('admin.settings.violations.store'), [
-                'violation_name' => $name,
-                'description' => $description,
+                'violation_name' => 'Custom Type '.random_int(1000, 9999),
+                'description' => 'Should be rejected',
             ])
             ->assertRedirect(route('admin.settings', ['section' => 'violations']))
-            ->assertSessionHasNoErrors();
+            ->assertSessionHas('error');
 
-        $created = \App\Models\ViolationType::query()->where('violation_name', $name)->first();
-        $this->assertNotNull($created);
-        $this->assertSame($description, $created->description);
-        $this->assertSame('Active', $created->status);
+        $this->assertNull(
+            \App\Models\ViolationType::query()->where('violation_name', 'like', 'Custom Type %')->first()
+        );
 
-        $this->actingAs($this->admin)
-            ->get(route('admin.settings', ['section' => 'violations']))
-            ->assertOk()
-            ->assertSee($name)
-            ->assertSee($description);
+        $wrongParking = \App\Models\ViolationType::query()
+            ->where('violation_name', 'Wrong Parking')
+            ->first();
+        $this->assertNotNull($wrongParking);
 
-        $updatedDescription = 'Vehicle parked in a restricted area';
+        $updatedDescription = 'Vehicles are not parked at the designated parking area. (QA)';
         $this->actingAs($this->admin)
             ->from(route('admin.settings', ['section' => 'violations']))
-            ->put(route('admin.settings.violations.update', $created->id), [
-                'violation_name' => 'Illegal Parking '.$suffix,
+            ->put(route('admin.settings.violations.update', $wrongParking->id), [
+                'violation_name' => 'Wrong Parking',
                 'description' => $updatedDescription,
             ])
             ->assertRedirect(route('admin.settings', ['section' => 'violations']))
             ->assertSessionHasNoErrors();
 
-        $created->refresh();
-        $this->assertSame('Illegal Parking '.$suffix, $created->violation_name);
-        $this->assertSame($updatedDescription, $created->description);
+        $wrongParking->refresh();
+        $this->assertSame('Wrong Parking', $wrongParking->violation_name);
+        $this->assertSame($updatedDescription, $wrongParking->description);
 
-        $this->actingAs($this->admin)
-            ->from(route('admin.settings', ['section' => 'violations']))
-            ->post(route('admin.settings.violations.toggle', $created->id))
-            ->assertRedirect(route('admin.settings', ['section' => 'violations']));
-
-        $created->refresh();
-        $this->assertSame('Inactive', $created->status);
-
-        $this->actingAs($this->admin)
-            ->from(route('admin.settings', ['section' => 'violations']))
-            ->post(route('admin.settings.violations.toggle', $created->id))
-            ->assertRedirect(route('admin.settings', ['section' => 'violations']));
-
-        $created->refresh();
-        $this->assertSame('Active', $created->status);
-
-        $this->actingAs($this->admin)
-            ->delete(route('admin.settings.violations.destroy', $created->id))
-            ->assertRedirect(route('admin.settings', ['section' => 'violations']));
-
-        $this->assertNull(\App\Models\ViolationType::query()->where('id', $created->id)->first());
+        // Restore canonical description after the edit check.
+        $wrongParking->update([
+            'description' => 'Vehicles are not parked at the designated parking area.',
+        ]);
     }
 
     public function test_view_user_back_link_from_registrations(): void
@@ -427,7 +408,6 @@ class AdminOverhaulTest extends TestCase
     {
         $prefix = 'ZX'.random_int(10, 99);
         $name = 'Test Lot '.$prefix;
-        $expectedId = app(\App\Services\ParkingLayoutService::class)->nextAreaId();
 
         $this->actingAs($this->admin)
             ->from(route('admin.parking.layout'))
@@ -444,7 +424,7 @@ class AdminOverhaulTest extends TestCase
 
         $area = \App\Models\ParkingArea::query()->where('area_name', $name)->first();
         $this->assertNotNull($area);
-        $this->assertSame($expectedId, (int) $area->id);
+        $this->assertGreaterThan(0, (int) $area->id);
         $slots = \App\Models\ParkingSlot::query()->where('area_id', $area->id)->orderBy('slot_number')->get();
         $this->assertCount(2, $slots);
         $this->assertSame(2, (int) $area->capacity);

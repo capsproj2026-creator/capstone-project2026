@@ -92,7 +92,7 @@ class ViolationEvidenceTest extends TestCase
         $response = $this->actingAs($guard)
             ->post(route('guard.violations.store'), [
                 'plate_number' => $owner->plate_number,
-                'violation_type' => $type,
+                'violation_types' => [$type],
                 'description' => 'Test upload with evidence',
                 'evidence_photos' => [$this->fakeJpegUpload()],
             ]);

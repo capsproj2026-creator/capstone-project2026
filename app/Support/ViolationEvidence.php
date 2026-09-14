@@ -42,6 +42,10 @@ class ViolationEvidence
         return $single !== '' ? [self::normalizePath($single)] : [];
     }
 
+    /**
+     * Load a violation log for authenticated evidence streaming.
+     * Callers MUST enforce role/ownership (Admin/Guard: any log; User: own user_id only).
+     */
     public static function findAuthorized(string|int $id): ViolationLog
     {
         $log = ViolationLog::query()->find((int) $id)

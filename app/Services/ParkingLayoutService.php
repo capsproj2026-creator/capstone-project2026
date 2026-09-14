@@ -67,13 +67,7 @@ class ParkingLayoutService
 
     public function nextAreaId(): int
     {
-        $max = 0;
-
-        ParkingArea::query()->get(['id'])->each(function (ParkingArea $area) use (&$max) {
-            $max = max($max, (int) $area->id);
-        });
-
-        return $max + 1;
+        return SequenceService::next((new ParkingArea)->getTable());
     }
 
     public function addSlots(ParkingArea $area, int $count): int
