@@ -127,9 +127,9 @@
                         <div class="min-w-0 flex-1">
                             <div class="flex flex-wrap items-center gap-2">
                                 <h3 class="text-base font-semibold text-gray-900">{{ $row->violator_name }}</h3>
-                                <span class="rounded-md bg-red-100 px-2 py-0.5 text-xs font-semibold lowercase text-red-700">
-                                    {{ $row->violation_type }}
-                                </span>
+                                @foreach ($row->typeList() as $typeName)
+                                    <span class="rounded-md bg-red-100 px-2 py-0.5 text-xs font-semibold text-red-700">{{ $typeName }}</span>
+                                @endforeach
                             </div>
                             <p class="mt-2 text-sm leading-relaxed text-gray-600">
                                 {{ $row->description ?: 'No description provided.' }}

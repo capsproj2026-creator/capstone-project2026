@@ -24,14 +24,14 @@ class AiParkingViolationService
         'no_parking' => 'Wrong Parking',
         'aisle_blocked' => 'Wrong Parking',
         'double_park' => 'Wrong Parking',
-        'overtime' => 'Overtime Parking',
-        'unauthorized' => 'Unauthorized Parking',
+        'overtime' => 'Wrong Parking',
+        // Unknown / access-denied plates map to Wrong Parking when a registered owner exists.
+        'unauthorized' => 'Wrong Parking',
     ];
 
     /** Violation types that are limited to one citation per calendar day per user/vehicle. */
     private const ONCE_PER_DAY_TYPES = [
         'Wrong Parking',
-        'Unauthorized Parking',
     ];
 
     /**
@@ -97,12 +97,12 @@ class AiParkingViolationService
             $vehicleDetails = $identity['vehicle_details'];
         }
 
-        // Unauthorized: unknown plate → notify guards once/day, no user citation
+        // Unknown plate → notify guards once/day, no user citation (no dummy user created).
         if ($type === 'unauthorized' && ! $user) {
             $guardNotified = $this->notifyGuardsOncePerDay(
                 plate: $plate,
-                violationType: $violationType,
-                title: "AI Alert: {$violationType}",
+                violationType: 'Wrong Parking',
+                title: 'AI Alert: Unregistered vehicle',
                 message: "Camera {$cameraId} detected unregistered plate {$plate}"
                     .($areaName ? " at {$areaName}" : '')
                     .'. No registered owner — review on AI Parking Monitor.',

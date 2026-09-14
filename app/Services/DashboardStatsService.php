@@ -135,7 +135,7 @@ class DashboardStatsService
 
         if (array_sum($values) === 0) {
             return [
-                'labels' => ['No License Plate', 'Unauthorized Parking', 'Overstay', 'Other'],
+                'labels' => \App\Support\TrafficViolations::names(),
                 'values' => [0, 0, 0, 0],
                 'percents' => [0, 0, 0, 0],
                 'colors' => ['#93C5FD', '#BFDBFE', '#6EE7B7', '#5D9FD1'],

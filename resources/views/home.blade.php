@@ -11,14 +11,13 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Welcome - Smart Campus VMS</title>
     @include('partials.favicon')
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script src="{{ asset('vendor/lucide.min.js') }}"></script>
     <style>
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
         *, *::before, *::after { box-sizing: border-box; }
         html, body {
             margin: 0;
             min-height: 100%;
-            font-family: 'Inter', sans-serif;
+            font-family: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
         }
         body {
             min-height: 100vh;
@@ -130,15 +129,16 @@
                 <img src="{{ asset('images/cspc-logo.png') }}" alt="Camarines Sur Polytechnic Colleges">
             </div>
         @else
-            <div class="logo-circle"><i class="fa-solid fa-shield-halved"></i></div>
+            <div class="logo-circle"><i data-lucide="shield"></i></div>
         @endif
         <h1>Smart Campus VMS</h1>
         <p>Welcome to the Vehicle Management System. Please log in to access your dashboard or register a new vehicle.</p>
         <div class="button-group">
-            <a href="{{ route('login') }}" class="btn btn-login"><i class="fa-solid fa-right-to-bracket"></i> Login to Portal</a>
-            <a href="{{ route('register') }}" class="btn btn-register"><i class="fa-solid fa-user-plus"></i> Create New Account</a>
+            <a href="{{ route('login') }}" class="btn btn-login"><i data-lucide="log-in"></i> Login to Portal</a>
+            <a href="{{ route('register') }}" class="btn btn-register"><i data-lucide="user-plus"></i> Create New Account</a>
         </div>
         <div class="footer">&copy; {{ date('Y') }} Smart Campus Security Department</div>
     </div>
+    <script>window.lucide?.createIcons?.();</script>
 </body>
 </html>

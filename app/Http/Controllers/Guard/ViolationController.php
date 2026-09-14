@@ -10,6 +10,8 @@ use App\Models\ViolationLog;
 use App\Models\ViolationType;
 use App\Notifications\AccountLockedNotification;
 use App\Services\ViolationEnforcementService;
+use App\Support\TrafficViolations;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Mail;
@@ -20,28 +22,29 @@ class ViolationController extends Controller
 {
     public function index(Request $request): View
     {
+        TrafficViolations::syncToDatabase();
+
         $registeredPlates = User::query()
             ->whereNotNull('plate_number')
             ->whereNotIn('plate_number', ['N/A', 'n/a', ''])
             ->orderBy('plate_number')
             ->get(['id', 'plate_number', 'fullname']);
 
-        $settings = app(\App\Services\SystemSettingService::class);
-
         return view('guard.violations', [
             'logs' => ViolationLog::query()->orderByDesc('created_at')->paginate(25),
-            'violationTypes' => ViolationType::query()->where('status', 'Active')->orderBy('id')->pluck('violation_name'),
+            'violationTypes' => ViolationType::query()
+                ->where('status', 'Active')
+                ->orderBy('id')
+                ->get(['violation_name', 'description']),
             'registeredPlates' => $registeredPlates,
-            'requirePhotoEvidence' => $settings->bool('require_photo_evidence', false),
             'success' => $request->boolean('success'),
             'error' => $request->query('error'),
         ]);
     }
 
-    public function store(Request $request): RedirectResponse
+    public function store(Request $request): JsonResponse|RedirectResponse
     {
-        $settings = app(\App\Services\SystemSettingService::class);
-        $requirePhoto = $settings->bool('require_photo_evidence', false);
+        TrafficViolations::syncToDatabase();
 
         $activeTypes = ViolationType::query()
             ->where('status', 'Active')
@@ -49,23 +52,21 @@ class ViolationController extends Controller
             ->pluck('violation_name')
             ->all();
 
-        $rules = [
+        $validated = $request->validate([
             'plate_number' => ['required', 'string', 'max:32'],
-            'violation_type' => ['required', 'string', 'max:255', Rule::in($activeTypes)],
+            'violation_types' => ['required', 'array', 'min:1'],
+            'violation_types.*' => ['required', 'string', 'max:255', Rule::in($activeTypes)],
             'description' => ['nullable', 'string', 'max:1000'],
-        ];
+            'evidence_photo' => ['nullable', 'image', 'max:5120'],
+            'evidence_photos' => ['nullable', 'array', 'max:5'],
+            'evidence_photos.*' => ['image', 'max:5120'],
+        ]);
 
-        if ($requirePhoto) {
-            $rules['evidence_photo'] = ['nullable', 'image', 'max:5120'];
-            $rules['evidence_photos'] = ['required', 'array', 'min:1', 'max:5'];
-            $rules['evidence_photos.*'] = ['image', 'max:5120'];
-        } else {
-            $rules['evidence_photo'] = ['nullable', 'image', 'max:5120'];
-            $rules['evidence_photos'] = ['nullable', 'array', 'max:5'];
-            $rules['evidence_photos.*'] = ['image', 'max:5120'];
-        }
-
-        $validated = $request->validate($rules);
+        $types = array_values(array_unique(array_map(
+            static fn ($t) => trim((string) $t),
+            $validated['violation_types']
+        )));
+        $typeLabel = TrafficViolations::displayLabel($types);
 
         $plate = strtoupper(trim($validated['plate_number']));
         $rawPlate = trim($validated['plate_number']);
@@ -76,11 +77,15 @@ class ViolationController extends Controller
             ->first();
 
         if (! $user) {
+            if ($request->expectsJson()) {
+                return response()->json(['ok' => false, 'error' => 'plate_not_found', 'message' => 'Plate number not found in registered vehicles.'], 422);
+            }
+
             return redirect()->route('guard.violations', ['error' => 'plate_not_found']);
         }
 
         $guardId = auth()->id();
-        $title = "Violation Recorded: {$validated['violation_type']}";
+        $title = 'Violation Recorded: '.$typeLabel;
 
         $evidencePaths = [];
         if ($request->hasFile('evidence_photos')) {
@@ -94,10 +99,6 @@ class ViolationController extends Controller
             $evidencePaths[] = $request->file('evidence_photo')->store('violation-evidence', 'private');
         }
 
-        if ($requirePhoto && $evidencePaths === []) {
-            return redirect()->route('guard.violations', ['error' => 'photo_required']);
-        }
-
         $log = ViolationLog::query()->create([
             'user_id' => $user->id,
             'violator_name' => $user->fullname,
@@ -106,8 +107,9 @@ class ViolationController extends Controller
                 ? ($user->roleName())
                 : 'Other',
             'plate_number' => $validated['plate_number'],
-            'violation_type' => $validated['violation_type'],
-            'description' => $validated['description'],
+            'violation_type' => $typeLabel,
+            'violation_types' => $types,
+            'description' => $validated['description'] ?? null,
             'evidence_photo' => $evidencePaths[0] ?? null,
             'evidence_photos' => $evidencePaths !== [] ? $evidencePaths : null,
             'guard_id' => (string) $guardId,
@@ -118,6 +120,7 @@ class ViolationController extends Controller
         $newStrikes = app(ViolationEnforcementService::class)->syncStrikesFromLogs($user);
         $user->refresh();
 
+        $settings = app(\App\Services\SystemSettingService::class);
         $autoLock = $settings->bool('auto_lock_on_3rd_violation', true);
         $sendNotifications = $settings->bool('send_violation_notifications', true);
 
@@ -128,7 +131,8 @@ class ViolationController extends Controller
             $message .= ' '.$sanction.'.';
         }
 
-        if ($autoLock && $newStrikes >= User::MAX_STRIKES) {
+        $locked = $autoLock && $newStrikes >= User::MAX_STRIKES;
+        if ($locked) {
             $message .= ' Your account has been permanently locked.';
         }
 
@@ -145,9 +149,9 @@ class ViolationController extends Controller
             ]);
 
             try {
-                $this->sendViolationMail($user, $log, $validated['violation_type'], $validated['description'] ?? null);
+                $this->sendViolationMail($user, $log, $typeLabel, $validated['description'] ?? null);
 
-                if ($autoLock && $newStrikes >= User::MAX_STRIKES) {
+                if ($locked) {
                     $user->notify(new AccountLockedNotification($newStrikes));
                 }
             } catch (\Throwable $e) {
@@ -155,15 +159,21 @@ class ViolationController extends Controller
             }
         }
 
+        if ($request->expectsJson()) {
+            return response()->json([
+                'ok' => true,
+                'message' => 'Violation logged successfully.'.($locked ? ' Account locked (3/3 strikes).' : ''),
+                'locked' => $locked,
+                'log_id' => (string) $log->getKey(),
+            ]);
+        }
+
         return redirect()->route('guard.violations', [
             'success' => 1,
-            'locked' => ($autoLock && $newStrikes >= User::MAX_STRIKES) ? 1 : 0,
+            'locked' => $locked ? 1 : 0,
         ]);
     }
 
-    /**
-     * Sends the violation alert email to the vehicle owner, including photo evidence when available.
-     */
     private function sendViolationMail(
         User $user,
         ViolationLog $log,

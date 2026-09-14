@@ -46,6 +46,12 @@ class CapstoneSeeder extends Seeder
             ParkingSlot::class,
         ]);
         $this->backfillRegistrationStates();
+
+        try {
+            \Illuminate\Support\Facades\Artisan::call('mongo:ensure-indexes');
+        } catch (\Throwable $e) {
+            // Indexes are best-effort during seed (Mongo may be offline in CI).
+        }
     }
 
     private function backfillRegistrationStates(): void
@@ -146,22 +152,7 @@ class CapstoneSeeder extends Seeder
 
     private function seedViolationTypes(): void
     {
-        $types = [
-            ['violation_name' => 'Wrong Parking', 'description' => 'Vehicles are not parked at the designated parking area.', 'status' => 'Active'],
-            ['violation_name' => 'Over Speeding', 'description' => 'The driver has violated the approved speed limit within the College premises, which is 15 kph.', 'status' => 'Inactive'],
-            ['violation_name' => 'Use of Motorcycle Mufflers', 'description' => 'Mufflers are strictly prohibited inside the College premises.', 'status' => 'Active'],
-            ['violation_name' => 'Explicit disrespect', 'description' => 'Explicit disrespect to Security Personnel implementing the Policy.', 'status' => 'Active'],
-            ['violation_name' => 'Overtime Parking', 'description' => 'Vehicle remained in a parking slot beyond the allowed dwell time (AI monitored).', 'status' => 'Active'],
-            ['violation_name' => 'Unauthorized Parking', 'description' => 'Unregistered or access-denied vehicle detected in a parking area (AI monitored).', 'status' => 'Active'],
-        ];
-
-        foreach ($types as $index => $type) {
-            ViolationType::query()->updateOrCreate(['id' => $index + 1], $type);
-        }
-
-        ViolationType::query()
-            ->where('violation_name', 'Over Speeding')
-            ->update(['status' => 'Inactive']);
+        \App\Support\TrafficViolations::syncToDatabase();
     }
 
     private function seedViolationSanctions(): void

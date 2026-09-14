@@ -21,7 +21,8 @@ param(
     [switch]$SkipAi,
     [switch]$SkipVite,
     [switch]$WithGitSync,
-    [switch]$SkipNgrok
+    [switch]$SkipNgrok,
+    [switch]$SkipMongoCheck
 )
 
 $ErrorActionPreference = "Stop"
@@ -179,28 +180,36 @@ if ($preflight.Count -gt 0) {
 }
 
 Set-Location $Root
-Write-Host "Checking MongoDB (capstone database)..." -ForegroundColor Cyan
-# PHP may write harmless warnings to stderr; don't let Stop mode treat them as fatal.
-$prevEap = $ErrorActionPreference
-$ErrorActionPreference = "Continue"
-try {
-    php artisan config:clear 2>$null | Out-Null
-    php scripts/mongo_ping.php 2>$null | Out-Null
-    $mongoOk = ($LASTEXITCODE -eq 0)
-} finally {
-    $ErrorActionPreference = $prevEap
+
+function Test-CapstoneMongo {
+    # Do not pipe native php — PowerShell can mis-report $LASTEXITCODE after Out-Null.
+    $prevEap = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    try {
+        & php artisan config:clear *> $null
+        & php scripts/mongo_ping.php *> $null
+        return ($LASTEXITCODE -eq 0)
+    } finally {
+        $ErrorActionPreference = $prevEap
+    }
 }
-if (-not $mongoOk) {
-    Write-Host ""
-    Write-Host "MongoDB is not reachable." -ForegroundColor Red
-    Write-Host "  Local: start the MongoDB Windows service, then in .env set:" -ForegroundColor Yellow
-    Write-Host "    MONGODB_MODE=local" -ForegroundColor Yellow
-    Write-Host "    MONGODB_URI=mongodb://127.0.0.1:27017" -ForegroundColor Yellow
-    Write-Host "  Cloud: powershell -ExecutionPolicy Bypass -File .\scripts\setup-atlas-mongo.ps1" -ForegroundColor Yellow
-    Write-Host "  Test:  php scripts/mongo_ping.php" -ForegroundColor Yellow
-    exit 1
+
+if (-not $SkipMongoCheck) {
+    Write-Host "Checking MongoDB (capstone database)..." -ForegroundColor Cyan
+    if (-not (Test-CapstoneMongo)) {
+        Write-Host ""
+        Write-Host "MongoDB is not reachable." -ForegroundColor Red
+        Write-Host "  Local: start the MongoDB Windows service, then in .env set:" -ForegroundColor Yellow
+        Write-Host "    MONGODB_MODE=local" -ForegroundColor Yellow
+        Write-Host "    MONGODB_URI=mongodb://127.0.0.1:27017" -ForegroundColor Yellow
+        Write-Host "  Cloud: powershell -ExecutionPolicy Bypass -File .\scripts\setup-atlas-mongo.ps1" -ForegroundColor Yellow
+        Write-Host "  Test:  php scripts/mongo_ping.php" -ForegroundColor Yellow
+        exit 1
+    }
+    Write-Host "  MongoDB: connected" -ForegroundColor Green
+} else {
+    Write-Host "MongoDB: skipped (already verified by caller)" -ForegroundColor DarkGray
 }
-Write-Host "  MongoDB: connected" -ForegroundColor Green
 
 $campusIdPython = Join-Path $Root ".venv-campus-id-ocr\Scripts\python.exe"
 if (-not (Test-Path -LiteralPath $campusIdPython)) {

@@ -2,17 +2,9 @@
     <div class="mb-6 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div class="min-w-0">
             <h3 class="text-lg font-semibold text-gray-900">Violation Types</h3>
-            <p class="mt-1 text-sm text-gray-500">Manage rules and set active status. Toggle statuses, then click Save.</p>
+            <p class="mt-1 text-sm text-gray-500">Official CSPC traffic violations (fixed list). Toggle active status, then click Save.</p>
         </div>
         <div class="flex flex-wrap items-center gap-2">
-            <button
-                type="button"
-                id="open-add-violation"
-                class="inline-flex shrink-0 items-center justify-center gap-2 rounded-lg border border-gray-200 bg-white px-4 py-2.5 text-sm font-semibold text-gray-800 hover:bg-gray-50"
-            >
-                <i data-lucide="plus" class="h-4 w-4"></i>
-                Add Type
-            </button>
             <button
                 type="submit"
                 form="violation-types-save-form"
@@ -73,43 +65,21 @@
                     >
                         Edit
                     </button>
-
-                    <button
-                        type="submit"
-                        form="violation-type-delete-{{ $type->id }}"
-                        class="rounded-lg border border-gray-200 bg-white p-2 text-gray-500 hover:border-red-200 hover:bg-red-50 hover:text-red-600"
-                        title="Delete"
-                        onclick="return confirm('Delete this violation type? This cannot be undone.')"
-                    >
-                        <i data-lucide="trash-2" class="h-4 w-4"></i>
-                    </button>
                 </div>
             </div>
         @empty
             <p class="rounded-xl border border-dashed border-gray-200 px-4 py-10 text-center text-sm text-gray-500">
-                No violation types yet. Use Add Type to create one.
+                No violation types found. Run <code class="text-xs">php artisan db:seed</code> to restore the official list.
             </p>
         @endforelse
     </form>
-
-    @foreach ($violationTypes as $type)
-        <form
-            id="violation-type-delete-{{ $type->id }}"
-            method="POST"
-            action="{{ route('admin.settings.violations.destroy', $type->id) }}"
-            class="hidden"
-        >
-            @csrf
-            @method('DELETE')
-        </form>
-    @endforeach
 </div>
 
-{{-- Add / Edit Violation Modal --}}
+{{-- Edit Violation Modal (official names only) --}}
 <div id="violation-type-modal" class="fixed inset-0 z-50 hidden items-start justify-center overflow-y-auto bg-black/50 p-4 sm:items-center">
     <div class="my-8 w-full max-w-lg rounded-xl bg-white p-5 shadow-xl sm:my-4 sm:p-6">
         <div class="mb-4 flex items-center justify-between gap-3">
-            <h3 id="violation-modal-title" class="text-lg font-semibold text-gray-900">Add Violation Type</h3>
+            <h3 id="violation-modal-title" class="text-lg font-semibold text-gray-900">Edit Violation Type</h3>
             <button type="button" data-close-modal="violation-type-modal" class="rounded-lg p-1.5 text-gray-500 hover:bg-gray-100">
                 <i data-lucide="x" class="h-5 w-5"></i>
             </button>
@@ -127,7 +97,8 @@
                     id="violation_name"
                     required
                     maxlength="255"
-                    class="w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2.5 text-sm focus:border-blue-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                    readonly
+                    class="w-full rounded-lg border border-gray-200 bg-gray-100 px-3 py-2.5 text-sm text-gray-700"
                 >
             </div>
 

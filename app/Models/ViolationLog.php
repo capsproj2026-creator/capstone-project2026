@@ -19,6 +19,7 @@ class ViolationLog extends MongoModel
         'user_type',
         'plate_number',
         'violation_type',
+        'violation_types',
         'description',
         'evidence_photo',
         'evidence_photos',
@@ -42,7 +43,32 @@ class ViolationLog extends MongoModel
             'confidence' => 'float',
             'created_at' => 'datetime',
             'evidence_photos' => 'array',
+            'violation_types' => 'array',
         ];
+    }
+
+    /**
+     * @return list<string>
+     */
+    public function typeList(): array
+    {
+        $types = $this->violation_types;
+        if (is_array($types) && $types !== []) {
+            return array_values(array_filter(array_map(
+                static fn ($t) => trim((string) $t),
+                $types
+            )));
+        }
+
+        $single = trim((string) ($this->violation_type ?? ''));
+
+        return $single !== '' ? [$single] : [];
+    }
+
+    public function typeLabel(): string
+    {
+        return \App\Support\TrafficViolations::displayLabel($this->typeList())
+            ?: trim((string) ($this->violation_type ?? ''));
     }
 
     /**

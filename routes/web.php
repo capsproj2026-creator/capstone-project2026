@@ -122,6 +122,9 @@ Route::prefix('admin')->middleware(['auth', 'verified', 'granted', 'no.cache', '
         ->middleware('permission:manage_admins')
         ->name('guards.store');
     Route::get('/rfid', [RfidController::class, 'index'])->name('rfid');
+    Route::get('/rfid/latest-unregistered', [RfidController::class, 'latestUnregistered'])
+        ->middleware('permission:manage_users')
+        ->name('rfid.latest-unregistered');
     Route::post('/rfid/{id}/approve', [RfidController::class, 'approve'])
         ->middleware('permission:manage_users')
         ->name('rfid.approve');
@@ -250,9 +253,12 @@ Route::prefix('admin')->middleware(['auth', 'verified', 'granted', 'no.cache', '
 
 Route::prefix('guard')->middleware(['auth', 'verified', 'granted', 'no.cache', 'role:Guard'])->name('guard.')->group(function () {
     Route::get('/', [GuardDashboardController::class, 'index'])->name('dashboard');
-    Route::get('/violations', [GuardViolationController::class, 'index'])->name('violations');
+    Route::get('/violations', [GuardViolationController::class, 'index'])
+        ->middleware('permission:log_violations')
+        ->name('violations');
     Route::get('/violations/{id}/evidence/{index?}', [GuardViolationController::class, 'evidence'])
         ->whereNumber('index')
+        ->middleware('permission:log_violations')
         ->name('violations.evidence');
     Route::post('/violations', [GuardViolationController::class, 'store'])
         ->middleware(['throttle:10,1', 'permission:log_violations'])

@@ -119,8 +119,9 @@
         </form>
     </div>
 
-    {{-- Live scan stage (fullscreen target) --}}
-    <div id="gate-monitor-stage" class="gate-monitor-stage rounded-2xl border border-gray-200 bg-white p-4 shadow-sm sm:p-6 lg:p-8">
+    {{-- Live scan stage + recent logs (responsive) --}}
+    <div class="grid grid-cols-1 gap-4 lg:grid-cols-12 lg:gap-6">
+    <div id="gate-monitor-stage" class="gate-monitor-stage rounded-2xl border border-gray-200 bg-white p-4 shadow-sm sm:p-6 lg:col-span-8 lg:p-8">
         <div class="mb-4 flex items-center justify-between gap-3 sm:mb-6">
             <p id="server-clock" class="rounded-full bg-emerald-500 px-4 py-1.5 text-sm font-semibold text-white tabular-nums">
                 {{ now()->format('g:i:s A') }}
@@ -169,6 +170,11 @@
                             <p id="scan-temp-banner-text" class="text-sm font-semibold text-amber-900">Unregistered student/faculty — complete vehicle registration within 5 hours</p>
                             <p id="scan-temp-register" class="mt-1 hidden break-all text-xs text-amber-800"></p>
                         </div>
+                        <div id="scan-unauthorized-banner" class="mt-4 hidden rounded-xl border-2 border-red-400 bg-red-50 px-4 py-3 text-left shadow-sm">
+                            <p class="text-sm font-bold uppercase tracking-wide text-red-700">Unauthorized Access</p>
+                            <p id="scan-unauthorized-text" class="mt-1 text-sm font-semibold text-red-900">Unknown RFID tag — no registered user</p>
+                            <p id="scan-unauthorized-uid" class="mt-1 font-mono text-xs text-red-700"></p>
+                        </div>
                     </div>
 
                     <div class="space-y-3 px-5 pb-5 sm:px-6">
@@ -215,6 +221,41 @@
                 </div>
             </div>
         </div>
+    </div>
+
+    <aside id="gate-recent-panel" class="flex max-h-[36rem] flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm lg:col-span-4 lg:max-h-none lg:min-h-[22rem]">
+        <div class="border-b border-gray-100 px-4 py-3 sm:px-5">
+            <h3 class="text-sm font-semibold text-gray-900">Recent IN / OUT</h3>
+            <p class="mt-0.5 text-xs text-gray-500">Last 10 gate scans (live)</p>
+        </div>
+        <ul id="gate-recent-list" class="flex-1 space-y-1 overflow-y-auto p-2 sm:p-3" aria-live="polite">
+            @forelse (($recentFeed ?? []) as $item)
+                <li
+                    class="flex items-center justify-between gap-2 rounded-xl px-3 py-2.5 text-sm {{ !empty($item['is_unauthorized']) ? 'border border-red-200 bg-red-50' : 'hover:bg-gray-50' }}"
+                    data-log-id="{{ $item['id'] }}"
+                >
+                    <div class="min-w-0">
+                        <p class="truncate font-semibold {{ !empty($item['is_unauthorized']) ? 'text-red-800' : 'text-gray-900' }}">{{ $item['name'] }}</p>
+                        <p class="text-xs text-gray-500">{{ $item['time'] ?? '—' }}</p>
+                    </div>
+                    @php
+                        $unk = ! empty($item['is_unauthorized']);
+                        $act = (string) ($item['action'] ?? '');
+                        $badgeClass = $unk
+                            ? 'bg-red-100 text-red-700'
+                            : (strcasecmp($act, 'Entry') === 0
+                                ? 'bg-emerald-50 text-emerald-700'
+                                : (strcasecmp($act, 'Exit') === 0
+                                    ? 'bg-blue-50 text-blue-700'
+                                    : 'bg-gray-100 text-gray-600'));
+                    @endphp
+                    <span class="shrink-0 rounded-full px-2.5 py-1 text-[11px] font-bold uppercase {{ $badgeClass }}">{{ $unk ? 'UNK' : ($act !== '' ? $act : '—') }}</span>
+                </li>
+            @empty
+                <li id="gate-recent-empty" class="px-3 py-10 text-center text-sm text-gray-500">No scans yet</li>
+            @endforelse
+        </ul>
+    </aside>
     </div>
 @endsection
 
@@ -384,6 +425,9 @@
             const tempBanner = document.getElementById('scan-temp-banner');
             const tempText = document.getElementById('scan-temp-banner-text');
             const tempRegister = document.getElementById('scan-temp-register');
+            const unauthBanner = document.getElementById('scan-unauthorized-banner');
+            const unauthText = document.getElementById('scan-unauthorized-text');
+            const unauthUid = document.getElementById('scan-unauthorized-uid');
             if (tempBanner) {
                 if (latest.is_temporary) {
                     tempBanner.classList.remove('hidden');
@@ -401,6 +445,21 @@
                     }
                 } else {
                     tempBanner.classList.add('hidden');
+                }
+            }
+            if (unauthBanner) {
+                if (latest.is_unauthorized) {
+                    unauthBanner.classList.remove('hidden');
+                    if (unauthText) {
+                        unauthText.textContent = latest.reason || 'Unknown RFID tag — no registered user';
+                    }
+                    if (unauthUid) {
+                        unauthUid.textContent = latest.rfid_uid_full && latest.rfid_uid_full !== '—'
+                            ? ('UID: ' + latest.rfid_uid_full)
+                            : '';
+                    }
+                } else {
+                    unauthBanner.classList.add('hidden');
                 }
             }
 
@@ -526,6 +585,31 @@
             }
             lastScanAt = scan.time || lastScanAt;
             showScanCard(scan);
+            // Optimistic update of the right-side feed before the next poll.
+            if (recentList) {
+                const existing = Array.from(recentList.querySelectorAll('[data-log-id]')).map((el) => el.getAttribute('data-log-id'));
+                if (!existing.includes(String(scan.id))) {
+                    const feedItem = {
+                        id: scan.id,
+                        name: scan.name || 'Unknown Tag',
+                        time: scan.time || '—',
+                        action: scan.action,
+                        granted: !!scan.granted,
+                        is_unauthorized: !!scan.is_unauthorized,
+                    };
+                    const current = [feedItem].concat(
+                        Array.from(recentList.querySelectorAll('[data-log-id]')).slice(0, 9).map((el) => ({
+                            id: el.getAttribute('data-log-id'),
+                            name: el.querySelector('.font-semibold')?.textContent || 'Unknown Tag',
+                            time: el.querySelector('.text-xs')?.textContent || '—',
+                            action: el.querySelector('.rounded-full')?.textContent || '—',
+                            granted: true,
+                            is_unauthorized: el.className.includes('bg-red-50'),
+                        }))
+                    );
+                    renderRecentLogs(current);
+                }
+            }
             // A successful scan implies the board was online; heartbeat poll will confirm.
             setEsp32Status(true);
         };
@@ -667,6 +751,40 @@
             setEsp32Status(entryOnline);
         };
 
+        const recentList = document.getElementById('gate-recent-list');
+        const actionBadgeClass = (item) => {
+            if (item.is_unauthorized) return 'bg-red-100 text-red-700';
+            const a = String(item.action || '');
+            if (a.toLowerCase() === 'entry') return 'bg-emerald-50 text-emerald-700';
+            if (a.toLowerCase() === 'exit') return 'bg-blue-50 text-blue-700';
+            return 'bg-gray-100 text-gray-600';
+        };
+
+        const renderRecentLogs = (items) => {
+            if (!recentList || !Array.isArray(items)) return;
+            if (items.length === 0) {
+                recentList.innerHTML = '<li class="px-3 py-10 text-center text-sm text-gray-500">No scans yet</li>';
+                return;
+            }
+            recentList.innerHTML = items.slice(0, 10).map((item) => {
+                const unk = !!item.is_unauthorized;
+                const rowClass = unk
+                    ? 'border border-red-200 bg-red-50'
+                    : 'hover:bg-gray-50';
+                const nameClass = unk ? 'text-red-800' : 'text-gray-900';
+                const badge = unk ? 'UNK' : (item.action || '—');
+                const name = String(item.name || 'Unknown Tag').replace(/</g, '&lt;');
+                const time = String(item.time || '—').replace(/</g, '&lt;');
+                return `<li class="flex items-center justify-between gap-2 rounded-xl px-3 py-2.5 text-sm ${rowClass}" data-log-id="${item.id}">
+                    <div class="min-w-0">
+                        <p class="truncate font-semibold ${nameClass}">${name}</p>
+                        <p class="text-xs text-gray-500">${time}</p>
+                    </div>
+                    <span class="shrink-0 rounded-full px-2.5 py-1 text-[11px] font-bold uppercase ${actionBadgeClass(item)}">${badge}</span>
+                </li>`;
+            }).join('');
+        };
+
         const refreshGateHardware = async () => {
             if (!statusUrl || document.hidden) return;
             try {
@@ -674,6 +792,9 @@
                 if (!res.ok) return;
                 const data = await res.json();
                 paintGates(data.gates || []);
+                if (Array.isArray(data.recent_logs)) {
+                    renderRecentLogs(data.recent_logs);
+                }
                 // HTTP fallback when Reverb/Echo drops — profile card still updates.
                 if (data.latest_scan?.id) {
                     handleScan(data.latest_scan);

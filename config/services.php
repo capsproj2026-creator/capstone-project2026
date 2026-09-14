@@ -60,7 +60,7 @@ return [
         'allow_exit_without_entry' => filter_var(env('RFID_ALLOW_EXIT_WITHOUT_ENTRY', false), FILTER_VALIDATE_BOOLEAN),
         // Unknown RFID at Entry: unregistered student/faculty get a one-time gate pass
         // until they complete vehicle registration (visitors use VisitorRfidCard).
-        'temp_access_enabled' => filter_var(env('RFID_TEMP_ACCESS_ENABLED', true), FILTER_VALIDATE_BOOLEAN),
+        'temp_access_enabled' => filter_var(env('RFID_TEMP_ACCESS_ENABLED', false), FILTER_VALIDATE_BOOLEAN),
         'temp_access_hours' => max(1, (int) env('RFID_TEMP_ACCESS_HOURS', 5)),
         'temp_access_max' => max(1, (int) env('RFID_TEMP_ACCESS_MAX', 3)),
     ],

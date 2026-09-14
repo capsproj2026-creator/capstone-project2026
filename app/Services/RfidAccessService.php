@@ -74,31 +74,27 @@ class RfidAccessService
 
     private function processUnknownCard(string $uid, string $gateId, string $direction): array
     {
-        $temps = app(TemporaryRfidService::class);
+        // Unregistered RFID: log with null user fields — never create placeholder users.
+        $log = $this->logDeniedAttempt(
+            null,
+            null,
+            $uid,
+            $gateId,
+            $direction,
+            self::STATUS_CARD_NOT_REGISTERED,
+            'RFID card is not registered in the system.'
+        );
 
-        if (! $temps->enabled() || $direction !== 'Entry') {
-            $log = $this->logDeniedAttempt(null, null, $uid, $gateId, $direction, self::STATUS_CARD_NOT_REGISTERED, 'RFID card is not registered in the system.');
-
-            return $this->response(self::STATUS_CARD_NOT_REGISTERED, 'card_not_registered', false, $direction, $gateId, 'RFID card is not registered in the system.', null, $log->id);
-        }
-
-        $key = $temps->identityKeyForUid($uid);
-        if ($temps->countForIdentity($key) >= $temps->maxAccounts()) {
-            $log = $this->logDeniedAttempt(null, null, $uid, $gateId, $direction, self::STATUS_DENIED, TemporaryRfidService::LIMIT_MESSAGE);
-
-            return $this->response(self::STATUS_DENIED, 'access_denied', false, $direction, $gateId, TemporaryRfidService::LIMIT_MESSAGE, null, $log->id);
-        }
-
-        try {
-            $user = $temps->createForUid($uid);
-        } catch (\Throwable $e) {
-            $message = $e->getMessage() !== '' ? $e->getMessage() : TemporaryRfidService::LIMIT_MESSAGE;
-            $log = $this->logDeniedAttempt(null, null, $uid, $gateId, $direction, self::STATUS_DENIED, $message);
-
-            return $this->response(self::STATUS_DENIED, 'access_denied', false, $direction, $gateId, $message, null, $log->id);
-        }
-
-        return $this->processTemporaryUser($user->fresh(['role', 'vehicleType']) ?? $user, $uid, $gateId, $direction);
+        return $this->response(
+            self::STATUS_CARD_NOT_REGISTERED,
+            'card_not_registered',
+            false,
+            $direction,
+            $gateId,
+            'RFID card is not registered in the system.',
+            null,
+            $log->id
+        );
     }
 
     private function processRemedialUser(User $user, string $uid, string $gateId, string $direction): array

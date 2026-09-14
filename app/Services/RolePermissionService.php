@@ -33,7 +33,7 @@ class RolePermissionService
     {
         return [
             'manage_users' => ['admin' => true, 'security_head' => true, 'guard' => false],
-            'log_violations' => ['admin' => true, 'security_head' => true, 'guard' => true],
+            'log_violations' => ['admin' => false, 'security_head' => false, 'guard' => true],
             'clear_penalties' => ['admin' => true, 'security_head' => true, 'guard' => false],
             'view_reports' => ['admin' => true, 'security_head' => true, 'guard' => true],
             'manage_parking' => ['admin' => true, 'security_head' => true, 'guard' => false],

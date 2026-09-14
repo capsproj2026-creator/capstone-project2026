@@ -38,6 +38,10 @@ class SettingsController extends Controller
             $section = 'general';
         }
 
+        if ($section === 'violations') {
+            \App\Support\TrafficViolations::syncToDatabase();
+        }
+
         return view('admin.settings', [
             'section' => $section,
             'systemSettings' => $settings->all(),
@@ -453,29 +457,25 @@ class SettingsController extends Controller
 
     public function storeViolationType(Request $request): RedirectResponse
     {
-        $validated = $request->validate([
-            'violation_name' => ['required', 'string', 'max:255'],
-            'description' => ['required', 'string', 'max:500'],
-        ]);
-
-        ViolationType::query()->create([
-            'id' => SequenceService::next('violation_types'),
-            'violation_name' => $validated['violation_name'],
-            'description' => $validated['description'],
-            'status' => 'Active',
-        ]);
-
         return redirect()
             ->route('admin.settings', ['section' => 'violations'])
-            ->with('success', 'Violation type added.');
+            ->with('error', 'Violation types are fixed by campus policy (CSPC Ref. No. 2026-021). You can edit descriptions or toggle active status only.');
     }
 
     public function updateViolationType(Request $request, int $id): RedirectResponse
     {
         $type = ViolationType::query()->where('id', $id)->firstOrFail();
+        $official = \App\Support\TrafficViolations::names();
+        if (! in_array((string) $type->violation_name, $official, true)) {
+            \App\Support\TrafficViolations::syncToDatabase();
+
+            return redirect()
+                ->route('admin.settings', ['section' => 'violations'])
+                ->with('error', 'Legacy violation type removed. Official list restored.');
+        }
 
         $validated = $request->validate([
-            'violation_name' => ['required', 'string', 'max:255'],
+            'violation_name' => ['required', 'string', 'max:255', Rule::in($official)],
             'description' => ['required', 'string', 'max:500'],
         ]);
 
@@ -538,11 +538,8 @@ class SettingsController extends Controller
 
     public function destroyViolationType(int $id): RedirectResponse
     {
-        $type = ViolationType::query()->where('id', $id)->firstOrFail();
-        $type->delete();
-
         return redirect()
             ->route('admin.settings', ['section' => 'violations'])
-            ->with('success', 'Violation type deleted.');
+            ->with('error', 'Official traffic violation types cannot be deleted.');
     }
 }

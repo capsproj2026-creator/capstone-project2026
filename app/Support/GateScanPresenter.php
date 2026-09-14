@@ -19,10 +19,11 @@ class GateScanPresenter
         $user = $log->user;
         $visitor = $log->visitor;
         $isVisitor = (bool) $visitor && ! $user;
+        $isUnauthorized = ! $user && ! $visitor && strcasecmp((string) ($log->action ?? ''), 'Override') !== 0;
 
         $name = $isVisitor
             ? $visitor->displayName()
-            : ($user?->displayName() ?? 'Unknown card');
+            : ($user?->displayName() ?? 'Unknown Tag');
         $granted = $log->accessGranted();
         $strikes = (int) ($user?->strike_count ?? 0);
 
@@ -31,7 +32,7 @@ class GateScanPresenter
                 ->filter()
                 ->map(fn ($w) => mb_substr($w, 0, 1))
                 ->take(2)
-                ->join('') ?: 'U'
+                ->join('') ?: ($isUnauthorized ? '?' : 'U')
         );
 
         $isTemporary = (bool) $user?->isTemporaryAccount();
@@ -48,6 +49,7 @@ class GateScanPresenter
 
         if (strcasecmp($action, 'Override') === 0) {
             $name = $user?->displayName() ?? 'Guard override';
+            $isUnauthorized = false;
         }
 
         $plate = $isVisitor ? ($visitor->plate_number ?? null) : ($user?->plate_number ?? null);
@@ -62,13 +64,14 @@ class GateScanPresenter
             'log_number' => $log->daily_log_id ?? (string) $log->getKey(),
             'name' => $name,
             'initials' => $initials,
-            'profile_picture_url' => $user
-                ? $user->profilePictureUrl()
-                : 'https://ui-avatars.com/api/?name='.urlencode($name).'&background='.($isVisitor ? '0d9488' : '64748b').'&color=fff&size=256',
-            'role' => $isVisitor ? 'Visitor' : ($user?->gateRoleLabel() ?? 'Unknown'),
+            'profile_picture_url' => $user ? $user->profilePictureUrl() : '',
+            'role' => $isUnauthorized
+                ? 'Unknown Tag'
+                : ($isVisitor ? 'Visitor' : ($user?->gateRoleLabel() ?? 'Unknown')),
             'is_visitor' => $isVisitor,
             'is_temporary' => $isTemporary,
             'is_remedial' => $isRemedial,
+            'is_unauthorized' => $isUnauthorized,
             'temporary_expires_at' => $isTemporary ? $user?->temporary_expires_at?->toIso8601String() : null,
             'remedial_expires_at' => $isRemedial ? $user?->remedial_expires_at?->toIso8601String() : null,
             'temporary_message' => $isTemporary
@@ -89,7 +92,7 @@ class GateScanPresenter
             'rfid_uid' => $uid === '' ? null : '••••'.substr($uid, -4),
             'rfid_uid_full' => $log->displayRfid(),
             'reason' => $log->displayReason(),
-            'status_label' => $statusLabel,
+            'status_label' => $isUnauthorized ? 'Unauthorized Access' : $statusLabel,
             'strike_count' => $violationInfo['strike_count'],
             'has_violations' => $violationInfo['has_violations'],
             'violation_count' => $violationInfo['violation_count'],
@@ -112,6 +115,25 @@ class GateScanPresenter
         }
 
         return $payload;
+    }
+
+    /**
+     * Compact feed item for the Live Gate Monitor recent-logs panel.
+     *
+     * @return array{id: string, name: string, time: string|null, action: string|null, granted: bool, is_unauthorized: bool}
+     */
+    public static function feedItem(GateLog $log): array
+    {
+        $full = self::fromLog($log, withStats: false);
+
+        return [
+            'id' => $full['id'],
+            'name' => $full['name'],
+            'time' => $full['time'],
+            'action' => $full['action'],
+            'granted' => (bool) $full['granted'],
+            'is_unauthorized' => (bool) ($full['is_unauthorized'] ?? false),
+        ];
     }
 
     /**

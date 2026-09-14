@@ -3,11 +3,13 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
+use App\Models\GateLog;
 use App\Models\User;
 use App\Services\NavigationService;
 use App\Services\RfidAccessService;
 use App\Services\TemporaryRfidService;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
@@ -122,6 +124,46 @@ class RfidController extends Controller
             'users' => $users,
             'search' => $search,
             'stats' => $stats,
+            'latestUnregisteredUrl' => route('admin.rfid.latest-unregistered'),
+        ]);
+    }
+
+    /**
+     * Latest gate tap for an unknown RFID — used to auto-fill Assign RFID modal.
+     */
+    public function latestUnregistered(RfidAccessService $rfid): JsonResponse
+    {
+        $log = GateLog::query()
+            ->whereNull('user_id')
+            ->whereNull('visitor_id')
+            ->whereNotNull('rfid_uid')
+            ->where('rfid_uid', '!=', '')
+            ->where(function ($q) {
+                $q->where('result', RfidAccessService::STATUS_CARD_NOT_REGISTERED)
+                    ->orWhere('result', RfidAccessService::STATUS_DENIED);
+            })
+            ->orderByDesc('timestamp')
+            ->first();
+
+        if (! $log) {
+            return response()->json(['ok' => true, 'uid' => null]);
+        }
+
+        $uid = $rfid->normalizeUid((string) $log->rfid_uid);
+        if (strlen($uid) < 6) {
+            return response()->json(['ok' => true, 'uid' => null]);
+        }
+
+        // Only surface scans from the last 10 minutes so old taps don't stick.
+        $fresh = $log->timestamp && $log->timestamp->greaterThan(now()->subMinutes(10));
+
+        return response()->json([
+            'ok' => true,
+            'uid' => $fresh ? $uid : null,
+            'gate_id' => $log->gate_id,
+            'action' => $log->action,
+            'scanned_at' => $log->timestamp?->toIso8601String(),
+            'log_id' => (string) $log->getKey(),
         ]);
     }
 
@@ -205,7 +247,7 @@ class RfidController extends Controller
     {
         $validated = $request->validate([
             'user_id' => ['required', 'integer', Rule::exists(User::class, 'id')],
-            'action' => ['required', 'in:grant,deny,assign_uid'],
+            'action' => ['required', 'in:grant,deny,assign_uid,restore'],
             'rfid_uid' => ['nullable', 'string', 'max:64'],
             'tab' => ['nullable', 'string', Rule::in($this->allowedTabs())],
         ]);
@@ -285,6 +327,30 @@ class RfidController extends Controller
             return redirect()
                 ->route('admin.rfid', ['tab' => $tab])
                 ->with('success', "Gate access denied for {$user->displayName()}.");
+        }
+
+        if ($validated['action'] === 'restore') {
+            if ($user->isLocked()) {
+                return redirect()
+                    ->route('admin.rfid', ['tab' => $tab])
+                    ->with('error', 'Cannot restore access: this account is locked.');
+            }
+
+            if ($user->status === User::STATUS_DENIED) {
+                return redirect()
+                    ->route('admin.rfid', ['tab' => $tab])
+                    ->with('error', 'Registration is denied. Re-approve the registration first, then restore gate access.');
+            }
+
+            $nextGate = filled($user->rfid_uid)
+                ? User::GATE_ACCESS_GRANTED
+                : User::GATE_ACCESS_PENDING;
+
+            $user->update(['Gate_access' => $nextGate]);
+
+            return redirect()
+                ->route('admin.rfid', ['tab' => $tab])
+                ->with('success', "Gate access restored for {$user->displayName()}.");
         }
 
         return redirect()->route('admin.rfid', ['tab' => $tab]);

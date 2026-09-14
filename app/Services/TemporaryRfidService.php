@@ -7,9 +7,8 @@ use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
 
 /**
- * One-time gate pass for a student or faculty member who has not registered yet.
- * Unknown Entry UIDs create a pending Student/Staff placeholder (not a visitor).
- * Visitors use VisitorRfidCard instead.
+ * Legacy helpers for temporary RFID placeholder accounts.
+ * New unknown-card scans no longer create users — see RfidAccessService::processUnknownCard().
  */
 class TemporaryRfidService
 {

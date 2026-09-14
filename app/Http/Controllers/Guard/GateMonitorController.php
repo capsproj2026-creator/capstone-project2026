@@ -6,27 +6,30 @@ use App\Http\Controllers\Controller;
 use App\Models\GateLog;
 use App\Services\GateHardwareService;
 use App\Services\GateLogService;
+use App\Support\GateScanPresenter;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
 use Illuminate\View\View;
+use InvalidArgumentException;
 
 class GateMonitorController extends Controller
 {
     public function index(Request $request): View
     {
         $action = $this->actionFromRequest($request);
-        $logs = $this->filteredLogs($action);
+        $logs = $this->filteredLogs($action, 10);
         $latestLog = $logs->first();
         $initialLatestScan = null;
         if ($latestLog) {
             // Seed client knownLatestId only — do not auto-display an old card on page load.
-            $initialLatestScan = \App\Support\GateScanPresenter::fromLog($latestLog, withStats: true);
+            $initialLatestScan = GateScanPresenter::fromLog($latestLog, withStats: true);
         }
 
         return view('guard.gate-monitor', [
             'recentLogs' => $logs,
+            'recentFeed' => $logs->map(fn (GateLog $log) => GateScanPresenter::feedItem($log))->values()->all(),
             'latestLog' => $latestLog,
             'initialLatestScan' => $initialLatestScan,
             'todayEntries' => app(GateLogService::class)->todayCount('Entry'),
@@ -55,14 +58,24 @@ class GateMonitorController extends Controller
             $ts = $latestLog->timestamp;
             $fresh = $ts && $ts->greaterThan(now()->subMinutes(5));
             if ($fresh) {
-                $latestScan = \App\Support\GateScanPresenter::fromLog($latestLog, withStats: true);
+                $latestScan = GateScanPresenter::fromLog($latestLog, withStats: true);
             }
         }
+
+        $recent = GateLog::query()
+            ->with(['user.role', 'visitor'])
+            ->orderByDesc('timestamp')
+            ->limit(10)
+            ->get()
+            ->map(fn (GateLog $log) => GateScanPresenter::feedItem($log))
+            ->values()
+            ->all();
 
         return response()->json([
             'ok' => true,
             'gates' => $hardware->statuses(),
             'latest_scan' => $latestScan,
+            'recent_logs' => $recent,
         ]);
     }
 
@@ -146,10 +159,10 @@ class GateMonitorController extends Controller
     /**
      * @return Collection<int, GateLog>
      */
-    private function filteredLogs(string $action, int $limit = 50): Collection
+    private function filteredLogs(string $action, int $limit = 10): Collection
     {
         $query = GateLog::query()
-            ->with(['user.role'])
+            ->with(['user.role', 'visitor'])
             ->orderByDesc('timestamp');
 
         if ($action !== '') {

@@ -230,16 +230,30 @@
                                         </button>
                                     @endif
 
-                                    @if (! $isDenied)
+                                    @if ($isDenied && ! $isLocked)
+                                        <form method="POST" action="{{ route('admin.rfid.update') }}" class="w-full">
+                                            @csrf
+                                            <input type="hidden" name="user_id" value="{{ $u->id }}">
+                                            <input type="hidden" name="tab" value="{{ $activeFilter }}" data-rfid-tab-input>
+                                            <input type="hidden" name="action" value="restore">
+                                            <button type="submit"
+                                                class="inline-flex w-full items-center justify-center gap-1.5 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-700 hover:bg-emerald-100"
+                                                onclick="return confirm('Restore gate access for {{ addslashes($u->displayName()) }}?')">
+                                                <i data-lucide="undo-2" class="h-3.5 w-3.5"></i>
+                                                Restore Access
+                                            </button>
+                                        </form>
+                                    @elseif (! $isDenied && ! $isLocked)
                                         <form method="POST" action="{{ route('admin.rfid.update') }}" class="w-full">
                                             @csrf
                                             <input type="hidden" name="user_id" value="{{ $u->id }}">
                                             <input type="hidden" name="tab" value="{{ $activeFilter }}" data-rfid-tab-input>
                                             <input type="hidden" name="action" value="deny">
                                             <button type="submit"
-                                                class="inline-flex w-full items-center justify-center rounded-lg border border-red-200 px-3 py-2 text-xs font-semibold text-red-600 hover:bg-red-50"
+                                                class="inline-flex w-full items-center justify-center gap-1.5 rounded-lg border border-red-200 bg-white px-3 py-2 text-xs font-semibold text-red-600 hover:bg-red-50"
                                                 onclick="return confirm('Deny gate access for {{ addslashes($u->displayName()) }}?')">
-                                                Deny
+                                                <i data-lucide="ban" class="h-3.5 w-3.5"></i>
+                                                Deny Access
                                             </button>
                                         </form>
                                     @endif
@@ -298,10 +312,10 @@
 
                 <div class="mt-5">
                     <label for="assign-rfid-uid" class="mb-1.5 block text-sm font-semibold text-gray-900">
-                        RFID Tag Number <span class="text-red-500">*</span>
+                        RFID Tag UID <span class="text-red-500">*</span>
                     </label>
                     <p id="assign-rfid-current" class="mb-2 hidden text-xs text-emerald-700">
-                        Currently linked — enter a new UID only if replacing the tag.
+                        Currently linked — scan a new tag only if replacing it.
                     </p>
                     <div class="relative">
                         <span class="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400">
@@ -314,11 +328,23 @@
                             required
                             autocomplete="off"
                             spellcheck="false"
-                            placeholder="Enter RFID tag number (e.g., RFID-001)"
-                            class="w-full rounded-xl border border-blue-200 bg-white py-2.5 pl-10 pr-3 text-sm text-gray-900 placeholder:text-gray-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                            inputmode="text"
+                            data-no-clear
+                            placeholder="Tap card"
+                            class="w-full rounded-xl border border-blue-200 bg-white py-2.5 pl-10 pr-3 font-mono text-sm uppercase tracking-wide text-gray-900 placeholder:normal-case placeholder:tracking-normal placeholder:text-gray-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                         >
                     </div>
-                    <p class="mt-1.5 text-xs text-gray-400">Scan or manually enter the RFID tag number</p>
+                    <p id="assign-rfid-scan-hint" class="mt-1.5 text-xs text-gray-500">
+                        Scan the physical RFID card at the gate or USB reader while this dialog is open — no need to type. Example UID: <span class="font-mono font-semibold text-gray-700">5AB48FF8</span>
+                    </p>
+                    <button
+                        type="button"
+                        id="assign-rfid-use-latest"
+                        class="mt-2 inline-flex w-full items-center justify-center gap-2 rounded-xl border border-dashed border-blue-300 bg-blue-50/60 px-3 py-2 text-xs font-semibold text-blue-800 hover:bg-blue-50"
+                    >
+                        <i data-lucide="scan-line" class="h-3.5 w-3.5"></i>
+                        Use last unregistered gate scan UID
+                    </button>
                 </div>
 
                 <div class="mt-4 rounded-xl border border-blue-100 bg-blue-50 px-4 py-3 text-sm text-blue-800">
@@ -417,12 +443,14 @@
         searchInput?.addEventListener('input', applyView);
         applyView();
 
-        // Assign modal
+        // Assign modal — auto-fill from gate API scans + USB keyboard-wedge readers
         const modal = document.getElementById('assign-rfid-modal');
         const form = document.getElementById('assign-rfid-form');
         const input = document.getElementById('assign-rfid-uid');
         const submitBtn = document.getElementById('assign-rfid-submit');
+        const scanHint = document.getElementById('assign-rfid-scan-hint');
         const approveTemplate = @json(route('admin.rfid.approve', ['id' => '__ID__']));
+        const latestUnregisteredUrl = @json($latestUnregisteredUrl ?? route('admin.rfid.latest-unregistered'));
 
         const initials = (name) => {
             const parts = String(name || '').trim().split(/\s+/).filter(Boolean);
@@ -430,8 +458,80 @@
             return parts.slice(0, 2).map((p) => p.charAt(0).toUpperCase()).join('');
         };
 
+        const normalizeUid = (raw) => String(raw || '')
+            .replace(/^\s*UID\s*:\s*/i, '')
+            .toUpperCase()
+            .replace(/[^A-F0-9]/g, '');
+
+        /** Reject masked gate payloads like ••••8FF8 (only last 4 hex digits). */
+        const isFullUid = (raw) => {
+            const uid = normalizeUid(raw);
+            return uid.length >= 6;
+        };
+
         const syncSubmitState = () => {
-            if (submitBtn) submitBtn.disabled = !(input?.value || '').trim().length;
+            if (submitBtn) submitBtn.disabled = !isFullUid(input?.value || '');
+        };
+
+        const setUidValue = (raw, source) => {
+            if (!input) return false;
+            if (!isFullUid(raw)) return false;
+            const uid = normalizeUid(raw);
+            input.value = uid;
+            syncSubmitState();
+            input.classList.add('ring-2', 'ring-emerald-400');
+            window.setTimeout(() => input.classList.remove('ring-2', 'ring-emerald-400'), 800);
+            if (scanHint) {
+                scanHint.innerHTML = source === 'gate'
+                    ? `Captured from gate scan: <span class="font-mono font-semibold">${uid}</span>`
+                    : `Captured from reader: <span class="font-mono font-semibold">${uid}</span>`;
+                scanHint.classList.remove('text-gray-400', 'text-amber-700');
+                scanHint.classList.add('text-emerald-700');
+            }
+            return true;
+        };
+
+        let scanBuffer = '';
+        let scanTimer = null;
+        let gatePollTimer = null;
+        let lastGateLogId = '';
+        // USB/keyboard-wedge readers often pause 50–150ms between characters.
+        const USB_SCAN_GAP_MS = 400;
+
+        const isModalOpen = () => modal && !modal.classList.contains('hidden');
+
+        const pullLatestGateUid = async () => {
+            if (!isModalOpen() || !latestUnregisteredUrl) return;
+            try {
+                const res = await fetch(latestUnregisteredUrl, {
+                    headers: { Accept: 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
+                    credentials: 'same-origin',
+                    cache: 'no-store',
+                });
+                if (!res.ok) return;
+                const data = await res.json();
+                if (!data?.uid || !isFullUid(data.uid)) return;
+                const logId = String(data.log_id || '');
+                const empty = !(input?.value || '').trim();
+                if (empty || (logId && logId !== lastGateLogId)) {
+                    if (setUidValue(data.uid, 'gate')) {
+                        lastGateLogId = logId || lastGateLogId;
+                    }
+                }
+            } catch (e) { /* ignore */ }
+        };
+
+        const startGatePoll = () => {
+            stopGatePoll();
+            pullLatestGateUid();
+            gatePollTimer = window.setInterval(pullLatestGateUid, 300);
+        };
+
+        const stopGatePoll = () => {
+            if (gatePollTimer) {
+                clearInterval(gatePollTimer);
+                gatePollTimer = null;
+            }
         };
 
         const openModal = (btn) => {
@@ -445,35 +545,133 @@
             const currentHint = document.getElementById('assign-rfid-current');
             const hasExisting = Boolean((btn.dataset.rfid || '').trim());
             if (currentHint) currentHint.classList.toggle('hidden', !hasExisting);
-            if (input) {
-                // Keep UID in the input for assignment/update, but do not echo it in the list UI.
-                input.value = btn.dataset.rfid || '';
-                input.focus();
+            scanBuffer = '';
+            lastGateLogId = '';
+            if (input) input.value = '';
+            if (scanHint) {
+                scanHint.innerHTML = 'Scan the physical RFID card at the gate or USB reader while this dialog is open — no need to type. Example UID: <span class="font-mono font-semibold text-gray-700">5AB48FF8</span>';
+                scanHint.classList.add('text-gray-500');
+                scanHint.classList.remove('text-emerald-700', 'text-amber-700', 'text-gray-400');
             }
             if (submitBtn) submitBtn.textContent = btn.dataset.mode === 'update' ? 'Update & Notify' : 'Assign & Notify';
             syncSubmitState();
             modal?.classList.remove('hidden');
             modal?.classList.add('flex');
             if (window.lucide) window.lucide.createIcons();
+            window.setTimeout(() => input?.focus({ preventScroll: true }), 50);
+            startGatePoll();
         };
 
         const closeModal = () => {
+            stopGatePoll();
             modal?.classList.add('hidden');
             modal?.classList.remove('flex');
             if (form) form.reset();
+            scanBuffer = '';
+            if (scanTimer) {
+                clearTimeout(scanTimer);
+                scanTimer = null;
+            }
             syncSubmitState();
         };
+
+        // USB / keyboard-wedge RFID: capture globally while modal is open.
+        document.addEventListener('keydown', (e) => {
+            if (!isModalOpen()) return;
+            if (e.key === 'Escape') {
+                closeModal();
+                return;
+            }
+            if (e.ctrlKey || e.metaKey || e.altKey) return;
+
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                if (scanTimer) {
+                    clearTimeout(scanTimer);
+                    scanTimer = null;
+                }
+                const candidate = scanBuffer.length >= 6 ? scanBuffer : (input?.value || '');
+                if (isFullUid(candidate)) {
+                    setUidValue(candidate, 'usb');
+                }
+                scanBuffer = '';
+                return;
+            }
+            if (e.key === 'Backspace') {
+                if (document.activeElement === input) return;
+                e.preventDefault();
+                scanBuffer = scanBuffer.slice(0, -1);
+                if (input) {
+                    input.value = normalizeUid(scanBuffer) || scanBuffer.toUpperCase();
+                    syncSubmitState();
+                }
+                return;
+            }
+            if (e.key.length !== 1) return;
+
+            // Always capture into the UID field (even if another control has focus).
+            e.preventDefault();
+            e.stopPropagation();
+            scanBuffer += e.key;
+            if (input) {
+                input.value = normalizeUid(scanBuffer) || scanBuffer.toUpperCase();
+                syncSubmitState();
+            }
+            if (scanTimer) clearTimeout(scanTimer);
+            scanTimer = window.setTimeout(() => {
+                if (isFullUid(scanBuffer)) {
+                    setUidValue(scanBuffer, 'usb');
+                }
+                // Keep buffer only if still incomplete — do not wipe a partial UID mid-scan.
+                if (isFullUid(scanBuffer) || scanBuffer.length === 0) {
+                    scanBuffer = '';
+                }
+                scanTimer = null;
+            }, USB_SCAN_GAP_MS);
+        }, true);
+
+        // Live gate scans via Reverb (same channel as Live Gate Monitor).
+        window.whenEchoReady?.((echo) => {
+            if (!echo) return;
+            echo.private('gate.scans').listen('.GateScanProcessed', (scan) => {
+                if (!isModalOpen()) return;
+                // Prefer full UID from unauthorized / unknown-tag scans only.
+                if (scan && scan.is_unauthorized === false && scan.granted) return;
+                const full = (scan?.rfid_uid_full && scan.rfid_uid_full !== '—')
+                    ? scan.rfid_uid_full
+                    : '';
+                if (full && isFullUid(full) && setUidValue(full, 'gate')) {
+                    lastGateLogId = String(scan.id || lastGateLogId);
+                }
+            });
+        });
 
         document.querySelectorAll('.js-assign-rfid').forEach((btn) => {
             btn.addEventListener('click', () => openModal(btn));
         });
         document.getElementById('assign-rfid-close')?.addEventListener('click', closeModal);
         document.getElementById('assign-rfid-cancel')?.addEventListener('click', closeModal);
-        modal?.addEventListener('click', (e) => { if (e.target === modal) closeModal(); });
-        document.addEventListener('keydown', (e) => {
-            if (e.key === 'Escape' && modal && !modal.classList.contains('hidden')) closeModal();
+        document.getElementById('assign-rfid-use-latest')?.addEventListener('click', async () => {
+            lastGateLogId = ''; // force refill from latest scan
+            if (input) input.value = '';
+            await pullLatestGateUid();
+            if (!(input?.value || '').trim() && scanHint) {
+                scanHint.textContent = 'No recent unregistered gate scan found. Tap the card at the Entry/Exit reader, wait 1 second, then try again.';
+                scanHint.classList.remove('text-gray-400', 'text-gray-500', 'text-emerald-700');
+                scanHint.classList.add('text-amber-700');
+            }
+            input?.focus({ preventScroll: true });
         });
-        input?.addEventListener('input', syncSubmitState);
+        modal?.addEventListener('click', (e) => { if (e.target === modal) closeModal(); });
+        input?.addEventListener('input', () => {
+            const cleaned = normalizeUid(input.value);
+            if (cleaned && cleaned !== input.value) {
+                const pos = input.selectionStart;
+                input.value = cleaned;
+                try { input.setSelectionRange(pos, pos); } catch (e) {}
+            }
+            syncSubmitState();
+        });
         syncSubmitState();
     });
 </script>

@@ -84,8 +84,8 @@ Write-Host ""
 
 Set-Location $Root
 Write-Host "Checking MongoDB (capstone)..." -ForegroundColor Cyan
-php artisan config:clear | Out-Null
-php scripts/mongo_ping.php 2>$null
+& php artisan config:clear *> $null
+& php scripts/mongo_ping.php *> $null
 if ($LASTEXITCODE -ne 0) {
     Write-Host ""
     Write-Host "MongoDB is not connected." -ForegroundColor Red
@@ -106,12 +106,17 @@ if (-not $SkipWebStack) {
     if (-not (Test-HttpOk $laravelUrl)) {
         Write-Host ""
         Write-Host "Starting website stack (Laravel + Reverb + Vite)..." -ForegroundColor Cyan
-        $sysArgs = @("-SkipAi")
+        $sysArgs = @("-SkipAi", "-SkipMongoCheck")
         if ($SkipNgrok) { $sysArgs += "-SkipNgrok" }
         if (Test-Path (Join-Path $Root "public\build\manifest.json")) {
             $sysArgs += "-SkipVite"
         }
         & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $ScriptsDir "start-system.ps1") @sysArgs
+        if ($LASTEXITCODE -ne 0) {
+            Write-Host ""
+            Write-Host "Website stack did not start (see messages above)." -ForegroundColor Red
+            exit 1
+        }
         Write-Host "Waiting for Laravel..." -ForegroundColor DarkGray
         $ready = $false
         for ($i = 0; $i -lt 45; $i++) {

@@ -315,8 +315,8 @@
 @endsection
 
 @push('scripts')
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.8/dist/chart.umd.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0/dist/chartjs-plugin-datalabels.min.js"></script>
+<script src="{{ asset('vendor/chart.umd.min.js') }}"></script>
+<script src="{{ asset('vendor/chartjs-plugin-datalabels.min.js') }}"></script>
 <script>
 (() => {
     if (window.lucide) window.lucide.createIcons();

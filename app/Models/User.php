@@ -481,7 +481,8 @@ class User extends Authenticatable implements MustVerifyEmail
             return asset('storage/uploads/profile/'.$this->profile_pic);
         }
 
-        return 'https://ui-avatars.com/api/?name='.urlencode($this->fullname).'&background=2563eb&color=fff&size=128';
+        // Offline-safe: empty URL lets UIs fall back to local initials (no CDN).
+        return '';
     }
 
     public function uploadedDocumentPath(string $field, string $directory): ?string

@@ -58,10 +58,16 @@
 #define GATE_OPEN_MS 8000UL
 #endif
 #ifndef GATE_COOLDOWN_MS
-#define GATE_COOLDOWN_MS 2500UL
+// Short gap so a new tap is readable almost immediately (still stops double-fire on one hold).
+#define GATE_COOLDOWN_MS 400UL
+#endif
+#ifndef SAME_UID_COOLDOWN_MS
+// Same physical card left on the reader — ignore repeats a bit longer.
+#define SAME_UID_COOLDOWN_MS 900UL
 #endif
 #ifndef SCAN_BLOCK_MS
-#define SCAN_BLOCK_MS 3500UL
+// Prevents duplicate boom opens during one grant cycle (not a general "wait to scan").
+#define SCAN_BLOCK_MS 1000UL
 #endif
 #ifndef HEARTBEAT_MS
 #define HEARTBEAT_MS 1500UL
@@ -140,6 +146,7 @@ struct ScanResult {
 };
 
 unsigned long lastScanMs = 0;
+String lastUidHex = "";
 unsigned long lastHeartbeatMs = 0;
 unsigned long lastWifiRetryMs = 0;
 unsigned long wifiRetryDelayMs = 1000UL;
@@ -707,14 +714,20 @@ void loopGateClient() {
     }
   }
 
-  if (millis() - lastScanMs < GATE_COOLDOWN_MS) {
+  String uid = uidToHex(mfrc522.uid);
+
+  // Same card held on reader → short ignore. Different card → ready almost immediately.
+  const unsigned long gap = millis() - lastScanMs;
+  const bool sameCard = (lastUidHex.length() > 0 && uid.equalsIgnoreCase(lastUidHex));
+  const unsigned long needMs = sameCard ? SAME_UID_COOLDOWN_MS : GATE_COOLDOWN_MS;
+  if (gap < needMs) {
     mfrc522.PICC_HaltA();
     mfrc522.PCD_StopCrypto1();
     return;
   }
   lastScanMs = millis();
+  lastUidHex = uid;
 
-  String uid = uidToHex(mfrc522.uid);
   Serial.print("UID: ");
   Serial.println(uid);
 

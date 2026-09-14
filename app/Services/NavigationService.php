@@ -46,7 +46,7 @@ class NavigationService
             ['label' => 'Register Visitor', 'route' => 'guard.visitors.register', 'icon' => 'clipboard-plus', 'access' => ['guard']],
             ['label' => 'Active Visitors', 'route' => 'guard.visitors.active', 'icon' => 'user-round-check', 'access' => ['guard']],
             ['label' => 'Visitor History', 'route' => 'guard.visitors.history', 'icon' => 'history', 'access' => ['guard']],
-            ['label' => 'Violations', 'route' => 'guard.violations', 'icon' => 'triangle-alert', 'access' => ['guard']],
+            ['label' => 'Violations', 'route' => 'guard.violations', 'icon' => 'triangle-alert', 'access' => ['guard'], 'permission' => 'log_violations'],
             ['label' => 'Access Logs', 'route' => 'guard.access-logs', 'icon' => 'file-text', 'access' => ['guard']],
             ['label' => 'Parking', 'route' => 'guard.parking', 'icon' => 'parking-square', 'access' => ['guard']],
             ['label' => 'AI Parking Monitor', 'route' => 'guard.ai-parking', 'icon' => 'scan', 'access' => ['guard']],
@@ -59,7 +59,20 @@ class NavigationService
             ['label' => 'Parking', 'route' => 'user.parking', 'icon' => 'parking-square', 'access' => ['student', 'staff']],
         ];
 
-        return array_values(array_filter($routes, fn (array $item) => in_array($role, $item['access'], true)));
+        return array_values(array_filter($routes, function (array $item) use ($role): bool {
+            if (! in_array($role, $item['access'], true)) {
+                return false;
+            }
+
+            $permission = $item['permission'] ?? null;
+            if (! is_string($permission) || $permission === '') {
+                return true;
+            }
+
+            $user = Auth::user();
+
+            return $user ? app(RolePermissionService::class)->allows($user, $permission) : false;
+        }));
     }
 
     /**
