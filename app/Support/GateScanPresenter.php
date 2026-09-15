@@ -126,7 +126,7 @@ class GateScanPresenter
      * Compact feed item for the Live Gate Monitor In/Out Logs panel.
      *
      * @return array{
-     *   id: string, name: string, time: string|null, timestamp: string|null,
+     *   id: string, name: string, role: string|null, time: string|null, timestamp: string|null,
      *   action: string|null, plate_number: string|null, vehicle_type: string|null,
      *   granted: bool, is_unauthorized: bool, result: string|null, status_label: string|null
      * }
@@ -138,6 +138,7 @@ class GateScanPresenter
         return [
             'id' => $full['id'],
             'name' => $full['name'],
+            'role' => $full['role'] ?? null,
             'time' => $full['time'],
             'timestamp' => $full['timestamp'],
             'action' => $full['action'],

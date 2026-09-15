@@ -99,13 +99,24 @@
         p { color: #475569; font-size: 0.95rem; line-height: 1.5; margin: 0 0 24px; }
         .button-group { display: flex; flex-direction: column; gap: 12px; }
         .btn {
-            padding: 14px;
+            padding: 14px 16px;
             border-radius: 8px;
             font-size: 14px;
             font-weight: 600;
+            line-height: 1.25;
             text-decoration: none;
-            display: block;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
             cursor: pointer;
+        }
+        .btn svg,
+        .btn i {
+            width: 16px;
+            height: 16px;
+            flex-shrink: 0;
+            display: block;
         }
         .btn-login { background: #0f172a; color: #fff; }
         .btn-login:hover { background: #1e293b; }

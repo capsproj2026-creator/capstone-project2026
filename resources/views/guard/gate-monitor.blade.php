@@ -233,6 +233,16 @@
                 @php
                     $unk = ! empty($item['is_unauthorized']);
                     $act = (string) ($item['action'] ?? '');
+                    $role = trim((string) ($item['role'] ?? ''));
+                    $roleLower = strtolower($role);
+                    $roleClass = match (true) {
+                        $roleLower === 'student' => 'bg-blue-50 text-blue-700',
+                        in_array($roleLower, ['staff', 'faculty'], true) => 'bg-violet-50 text-violet-700',
+                        $roleLower === 'visitor' => 'bg-teal-50 text-teal-700',
+                        $roleLower === 'temporary' => 'bg-amber-50 text-amber-800',
+                        $unk || str_contains($roleLower, 'unknown') => 'bg-red-50 text-red-700',
+                        default => 'bg-gray-100 text-gray-600',
+                    };
                     $dirLabel = strcasecmp($act, 'Entry') === 0
                         ? 'IN'
                         : (strcasecmp($act, 'Exit') === 0 ? 'OUT' : (strcasecmp($act, 'Override') === 0 ? 'OPEN' : '—'));
@@ -262,6 +272,9 @@
                                     · {{ $item['vehicle_type'] }}
                                 @endif
                             </p>
+                            @if ($role !== '')
+                                <span class="mt-1 inline-flex rounded-full px-2 py-0.5 text-[10px] font-semibold {{ $roleClass }}">{{ $role }}</span>
+                            @endif
                         </div>
                         <span class="shrink-0 rounded-full px-2 py-0.5 text-[10px] font-bold uppercase {{ $dirClass }}">{{ $dirLabel }}</span>
                     </div>
@@ -365,9 +378,10 @@
         const roleClasses = (role) => {
             const r = String(role || '').toLowerCase();
             if (r === 'student') return 'bg-blue-50 text-blue-700';
-            if (r === 'staff') return 'bg-violet-50 text-violet-700';
+            if (r === 'staff' || r === 'faculty') return 'bg-violet-50 text-violet-700';
             if (r === 'visitor') return 'bg-teal-50 text-teal-700';
             if (r === 'temporary') return 'bg-amber-50 text-amber-800';
+            if (r.includes('unknown')) return 'bg-red-50 text-red-700';
             return 'bg-gray-100 text-gray-600';
         };
 
@@ -611,6 +625,7 @@
                 const feedItem = {
                     id: scan.id,
                     name: scan.name || 'Unknown Tag',
+                    role: scan.role || null,
                     time: scan.time || '—',
                     timestamp: scan.timestamp || scan.time || '—',
                     action: scan.action,
@@ -804,6 +819,10 @@
                 const when = String(item.timestamp || item.time || '—').replace(/</g, '&lt;');
                 const plate = String(item.plate_number || '—').replace(/</g, '&lt;');
                 const vehicle = item.vehicle_type ? ' · ' + String(item.vehicle_type).replace(/</g, '&lt;') : '';
+                const role = String(item.role || '').trim();
+                const roleHtml = role
+                    ? `<span class="mt-1 inline-flex rounded-full px-2 py-0.5 text-[10px] font-semibold ${roleClasses(role)}">${role.replace(/</g, '&lt;')}</span>`
+                    : '';
                 const dir = directionInfo(item);
                 const res = resultInfo(item);
                 return `<li class="rounded-xl px-3 py-2.5 text-sm ${rowClass}" data-log-id="${item.id}">
@@ -811,6 +830,7 @@
                         <div class="min-w-0">
                             <p class="truncate font-semibold ${nameClass}">${name}</p>
                             <p class="truncate text-xs text-gray-500">${plate}${vehicle}</p>
+                            ${roleHtml}
                         </div>
                         <span class="shrink-0 rounded-full px-2 py-0.5 text-[10px] font-bold uppercase ${dir.cls}">${dir.label}</span>
                     </div>
