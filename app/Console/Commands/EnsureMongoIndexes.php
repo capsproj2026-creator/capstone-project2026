@@ -39,6 +39,7 @@ class EnsureMongoIndexes extends Command
                 ['key' => ['created_at' => -1], 'name' => 'violations_created'],
                 ['key' => ['user_id' => 1, 'created_at' => -1], 'name' => 'violations_user_created'],
                 ['key' => ['plate_number' => 1, 'created_at' => -1], 'name' => 'violations_plate_created'],
+                ['key' => ['plate_key' => 1, 'created_at' => -1], 'name' => 'violations_plate_key_created', 'sparse' => true],
             ],
             'visitor_rfid_cards' => [
                 ['key' => ['rfid_uid' => 1], 'name' => 'visitor_cards_rfid', 'sparse' => true],

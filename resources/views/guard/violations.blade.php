@@ -5,26 +5,31 @@
 @section('content')
     @include('partials.shell.page-header', [
         'title' => 'Violation Records',
-        'subtitle' => 'Log citations against registered campus plates',
+        'subtitle' => 'Log citations for registered or unregistered plates',
     ])
 
     <div id="violation-flash" class="mb-4 hidden"></div>
 
     @if ($success)
+        @php($loggedCount = max(1, (int) request()->query('count', 1)))
         <div class="mb-4 flex gap-2 rounded-xl border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800">
             <i data-lucide="circle-check" class="mt-0.5 h-4 w-4 shrink-0"></i>
             <span>
-                Violation logged successfully.
+                @if (request()->boolean('unregistered'))
+                    {{ $loggedCount }} {{ $loggedCount === 1 ? 'violation' : 'violations' }} logged for an unregistered plate. The owner will be emailed automatically when that plate is registered.
+                @else
+                    {{ $loggedCount }} {{ $loggedCount === 1 ? 'violation' : 'violations' }} logged successfully.
+                @endif
                 @if (request()->boolean('locked'))
                     <strong>The violator's account has been permanently locked (3/3 strikes).</strong>
                 @endif
             </span>
         </div>
     @endif
-    @if ($error === 'plate_not_found')
+    @if ($error === 'invalid_plate')
         <div class="mb-4 flex gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
             <i data-lucide="alert-circle" class="mt-0.5 h-4 w-4 shrink-0"></i>
-            <span>Plate number not found in registered vehicles.</span>
+            <span>Enter a valid plate number.</span>
         </div>
     @endif
 
@@ -63,7 +68,6 @@
                         <th class="px-6 py-3 font-medium">Plate</th>
                         <th class="px-6 py-3 font-medium">Name</th>
                         <th class="px-6 py-3 font-medium">Type</th>
-                        <th class="px-6 py-3 font-medium">Camera / Area</th>
                         <th class="px-6 py-3 font-medium">Evidence</th>
                         <th class="px-6 py-3 font-medium">Date</th>
                     </tr>
@@ -73,8 +77,10 @@
                         <tr class="hover:bg-gray-50/80">
                             <td class="px-6 py-4"><code class="rounded bg-gray-100 px-1.5 py-0.5 text-xs font-semibold">{{ $row->plate_number }}</code></td>
                             <td class="px-6 py-4 font-medium text-gray-900">
-                                {{ $row->violator_name }}
-                                @if (filled($row->vehicle_details))
+                                {{ $row->violator_name ?: 'Unregistered Vehicle' }}
+                                @if (! $row->user_id)
+                                    <span class="mt-0.5 block text-xs font-normal text-amber-600">Pending owner registration</span>
+                                @elseif (filled($row->vehicle_details))
                                     <p class="mt-0.5 text-xs font-normal text-gray-500">{{ $row->vehicle_details }}</p>
                                 @endif
                             </td>
@@ -85,19 +91,13 @@
                                     @endforeach
                                 </div>
                             </td>
-                            <td class="px-6 py-4 text-xs text-gray-600">
-                                {{ $row->camera_id ?: '—' }}
-                                @if (filled($row->area_name))
-                                    <p class="mt-0.5">{{ $row->area_name }}</p>
-                                @endif
-                            </td>
                             <td class="px-6 py-4">
                                 <x-violation.evidence-panel :log="$row" route-name="guard.violations.evidence" compact />
                             </td>
                             <td class="px-6 py-4 text-gray-600">{{ ph_datetime($row->created_at) }}</td>
                         </tr>
                     @empty
-                        <tr><td colspan="6" class="px-6 py-14 text-center text-gray-500">No violations logged yet.</td></tr>
+                        <tr><td colspan="5" class="px-6 py-14 text-center text-gray-500">No violations logged yet.</td></tr>
                     @endforelse
                 </tbody>
             </table>
@@ -110,7 +110,7 @@
     <div id="violationModal" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/50 p-4">
         <div class="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-2xl bg-white p-6 shadow-xl">
             <h3 class="mb-1 text-lg font-semibold text-gray-900">Log Violation</h3>
-            <p class="mb-4 text-sm text-gray-500">{{ $registeredPlates->count() }} registered plate(s) on campus</p>
+            <p class="mb-4 text-sm text-gray-500">Enter any plate — registered owners are notified now; unregistered plates notify when registered.</p>
             <form id="violation-log-form" method="POST" action="{{ route('guard.violations.store') }}" enctype="multipart/form-data" class="space-y-4">
                 @csrf
                 <div>
@@ -122,7 +122,7 @@
                         list="registered-plates-list"
                         required
                         autocomplete="off"
-                        placeholder="Search or select plate..."
+                        placeholder="Enter plate number..."
                         class="w-full rounded-lg border border-gray-300 px-3 py-2 uppercase focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20"
                     >
                     <datalist id="registered-plates-list">
@@ -132,7 +132,7 @@
                     </datalist>
                     @if ($registeredPlates->isNotEmpty())
                         <details class="mt-2">
-                            <summary class="cursor-pointer text-xs font-medium text-blue-600">Browse all registered plates</summary>
+                            <summary class="cursor-pointer text-xs font-medium text-blue-600">Browse registered plates</summary>
                             <div class="mt-2 max-h-40 overflow-y-auto rounded-lg border border-gray-200 bg-gray-50 p-2">
                                 <ul class="space-y-1 text-xs text-gray-700">
                                     @foreach ($registeredPlates as $vehicle)
@@ -150,9 +150,8 @@
                                 </ul>
                             </div>
                         </details>
-                    @else
-                        <p class="mt-1 text-xs text-amber-600">No registered plates found. Users must register a vehicle first.</p>
                     @endif
+                    <p class="mt-1 text-xs text-gray-500">Unregistered plates are saved and emailed to the owner after they register that plate.</p>
                 </div>
                 <div>
                     <p class="mb-2 text-sm font-medium text-gray-700">Violation Type <span class="text-red-600">*</span></p>
@@ -244,7 +243,16 @@
         }
         typesError?.classList.add('hidden');
 
+        if (form.dataset.submitting === '1') {
+            return;
+        }
+        form.dataset.submitting = '1';
+
         const fd = new FormData(form);
+        // Keep only checked violation types (prevents stale/duplicate fields).
+        fd.delete('violation_types[]');
+        checked.forEach((el) => fd.append('violation_types[]', el.value));
+
         if (submitBtn) {
             submitBtn.disabled = true;
             submitBtn.textContent = 'Saving…';
@@ -262,20 +270,23 @@
             });
             const data = await res.json().catch(() => ({}));
             if (!res.ok || !data.ok) {
-                const msg = data.message || (data.error === 'plate_not_found'
-                    ? 'Plate number not found in registered vehicles.'
-                    : 'Unable to log violation.');
+                const msg = data.message || 'Unable to log violation.';
                 showFlash(false, msg);
+                form.dataset.submitting = '0';
+                if (submitBtn) {
+                    submitBtn.disabled = false;
+                    submitBtn.textContent = 'Submit';
+                }
                 return;
             }
-            showFlash(true, data.message || 'Violation logged successfully.');
+            const savedCount = Number(data.count || checked.length || 1);
+            showFlash(true, data.message || `${savedCount} violation${savedCount === 1 ? '' : 's'} logged successfully.`);
             closeModal();
             form.reset();
-            // Soft refresh list without full navigation delay when possible.
             window.setTimeout(() => { window.location.reload(); }, 400);
         } catch (err) {
             showFlash(false, 'Network error — please try again.');
-        } finally {
+            form.dataset.submitting = '0';
             if (submitBtn) {
                 submitBtn.disabled = false;
                 submitBtn.textContent = 'Submit';

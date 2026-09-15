@@ -302,6 +302,12 @@ class RegisterController extends Controller
             // User row already has plate; profile can re-add if sync failed.
         }
 
+        try {
+            app(\App\Services\ViolationPlateLinkService::class)->claimPendingForUser($user->fresh() ?? $user);
+        } catch (\Throwable $e) {
+            report($e);
+        }
+
         Notification::query()->create([
             'user_id' => $user->id,
             'sender_id' => $user->id,

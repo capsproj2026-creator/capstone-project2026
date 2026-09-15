@@ -18,6 +18,7 @@ class ViolationLog extends MongoModel
         'id_number',
         'user_type',
         'plate_number',
+        'plate_key',
         'violation_type',
         'violation_types',
         'description',
@@ -25,6 +26,7 @@ class ViolationLog extends MongoModel
         'evidence_photos',
         'guard_id',
         'status',
+        'owner_notified_at',
         'created_at',
         'camera_id',
         'area_id',
@@ -42,6 +44,7 @@ class ViolationLog extends MongoModel
             'track_id' => 'integer',
             'confidence' => 'float',
             'created_at' => 'datetime',
+            'owner_notified_at' => 'datetime',
             'evidence_photos' => 'array',
             'violation_types' => 'array',
         ];
@@ -54,13 +57,25 @@ class ViolationLog extends MongoModel
     {
         $types = $this->violation_types;
         if (is_array($types) && $types !== []) {
-            return array_values(array_filter(array_map(
+            $list = array_values(array_filter(array_map(
                 static fn ($t) => trim((string) $t),
                 $types
             )));
+            if (count($list) > 1) {
+                return array_values(array_unique($list));
+            }
+            if (count($list) === 1) {
+                return $list;
+            }
         }
 
         $single = trim((string) ($this->violation_type ?? ''));
+        if ($single !== '' && str_contains($single, ' · ')) {
+            return array_values(array_unique(array_filter(array_map(
+                'trim',
+                explode(' · ', $single)
+            ))));
+        }
 
         return $single !== '' ? [$single] : [];
     }

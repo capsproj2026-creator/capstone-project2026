@@ -94,6 +94,12 @@ class UserVehicleService
         $this->plates->syncUserVehicle($vehicle->load('vehicleType'), $user->fresh());
         PlateLookup::forgetIndex();
 
+        try {
+            app(ViolationPlateLinkService::class)->claimPendingForUser($user->fresh() ?? $user);
+        } catch (\Throwable $e) {
+            report($e);
+        }
+
         return $vehicle->load('vehicleType');
     }
 
@@ -116,6 +122,12 @@ class UserVehicleService
         $this->syncPrimaryToUser($user);
         $this->plates->syncUserVehicle($vehicle->fresh()->load('vehicleType'), $user->fresh());
         PlateLookup::forgetIndex();
+
+        try {
+            app(ViolationPlateLinkService::class)->claimPendingForUser($user->fresh() ?? $user);
+        } catch (\Throwable $e) {
+            report($e);
+        }
 
         return $vehicle->fresh()->load('vehicleType');
     }

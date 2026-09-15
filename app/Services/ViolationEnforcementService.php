@@ -47,12 +47,18 @@ class ViolationEnforcementService
         if ($autoLock && $strikes >= self::MAX_STRIKES) {
             $updates['status'] = User::STATUS_LOCKED;
             $updates['Gate_access'] = User::GATE_ACCESS_DENIED;
+        } elseif ($user->status === User::STATUS_LOCKED && $strikes < self::MAX_STRIKES) {
+            // Repair path: unlock when corrected log count drops below the lock threshold.
+            $updates['status'] = User::STATUS_GRANTED;
+            $updates['Gate_access'] = User::GATE_ACCESS_GRANTED;
         }
 
         $user->update($updates);
 
         if ($autoLock && $strikes >= self::MAX_STRIKES) {
             $this->recordPermanentSuspension($user, $strikes);
+        } elseif ($strikes < self::MAX_STRIKES) {
+            UserSuspension::query()->where('user_id', $user->id)->delete();
         }
     }
 
