@@ -2,11 +2,14 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\HasSyncMetadata;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Support\Carbon;
 
 class Visitor extends MongoModel
 {
+    use HasSyncMetadata;
+
     protected $collection = 'visitors';
 
     public const STATUS_WAITING = 'Waiting';

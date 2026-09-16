@@ -87,6 +87,7 @@ Route::middleware(['auth', 'no.cache'])->group(function () {
     Route::post('/email/verification-notification', [EmailVerificationController::class, 'send'])
         ->middleware('throttle:6,1')
         ->name('verification.send');
+    Route::get('/sync/status', [\App\Http\Controllers\SyncStatusController::class, 'status'])->name('sync.status');
 });
 
 Route::middleware(['auth', 'verified', 'granted', 'no.cache'])->group(function () {

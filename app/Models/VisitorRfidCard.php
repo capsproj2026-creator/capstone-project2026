@@ -2,10 +2,13 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\HasSyncMetadata;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class VisitorRfidCard extends MongoModel
 {
+    use HasSyncMetadata;
+
     protected $collection = 'visitor_rfid_cards';
 
     public const STATUS_AVAILABLE = 'Available';

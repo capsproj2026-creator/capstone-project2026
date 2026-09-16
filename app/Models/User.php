@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Models\Concerns\HasSequentialId;
+use App\Models\Concerns\HasSyncMetadata;
 use Illuminate\Auth\MustVerifyEmail as MustVerifyEmailTrait;
 use Illuminate\Contracts\Auth\MustVerifyEmail;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -14,6 +15,7 @@ use MongoDB\Laravel\Auth\User as Authenticatable;
 class User extends Authenticatable implements MustVerifyEmail
 {
     use HasSequentialId;
+    use HasSyncMetadata;
     use MustVerifyEmailTrait;
     use Notifiable;
 

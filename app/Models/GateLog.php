@@ -2,10 +2,13 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\HasSyncMetadata;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class GateLog extends MongoModel
 {
+    use HasSyncMetadata;
+
     protected $collection = 'gate_logs';
 
     public $timestamps = false;

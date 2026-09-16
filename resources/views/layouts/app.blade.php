@@ -253,6 +253,13 @@
 
             {{-- Main content --}}
             <main id="portal-main" class="portal-main portal-main-area min-w-0 flex-1 p-4 sm:p-6 lg:p-8">
+                <div
+                    id="sync-status-banner"
+                    class="mb-4 hidden items-center gap-2 rounded-xl border px-4 py-2.5 text-sm font-medium"
+                    role="status"
+                    aria-live="polite"
+                ></div>
+
                 @if ($errors->any())
                     <div class="portal-alert portal-alert--error mb-4">
                         <p class="font-semibold">Please fix the following:</p>
@@ -303,6 +310,57 @@
                 else if (Date.now() - started >= timeoutMs) finish(null);
             }, 50);
         };
+    </script>
+    <script>
+        (function () {
+            var banner = document.getElementById('sync-status-banner');
+            if (!banner) return;
+
+            var STYLES = {
+                online: 'border-emerald-200 bg-emerald-50 text-emerald-800',
+                offline: 'border-amber-200 bg-amber-50 text-amber-800',
+                syncing: 'border-blue-200 bg-blue-50 text-blue-800',
+                error: 'border-red-200 bg-red-50 text-red-800',
+            };
+
+            function setBanner(kind, text) {
+                Object.values(STYLES).forEach(function (cls) {
+                    cls.split(' ').forEach(function (c) { banner.classList.remove(c); });
+                });
+                if (!kind) {
+                    banner.classList.add('hidden');
+                    banner.textContent = '';
+                    return;
+                }
+                banner.classList.remove('hidden');
+                banner.classList.add('flex');
+                (STYLES[kind] || STYLES.error).split(' ').forEach(function (c) { banner.classList.add(c); });
+                banner.textContent = text;
+            }
+
+            function refreshSyncStatus() {
+                fetch('{{ route('sync.status') }}', { headers: { Accept: 'application/json' } })
+                    .then(function (r) { return r.ok ? r.json() : null; })
+                    .then(function (data) {
+                        if (!data || !data.enabled) {
+                            // Sync feature is off on this deployment (e.g. cloud/Atlas-only) — no banner.
+                            setBanner(null);
+                            return;
+                        }
+                        if (!data.atlas_configured) {
+                            setBanner('offline', 'Local Mode — MongoDB Atlas is not configured on this device. Changes are saved locally.');
+                        } else if (data.atlas_reachable) {
+                            setBanner('online', 'Online / Synced — connected to MongoDB Atlas (' + (data.device_id || 'this device') + ').');
+                        } else {
+                            setBanner('offline', 'Offline Mode — Changes are saved locally and will sync when connection is restored.');
+                        }
+                    })
+                    .catch(function () { /* Network hiccup on the status check itself: leave last known state. */ });
+            }
+
+            refreshSyncStatus();
+            window.setInterval(refreshSyncStatus, 30000);
+        })();
     </script>
     @stack('scripts')
 </body>

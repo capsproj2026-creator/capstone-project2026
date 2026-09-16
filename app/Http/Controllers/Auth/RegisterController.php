@@ -321,7 +321,21 @@ class RegisterController extends Controller
         Auth::login($user);
         $request->session()->regenerate();
 
-        $user->sendEmailVerificationNotification();
+        // The account (and the admin-visible "pending" record) is already
+        // saved at this point. Never let a network/SMTP failure here turn
+        // into a registration failure — offline, this throws (QUEUE_
+        // CONNECTION=sync means it sends inline, no queue to defer it), so
+        // we catch it, flag the row for a later retry, and still tell the
+        // user registration succeeded. verification.notice already offers
+        // a "resend" action once the connection is back.
+        try {
+            $user->sendEmailVerificationNotification();
+        } catch (\Throwable $e) {
+            report($e);
+            User::withoutSyncStamping(fn () => $user->forceFill([
+                'verification_email_pending' => true,
+            ])->save());
+        }
 
         return redirect()
             ->route('verification.notice')

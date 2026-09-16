@@ -2,10 +2,13 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\HasSyncMetadata;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class ViolationLog extends MongoModel
 {
+    use HasSyncMetadata;
+
     protected $collection = 'violations_log';
 
     public $timestamps = false;

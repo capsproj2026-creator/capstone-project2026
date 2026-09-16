@@ -50,6 +50,32 @@ return [
                 : []), static fn ($value) => $value !== null && $value !== '' && $value !== false),
         ],
 
+        // Secondary, independent connection used ONLY by the local-first sync
+        // bridge (App\Services\Sync\AtlasSyncService) to reach MongoDB Atlas
+        // directly, regardless of what the primary 'mongodb' connection above
+        // points at. This lets a laptop run entirely against a LOCAL Mongo
+        // as its default connection (fast, offline-capable) while a separate
+        // background process still pushes/pulls to Atlas. On a cloud-only
+        // deployment MONGODB_ATLAS_URI is simply left empty and this
+        // connection is never used (see config/sync.php 'enabled').
+        'mongodb_atlas' => [
+            'driver' => 'mongodb',
+            'dsn' => env('MONGODB_ATLAS_URI', ''),
+            'database' => env('MONGODB_ATLAS_DATABASE', env('MONGODB_DATABASE', 'capstone')),
+            'options' => array_filter([
+                'authSource' => env('MONGODB_AUTH_DATABASE'),
+                'connectTimeoutMS' => (int) env('SYNC_ATLAS_CONNECT_TIMEOUT_MS', 4000),
+                'serverSelectionTimeoutMS' => (int) env('SYNC_ATLAS_CONNECT_TIMEOUT_MS', 4000),
+                'socketTimeoutMS' => (int) env('MONGODB_SOCKET_TIMEOUT_MS', 15000),
+                'maxPoolSize' => 5,
+                'retryReads' => true,
+                'tlsAllowInvalidCertificates' => str_starts_with((string) env('MONGODB_ATLAS_URI', ''), 'mongodb+srv://')
+                    && filter_var(env('MONGODB_TLS_ALLOW_INVALID', false), FILTER_VALIDATE_BOOLEAN)
+                    ? true
+                    : null,
+            ], static fn ($value) => $value !== null && $value !== '' && $value !== false),
+        ],
+
         'sqlite' => [
             'driver' => 'sqlite',
             'url' => env('DB_URL'),
