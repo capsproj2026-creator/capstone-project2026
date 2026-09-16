@@ -374,6 +374,9 @@
 
         let idleTimer = null;
         let knownLatestId = '';
+        let lastShownUidKey = '';
+        let lastShownAtMs = 0;
+        const SAME_UID_UI_MS = 2500; // Suppress second profile flash from hold-on-reader bounce.
 
         const roleClasses = (role) => {
             const r = String(role || '').toLowerCase();
@@ -401,6 +404,14 @@
 
             if (url && avatarImg) {
                 avatarImg.alt = latest?.name || 'User';
+                const nextSrc = url;
+                // Avoid cache-bust reload flicker when the same person is shown again.
+                if (avatarImg.dataset.baseSrc === nextSrc && avatarImg.complete && avatarImg.naturalWidth > 0) {
+                    avatarImg.classList.remove('hidden');
+                    avatarInitials?.classList.add('hidden');
+                    return;
+                }
+                avatarImg.dataset.baseSrc = nextSrc;
                 avatarImg.classList.add('hidden');
                 avatarImg.onload = () => {
                     avatarImg.classList.remove('hidden');
@@ -410,7 +421,7 @@
                     avatarImg.classList.add('hidden');
                     avatarInitials?.classList.remove('hidden');
                 };
-                avatarImg.src = `${url}${url.includes('?') ? '&' : '?'}t=${Date.now()}`;
+                avatarImg.src = `${nextSrc}${nextSrc.includes('?') ? '&' : '?'}t=${Date.now()}`;
                 if (avatarImg.complete && avatarImg.naturalWidth > 0) {
                     avatarImg.classList.remove('hidden');
                     avatarInitials?.classList.add('hidden');
@@ -605,7 +616,40 @@
                 if (exits && scan.today_exits != null) exits.textContent = scan.today_exits;
                 return;
             }
+
+            // One physical tap can produce two GateLog rows (Granted, then Already Inside)
+            // when the card stays on the reader after a slow API reply. Treat the same UID
+            // within a short window as one profile show.
+            const uidKey = String(scan.rfid_uid_full || scan.rfid_uid || scan.name || '').trim().toUpperCase();
+            const nowMs = Date.now();
+            if (uidKey && uidKey === lastShownUidKey && (nowMs - lastShownAtMs) < SAME_UID_UI_MS) {
+                knownLatestId = scanId;
+                if (entries && scan.today_entries != null) entries.textContent = scan.today_entries;
+                if (exits && scan.today_exits != null) exits.textContent = scan.today_exits;
+                if (!recentItems.some((it) => String(it.id) === scanId)) {
+                    // Keep the In/Out log accurate, but do not re-animate the big profile card.
+                    const feedItem = {
+                        id: scan.id,
+                        name: scan.name || 'Unknown Tag',
+                        role: scan.role || null,
+                        time: scan.time || '—',
+                        timestamp: scan.timestamp || scan.time || '—',
+                        action: scan.action,
+                        plate_number: scan.plate_number || null,
+                        vehicle_type: scan.vehicle_type || null,
+                        granted: !!scan.granted,
+                        is_unauthorized: !!scan.is_unauthorized,
+                        result: scan.result || null,
+                        status_label: scan.status_label || null,
+                    };
+                    renderRecentLogs([feedItem].concat(recentItems).slice(0, 10));
+                }
+                return;
+            }
+
             knownLatestId = scanId;
+            lastShownUidKey = uidKey;
+            lastShownAtMs = nowMs;
             if (entries && scan.today_entries != null) {
                 entries.textContent = scan.today_entries;
             } else if (entries && scan.granted && scan.action === 'Entry') {

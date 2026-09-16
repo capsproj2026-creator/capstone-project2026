@@ -14,7 +14,7 @@ class GateScanPresenter
      */
     public static function fromLog(GateLog $log, bool $withStats = true): array
     {
-        $log->loadMissing(['user.role', 'visitor']);
+        $log->loadMissing(['user.role', 'user.vehicleType', 'visitor.vehicleType']);
 
         $uid = trim((string) ($log->rfid_uid ?? ''));
         $user = $log->user;

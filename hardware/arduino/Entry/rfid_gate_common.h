@@ -58,16 +58,17 @@
 #define GATE_OPEN_MS 8000UL
 #endif
 #ifndef GATE_COOLDOWN_MS
-// Short gap so a new tap is readable almost immediately (still stops double-fire on one hold).
-#define GATE_COOLDOWN_MS 400UL
+// Short gap so a *different* card can be tapped quickly after the previous one.
+#define GATE_COOLDOWN_MS 250UL
 #endif
 #ifndef SAME_UID_COOLDOWN_MS
-// Same physical card left on the reader — ignore repeats a bit longer.
-#define SAME_UID_COOLDOWN_MS 900UL
+// Same physical card left on the reader after a completed scan — ignore repeats.
+// Measured from AFTER the HTTP round-trip (see lastScanMs refresh below), not before.
+#define SAME_UID_COOLDOWN_MS 1800UL
 #endif
 #ifndef SCAN_BLOCK_MS
 // Prevents duplicate boom opens during one grant cycle (not a general "wait to scan").
-#define SCAN_BLOCK_MS 1000UL
+#define SCAN_BLOCK_MS 800UL
 #endif
 #ifndef HEARTBEAT_MS
 #define HEARTBEAT_MS 1500UL
@@ -121,8 +122,9 @@
 #define PIN_BUZZER 27
 #define PIN_GATE  14
 
-const uint16_t HTTP_CONNECT_MS = 5000;
-const uint16_t HTTP_READ_MS    = 10000;
+// Tight timeouts so a dead API fails fast; healthy LAN replies well under these.
+const uint16_t HTTP_CONNECT_MS = 2500;
+const uint16_t HTTP_READ_MS    = 5000;
 const uint16_t HTTP_HB_CONNECT_MS = 3000;
 const uint16_t HTTP_HB_READ_MS    = 5000;
 
@@ -733,7 +735,7 @@ void loopGateClient() {
 
   // Brief green blink = card was read locally (even before Laravel reply).
   digitalWrite(PIN_GREEN, HIGH);
-  delay(40);
+  delay(20);
   digitalWrite(PIN_GREEN, LOW);
 
   if (!wifiOk) {
@@ -744,6 +746,11 @@ void loopGateClient() {
   }
 
   ScanResult result = postScan(uid);
+  // Cooldown must start AFTER the HTTP round-trip. If we only stamped lastScanMs
+  // before POST, a 1–2s Laravel reply already exhausts SAME_UID_COOLDOWN_MS and
+  // the still-held card immediately fires a second scan (double profile on the
+  // live gate monitor: Access Granted, then Already Inside).
+  lastScanMs = millis();
   Serial.printf("Decision: granted=%d shared_boom=%d status=%s code=%s\n",
                 result.granted, result.openSharedBoom, result.status.c_str(), result.code.c_str());
   handleResult(result);
@@ -907,7 +914,7 @@ void handleResult(const ScanResult &result, bool forceOpen) {
     if (!forceOpen && (gateIsOpen || millis() < gateCycleEndsMs)) {
       Serial.println("Gate cycle active — ignoring duplicate RFID open");
       digitalWrite(PIN_GREEN, HIGH);
-      delay(200);
+      delay(80);
       digitalWrite(PIN_GREEN, LOW);
       return;
     }
@@ -950,11 +957,11 @@ void denyAccess(const ScanResult &result) {
 
   for (int i = 0; i < pulses; i++) {
     digitalWrite(PIN_BUZZER, HIGH);
-    delay(120);
-    digitalWrite(PIN_BUZZER, LOW);
     delay(80);
+    digitalWrite(PIN_BUZZER, LOW);
+    delay(50);
   }
-  delay(400);
+  delay(150);
   digitalWrite(PIN_RED, LOW);
   Serial.printf("Denied (%s)\n", result.code.c_str());
   if (result.code == "already_inside") {

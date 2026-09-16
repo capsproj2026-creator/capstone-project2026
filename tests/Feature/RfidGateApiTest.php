@@ -144,9 +144,14 @@ class RfidGateApiTest extends TestCase
             ->assertJsonPath('granted', false)
             ->assertJsonStructure(['log_id']);
 
+        // ESP32 still gets Already Inside, and a log row is kept for audit, but the
+        // live gate monitor must not get a second profile broadcast right after grant.
         Event::assertDispatched(GateScanProcessed::class, function (GateScanProcessed $event) {
-            return $event->scan['granted'] === false
-                && $event->scan['result'] === RfidAccessService::STATUS_ALREADY_INSIDE;
+            return $event->scan['granted'] === true
+                && $event->scan['result'] === RfidAccessService::STATUS_GRANTED;
+        });
+        Event::assertNotDispatched(GateScanProcessed::class, function (GateScanProcessed $event) {
+            return ($event->scan['result'] ?? null) === RfidAccessService::STATUS_ALREADY_INSIDE;
         });
 
         $grantedLog = GateLog::query()
@@ -157,6 +162,13 @@ class RfidGateApiTest extends TestCase
         $this->assertNotNull($grantedLog);
         $this->assertSame('GATE-IN-1', $grantedLog->gate_id);
         $this->assertSame('Entry', $grantedLog->action);
+
+        $this->assertTrue(
+            GateLog::query()
+                ->where('rfid_uid', self::UID)
+                ->where('result', RfidAccessService::STATUS_ALREADY_INSIDE)
+                ->exists()
+        );
     }
 
     public function test_rfid_scan_payload_matches_live_gate_presenter(): void

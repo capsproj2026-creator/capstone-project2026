@@ -9,6 +9,7 @@ use App\Models\ParkingSlot;
 use App\Models\User;
 use App\Models\Visitor;
 use App\Models\VisitorRfidCard;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Str;
 
 class RfidAccessService
@@ -157,7 +158,7 @@ class RfidAccessService
         ]);
 
         $this->syncUserParkingOccupancy($user, $direction);
-        GateScanProcessed::dispatchFromLog($log);
+        $this->broadcastGrantedScan($log, $uid);
         $sharedQueued = app(GateHardwareService::class)->notifySharedBoomAfterGrant($gateId, $direction);
 
         return $this->response(
@@ -229,7 +230,7 @@ class RfidAccessService
         ]);
 
         $this->syncUserParkingOccupancy($user, $direction);
-        GateScanProcessed::dispatchFromLog($log);
+        $this->broadcastGrantedScan($log, $uid);
         $sharedQueued = app(GateHardwareService::class)->notifySharedBoomAfterGrant($gateId, $direction);
 
         return $this->response(
@@ -307,7 +308,7 @@ class RfidAccessService
         ]);
 
         $this->syncUserParkingOccupancy($user, $direction);
-        GateScanProcessed::dispatchFromLog($log);
+        $this->broadcastGrantedScan($log, $uid);
         $sharedQueued = app(GateHardwareService::class)->notifySharedBoomAfterGrant($gateId, $direction);
 
         return $this->response(
@@ -399,7 +400,7 @@ class RfidAccessService
             $visitorService->completeOnExit($visitor);
         }
 
-        GateScanProcessed::dispatchFromLog($log->fresh(['visitor', 'user']) ?? $log);
+        $this->broadcastGrantedScan($log->fresh(['visitor', 'user']) ?? $log, $uid);
         $sharedQueued = app(GateHardwareService::class)->notifySharedBoomAfterGrant($gateId, $direction);
 
         return $this->response(
@@ -457,9 +458,9 @@ class RfidAccessService
                     ->orWhere('result', self::STATUS_GRANTED);
             })
             ->orderByDesc('timestamp')
-            ->first();
+            ->value('action');
 
-        return $last?->action;
+        return $last ? (string) $last : null;
     }
 
     private function lastActionForVisitor(Visitor $visitor): ?string
@@ -472,9 +473,9 @@ class RfidAccessService
                     ->orWhere('result', self::STATUS_GRANTED);
             })
             ->orderByDesc('timestamp')
-            ->first();
+            ->value('action');
 
-        return $last?->action;
+        return $last ? (string) $last : null;
     }
 
     private function syncUserParkingOccupancy(User $user, string $action): void
@@ -552,9 +553,51 @@ class RfidAccessService
             'timestamp' => now(),
         ]);
 
-        GateScanProcessed::dispatchFromLog($log);
+        // Hold-on-reader bounce after a grant often creates Already Inside/Outside within
+        // ~1–2s. Still log it for audit, but do not push a second profile flash to the
+        // live gate monitor (ESP32 firmware also suppresses the second POST).
+        if ($this->shouldBroadcastDeniedScan($uid, $result)) {
+            GateScanProcessed::dispatchFromLog($log);
+        }
 
         return $log;
+    }
+
+    private function broadcastGrantedScan(GateLog $log, string $uid): void
+    {
+        if ($uid !== '') {
+            Cache::put($this->recentGrantCacheKey($uid), 1, now()->addSeconds(3));
+        }
+
+        GateScanProcessed::dispatchFromLog($log);
+    }
+
+    private function shouldBroadcastDeniedScan(string $uid, string $result): bool
+    {
+        if (! in_array($result, [self::STATUS_ALREADY_INSIDE, self::STATUS_ALREADY_OUTSIDE], true)) {
+            return true;
+        }
+
+        if ($uid === '') {
+            return true;
+        }
+
+        // Prefer the short-lived cache flag set on grant (fast + reliable across Mongo
+        // timestamp quirks). Fall back to a recent grant row if the cache was cleared.
+        if (Cache::has($this->recentGrantCacheKey($uid))) {
+            return false;
+        }
+
+        return ! GateLog::query()
+            ->where('rfid_uid', $uid)
+            ->where('result', self::STATUS_GRANTED)
+            ->where('timestamp', '>=', now()->subSeconds(3))
+            ->exists();
+    }
+
+    private function recentGrantCacheKey(string $uid): string
+    {
+        return 'rfid:recent_grant:'.strtoupper(trim($uid));
     }
 
     /**
