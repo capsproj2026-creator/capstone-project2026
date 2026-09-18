@@ -100,12 +100,13 @@ Write-Host "  MongoDB: OK" -ForegroundColor Green
 if (-not $SkipWebStack) {
     # Port open but HTTP hung (common after many restarts) - recycle Laravel first.
     if ((Test-PortListening 8000) -and -not (Test-HttpOk $laravelUrl)) {
-        Write-Host "Laravel port 8000 is open but not responding - restarting it..." -ForegroundColor Yellow
+        Write-Host "Port 8000 is open but not responding - restarting front + Laravel..." -ForegroundColor Yellow
         Stop-PortListeners 8000
+        Stop-PortListeners 8001
     }
     if (-not (Test-HttpOk $laravelUrl)) {
         Write-Host ""
-        Write-Host "Starting website stack (Laravel + Reverb + Vite)..." -ForegroundColor Cyan
+        Write-Host "Starting website stack (LAN front + Laravel + Reverb + Vite)..." -ForegroundColor Cyan
         $sysArgs = @("-SkipAi", "-SkipMongoCheck")
         if ($SkipNgrok) { $sysArgs += "-SkipNgrok" }
         if (Test-Path (Join-Path $Root "public\build\manifest.json")) {
@@ -128,17 +129,28 @@ if (-not $SkipWebStack) {
             if (($i -eq 12) -and (Test-PortListening 8000) -and -not (Test-HttpOk $laravelUrl)) {
                 Write-Host "Still hung - recycling port 8000 and reopening Laravel..." -ForegroundColor Yellow
                 Stop-PortListeners 8000
+                Stop-PortListeners 8001
                 $laravelLaunch = @"
 `$Host.UI.RawUI.WindowTitle = 'Laravel'
 Set-Location -LiteralPath '$Root'
-`$env:PHP_CLI_SERVER_WORKERS = '4'
-php artisan serve --host=0.0.0.0 --port=8000 --no-reload
+php artisan serve --host=127.0.0.1 --port=8001 --no-reload
+"@
+                $frontLaunch = @"
+`$Host.UI.RawUI.WindowTitle = 'LAN Front (ESP32)'
+Set-Location -LiteralPath '$Root'
+php -S 0.0.0.0:8000 bootstrap/lan_front_router.php
 "@
                 Start-Process powershell -WorkingDirectory $Root -ArgumentList @(
                     "-NoExit",
                     "-NoProfile",
                     "-ExecutionPolicy", "Bypass",
                     "-Command", $laravelLaunch
+                ) | Out-Null
+                Start-Process powershell -WorkingDirectory $Root -ArgumentList @(
+                    "-NoExit",
+                    "-NoProfile",
+                    "-ExecutionPolicy", "Bypass",
+                    "-Command", $frontLaunch
                 ) | Out-Null
             }
         }
@@ -154,14 +166,19 @@ php artisan serve --host=0.0.0.0 --port=8000 --no-reload
     if ((Test-PortListening 8000) -and -not (Test-HttpOk $laravelUrl)) {
         Write-Host "Laravel port 8000 is open but not responding - restarting it..." -ForegroundColor Yellow
         Stop-PortListeners 8000
+        Stop-PortListeners 8001
     }
     if (-not (Test-HttpOk $laravelUrl)) {
-        Write-Host "Laravel is down - starting php artisan serve..." -ForegroundColor Yellow
+        Write-Host "Laravel is down - starting LAN front + Laravel..." -ForegroundColor Yellow
         $laravelLaunch = @"
 `$Host.UI.RawUI.WindowTitle = 'Laravel'
 Set-Location -LiteralPath '$Root'
-`$env:PHP_CLI_SERVER_WORKERS = '4'
-php artisan serve --host=0.0.0.0 --port=8000 --no-reload
+php artisan serve --host=127.0.0.1 --port=8001 --no-reload
+"@
+        $frontLaunch = @"
+`$Host.UI.RawUI.WindowTitle = 'LAN Front (ESP32)'
+Set-Location -LiteralPath '$Root'
+php -S 0.0.0.0:8000 bootstrap/lan_front_router.php
 "@
         Start-Process powershell -WorkingDirectory $Root -ArgumentList @(
             "-NoExit",
@@ -169,14 +186,21 @@ php artisan serve --host=0.0.0.0 --port=8000 --no-reload
             "-ExecutionPolicy", "Bypass",
             "-Command", $laravelLaunch
         ) | Out-Null
+        Start-Process powershell -WorkingDirectory $Root -ArgumentList @(
+            "-NoExit",
+            "-NoProfile",
+            "-ExecutionPolicy", "Bypass",
+            "-Command", $frontLaunch
+        ) | Out-Null
         $ready = $false
         for ($i = 0; $i -lt 25; $i++) {
             Start-Sleep -Seconds 1
             if (Test-HttpOk $laravelUrl) { $ready = $true; break }
         }
         if (-not $ready) {
-            Write-Host "Laravel did not respond at $laravelUrl - open a Laravel window manually:" -ForegroundColor Red
-            Write-Host "  php artisan serve --host=0.0.0.0 --port=8000 --no-reload" -ForegroundColor DarkYellow
+            Write-Host "Laravel did not respond at $laravelUrl - open windows manually:" -ForegroundColor Red
+            Write-Host "  php artisan serve --host=127.0.0.1 --port=8001 --no-reload" -ForegroundColor DarkYellow
+            Write-Host "  php -S 0.0.0.0:8000 bootstrap/lan_front_router.php" -ForegroundColor DarkYellow
             exit 1
         }
     }

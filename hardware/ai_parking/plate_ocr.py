@@ -656,6 +656,9 @@ class AsyncPlateQueue:
             mem.tick_plate_deadline()
             if mem.is_plate_terminal():
                 return
+            # Defense in depth: never queue OCR for stationary / idle vehicles.
+            if not mem.allows_ocr():
+                return
         now = time.time()
         if mem and (now - mem.last_ocr_at) < every_sec:
             return

@@ -115,8 +115,27 @@ function onFormSubmit(e) {
         'Thank you for pre-registering.\n\n' +
         'Your reference code: ' +
         body.confirmation_code +
+        '\n\nRegistration details:\n' +
+        'Name: ' +
+        [payload.first_name, payload.middle_name, payload.last_name].filter(Boolean).join(' ') +
+        '\nContact: ' +
+        (payload.contact_number || '—') +
+        '\nEmail: ' +
+        (payload.email || '—') +
+        '\nPurpose: ' +
+        (payload.purpose || '—') +
+        '\nOffice / Person: ' +
+        (payload.office_to_visit || '—') +
+        '\nExpected exit: ' +
+        (payload.expected_exit_at || '—') +
+        '\nPlate: ' +
+        (payload.plate_number || '—') +
+        '\nVehicle: ' +
+        (payload.vehicle_name || payload.vehicle_id || '—') +
+        '\nColor: ' +
+        (payload.vehicle_color || '—') +
         '\n\nShow this code at the guard booth.\n\n' +
-        'You can also open this link on your phone:\n' +
+        'Open your full confirmation page:\n' +
         body.success_url +
         '\n',
     });

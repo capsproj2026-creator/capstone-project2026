@@ -5,7 +5,6 @@ namespace App\Services;
 use App\Events\GateScanProcessed;
 use App\Models\GateLog;
 use App\Models\User;
-use Illuminate\Support\Facades\Cache;
 
 class GateHardwareService
 {
@@ -16,6 +15,7 @@ class GateHardwareService
 
     public const ACTION_OVERRIDE = 'Override';
 
+    /** Keep in sync with bootstrap/gate_hardware_store.php */
     public const ONLINE_AFTER_SEC = 12;
 
     public const COMMAND_TTL_SEC = 60;
@@ -23,11 +23,14 @@ class GateHardwareService
     /** How many heartbeats keep repeating open:true so a missed ESP32 parse still opens the servo. */
     public const OPEN_DELIVERIES = 8;
 
+    public function __construct()
+    {
+        require_once base_path('bootstrap/gate_hardware_store.php');
+    }
+
     public function normalizeGateId(string $gateId): ?string
     {
-        $id = strtoupper(trim($gateId));
-
-        return array_key_exists($id, self::GATES) ? $id : null;
+        return gate_hw_normalize_id($gateId);
     }
 
     public function directionFor(string $gateId): string
@@ -39,14 +42,7 @@ class GateHardwareService
 
     public function isOnline(string $gateId): bool
     {
-        $id = $this->normalizeGateId($gateId);
-        if ($id === null) {
-            return false;
-        }
-
-        $seen = Cache::get($this->seenKey($id));
-
-        return is_numeric($seen) && (now()->timestamp - (int) $seen) <= self::ONLINE_AFTER_SEC;
+        return gate_hw_is_online($gateId);
     }
 
     /**
@@ -56,27 +52,7 @@ class GateHardwareService
      */
     public function heartbeat(string $gateId): array
     {
-        $id = $this->normalizeGateId($gateId);
-        if ($id === null) {
-            return [
-                'ok' => false,
-                'gate_id' => strtoupper(trim($gateId)),
-                'open' => false,
-                'command' => null,
-                'message' => 'Unknown gate_id.',
-            ];
-        }
-
-        Cache::put($this->seenKey($id), now()->timestamp, now()->addSeconds(45));
-
-        $open = $this->consumeOpenDelivery($id);
-
-        return [
-            'ok' => true,
-            'gate_id' => $id,
-            'open' => $open,
-            'command' => $open ? 'open' : null,
-        ];
+        return gate_hw_heartbeat($gateId);
     }
 
     /**
@@ -89,12 +65,10 @@ class GateHardwareService
             return false;
         }
 
-        $this->storeOpenCommand($id, [
+        return gate_hw_store_open($id, [
             'reason' => $reason,
             'queued_at' => now()->toIso8601String(),
         ]);
-
-        return true;
     }
 
     /**
@@ -136,7 +110,7 @@ class GateHardwareService
 
         $actuatorId = $shared;
         $reason = trim($reason);
-        $this->storeOpenCommand($actuatorId, [
+        gate_hw_store_open($actuatorId, [
             'reason' => $reason,
             'operator_id' => $operator->id,
             'queued_at' => now()->toIso8601String(),
@@ -172,58 +146,16 @@ class GateHardwareService
     {
         $out = [];
         foreach (self::GATES as $id => $direction) {
-            $seen = Cache::get($this->seenKey($id));
             $out[] = [
                 'gate_id' => $id,
                 'direction' => $direction,
                 'label' => $direction === 'Entry' ? 'Entry Gate' : 'Exit Gate',
                 'online' => $this->isOnline($id),
-                'pending_open' => Cache::has($this->openKey($id)),
-                'last_seen_at' => is_numeric($seen) ? (int) $seen : null,
+                'pending_open' => gate_hw_has_pending_open($id),
+                'last_seen_at' => gate_hw_last_seen_at($id),
             ];
         }
 
         return $out;
-    }
-
-    /**
-     * @param  array<string, mixed>  $payload
-     */
-    private function storeOpenCommand(string $gateId, array $payload): void
-    {
-        Cache::put($this->openKey($gateId), array_merge($payload, [
-            'remain' => self::OPEN_DELIVERIES,
-        ]), now()->addSeconds(self::COMMAND_TTL_SEC));
-    }
-
-    private function consumeOpenDelivery(string $gateId): bool
-    {
-        $key = $this->openKey($gateId);
-        $cmd = Cache::get($key);
-        if (! is_array($cmd)) {
-            return false;
-        }
-
-        $remain = (int) ($cmd['remain'] ?? 1);
-        $remain--;
-
-        if ($remain <= 0) {
-            Cache::forget($key);
-        } else {
-            $cmd['remain'] = $remain;
-            Cache::put($key, $cmd, now()->addSeconds(self::COMMAND_TTL_SEC));
-        }
-
-        return true;
-    }
-
-    private function seenKey(string $gateId): string
-    {
-        return 'gate:hw:'.$gateId.':seen';
-    }
-
-    private function openKey(string $gateId): string
-    {
-        return 'gate:hw:'.$gateId.':open';
     }
 }

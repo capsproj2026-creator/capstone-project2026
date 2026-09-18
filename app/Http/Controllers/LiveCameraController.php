@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Events\AiParkingRealtime;
 use App\Models\ParkingArea;
 use App\Services\AiCameraRegistry;
 use App\Services\AiParkingHealthService;
@@ -191,6 +192,17 @@ class LiveCameraController extends Controller
         } catch (\InvalidArgumentException $e) {
             return response()->json(['ok' => false, 'message' => $e->getMessage()], 422);
         }
+
+        AiParkingRealtime::emit(AiParkingRealtime::EVENT_PLATE_MANUAL_ENTRY, [
+            'cameraId' => $cameraId,
+            'trackingId' => $trackId,
+            'recognitionSessionId' => $sessionId,
+            'plateNumber' => $identity['plate'] ?? PlateLookup::normalize($validated['plate']),
+            'source' => 'GUARD',
+            'ownerName' => $identity['owner_name'] ?? $identity['owner_label'] ?? null,
+            'userRole' => $identity['owner_role'] ?? $identity['role'] ?? null,
+            'vehicleType' => $identity['vehicle_details'] ?? null,
+        ]);
 
         return response()->json([
             'ok' => true,

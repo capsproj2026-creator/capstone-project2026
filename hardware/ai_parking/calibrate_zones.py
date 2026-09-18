@@ -3,11 +3,11 @@ Click-to-calibrate parking zone polygons.
 
 Run (camera or image):
   cd hardware/ai_parking
-  python calibrate_zones.py --zones zones_acad1.json
-  python calibrate_zones.py --live --camera 2
-  python calibrate_zones.py --image snapshot_acad1.jpg
+  python calibrate_zones.py --zones zones_acad1.json --live --camera 1 --fresh
+  python calibrate_zones.py --zones zones_acad1.json --image snapshot_acad1.jpg
 
-Uses snapshot_acad1.jpg for ACAD 1 when that file exists. Pass --live to grab CAM-2.
+Uses a live CAM frame when --live is set. Pass --fresh to clear old polygons
+and redraw from scratch (recommended when recalibrating).
 
 Controls:
   Left-click  — add polygon point
@@ -74,6 +74,14 @@ def companion_snapshot(zones_path: Path) -> str | None:
         if candidate.is_file():
             return str(candidate)
     return None
+
+
+def clear_zone_points(zones_data: dict) -> dict:
+    """Drop all drawn polygons so calibration starts blank on the live frame."""
+    for zone in zones_data.get("zones") or []:
+        zone["points"] = []
+    zones_data["calibrated"] = False
+    return zones_data
 
 
 class Calibrator:
@@ -215,7 +223,7 @@ def grab_frame(image_path: str | None, camera: CameraConfig | None):
     if not camera.has_credentials:
         raise SystemExit(
             f"{camera.camera_id}: missing USER/PASS in .env. "
-            "Set AI_CAMERA_2_USER and AI_CAMERA_2_PASS."
+            f"Set AI_CAMERA_{camera.camera_id[-1] if camera.camera_id[-1].isdigit() else '1'}_USER and PASS."
         )
 
     mjpeg = grab_mjpeg_frame(camera)
@@ -260,7 +268,12 @@ def main():
     parser.add_argument(
         "--live",
         action="store_true",
-        help="Grab a live frame from --camera instead of the lot snapshot",
+        help="Grab a live frame from --camera (ignores lot snapshot)",
+    )
+    parser.add_argument(
+        "--fresh",
+        action="store_true",
+        help="Clear all existing polygons and start blank (keep slot labels)",
     )
     parser.add_argument(
         "--zones",
@@ -271,7 +284,7 @@ def main():
         "--camera",
         type=int,
         default=DEFAULT_CAMERA,
-        help="Camera number from .env (default: 2 = Tapo). Use 1 for Dahua.",
+        help="Camera number from .env (default: 2 = Tapo). Use 1 for Dahua / CAM-1.",
     )
     args = parser.parse_args()
 
@@ -279,15 +292,24 @@ def main():
     if not zones_path.is_absolute():
         zones_path = BASE_DIR / zones_path
 
+    # Live-only: never fall back to the old calibrated snapshot.
     image_path = args.image
-    if not image_path and not args.live:
+    if args.live:
+        image_path = None
+    elif not image_path:
         image_path = companion_snapshot(zones_path)
 
     camera = None if image_path else resolve_camera(args.camera)
     if image_path:
         print(f"Using snapshot {image_path}")
+    else:
+        print(f"Using LIVE camera {args.camera} ({camera.camera_id if camera else '?'})")
+
     frame = grab_frame(image_path, camera)
     zones = load_zones(zones_path)
+    if args.fresh:
+        clear_zone_points(zones)
+        print("Fresh mode: old polygons cleared — draw slots on the live frame, then press S.")
     Calibrator(frame, zones, zones_path).run()
 
 

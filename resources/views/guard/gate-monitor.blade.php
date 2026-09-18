@@ -119,8 +119,8 @@
         </form>
     </div>
 
-    {{-- Live scan stage + recent logs (responsive) --}}
-    <div class="grid grid-cols-1 gap-4 lg:grid-cols-12 lg:gap-6">
+    {{-- Live scan stage + recent logs (responsive); this wrapper goes fullscreen --}}
+    <div id="gate-monitor-workspace" class="gate-monitor-workspace grid grid-cols-1 gap-4 lg:grid-cols-12 lg:gap-6">
     <div id="gate-monitor-stage" class="gate-monitor-stage rounded-2xl border border-gray-200 bg-white p-4 shadow-sm sm:p-6 lg:col-span-8 lg:p-8">
         <div class="mb-4 flex items-center justify-between gap-3 sm:mb-6">
             <p id="server-clock" class="rounded-full bg-emerald-500 px-4 py-1.5 text-sm font-semibold text-white tabular-nums">
@@ -293,62 +293,93 @@
 
 @push('styles')
 <style>
-    .gate-monitor-stage:fullscreen,
-    .gate-monitor-stage:-webkit-full-screen {
-        display: flex;
-        flex-direction: column;
+    .gate-monitor-workspace:fullscreen,
+    .gate-monitor-workspace:-webkit-full-screen {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) minmax(18rem, 24rem);
+        gap: 1.25rem;
         width: 100%;
         height: 100%;
         margin: 0;
-        border: none;
-        border-radius: 0;
-        background: #fff;
-        padding: 1.5rem 2rem 2rem;
+        padding: 1.25rem 1.5rem 1.5rem;
+        background: #f3f4f6;
+        overflow: hidden;
+        align-content: stretch;
+    }
+
+    .gate-monitor-workspace:fullscreen .gate-monitor-stage,
+    .gate-monitor-workspace:-webkit-full-screen .gate-monitor-stage {
+        display: flex;
+        flex-direction: column;
+        grid-column: auto;
+        height: 100%;
+        min-height: 0;
+        margin: 0;
+        border-radius: 1rem;
+        padding: 1.25rem 1.5rem 1.5rem;
         overflow: hidden;
     }
 
-    .gate-monitor-stage:fullscreen #gate-monitor-display,
-    .gate-monitor-stage:-webkit-full-screen #gate-monitor-display {
+    .gate-monitor-workspace:fullscreen #gate-recent-panel,
+    .gate-monitor-workspace:-webkit-full-screen #gate-recent-panel {
+        grid-column: auto;
+        height: 100%;
+        max-height: none;
+        min-height: 0;
+        border-radius: 1rem;
+    }
+
+    .gate-monitor-workspace:fullscreen #gate-monitor-display,
+    .gate-monitor-workspace:-webkit-full-screen #gate-monitor-display {
         flex: 1;
         min-height: 0;
         justify-content: center;
     }
 
-    .gate-monitor-stage:fullscreen #waiting-state,
-    .gate-monitor-stage:-webkit-full-screen #waiting-state {
+    .gate-monitor-workspace:fullscreen #waiting-state,
+    .gate-monitor-workspace:-webkit-full-screen #waiting-state {
         padding-top: 2rem;
         padding-bottom: 2rem;
     }
 
-    .gate-monitor-stage:fullscreen #waiting-state h2,
-    .gate-monitor-stage:-webkit-full-screen #waiting-state h2 {
+    .gate-monitor-workspace:fullscreen #waiting-state h2,
+    .gate-monitor-workspace:-webkit-full-screen #waiting-state h2 {
         font-size: 2.75rem;
     }
 
-    .gate-monitor-stage:fullscreen #scan-card,
-    .gate-monitor-stage:-webkit-full-screen #scan-card {
+    .gate-monitor-workspace:fullscreen #scan-card,
+    .gate-monitor-workspace:-webkit-full-screen #scan-card {
         max-width: 36rem;
     }
 
-    .gate-monitor-stage:fullscreen #scan-avatar-wrap,
-    .gate-monitor-stage:-webkit-full-screen #scan-avatar-wrap {
+    .gate-monitor-workspace:fullscreen #scan-avatar-wrap,
+    .gate-monitor-workspace:-webkit-full-screen #scan-avatar-wrap {
         height: 6.5rem;
         width: 6.5rem;
     }
 
-    .gate-monitor-stage:fullscreen #scan-name,
-    .gate-monitor-stage:-webkit-full-screen #scan-name {
+    .gate-monitor-workspace:fullscreen #scan-name,
+    .gate-monitor-workspace:-webkit-full-screen #scan-name {
         font-size: 2.25rem;
     }
 
-    .gate-monitor-stage:fullscreen #scan-plate,
-    .gate-monitor-stage:-webkit-full-screen #scan-plate {
+    .gate-monitor-workspace:fullscreen #scan-plate,
+    .gate-monitor-workspace:-webkit-full-screen #scan-plate {
         font-size: 1.875rem;
     }
 
-    .gate-monitor-stage:fullscreen #last-updated,
-    .gate-monitor-stage:-webkit-full-screen #last-updated {
+    .gate-monitor-workspace:fullscreen #last-updated,
+    .gate-monitor-workspace:-webkit-full-screen #last-updated {
         display: block;
+    }
+
+    @media (max-width: 900px) {
+        .gate-monitor-workspace:fullscreen,
+        .gate-monitor-workspace:-webkit-full-screen {
+            grid-template-columns: 1fr;
+            grid-template-rows: minmax(0, 1fr) minmax(12rem, 38%);
+            overflow: auto;
+        }
     }
 </style>
 @endpush
@@ -370,6 +401,7 @@
         const avatarImg = document.getElementById('scan-avatar-img');
         const avatarInitials = document.getElementById('scan-avatar-initials');
         const stage = document.getElementById('gate-monitor-stage');
+        const workspace = document.getElementById('gate-monitor-workspace') || stage;
         const initialLatestScan = @json($initialLatestScan ?? null);
 
         let idleTimer = null;
@@ -751,7 +783,7 @@
             || null
         );
 
-        const isFullscreen = () => fsElement() === stage;
+        const isFullscreen = () => fsElement() === workspace;
 
         const requestFs = (el) => (
             el.requestFullscreen?.()
@@ -779,7 +811,7 @@
         fsToggle?.addEventListener('click', async () => {
             try {
                 if (isFullscreen()) await exitFs();
-                else if (stage) await requestFs(stage);
+                else if (workspace) await requestFs(workspace);
             } catch (e) {
                 // ignore unsupported or blocked fullscreen
             }

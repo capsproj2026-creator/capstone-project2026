@@ -51,6 +51,24 @@ OCR_PLATE_ONLY = os.getenv("AI_PARKING_OCR_PLATE_ONLY", "1").strip().lower() in 
 MOTION_SPEED_THRESH = float(os.getenv("AI_PARKING_MOTION_SPEED_THRESH", "0.12"))
 MOTION_PARK_SEC = float(os.getenv("AI_PARKING_MOTION_PARK_SEC", "0.8"))
 MOTION_SMOOTH_ALPHA = float(os.getenv("AI_PARKING_MOTION_SMOOTH_ALPHA", "0.35"))
+# Require N consecutive above-threshold frames before MOVING (rejects single-frame jitter).
+MOVEMENT_CONFIRMATION_FRAMES = max(1, int(os.getenv("AI_PARKING_MOVEMENT_CONFIRMATION_FRAMES", "3")))
+# Require N consecutive below-threshold frames before STATIONARY/parked.
+STATIONARY_CONFIRMATION_FRAMES = max(1, int(os.getenv("AI_PARKING_STATIONARY_CONFIRMATION_FRAMES", "3")))
+# OCR is only allowed while motion_state == "moving" (hard gate).
+OCR_MOVING_ONLY = os.getenv("AI_PARKING_OCR_MOVING_ONLY", "1").strip().lower() in (
+    "1",
+    "true",
+    "yes",
+    "on",
+)
+
+
+def ocr_allowed_for_motion(motion_state: str | None) -> bool:
+    """Architectural gate: OCR runs only after movement is confirmed."""
+    if not OCR_MOVING_ONLY:
+        return True
+    return (motion_state or "").lower() == "moving"
 
 
 def _iou_xyxy(a, b) -> float:
@@ -231,9 +249,13 @@ class TrackMemory:
     smooth_center: tuple[float, float] | None = None
     last_motion_at: float = 0.0
     motion_speed: float = 0.0
-    # idle | moving | parked
+    # idle | moving | parked  (idle == UNKNOWN / not yet confirmed)
     motion_state: str = "idle"
     parked_since: float | None = None
+    moving_streak: int = 0
+    stationary_streak: int = 0
+    # AI_OCR | GUARD — manual entry must not be overwritten by later OCR.
+    plate_source: str | None = None
 
     def note_seen(self, now: float) -> None:
         self.last_seen = now
@@ -243,8 +265,20 @@ class TrackMemory:
         sid = int(self.recognition_session_id or 0)
         return f"VehicleSession-{sid:04d}" if sid else "VehicleSession-????"
 
+    def vehicle_event_id(self, camera_id: str | None = None) -> str:
+        cam = (camera_id or self.camera_id or "CAM").strip() or "CAM"
+        sid = int(self.recognition_session_id or 0)
+        return f"{cam}:session:{sid}"
+
+    def allows_ocr(self) -> bool:
+        """Hard rule: never OCR while stationary / unknown / parked."""
+        return ocr_allowed_for_motion(self.motion_state)
+
     def update_motion(self, xyxy: tuple[int, int, int, int], now: float) -> str:
-        """Classify vehicle as moving vs parked from bbox center drift."""
+        """Classify vehicle as moving vs parked from bbox center drift.
+
+        Detection alone never implies MOVING — measurable multi-frame motion is required.
+        """
         x1, y1, x2, y2 = xyxy
         cx = (x1 + x2) / 2.0
         cy = (y1 + y2) / 2.0
@@ -266,14 +300,39 @@ class TrackMemory:
             dist = ((sx - px) ** 2 + (sy - py) ** 2) ** 0.5
             self.motion_speed = dist / dt / max(diag, 1.0)
             if self.motion_speed >= MOTION_SPEED_THRESH:
-                self.motion_state = "moving"
+                self.moving_streak += 1
+                self.stationary_streak = 0
                 self.parked_since = None
-            elif self.parked_since is None:
-                self.parked_since = now
-            elif (now - self.parked_since) >= MOTION_PARK_SEC:
-                self.motion_state = "parked"
+                if self.moving_streak >= MOVEMENT_CONFIRMATION_FRAMES:
+                    if self.motion_state != "moving":
+                        print(
+                            f"[MOTION] {self.session_label()} -> MOVING "
+                            f"speed={self.motion_speed:.3f} streak={self.moving_streak}"
+                        )
+                    self.motion_state = "moving"
+            else:
+                self.stationary_streak += 1
+                self.moving_streak = 0
+                if self.parked_since is None:
+                    self.parked_since = now
+                # Prefer frame-count confirmation; also honor dwell seconds.
+                stationary_ready = (
+                    self.stationary_streak >= STATIONARY_CONFIRMATION_FRAMES
+                    or (now - self.parked_since) >= MOTION_PARK_SEC
+                )
+                if stationary_ready:
+                    if self.motion_state == "moving":
+                        print(
+                            f"[MOTION] {self.session_label()} -> STATIONARY/parked "
+                            f"speed={self.motion_speed:.3f} streak={self.stationary_streak}"
+                        )
+                    self.motion_state = "parked"
+                elif self.motion_state not in ("moving", "parked"):
+                    self.motion_state = "idle"
         else:
             self.motion_state = "idle"
+            self.moving_streak = 0
+            self.stationary_streak = 0
             self.parked_since = now
 
         self.prev_center = (sx, sy)
@@ -346,12 +405,24 @@ class TrackMemory:
         return self.plate_status in ("ok", "unreadable", "not_read")
 
     def mark_ocr_attempt(self, now: float | None = None) -> None:
+        """Count only real OCR attempts (caller must already pass the movement gate)."""
         if self.is_plate_terminal():
+            return
+        if not self.allows_ocr():
+            # Stationary / idle frames must never inflate the 6-attempt budget.
+            print(
+                f"[OCR] SKIPPED attempt count (vehicle {self.motion_state}, not moving) "
+                f"session={self.session_label()} attempts={self.ocr_attempts}/{OCR_MAX_ATTEMPTS}"
+            )
             return
         now = now if now is not None else time.time()
         if self.ocr_started_at <= 0:
             self.ocr_started_at = now
         self.ocr_attempts += 1
+        print(
+            f"[OCR] attempt {self.ocr_attempts}/{OCR_MAX_ATTEMPTS} "
+            f"session={self.session_label()} motion={self.motion_state}"
+        )
 
     def tick_plate_deadline(self, now: float | None = None) -> bool:
         """
@@ -410,6 +481,13 @@ class TrackMemory:
     def lock_plate(self, plate: str, confidence: float, reason: str) -> None:
         """Hard-lock plate; subsequent OCR must be ignored."""
         manual = str(reason or "").startswith("manual")
+        # Guard manual entry always wins and must not be overwritten by OCR.
+        if (
+            self.is_plate_locked()
+            and (self.plate_source or "").upper() == "GUARD"
+            and not manual
+        ):
+            return
         if self.is_plate_locked() and self.plate == plate and not manual:
             self.ocr_confidence = max(self.ocr_confidence, float(confidence or 0.0))
             return
@@ -420,14 +498,19 @@ class TrackMemory:
         self.ocr_confidence = max(self.ocr_confidence, float(confidence or 0.0))
         self.plate_locked_at = time.time()
         self.plate_lock_reason = reason
+        self.plate_source = "GUARD" if manual else "AI_OCR"
         self.unreadable_votes = 0
         # Manual guard overrides must stick even if OCR later votes differently.
         if manual:
             self.plate_votes = {plate: max(99, int(self.plate_votes.get(plate, 0) or 0))}
             self.plate_vote_scores = {plate: max(99.0, float(self.plate_vote_scores.get(plate, 0.0) or 0.0))}
+            print(
+                f"[OCR] Guard manually entered plate={plate} source=GUARD "
+                f"attempts={self.ocr_attempts}"
+            )
         print(
             f"[OCR] PLATE LOCKED: {plate} conf={confidence:.2f} reason={reason} "
-            f"attempts={self.ocr_attempts}"
+            f"source={self.plate_source} attempts={self.ocr_attempts}"
         )
 
     def absorb_plate_state(self, donor: "TrackMemory") -> bool:
@@ -450,6 +533,7 @@ class TrackMemory:
         self.ocr_started_at = donor.ocr_started_at or self.ocr_started_at
         self.plate_locked_at = donor.plate_locked_at
         self.plate_lock_reason = donor.plate_lock_reason
+        self.plate_source = donor.plate_source or self.plate_source
         if donor.last_plate_crop is not None:
             self.last_plate_crop = donor.last_plate_crop
         if donor.last_vehicle_crop is not None:
@@ -485,6 +569,8 @@ class TrackMemory:
         # HARD LOCK — ignore everything after lock (including failures / outliers).
         if self.is_plate_locked():
             print(f"[OCR] OCR skipped: plate already locked ({self.plate})")
+            return
+        if (self.plate_source or "").upper() == "GUARD":
             return
         if self.plate_status in ("unreadable", "not_read"):
             return
@@ -924,11 +1010,42 @@ class ParkingIntelligence:
         key = (track_id, event_type, zone_id)
         if not self._should_emit(key):
             return None
+        plate_out = plate
+        plate_status = None
+        plate_source = None
+        session_id = None
+        vehicle_event_id = None
+        owner_name = None
+        owner_role = None
+        vehicle_details = None
+        if track_id is not None:
+            mem = self.tracks.get(int(track_id))
+            if mem is not None:
+                if not plate_out:
+                    if mem.is_plate_locked() and mem.plate:
+                        plate_out = mem.plate
+                    elif mem.plate_status in ("not_read", "unreadable"):
+                        plate_out = "UNKNOWN"
+                plate_status = mem.plate_status
+                plate_source = mem.plate_source or ("GUARD" if str(mem.plate_lock_reason or "").startswith("manual") else "AI_OCR")
+                session_id = mem.recognition_session_id
+                vehicle_event_id = mem.vehicle_event_id(self.camera_id) + f":{event_type}:{zone_id}"
+                owner_name = mem.owner_name or mem.owner_label
+                owner_role = mem.owner_role
+                vehicle_details = mem.vehicle_details or mem.vehicle_type
         evt = {
             "type": event_type,
             "zone_id": zone_id,
             "track_id": track_id,
-            "plate": plate,
+            "plate": plate_out,
+            "plate_status": plate_status,
+            "plate_source": plate_source,
+            "detection_source": plate_source or "AI",
+            "recognition_session_id": session_id,
+            "vehicle_event_id": vehicle_event_id,
+            "owner_name": owner_name,
+            "owner_role": owner_role,
+            "vehicle_details": vehicle_details,
             "confidence": 0.8,
             "ts": time.time(),
         }
@@ -1020,7 +1137,10 @@ class ParkingIntelligence:
                         sid,
                         int(tid),
                         mem.plate,
-                        {"dwell_minutes": round((now - mem.slot_since) / 60, 1)},
+                        {
+                            "dwell_minutes": round((now - mem.slot_since) / 60, 1),
+                            **({"owner_name": mem.owner_name} if mem.owner_name else {}),
+                        },
                     )
                     if evt:
                         events.append(evt)
@@ -1033,7 +1153,10 @@ class ParkingIntelligence:
                         zone_key,
                         int(tid),
                         mem.plate,
-                        {"slots": [str(z["id"]) for z in matched_slots]},
+                        {
+                            "slots": [str(z["id"]) for z in matched_slots],
+                            **({"owner_name": mem.owner_name} if mem.owner_name else {}),
+                        },
                     )
                     if evt:
                         events.append(evt)
@@ -1041,7 +1164,16 @@ class ParkingIntelligence:
                 # no parking / aisle
                 for rz in matched_rules:
                     et = "no_parking" if rz.get("type") == "no_parking" else "aisle_blocked"
-                    evt = self._emit(et, str(rz.get("id")), int(tid), mem.plate, {"label": rz.get("label")})
+                    evt = self._emit(
+                        et,
+                        str(rz.get("id")),
+                        int(tid),
+                        mem.plate,
+                        {
+                            "label": rz.get("label"),
+                            **({"owner_name": mem.owner_name} if mem.owner_name else {}),
+                        },
+                    )
                     if evt:
                         events.append(evt)
 

@@ -7,7 +7,7 @@
  *
  * Network: same rfid_gate_config.h Wi-Fi + API as Entry (no WiFiManager portal).
  * When Exit is granted, Laravel queues open on GATE-IN-1.
- * The Entry ESP32 (with the servo) opens the boom on its next heartbeat.
+ * The Entry ESP32 (with the servo) opens the boom for GATE_OPEN_MS (5 seconds).
  *
  * Arduino IDE: File → Open → OneDrive\Documents\Arduino\Exit\Exit.ino
  * (run sync-arduino.bat from the project if this folder looks old)
@@ -19,6 +19,9 @@
 // No local servo — shared boom is on the Entry board.
 #define ACTUATOR_NONE 0
 #define ACTUATOR_MODE ACTUATOR_NONE
+
+// Must match Entry: Exit grant opens Entry boom for 5 seconds.
+#define GATE_OPEN_MS 5000UL
 
 #include "rfid_gate_common.h"
 

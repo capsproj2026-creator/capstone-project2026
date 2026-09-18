@@ -35,7 +35,7 @@ from load_env import load_project_env
 # Load .env before parking_rules / plate_ocr read tunables at import time.
 load_project_env()
 
-from parking_rules import ParkingIntelligence, SimpleIoUTracker
+from parking_rules import ParkingIntelligence, SimpleIoUTracker, ocr_allowed_for_motion
 from plate_ocr import OCR_EVERY_SEC, OCR_SYNC_ENABLED, OCR_SYNC_EVERY_SEC, AsyncPlateQueue, PlateOCR
 from plate_text import _clean_raw
 from monitor_scan import encode_crop_jpeg, encode_crop_jpeg_bytes, enhance_monitor_frame, scan_visible_region
@@ -82,6 +82,10 @@ STREAM_TARGET_FPS = float(os.getenv("AI_PARKING_STREAM_FPS", "18"))
 STREAM_JPEG_QUALITY = int(os.getenv("AI_PARKING_STREAM_JPEG_QUALITY", "72"))
 # AI overlay stream (monitor). Higher than live preview so ~20 m plates stay readable.
 AI_STREAM_JPEG_QUALITY = int(os.getenv("AI_PARKING_AI_STREAM_JPEG_QUALITY", "78"))
+# CCTV Live Cameras: only push a new JPEG when the scene moves (saves CPU/bandwidth).
+CCTV_MOTION_ONLY = os.getenv("AI_PARKING_CCTV_MOTION_ONLY", "1") == "1"
+CCTV_MOTION_MEAN = float(os.getenv("AI_PARKING_CCTV_MOTION_MEAN", "2.8"))
+CCTV_FORCE_REFRESH_SEC = float(os.getenv("AI_PARKING_CCTV_FORCE_REFRESH_SEC", "10"))
 MONITOR_SHARPEN = os.getenv("AI_PARKING_MONITOR_SHARPEN", "0") == "1"
 RECONNECT_EVERY_SEC = float(os.getenv("AI_CAMERA_RECONNECT_SEC", "5"))
 OPEN_LOCK = threading.Lock()
@@ -120,7 +124,7 @@ if not VEHICLES_ONLY and os.getenv("AI_PARKING_DETECT_PERSONS", "0") == "1":
     DETECT_CLASS_IDS = [0, 2, 3, 5, 7]
     VEHICLE_CLASS_IDS = set(DETECT_CLASS_IDS)
 POST_PERSON_DETECTIONS = (not VEHICLES_ONLY) and os.getenv("AI_PARKING_POST_PERSONS", "0") == "1"
-OCR_PARKED_ONLY = os.getenv("AI_PARKING_OCR_PARKED_ONLY", "0") == "1"
+OCR_PARKED_ONLY = os.getenv("AI_PARKING_OCR_PARKED_ONLY", "0") == "1"  # legacy; ignored when OCR_MOVING_ONLY
 COCO_NAMES = {
     0: "person",
     2: "car",
@@ -716,7 +720,8 @@ def parse_tracks(
             if plate_queue is not None:
                 mem.maybe_retry_not_read(now)
             if plate_queue is not None and not mem.is_plate_terminal():
-                ocr_ok = not OCR_PARKED_ONLY or motion_state in (None, "parked", "idle")
+                # HARD GATE: YOLO → tracking → movement check → OCR (never OCR while stationary).
+                ocr_ok = ocr_allowed_for_motion(motion_state) and mem.allows_ocr()
                 # Prefer real vehicles for OCR; still allow mid-size parked cars/multicabs.
                 box_w = max(1, ox2 - ox1)
                 box_h = max(1, oy2 - oy1)
@@ -725,6 +730,12 @@ def parse_tracks(
                 if area_frac < 0.006 or box_w < 64 or box_h < 48:
                     ocr_ok = False
                 if ocr_ok:
+                    if (now - getattr(mem, "_last_ocr_gate_log_at", 0.0)) > 2.0:
+                        mem._last_ocr_gate_log_at = now  # type: ignore[attr-defined]
+                        print(
+                            f"[{camera_id}] Track #{track_id} OCR started "
+                            f"(moving, attempts={mem.ocr_attempts})"
+                        )
                     plate_queue.submit(
                         camera_id,
                         track_id,
@@ -734,6 +745,14 @@ def parse_tracks(
                         OCR_EVERY_SEC,
                         cls_id=row.get("cls_id"),
                     )
+                elif motion_state != "moving":
+                    if (now - getattr(mem, "_last_ocr_skip_log_at", 0.0)) > 3.0:
+                        mem._last_ocr_skip_log_at = now  # type: ignore[attr-defined]
+                        print(
+                            f"[{camera_id}] Track #{track_id} OCR skipped "
+                            f"because vehicle is {motion_state or 'unknown'} "
+                            f"(attempts={mem.ocr_attempts} unchanged)"
+                        )
             elif plate_queue is not None and mem.is_plate_locked():
                 # One-line skip (rate-limit via last_ocr_at reuse).
                 if (now - getattr(mem, "last_ocr_at", 0)) > 5.0:
@@ -1579,6 +1598,8 @@ class CameraWorker:
         self._held_counts = (0, 0)
         self._ai_overlay_lock = threading.Lock()
         self._ai_overlay_jpeg: bytes | None = None
+        self._prev_preview_gray = None
+        self._last_preview_push = 0.0
         zones_path = Path(config.zones_file)
         if not zones_path.is_file():
             zones_path = BASE_DIR / "zones.json"
@@ -1738,6 +1759,32 @@ class CameraWorker:
                 continue
 
             display_raw, _ = resize_for_infer(frame, self.preview_max_width)
+
+            # Skip re-encode when the CCTV scene is still (no meaningful movement).
+            # MJPEG clients already skip identical JPEG objects, so bandwidth drops too.
+            if (
+                CCTV_MOTION_ONLY
+                and self.state.get_jpeg(False) is not None
+                and display_raw is not None
+            ):
+                gray = cv2.cvtColor(display_raw, cv2.COLOR_BGR2GRAY)
+                gray = cv2.GaussianBlur(gray, (5, 5), 0)
+                still = False
+                if (
+                    self._prev_preview_gray is not None
+                    and self._prev_preview_gray.shape == gray.shape
+                ):
+                    score = float(cv2.mean(cv2.absdiff(gray, self._prev_preview_gray))[0])
+                    force = (time.time() - self._last_preview_push) >= CCTV_FORCE_REFRESH_SEC
+                    if score < CCTV_MOTION_MEAN and not force:
+                        still = True
+                self._prev_preview_gray = gray
+                if still:
+                    elapsed = time.perf_counter() - started
+                    time.sleep(max(0.001, interval - elapsed))
+                    continue
+
+            self._last_preview_push = time.time()
             raw_jpeg = None
             ok_raw, buf_raw = cv2.imencode(".jpg", display_raw, encode_params)
             if ok_raw:
@@ -2010,6 +2057,8 @@ class CameraWorker:
         candidates = []
         for tid, mem in list(self.intelligence.tracks.items()):
             if mem.is_plate_terminal():
+                continue
+            if not mem.allows_ocr():
                 continue
             if (now - mem.first_seen) < 0.4:
                 continue

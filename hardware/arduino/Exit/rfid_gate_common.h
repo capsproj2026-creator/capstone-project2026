@@ -55,7 +55,7 @@
 #endif
 
 #ifndef GATE_OPEN_MS
-#define GATE_OPEN_MS 8000UL
+#define GATE_OPEN_MS   5000UL
 #endif
 #ifndef GATE_COOLDOWN_MS
 // Short gap so a *different* card can be tapped quickly after the previous one.
@@ -123,10 +123,10 @@
 #define PIN_GATE  14
 
 // Tight timeouts so a dead API fails fast; healthy LAN replies well under these.
-const uint16_t HTTP_CONNECT_MS = 2500;
-const uint16_t HTTP_READ_MS    = 5000;
-const uint16_t HTTP_HB_CONNECT_MS = 3000;
-const uint16_t HTTP_HB_READ_MS    = 5000;
+const uint16_t HTTP_CONNECT_MS = 4000;
+const uint16_t HTTP_READ_MS    = 15000;
+const uint16_t HTTP_HB_CONNECT_MS = 5000;
+const uint16_t HTTP_HB_READ_MS    = 15000;
 
 MFRC522 mfrc522(SS_PIN, RST_PIN);
 Preferences gatePrefs;
@@ -904,7 +904,8 @@ bool pollHeartbeat() {
   gateIsOpen = true;
   gateCloseAtMs = millis() + GATE_OPEN_MS;
   gateCycleEndsMs = millis() + SCAN_BLOCK_MS;
-  Serial.println("Servo OPEN — Entry scan, Exit scan, or emergency (one boom on this board)");
+  Serial.printf("Servo UP — Entry/Exit/emergency open; auto DOWN in %lu ms\n",
+                (unsigned long) GATE_OPEN_MS);
   return true;
 }
 
@@ -935,9 +936,10 @@ void grantAccess() {
   gateCloseAtMs = millis() + GATE_OPEN_MS;
   gateCycleEndsMs = millis() + SCAN_BLOCK_MS;
 #if ACTUATOR_MODE == ACTUATOR_NONE
-  Serial.println("Access Granted (Exit) — keep Entry ESP32 + Laravel on; servo opens on Entry in ~1-2s");
+  Serial.printf("Access Granted (Exit) — Entry boom opens via Laravel; stays UP %lu ms\n",
+                (unsigned long) GATE_OPEN_MS);
 #else
-  Serial.println("Access Granted (Entry) — servo opening on this board");
+  Serial.printf("Access Granted (Entry) — servo UP now, auto DOWN in %lu ms\n", (unsigned long) GATE_OPEN_MS);
 #endif
 }
 
@@ -1011,6 +1013,6 @@ void updateGateCycle() {
     closeGateActuator();
     digitalWrite(PIN_GREEN, LOW);
     gateCloseAtMs = 0;
-    Serial.println("Gate closed");
+    Serial.println("Servo DOWN — gate closed after open window");
   }
 }

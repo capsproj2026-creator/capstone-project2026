@@ -217,9 +217,16 @@
                             zone.textContent = evt.zone_id || '';
                             row.append(badge, zone);
                             li.append(row);
+                            const owner = (evt.owner_name || evt.owner_label || '').trim();
+                            if (owner && owner.toLowerCase() !== 'unknown vehicle') {
+                                const nameEl = document.createElement('p');
+                                nameEl.className = 'mt-1 text-sm font-semibold text-gray-900';
+                                nameEl.textContent = owner;
+                                li.append(nameEl);
+                            }
                             if (evt.plate) {
                                 const p = document.createElement('p');
-                                p.className = 'mt-1 text-xs text-gray-600';
+                                p.className = 'mt-0.5 text-xs text-gray-600';
                                 p.textContent = `Plate ${evt.plate}`;
                                 li.append(p);
                             }

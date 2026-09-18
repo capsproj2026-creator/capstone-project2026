@@ -14,6 +14,9 @@
 #define GATE_ID "GATE-IN-1"
 #define DIRECTION "Entry"
 
+// Boom stays UP for 5 seconds on Entry taps and on Exit-triggered opens.
+#define GATE_OPEN_MS 5000UL
+
 #include "rfid_gate_common.h"
 
 void setup() {

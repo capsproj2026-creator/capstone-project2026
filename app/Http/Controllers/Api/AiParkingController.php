@@ -72,6 +72,10 @@ class AiParkingController extends Controller
             'events.*.camera_id' => ['nullable', 'string', 'max:64'],
             'events.*.area_id' => ['nullable', 'integer'],
             'events.*.vehicle_details' => ['nullable', 'string', 'max:64'],
+            'events.*.owner_name' => ['nullable', 'string', 'max:128'],
+            'events.*.owner_label' => ['nullable', 'string', 'max:128'],
+            'events.*.owner_role' => ['nullable', 'string', 'max:64'],
+            'events.*.role' => ['nullable', 'string', 'max:64'],
         ]);
 
         $cameraId = (string) ($validated['camera_id'] ?? $registry->primaryCameraId());
@@ -116,6 +120,10 @@ class AiParkingController extends Controller
             'events.*.evidence_jpeg_base64' => ['nullable', 'string', 'max:800000'],
             'events.*.vehicle_details' => ['nullable', 'string', 'max:64'],
             'events.*.area_id' => ['nullable', 'integer'],
+            'events.*.owner_name' => ['nullable', 'string', 'max:128'],
+            'events.*.owner_label' => ['nullable', 'string', 'max:128'],
+            'events.*.owner_role' => ['nullable', 'string', 'max:64'],
+            'events.*.role' => ['nullable', 'string', 'max:64'],
         ]);
 
         $cameraId = (string) ($validated['camera_id'] ?? $registry->primaryCameraId());

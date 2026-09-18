@@ -19,6 +19,9 @@
 #define ACTUATOR_NONE 0
 #define ACTUATOR_MODE ACTUATOR_NONE
 
+// Must match Entry: Exit grant opens Entry boom for 5 seconds.
+#define GATE_OPEN_MS 5000UL
+
 #include "rfid_gate_common.h"
 
 void setup() {

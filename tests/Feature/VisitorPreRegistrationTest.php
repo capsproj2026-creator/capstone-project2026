@@ -90,7 +90,14 @@ class VisitorPreRegistrationTest extends TestCase
 
         $this->followRedirects($response)
             ->assertOk()
-            ->assertSee($visitor->confirmation_code, false);
+            ->assertSee($visitor->confirmation_code, false)
+            ->assertSee('Online Guest', false)
+            ->assertSee('09171234567', false)
+            ->assertSee('Campus tour', false)
+            ->assertSee('Registrar', false)
+            ->assertSee(strtoupper($plate), false)
+            ->assertSee('Silver', false)
+            ->assertSee('Registration details', false);
     }
 
     public function test_post_rejects_past_expected_exit_at(): void

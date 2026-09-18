@@ -230,8 +230,12 @@ if (Test-Path $arduinoSync) {
     Write-Host "  Arduino Entry/Exit sketches synced to OneDrive" -ForegroundColor DarkGray
 }
 
-Start-ProjectWindow "Laravel" @("php", "artisan", "serve", "--host=0.0.0.0", "--port=8000", "--no-reload")
-Start-Sleep -Milliseconds 800
+# Laravel stays on loopback :8001. LAN front on :8000 answers ESP32 heartbeats
+# instantly so a slow Mongo/page load cannot starve the gates (HTTP -11).
+Start-ProjectWindow "Laravel" @("php", "artisan", "serve", "--host=127.0.0.1", "--port=8001", "--no-reload")
+Start-Sleep -Milliseconds 600
+Start-ProjectWindow "LAN Front (ESP32)" @("php", "-S", "0.0.0.0:8000", "bootstrap/lan_front_router.php")
+Start-Sleep -Milliseconds 500
 
 $ngrokPublicUrl = $null
 if (-not $SkipNgrok) {
@@ -287,7 +291,8 @@ Write-Host "========================================" -ForegroundColor Green
 Write-Host " Smart Campus VMS is starting" -ForegroundColor Green
 Write-Host "========================================" -ForegroundColor Green
 Write-Host ""
-Write-Host "  Website:  http://127.0.0.1:8000" -ForegroundColor Yellow
+Write-Host "  Website:  http://127.0.0.1:8000  (front → Laravel :8001)" -ForegroundColor Yellow
+Write-Host "  ESP32 HB: answered on :8000 without waiting for Mongo" -ForegroundColor DarkGray
 if ($ngrokPublicUrl) {
     Write-Host ("  Public:   " + $ngrokPublicUrl) -ForegroundColor Yellow
     Write-Host ("  Webhook:  " + $ngrokPublicUrl + "/api/visitor/pre-register/google") -ForegroundColor Yellow

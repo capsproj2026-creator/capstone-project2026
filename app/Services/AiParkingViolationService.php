@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Events\AiParkingRealtime;
 use App\Mail\VehicleViolationMail;
 use App\Models\Notification;
 use App\Models\ParkingArea;
@@ -66,10 +67,22 @@ class AiParkingViolationService
     {
         $type = (string) $event['type'];
         $violationType = self::TYPE_MAP[$type];
-        $plate = PlateLookup::normalize((string) ($event['plate'] ?? ''));
+        $rawPlate = (string) ($event['plate'] ?? '');
+        $plate = PlateLookup::normalize($rawPlate);
+        if ($plate === '' && in_array(strtoupper(trim($rawPlate)), ['UNKNOWN', 'NOT_READ', 'N/A'], true)) {
+            $plate = 'UNKNOWN';
+        }
+        if ($plate === '' && in_array(strtolower((string) ($event['plate_status'] ?? '')), ['not_read', 'unreadable'], true)) {
+            $plate = 'UNKNOWN';
+        }
         $zoneId = (string) ($event['zone_id'] ?? '');
         $trackId = $event['track_id'] ?? null;
         $cameraId = (string) ($event['camera_id'] ?? $cameraId);
+        $vehicleEventId = (string) ($event['vehicle_event_id'] ?? $event['vehicleEventId'] ?? '');
+        if ($vehicleEventId === '' && $trackId !== null) {
+            $session = $event['recognition_session_id'] ?? $event['session_id'] ?? 't';
+            $vehicleEventId = $cameraId.':session:'.$session.':track:'.$trackId.':'.$type;
+        }
         // Never trust client area_id alone — resolve from camera registry.
         $areaId = app(AiCameraRegistry::class)->resolveAreaId(
             $cameraId,
@@ -78,24 +91,51 @@ class AiParkingViolationService
         $areaName = ParkingArea::query()->find($areaId)?->area_name;
         $vehicleDetails = $event['vehicle_details'] ?? null;
         $confidence = isset($event['confidence']) ? (float) $event['confidence'] : null;
+        $detectionSource = strtoupper((string) ($event['detection_source'] ?? $event['plate_source'] ?? 'AI'));
+        if ($detectionSource === '') {
+            $detectionSource = 'AI';
+        }
 
         $description = $this->buildDescription($event, $cameraId);
 
+        AiParkingRealtime::emit(AiParkingRealtime::EVENT_VIOLATION_DETECTED, [
+            'vehicleEventId' => $vehicleEventId !== '' ? $vehicleEventId : null,
+            'trackingId' => is_numeric($trackId) ? (int) $trackId : $trackId,
+            'plateNumber' => $plate !== '' ? $plate : 'UNKNOWN',
+            'violationType' => $violationType,
+            'cameraId' => $cameraId,
+            'parkingArea' => $areaName,
+            'detectionSource' => $detectionSource,
+        ]);
+
         if ($plate === '') {
-            return [
-                'status' => 'queued_ui_only',
-                'reason' => 'no_plate',
-                'type' => $type,
-                'zone_id' => $zoneId,
-                'track_id' => $trackId,
-            ];
+            $plate = 'UNKNOWN';
         }
 
-        $user = PlateLookup::findUser((string) ($event['plate'] ?? $plate));
-        $identity = PlateLookup::identity((string) ($event['plate'] ?? $plate));
-        if ($vehicleDetails === null) {
-            $vehicleDetails = $identity['vehicle_details'];
+        // Idempotency: same physical vehicle event must not create multiple DB rows.
+        if ($vehicleEventId !== '') {
+            $existing = ViolationLog::query()
+                ->where('vehicle_event_id', $vehicleEventId)
+                ->first();
+            if ($existing) {
+                return [
+                    'status' => 'debounced',
+                    'reason' => 'vehicle_event_id',
+                    'type' => $type,
+                    'plate' => $plate,
+                    'violation_log_id' => (string) $existing->getKey(),
+                ];
+            }
         }
+
+        $user = $plate !== 'UNKNOWN' ? PlateLookup::findUser((string) ($event['plate'] ?? $plate)) : null;
+        $identity = $plate !== 'UNKNOWN'
+            ? PlateLookup::identity((string) ($event['plate'] ?? $plate))
+            : ['vehicle_details' => $vehicleDetails, 'role' => $event['owner_role'] ?? $event['role'] ?? null];
+        if ($vehicleDetails === null) {
+            $vehicleDetails = $identity['vehicle_details'] ?? null;
+        }
+        $ownerRole = $event['owner_role'] ?? $event['role'] ?? ($identity['role'] ?? null);
 
         // Unknown plate → notify guards once/day, no user citation (no dummy user created).
         if ($type === 'unauthorized' && ! $user) {
@@ -209,6 +249,9 @@ class AiParkingViolationService
             'vehicle_details' => $vehicleDetails,
             'track_id' => is_numeric($trackId) ? (int) $trackId : null,
             'confidence' => $confidence,
+            'vehicle_event_id' => $vehicleEventId !== '' ? $vehicleEventId : null,
+            'detection_source' => $detectionSource,
+            'owner_role' => $ownerRole ?: $user->roleName(),
         ]);
 
         $newStrikes = app(ViolationEnforcementService::class)->syncStrikesFromLogs($user);
@@ -240,6 +283,25 @@ class AiParkingViolationService
             violationLogId: (string) $log->getKey(),
         );
 
+        $realtimePayload = [
+            'vehicleEventId' => $vehicleEventId !== '' ? $vehicleEventId : (string) $log->getKey(),
+            'trackingId' => is_numeric($trackId) ? (int) $trackId : $trackId,
+            'plateNumber' => $plate,
+            'userId' => $user->id,
+            'userRole' => $ownerRole ?: $user->roleName(),
+            'vehicleType' => $vehicleDetails,
+            'violationType' => $violationType,
+            'violationDescription' => $description,
+            'parkingArea' => $areaName,
+            'timestamp' => optional($log->created_at)?->toIso8601String(),
+            'detectionSource' => $detectionSource,
+            'confidence' => $confidence,
+            'evidenceReference' => $evidencePath,
+            'violationLogId' => (string) $log->getKey(),
+        ];
+        AiParkingRealtime::emit(AiParkingRealtime::EVENT_VIOLATION_CREATED, $realtimePayload);
+
+        $emailSent = false;
         try {
             Mail::to($user->email)->send(new VehicleViolationMail(
                 plateNumber: $plate,
@@ -252,6 +314,12 @@ class AiParkingViolationService
                 remarks: $description,
                 strikeCount: $newStrikes,
             ));
+            $emailSent = true;
+            AiParkingRealtime::emit(AiParkingRealtime::EVENT_VIOLATION_NOTIFICATION_SENT, [
+                'vehicleEventId' => $realtimePayload['vehicleEventId'],
+                'plateNumber' => $plate,
+                'violationLogId' => (string) $log->getKey(),
+            ]);
         } catch (\Throwable $e) {
             Log::warning('AI parking violation email failed: '.$e->getMessage());
         }
@@ -268,6 +336,9 @@ class AiParkingViolationService
             'camera_id' => $cameraId,
             'area_id' => $areaId,
             'guard_notified' => true,
+            'email_sent' => $emailSent,
+            'vehicle_event_id' => $vehicleEventId !== '' ? $vehicleEventId : null,
+            'violation_log_id' => (string) $log->getKey(),
         ];
     }
 
@@ -415,6 +486,8 @@ class AiParkingViolationService
                     'confidence' => $det['confidence'] ?? 0.5,
                     'vehicle_details' => $det['vehicle_details'] ?? null,
                     'camera_id' => $cameraId,
+                    'owner_name' => null,
+                    'owner_label' => 'Unknown Vehicle',
                 ];
 
                 continue;
@@ -432,6 +505,10 @@ class AiParkingViolationService
                     'confidence' => $det['confidence'] ?? 0.5,
                     'vehicle_details' => $det['vehicle_details'] ?? null,
                     'camera_id' => $cameraId,
+                    'owner_name' => $user->displayName(),
+                    'owner_label' => $user->displayName(),
+                    'owner_role' => $user->displayRoleLabel(),
+                    'role' => $user->displayRoleLabel(),
                 ];
             }
         }

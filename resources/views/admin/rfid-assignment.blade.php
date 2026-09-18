@@ -325,9 +325,9 @@
                     <div id="assign-rfid-scan-box" data-state="waiting" class="rounded-xl border-2 border-dashed border-blue-200 bg-blue-50/60 px-4 py-4 text-center transition-colors">
                         {{-- Waiting --}}
                         <div id="assign-rfid-state-waiting" class="flex flex-col items-center gap-1.5">
-                            <i data-lucide="loader-2" class="h-6 w-6 animate-spin text-blue-500"></i>
-                            <p class="text-sm font-semibold text-blue-800">Waiting for RFID scan…</p>
-                            <p class="text-xs text-blue-600">Tap the card on the RC522 reader connected to the gate ESP32.</p>
+                            <i data-lucide="radar" class="h-6 w-6 animate-pulse text-blue-500"></i>
+                            <p class="text-sm font-semibold text-blue-800">Waiting for ID tap…</p>
+                            <p class="text-xs text-blue-600">Tap the RFID card/ID on the gate RC522 reader now. The UID fills in automatically when the tap is read.</p>
                         </div>
                         {{-- Detected --}}
                         <div id="assign-rfid-state-detected" class="hidden flex-col items-center gap-1.5">
@@ -339,8 +339,8 @@
                         {{-- Failed / timeout --}}
                         <div id="assign-rfid-state-failed" class="hidden flex-col items-center gap-1.5">
                             <i data-lucide="alert-triangle" class="h-6 w-6 text-amber-600"></i>
-                            <p class="text-sm font-semibold text-amber-800">No card detected</p>
-                            <p class="text-xs text-amber-700">Check that the ESP32/RC522 gate reader is online, then try again.</p>
+                            <p class="text-sm font-semibold text-amber-800">No ID tap detected</p>
+                            <p class="text-xs text-amber-700">Keep the Assign modal open, make sure Entry ESP32 is online, then tap an unregistered card on the RC522 again.</p>
                             <button type="button" id="assign-rfid-retry" class="mt-1 inline-flex items-center gap-1.5 rounded-lg border border-amber-300 bg-white px-3 py-1.5 text-xs font-semibold text-amber-800 hover:bg-amber-50">
                                 <i data-lucide="rotate-cw" class="h-3.5 w-3.5"></i>
                                 Try again
@@ -513,6 +513,9 @@
         let gatePollTimer = null;
         let waitTimeoutTimer = null;
         let lastGateLogId = '';
+        let baselineLogId = '';
+        let modalOpenedAtMs = 0;
+        let modalOpenedAtIso = '';
         // USB/keyboard-wedge readers often pause 50–150ms between characters.
         const USB_SCAN_GAP_MS = 400;
 
@@ -535,8 +538,8 @@
             if (uidEl) uidEl.textContent = uid;
             if (scanHint) {
                 scanHint.textContent = source === 'gate'
-                    ? 'Detected via the gate ESP32/RC522 reader.'
-                    : 'Detected via a connected USB card reader.';
+                    ? 'UID captured from gate ID tap — review, then Assign & Notify.'
+                    : 'UID captured from USB reader tap — review, then Assign & Notify.';
             }
             setScanState('detected');
             return true;
@@ -545,7 +548,11 @@
         const pullLatestGateUid = async () => {
             if (!isModalOpen() || scanState !== 'waiting' || !latestUnregisteredUrl) return;
             try {
-                const res = await fetch(latestUnregisteredUrl, {
+                const url = new URL(latestUnregisteredUrl, window.location.origin);
+                if (modalOpenedAtIso) {
+                    url.searchParams.set('since', modalOpenedAtIso);
+                }
+                const res = await fetch(url.toString(), {
                     headers: { Accept: 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
                     credentials: 'same-origin',
                     cache: 'no-store',
@@ -554,18 +561,21 @@
                 const data = await res.json();
                 if (!data?.uid || !isFullUid(data.uid)) return;
                 const logId = String(data.log_id || '');
-                if (!logId || logId !== lastGateLogId) {
-                    if (setUidValue(data.uid, 'gate')) {
-                        lastGateLogId = logId || lastGateLogId;
-                    }
+                // Ignore the baseline (pre-existing) unauthorized tap from before the modal opened.
+                if (logId && baselineLogId && logId === baselineLogId) return;
+                if (logId && logId === lastGateLogId) return;
+                if (data.scanned_at && modalOpenedAtMs) {
+                    const scannedMs = Date.parse(data.scanned_at);
+                    if (!Number.isNaN(scannedMs) && scannedMs < (modalOpenedAtMs - 2500)) return;
+                }
+                if (setUidValue(data.uid, 'gate')) {
+                    lastGateLogId = logId || lastGateLogId;
                 }
             } catch (e) { /* ignore */ }
         };
 
-        // Echo (Reverb) already pushes the scan instantly — this poll is only a
-        // fallback for when the websocket connection is unavailable, so it does
-        // not need to be nearly as aggressive as a primary transport.
-        const GATE_POLL_MS = 1000;
+        // Poll while waiting for a fresh ID tap on the gate reader.
+        const GATE_POLL_MS = 500;
         const startGatePoll = () => {
             stopGatePoll();
             pullLatestGateUid();
@@ -586,17 +596,40 @@
             }, SCAN_TIMEOUT_MS);
         };
 
-        /** Reset the widget to "Waiting for RFID scan…" and resume listening. */
-        const resetToWaiting = () => {
+        const snapshotBaseline = async () => {
+            if (!latestUnregisteredUrl) {
+                baselineLogId = '';
+                return;
+            }
+            try {
+                const res = await fetch(latestUnregisteredUrl, {
+                    headers: { Accept: 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
+                    credentials: 'same-origin',
+                    cache: 'no-store',
+                });
+                if (!res.ok) return;
+                const data = await res.json();
+                baselineLogId = data?.log_id ? String(data.log_id) : '';
+                lastGateLogId = baselineLogId;
+            } catch (e) {
+                baselineLogId = '';
+            }
+        };
+
+        /** Reset the widget to "Waiting for ID tap…" and resume listening. */
+        const resetToWaiting = async () => {
             if (input) input.value = '';
             lastGateLogId = '';
             scanBuffer = '';
-            if (scanHint) scanHint.textContent = '';
+            if (scanHint) scanHint.textContent = 'Listening for a new ID tap on the gate reader…';
             setScanState('waiting');
             startWaitTimeout();
+            modalOpenedAtMs = Date.now();
+            modalOpenedAtIso = new Date(modalOpenedAtMs).toISOString();
+            await snapshotBaseline();
         };
 
-        const openModal = (btn) => {
+        const openModal = async (btn) => {
             const id = btn.dataset.userId;
             document.getElementById('assign-rfid-avatar').textContent = initials(btn.dataset.userName);
             document.getElementById('assign-rfid-name').textContent = btn.dataset.userName || 'Unknown';
@@ -608,10 +641,10 @@
             const hasExisting = Boolean((btn.dataset.rfid || '').trim());
             if (currentHint) currentHint.classList.toggle('hidden', !hasExisting);
             if (submitBtn) submitBtn.textContent = btn.dataset.mode === 'update' ? 'Update & Notify' : 'Assign & Notify';
-            resetToWaiting();
             modal?.classList.remove('hidden');
             modal?.classList.add('flex');
             if (window.lucide) window.lucide.createIcons();
+            await resetToWaiting();
             startGatePoll();
         };
 
@@ -694,14 +727,17 @@
         window.whenEchoReady?.((echo) => {
             if (!echo) return;
             echo.private('gate.scans').listen('.GateScanProcessed', (scan) => {
-                if (!isModalOpen()) return;
-                // Prefer full UID from unauthorized / unknown-tag scans only.
-                if (scan && scan.is_unauthorized === false && scan.granted) return;
+                if (!isModalOpen() || scanState !== 'waiting') return;
+                // Only capture unregistered / unauthorized taps for assignment.
+                if (!scan?.is_unauthorized) return;
                 const full = (scan?.rfid_uid_full && scan.rfid_uid_full !== '—')
                     ? scan.rfid_uid_full
                     : '';
-                if (full && isFullUid(full) && setUidValue(full, 'gate')) {
-                    lastGateLogId = String(scan.id || lastGateLogId);
+                if (!full || !isFullUid(full)) return;
+                const logId = String(scan.id || '');
+                if (logId && baselineLogId && logId === baselineLogId) return;
+                if (setUidValue(full, 'gate')) {
+                    lastGateLogId = logId || lastGateLogId;
                 }
             });
         });
@@ -711,12 +747,12 @@
         });
         document.getElementById('assign-rfid-close')?.addEventListener('click', closeModal);
         document.getElementById('assign-rfid-cancel')?.addEventListener('click', closeModal);
-        document.getElementById('assign-rfid-rescan')?.addEventListener('click', () => {
-            resetToWaiting();
+        document.getElementById('assign-rfid-rescan')?.addEventListener('click', async () => {
+            await resetToWaiting();
             startGatePoll();
         });
-        document.getElementById('assign-rfid-retry')?.addEventListener('click', () => {
-            resetToWaiting();
+        document.getElementById('assign-rfid-retry')?.addEventListener('click', async () => {
+            await resetToWaiting();
             startGatePoll();
         });
         modal?.addEventListener('click', (e) => { if (e.target === modal) closeModal(); });

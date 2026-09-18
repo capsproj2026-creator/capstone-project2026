@@ -23,9 +23,13 @@ class VisitorPreRegister
         return $url !== '' ? $url : null;
     }
 
+    /**
+     * Public entry URL for QR codes — uses the in-app form so visitors
+     * get a full confirmation page (not Google Forms' generic thank-you).
+     */
     public static function preRegisterUrl(): string
     {
-        return self::googleFormUrl() ?? route('visitor.pre-register');
+        return route('visitor.pre-register');
     }
 
     public static function webhookToken(): string
@@ -107,6 +111,11 @@ class VisitorPreRegister
 
     public static function confirmationCodeFromSignedRequest(Request $request): ?string
     {
+        return self::visitorFromSignedRequest($request)?->confirmation_code;
+    }
+
+    public static function visitorFromSignedRequest(Request $request): ?Visitor
+    {
         if (! $request->hasValidSignature()) {
             return null;
         }
@@ -116,9 +125,13 @@ class VisitorPreRegister
             return null;
         }
 
-        $visitor = Visitor::query()->find($visitorId);
+        $visitor = Visitor::query()->with('vehicleType')->find($visitorId);
         $code = $visitor?->confirmation_code;
 
-        return is_string($code) && $code !== '' ? $code : null;
+        if (! is_string($code) || $code === '') {
+            return null;
+        }
+
+        return $visitor;
     }
 }

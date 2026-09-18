@@ -13,12 +13,10 @@ use Illuminate\View\View;
 
 class VisitorPreRegistrationController extends Controller
 {
-    public function show(): RedirectResponse|View
+    public function show(): View
     {
-        if ($googleFormUrl = VisitorPreRegister::googleFormUrl()) {
-            return redirect()->away($googleFormUrl);
-        }
-
+        // Always use the built-in form so visitors see a full confirmation of their details
+        // (Google Forms only shows a generic thank-you page).
         return view('visitors.pre-register', [
             'vehicles' => Vehicle::query()->orderBy('id')->get(),
         ]);
@@ -43,22 +41,30 @@ class VisitorPreRegistrationController extends Controller
 
     public function success(Request $request): View|RedirectResponse
     {
-        $signedCode = VisitorPreRegister::confirmationCodeFromSignedRequest($request);
-        if ($signedCode !== null) {
-            return view('visitors.pre-register-success', [
-                'confirmationCode' => $signedCode,
-            ]);
-        }
+        $visitor = VisitorPreRegister::visitorFromSignedRequest($request);
 
-        $code = session('pre_register_code');
-        $visitorId = session('pre_register_visitor_id');
+        if (! $visitor) {
+            $code = session('pre_register_code');
+            $visitorId = session('pre_register_visitor_id');
 
-        if (! is_string($code) || $code === '' || ! is_numeric($visitorId)) {
-            return redirect()->route('visitor.pre-register');
+            if (! is_string($code) || $code === '' || ! is_numeric($visitorId)) {
+                return redirect()->route('visitor.pre-register');
+            }
+
+            $visitor = \App\Models\Visitor::query()
+                ->with('vehicleType')
+                ->find((int) $visitorId);
+
+            if (! $visitor || (string) $visitor->confirmation_code !== $code) {
+                return redirect()->route('visitor.pre-register');
+            }
+        } else {
+            $visitor->loadMissing('vehicleType');
         }
 
         return view('visitors.pre-register-success', [
-            'confirmationCode' => $code,
+            'visitor' => $visitor,
+            'confirmationCode' => $visitor->confirmation_code,
         ]);
     }
 

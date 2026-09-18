@@ -18,3 +18,15 @@ Broadcast::channel('gate.scans', function ($user) {
 
     return in_array($user->roleName(), ['Admin', 'Guard'], true);
 });
+
+Broadcast::channel('ai.parking', function ($user) {
+    if (! $user) {
+        return false;
+    }
+
+    if (in_array((int) ($user->user_role_id ?? 0), [1, 2], true)) {
+        return true;
+    }
+
+    return in_array($user->roleName(), ['Admin', 'Guard'], true);
+});

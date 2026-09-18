@@ -107,10 +107,9 @@ class VisitorGoogleFormWebhookTest extends TestCase
         ])->assertUnprocessable();
     }
 
-    public function test_qr_uses_google_form_url_when_configured(): void
+    public function test_qr_points_to_in_app_pre_register_form(): void
     {
-        $googleUrl = 'https://docs.google.com/forms/d/e/test123/viewform';
-        Config::set('services.visitor_pre_register.google_form_url', $googleUrl);
+        Config::set('services.visitor_pre_register.google_form_url', 'https://docs.google.com/forms/d/e/test123/viewform');
 
         if (! $this->guardUser->hasVerifiedEmail()) {
             $this->guardUser->update(['email_verified_at' => now()]);
@@ -121,15 +120,18 @@ class VisitorGoogleFormWebhookTest extends TestCase
             ->get(route('visitor.pre-register.qr'))
             ->assertOk()
             ->assertHeader('Content-Type', 'image/svg+xml');
+
+        $this->assertSame(route('visitor.pre-register'), \App\Support\VisitorPreRegister::preRegisterUrl());
     }
 
-    public function test_pre_register_redirects_to_google_form_when_configured(): void
+    public function test_pre_register_shows_in_app_form_even_when_google_url_configured(): void
     {
-        $googleUrl = 'https://docs.google.com/forms/d/e/test456/viewform';
-        Config::set('services.visitor_pre_register.google_form_url', $googleUrl);
+        Config::set('services.visitor_pre_register.google_form_url', 'https://docs.google.com/forms/d/e/test456/viewform');
 
         $this->get(route('visitor.pre-register'))
-            ->assertRedirect($googleUrl);
+            ->assertOk()
+            ->assertSee('Submit Pre-Registration', false)
+            ->assertDontSee('docs.google.com', false);
     }
 
     public function test_signed_success_url_expires(): void

@@ -344,8 +344,11 @@
                                 <span class="rounded bg-amber-100 px-2 py-0.5 text-xs font-semibold uppercase text-amber-800">{{ $evt['type'] ?? 'event' }}</span>
                                 <span class="text-xs text-gray-500">{{ $evt['zone_id'] ?? '' }}</span>
                             </div>
+                            @if (! empty($evt['owner_name']) || ! empty($evt['owner_label']))
+                                <p class="mt-1 text-sm font-semibold text-gray-900">{{ $evt['owner_name'] ?? $evt['owner_label'] }}</p>
+                            @endif
                             @if (! empty($evt['plate']))
-                                <p class="mt-1 text-xs text-gray-600">Plate {{ $evt['plate'] }}</p>
+                                <p class="mt-0.5 text-xs text-gray-600">Plate {{ $evt['plate'] }}</p>
                             @endif
                         </li>
                     @empty
@@ -1023,9 +1026,16 @@
                         zone.textContent = evt.zone_id || '';
                         row.append(badge, zone);
                         li.append(row);
+                        const owner = (evt.owner_name || evt.owner_label || '').trim();
+                        if (owner && owner.toLowerCase() !== 'unknown vehicle') {
+                            const nameEl = document.createElement('p');
+                            nameEl.className = 'mt-1 text-sm font-semibold text-gray-900';
+                            nameEl.textContent = owner;
+                            li.append(nameEl);
+                        }
                         if (evt.plate) {
                             const p = document.createElement('p');
-                            p.className = 'mt-1 text-xs text-gray-600';
+                            p.className = 'mt-0.5 text-xs text-gray-600';
                             p.textContent = `Plate ${evt.plate}`;
                             li.append(p);
                         }
@@ -1039,6 +1049,86 @@
     refresh();
     window.setInterval(refresh, 2500);
     document.addEventListener('visibilitychange', () => { if (!document.hidden) refresh(); });
+
+    const prependAiEvent = (evt) => {
+        if (!eventsList || !evt) return;
+        const empty = eventsList.querySelector('li.text-center');
+        if (empty) empty.remove();
+        const li = document.createElement('li');
+        li.className = 'px-4 py-3';
+        li.dataset.wsEvent = evt.event || 'event';
+        const row = document.createElement('div');
+        row.className = 'flex items-center justify-between gap-2';
+        const badge = document.createElement('span');
+        badge.className = 'rounded bg-amber-100 px-2 py-0.5 text-xs font-semibold uppercase text-amber-800';
+        badge.textContent = evt.violationType || evt.event || 'AI event';
+        const source = document.createElement('span');
+        source.className = 'text-xs text-gray-500';
+        source.textContent = evt.detectionSource || evt.source || '';
+        row.append(badge, source);
+        li.append(row);
+        const plate = evt.plateNumber || evt.plate || '';
+        const role = evt.userRole || evt.role || '';
+        const vType = evt.vehicleType || '';
+        const lines = [
+            plate ? `Plate Number: ${plate}` : null,
+            role ? `Role: ${role}` : null,
+            vType ? `Vehicle Type: ${vType}` : null,
+            evt.violationType ? `Violation: ${evt.violationType}` : null,
+            (evt.detectionSource || evt.source) ? `Source: ${evt.detectionSource || evt.source}` : null,
+        ].filter(Boolean);
+        lines.forEach((text) => {
+            const p = document.createElement('p');
+            p.className = 'mt-0.5 text-xs text-gray-600';
+            p.textContent = text;
+            li.append(p);
+        });
+        eventsList.prepend(li);
+        while (eventsList.children.length > 20) {
+            eventsList.lastElementChild?.remove();
+        }
+    };
+
+    const subscribeAiParking = (echo) => {
+        if (!echo) return;
+        try {
+            echo.private('ai.parking').listen('.AiParkingRealtime', (payload) => {
+                const eventName = payload?.event || '';
+                const data = payload?.data || {};
+                if (eventName === 'violation_created' || eventName === 'violation_detected') {
+                    prependAiEvent({
+                        event: eventName,
+                        plateNumber: data.plateNumber || 'UNKNOWN',
+                        userRole: data.userRole,
+                        vehicleType: data.vehicleType,
+                        violationType: data.violationType || 'Wrong Parking',
+                        detectionSource: data.detectionSource || 'AI',
+                    });
+                } else if (eventName === 'plate_manual_entry') {
+                    prependAiEvent({
+                        event: eventName,
+                        plateNumber: data.plateNumber,
+                        userRole: data.userRole,
+                        vehicleType: data.vehicleType,
+                        violationType: 'Manual plate',
+                        detectionSource: 'GUARD',
+                        source: 'GUARD',
+                    });
+                    refresh();
+                } else if (eventName === 'plate_not_read') {
+                    prependAiEvent({
+                        event: eventName,
+                        plateNumber: 'UNKNOWN',
+                        violationType: 'Plate not read',
+                        detectionSource: 'AI',
+                    });
+                }
+            });
+        } catch (e) {}
+    };
+    if (typeof window.whenEchoReady === 'function') {
+        window.whenEchoReady(subscribeAiParking);
+    }
 
     const plateModal = document.getElementById('plate-correct-modal');
     const plateForm = document.getElementById('plate-correct-form');

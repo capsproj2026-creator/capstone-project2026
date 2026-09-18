@@ -130,10 +130,12 @@ class RfidController extends Controller
 
     /**
      * Latest gate tap for an unknown RFID — used to auto-fill Assign RFID modal.
+     * Pass ?since=ISO8601 so only taps AFTER the modal opened are returned
+     * (avoids filling an old unauthorized scan the admin never just tapped).
      */
-    public function latestUnregistered(RfidAccessService $rfid): JsonResponse
+    public function latestUnregistered(Request $request, RfidAccessService $rfid): JsonResponse
     {
-        $log = GateLog::query()
+        $query = GateLog::query()
             ->whereNull('user_id')
             ->whereNull('visitor_id')
             ->whereNotNull('rfid_uid')
@@ -141,9 +143,24 @@ class RfidController extends Controller
             ->where(function ($q) {
                 $q->where('result', RfidAccessService::STATUS_CARD_NOT_REGISTERED)
                     ->orWhere('result', RfidAccessService::STATUS_DENIED);
-            })
-            ->orderByDesc('timestamp')
-            ->first();
+            });
+
+        $sinceRaw = trim((string) $request->query('since', ''));
+        $appliedSince = false;
+        if ($sinceRaw !== '') {
+            try {
+                $since = \Illuminate\Support\Carbon::parse($sinceRaw)->subSeconds(2);
+                $query->where('timestamp', '>=', $since);
+                $appliedSince = true;
+            } catch (\Throwable) {
+                $appliedSince = false;
+            }
+        }
+        if (! $appliedSince) {
+            $query->where('timestamp', '>=', now()->subMinutes(2));
+        }
+
+        $log = $query->orderByDesc('timestamp')->first();
 
         if (! $log) {
             return response()->json(['ok' => true, 'uid' => null]);
@@ -154,12 +171,9 @@ class RfidController extends Controller
             return response()->json(['ok' => true, 'uid' => null]);
         }
 
-        // Only surface scans from the last 10 minutes so old taps don't stick.
-        $fresh = $log->timestamp && $log->timestamp->greaterThan(now()->subMinutes(10));
-
         return response()->json([
             'ok' => true,
-            'uid' => $fresh ? $uid : null,
+            'uid' => $uid,
             'gate_id' => $log->gate_id,
             'action' => $log->action,
             'scanned_at' => $log->timestamp?->toIso8601String(),
