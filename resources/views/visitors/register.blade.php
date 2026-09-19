@@ -26,10 +26,9 @@
             <div class="min-w-0 flex-1">
                 <h2 class="text-sm font-semibold text-gray-900">Visitor self pre-registration</h2>
                 <p class="mt-1 text-sm text-gray-600">
+                    Print this QR at the entrance. Visitors scan it to fill the campus form, then see a confirmation screen with their <strong>name</strong>, details, and reference code to show the guard.
                     @if ($preRegisterUsesGoogleForm ?? false)
-                        Print this QR at the entrance. Visitors scan it to open the Google Form. After submit, they receive their name and reference code (email / confirmation link) to show the guard.
-                    @else
-                        Print this QR at the entrance. Visitors scan it to submit their details, then see a confirmation page with all their registration info and reference code.
+                        <span class="block mt-1 text-gray-500">A Google Form is also configured for webhook/email; the QR uses the in-app form so the guard can verify the confirmation on the phone.</span>
                     @endif
                 </p>
                 <p class="mt-2 break-all font-mono text-xs text-gray-500">{{ $preRegisterUrl }}</p>

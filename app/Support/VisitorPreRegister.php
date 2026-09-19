@@ -25,12 +25,16 @@ class VisitorPreRegister
 
     /**
      * Public entry URL for QR codes and /visitor/pre-register.
-     * When VISITOR_PRE_REGISTER_GOOGLE_FORM_URL is set, that Google Form is used.
-     * Otherwise the built-in Laravel form is used.
+     *
+     * Always use the in-app form so visitors land on the personalized Laravel
+     * confirmation (name + reference code) they can show the guard.
+     * Google Forms only shows a static thank-you page and cannot redirect to
+     * that confirmation. The Google Form URL / webhook remain optional for
+     * admins who still share the Form link directly.
      */
     public static function preRegisterUrl(): string
     {
-        return self::googleFormUrl() ?? route('visitor.pre-register');
+        return route('visitor.pre-register');
     }
 
     public static function webhookToken(): string
