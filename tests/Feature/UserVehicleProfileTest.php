@@ -40,8 +40,61 @@ class UserVehicleProfileTest extends TestCase
             ->get(route('profile.edit'))
             ->assertOk()
             ->assertSee('Registered Vehicles', false)
-            ->assertSee('Add Vehicle', false)
+            ->assertSee('up to '.UserVehicle::MAX_PER_USER.' vehicles', false)
             ->assertSee('Plate Number', false);
+    }
+
+    public function test_user_cannot_register_more_than_max_vehicles(): void
+    {
+        $vehicle = Vehicle::query()->orderBy('id')->first();
+        if (! $vehicle) {
+            $this->markTestSkipped('No vehicle types seeded.');
+        }
+
+        $service = app(UserVehicleService::class);
+        $user = $this->student->fresh();
+        $createdIds = [];
+
+        try {
+            $existing = $service->listFor($user);
+            if ($existing->count() > UserVehicle::MAX_PER_USER) {
+                $this->markTestSkipped('Test student already has more than the max vehicles.');
+            }
+
+            $needed = UserVehicle::MAX_PER_USER - $existing->count();
+            for ($i = 0; $i < $needed; $i++) {
+                $row = $service->add($user, [
+                    'vehicle_id' => $vehicle->id,
+                    'plate_number' => 'MX'.random_int(10000, 99999).$i,
+                ]);
+                $createdIds[] = $row->id;
+            }
+
+            $this->assertSame(UserVehicle::MAX_PER_USER, $service->listFor($user->fresh())->count());
+
+            $this->actingAs($user->fresh())
+                ->from(route('profile.edit'))
+                ->post(route('profile.update'), [
+                    'add_vehicle' => '1',
+                    'vehicle_id' => $vehicle->id,
+                    'plate_number' => 'MX'.random_int(10000, 99999),
+                ])
+                ->assertRedirect(route('profile.edit'))
+                ->assertSessionHasErrors('plate_number');
+
+            $html = $this->actingAs($user->fresh())
+                ->get(route('profile.edit'))
+                ->assertOk()
+                ->assertSee('reached the maximum of '.UserVehicle::MAX_PER_USER, false)
+                ->getContent();
+
+            $this->assertStringNotContainsString('name="add_vehicle"', $html);
+        } finally {
+            if ($createdIds !== []) {
+                UserVehicle::query()->whereIn('id', $createdIds)->delete();
+                $service->syncPrimaryToUser($user->fresh());
+            }
+        }
     }
 
     public function test_user_can_add_multiple_vehicles_without_replacing(): void

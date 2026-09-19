@@ -96,7 +96,11 @@
                     <i data-lucide="car" class="h-4 w-4 text-blue-600"></i>
                     Registered Vehicles
                 </h3>
-                <p class="mt-1 text-sm text-gray-500">You can register multiple vehicles. The primary vehicle is used for gate access and plate lookup.</p>
+                <p class="mt-1 text-sm text-gray-500">
+                    You can register up to {{ \App\Models\UserVehicle::MAX_PER_USER }} vehicles
+                    ({{ $userVehicles->count() }}/{{ \App\Models\UserVehicle::MAX_PER_USER }}).
+                    The primary vehicle is used for gate access and plate lookup.
+                </p>
             </div>
 
             @if ($userVehicles->isNotEmpty())
@@ -167,40 +171,46 @@
                 <p class="mb-5 rounded-lg border border-dashed border-gray-200 bg-gray-50 px-4 py-6 text-center text-sm text-gray-500">No vehicles registered yet. Add your first vehicle below.</p>
             @endif
 
-            <div class="rounded-xl border border-blue-100 bg-blue-50/50 p-4">
-                <h4 class="mb-3 flex items-center gap-2 text-sm font-semibold text-blue-900">
-                    <i data-lucide="plus-circle" class="h-4 w-4"></i>
-                    Add Vehicle
-                </h4>
-                <form method="POST" action="{{ route('profile.update') }}" class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-                    @csrf
-                    <input type="hidden" name="add_vehicle" value="1">
-                    <div>
-                        <label for="add_vehicle_id" class="mb-1 block text-xs font-medium text-gray-700">Vehicle Type <span class="text-red-500">*</span></label>
-                        <select name="vehicle_id" id="add_vehicle_id" required class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm">
-                            <option value="">Select type</option>
-                            @foreach ($vehicles as $vehicle)
-                                <option value="{{ $vehicle->id }}" @selected((string) old('vehicle_id') === (string) $vehicle->id)>{{ $vehicle->vehicle_name }}</option>
-                            @endforeach
-                        </select>
-                    </div>
-                    <div>
-                        <label for="add_plate_number" class="mb-1 block text-xs font-medium text-gray-700">Plate Number <span class="text-red-500">*</span></label>
-                        <input type="text" name="plate_number" id="add_plate_number" value="{{ old('plate_number') }}" required maxlength="20" placeholder="ABC-1234" class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm uppercase">
-                    </div>
-                    <div>
-                        <label for="add_vehicle_model" class="mb-1 block text-xs font-medium text-gray-700">Model</label>
-                        <input type="text" name="vehicle_model" id="add_vehicle_model" value="{{ old('vehicle_model') }}" maxlength="80" class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm">
-                    </div>
-                    <div>
-                        <label for="add_vehicle_color" class="mb-1 block text-xs font-medium text-gray-700">Color</label>
-                        <input type="text" name="vehicle_color" id="add_vehicle_color" value="{{ old('vehicle_color') }}" maxlength="40" class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm">
-                    </div>
-                    <div class="sm:col-span-2 lg:col-span-4 flex items-end">
-                        <button type="submit" class="w-full rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-blue-700 sm:w-auto">Add Vehicle</button>
-                    </div>
-                </form>
-            </div>
+            @if ($userVehicles->count() < \App\Models\UserVehicle::MAX_PER_USER)
+                <div class="rounded-xl border border-blue-100 bg-blue-50/50 p-4">
+                    <h4 class="mb-3 flex items-center gap-2 text-sm font-semibold text-blue-900">
+                        <i data-lucide="plus-circle" class="h-4 w-4"></i>
+                        Add Vehicle
+                    </h4>
+                    <form method="POST" action="{{ route('profile.update') }}" class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                        @csrf
+                        <input type="hidden" name="add_vehicle" value="1">
+                        <div>
+                            <label for="add_vehicle_id" class="mb-1 block text-xs font-medium text-gray-700">Vehicle Type <span class="text-red-500">*</span></label>
+                            <select name="vehicle_id" id="add_vehicle_id" required class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm">
+                                <option value="">Select type</option>
+                                @foreach ($vehicles as $vehicle)
+                                    <option value="{{ $vehicle->id }}" @selected((string) old('vehicle_id') === (string) $vehicle->id)>{{ $vehicle->vehicle_name }}</option>
+                                @endforeach
+                            </select>
+                        </div>
+                        <div>
+                            <label for="add_plate_number" class="mb-1 block text-xs font-medium text-gray-700">Plate Number <span class="text-red-500">*</span></label>
+                            <input type="text" name="plate_number" id="add_plate_number" value="{{ old('plate_number') }}" required maxlength="20" placeholder="ABC-1234" class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm uppercase">
+                        </div>
+                        <div>
+                            <label for="add_vehicle_model" class="mb-1 block text-xs font-medium text-gray-700">Model</label>
+                            <input type="text" name="vehicle_model" id="add_vehicle_model" value="{{ old('vehicle_model') }}" maxlength="80" class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm">
+                        </div>
+                        <div>
+                            <label for="add_vehicle_color" class="mb-1 block text-xs font-medium text-gray-700">Color</label>
+                            <input type="text" name="vehicle_color" id="add_vehicle_color" value="{{ old('vehicle_color') }}" maxlength="40" class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm">
+                        </div>
+                        <div class="sm:col-span-2 lg:col-span-4 flex items-end">
+                            <button type="submit" class="w-full rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-blue-700 sm:w-auto">Add Vehicle</button>
+                        </div>
+                    </form>
+                </div>
+            @else
+                <p class="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+                    You have reached the maximum of {{ \App\Models\UserVehicle::MAX_PER_USER }} registered vehicles. Remove one to add another.
+                </p>
+            @endif
         </div>
         @endif
     </div>

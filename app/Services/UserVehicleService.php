@@ -79,6 +79,12 @@ class UserVehicleService
         $this->assertPlateAvailable($validated['plate_number'], $user->id);
 
         $existing = $this->listFor($user);
+        if ($existing->count() >= UserVehicle::MAX_PER_USER) {
+            throw ValidationException::withMessages([
+                'plate_number' => 'You can register a maximum of '.UserVehicle::MAX_PER_USER.' vehicles.',
+            ]);
+        }
+
         $isPrimary = $existing->isEmpty();
 
         $vehicle = UserVehicle::query()->create([
