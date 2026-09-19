@@ -87,7 +87,11 @@ class VisitorGoogleFormWebhookTest extends TestCase
 
         $this->get($response->json('success_url'))
             ->assertOk()
-            ->assertSee($visitor->confirmation_code, false);
+            ->assertSee($visitor->confirmation_code, false)
+            ->assertSee('Thank you, Google Form', false)
+            ->assertSee('Already pre-registered', false)
+            ->assertSee('For the guard', false)
+            ->assertSee('Pre-registered · Waiting for RFID', false);
     }
 
     public function test_webhook_rejects_past_expected_exit_at(): void

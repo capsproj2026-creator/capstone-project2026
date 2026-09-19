@@ -8,12 +8,13 @@
 
 @section('content')
     @php
+        $visitorName = $visitor->displayName();
         $vehicleName = $visitor->vehicleType?->vehicle_name ?? '—';
         $exitAt = $visitor->expected_exit_at
             ? ph_datetime($visitor->expected_exit_at, 'M j, Y · g:i A')
             : '—';
         $rows = [
-            ['label' => 'Full Name', 'value' => $visitor->displayName()],
+            ['label' => 'Full Name', 'value' => $visitorName],
             ['label' => 'Contact Number', 'value' => $visitor->contact_number ?: '—'],
             ['label' => 'Email', 'value' => $visitor->email ?: '—'],
             ['label' => 'Purpose of Visit', 'value' => $visitor->purpose ?: '—'],
@@ -31,21 +32,27 @@
                 <div class="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-white/15">
                     <i data-lucide="circle-check" class="h-8 w-8"></i>
                 </div>
-                <h1 class="text-2xl font-bold">You are pre-registered</h1>
-                <p class="mt-1 text-sm text-emerald-100">Review your details below, then show this code at the guard booth</p>
+                <p class="text-xs font-semibold uppercase tracking-[0.2em] text-emerald-100">Already pre-registered</p>
+                <h1 class="mt-2 text-2xl font-bold sm:text-3xl">Thank you, {{ $visitorName }}</h1>
+                <p class="mt-2 text-sm text-emerald-100">Show this screen to the guard at the booth</p>
             </div>
         </div>
 
         <div class="w-full p-6 sm:p-8">
-            <div class="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-4 text-center">
-                <p class="text-sm font-medium text-emerald-800">Your reference code</p>
-                <p class="mt-2 break-all font-mono text-2xl font-bold tracking-wide text-emerald-950 sm:text-3xl">{{ $confirmationCode }}</p>
+            <div class="rounded-xl border-2 border-emerald-300 bg-emerald-50 px-4 py-5 text-center shadow-sm">
+                <p class="text-xs font-semibold uppercase tracking-wide text-emerald-700">For the guard</p>
+                <p class="mt-1 text-lg font-bold text-emerald-950 sm:text-xl">{{ $visitorName }}</p>
+                <p class="mt-3 text-sm font-medium text-emerald-800">Reference code</p>
+                <p class="mt-1 break-all font-mono text-2xl font-bold tracking-wide text-emerald-950 sm:text-3xl">{{ $confirmationCode }}</p>
+                <p class="mt-3 inline-flex items-center rounded-full bg-emerald-600 px-3 py-1 text-xs font-bold uppercase tracking-wide text-white">
+                    Pre-registered · Waiting for RFID
+                </p>
             </div>
 
             <div class="mt-6 overflow-hidden rounded-xl border border-gray-200">
                 <div class="border-b border-gray-100 bg-gray-50 px-4 py-3">
                     <h2 class="text-sm font-semibold text-gray-900">Registration details</h2>
-                    <p class="mt-0.5 text-xs text-gray-500">Information you submitted</p>
+                    <p class="mt-0.5 text-xs text-gray-500">Information submitted for this visit</p>
                 </div>
                 <dl class="divide-y divide-gray-100">
                     @foreach ($rows as $row)
@@ -60,9 +67,9 @@
             <div class="mt-6 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-left text-sm text-amber-900">
                 <p class="font-semibold">Next steps</p>
                 <ol class="mt-2 list-decimal space-y-1 pl-5">
-                    <li>Proceed to the guard booth.</li>
-                    <li>Say you already pre-registered and give this reference code.</li>
-                    <li>The guard will verify your ID and assign a temporary RFID card.</li>
+                    <li>Proceed to the guard booth and show this confirmation screen.</li>
+                    <li>The guard will verify your ID using your name and reference code.</li>
+                    <li>The guard will assign a temporary RFID card for campus entry.</li>
                 </ol>
             </div>
 

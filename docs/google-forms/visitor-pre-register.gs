@@ -112,7 +112,10 @@ function onFormSubmit(e) {
       to: payload.email,
       subject: 'Your campus visit reference code',
       body:
-        'Thank you for pre-registering.\n\n' +
+        'Thank you for pre-registering, ' +
+        [payload.first_name, payload.middle_name, payload.last_name].filter(Boolean).join(' ') +
+        '.\n\n' +
+        'Show this email or the confirmation page to the guard.\n\n' +
         'Your reference code: ' +
         body.confirmation_code +
         '\n\nRegistration details:\n' +
@@ -134,8 +137,8 @@ function onFormSubmit(e) {
         (payload.vehicle_name || payload.vehicle_id || '—') +
         '\nColor: ' +
         (payload.vehicle_color || '—') +
-        '\n\nShow this code at the guard booth.\n\n' +
-        'Open your full confirmation page:\n' +
+        '\n\nStatus: Already pre-registered — waiting for temporary RFID at the booth.\n\n' +
+        'Open your full confirmation page (show this to the guard):\n' +
         body.success_url +
         '\n',
     });
