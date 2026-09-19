@@ -25,7 +25,13 @@
             </div>
             <div class="min-w-0 flex-1">
                 <h2 class="text-sm font-semibold text-gray-900">Visitor self pre-registration</h2>
-                <p class="mt-1 text-sm text-gray-600">Print this QR at the entrance. Visitors scan it to submit their details, then see a confirmation page with all their registration info and reference code.</p>
+                <p class="mt-1 text-sm text-gray-600">
+                    @if ($preRegisterUsesGoogleForm ?? false)
+                        Print this QR at the entrance. Visitors scan it to open the Google Form. After submit, they receive their name and reference code (email / confirmation link) to show the guard.
+                    @else
+                        Print this QR at the entrance. Visitors scan it to submit their details, then see a confirmation page with all their registration info and reference code.
+                    @endif
+                </p>
                 <p class="mt-2 break-all font-mono text-xs text-gray-500">{{ $preRegisterUrl }}</p>
                 <a href="{{ $preRegisterQrUrl }}" download="visitor-pre-register-qr.svg" class="mt-3 inline-flex items-center gap-1.5 text-sm font-semibold text-blue-700 hover:underline">
                     <i data-lucide="download" class="h-4 w-4"></i>

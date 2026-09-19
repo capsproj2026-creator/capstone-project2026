@@ -13,10 +13,15 @@ use Illuminate\View\View;
 
 class VisitorPreRegistrationController extends Controller
 {
-    public function show(): View
+    public function show(): View|RedirectResponse
     {
-        // Always use the built-in form so visitors see a full confirmation of their details
-        // (Google Forms only shows a generic thank-you page).
+        // Prefer the configured Google Form when present (QR + this route).
+        // After submit, Apps Script hits the webhook and emails the signed
+        // success page (name + reference code) for the guard to verify.
+        if (VisitorPreRegister::usesGoogleForm()) {
+            return redirect()->away(VisitorPreRegister::googleFormUrl());
+        }
+
         return view('visitors.pre-register', [
             'vehicles' => Vehicle::query()->orderBy('id')->get(),
         ]);
