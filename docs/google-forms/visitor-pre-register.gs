@@ -1,19 +1,29 @@
 /**
- * Visitor pre-registration — Google Form → Smart Campus VMS webhook
+ * Visitor Pre-Registration — Google Form confirmation email (no Laravel webhook)
+ *
+ * Flow:
+ *   Visitor submits Google Form (Email required)
+ *        ↓
+ *   This script reads their answers
+ *        ↓
+ *   Emails them a confirmation to show the guard
+ *   (name, date/time, purpose, who to visit, plate, etc.)
+ *
+ * This does NOT create a visitor in Smart Campus VMS.
+ * Guards verify using the email the visitor shows on their phone,
+ * then register / assign RFID in the app as usual.
  *
  * Setup:
- * 1. Create a Google Form with the question titles listed in FIELD_TITLES below.
- * 2. Open Apps Script from the Form OR from the linked response spreadsheet:
- *      Form → Extensions → Apps Script   (recommended)
- *      Form → Responses → link to Sheets → Extensions → Apps Script
- * 3. Project Settings → Script properties:
- *      WEBHOOK_URL  = https://YOUR_PUBLIC_APP_URL/api/visitor/pre-register/google
- *      WEBHOOK_TOKEN = same as VISITOR_PRE_REGISTER_WEBHOOK_TOKEN in Laravel .env
- * 4. Run installFormSubmitTrigger() once (authorize when prompted).
- * 5. Set VISITOR_PRE_REGISTER_GOOGLE_FORM_URL in Laravel .env to the form's public URL.
+ * 1. Form questions must use the exact titles in FIELD_TITLES below.
+ * 2. Make "Email" Required on the form.
+ * 3. Form → Settings → Presentation → Confirmation message, e.g.:
+ *      "Thank you! Check your email for your visit confirmation — show that email to the guard."
+ * 4. Form → Extensions → Apps Script → paste this file.
+ * 5. Run installFormSubmitTrigger() once (authorize MailApp when prompted).
+ * 6. Optional: set VISITOR_PRE_REGISTER_GOOGLE_FORM_URL in Laravel .env so the
+ *    entrance QR opens this Google Form.
  *
- * After submit: Laravel creates the visitor and returns a reference code.
- * If the visitor entered Email, this script emails the code + a signed success link.
+ * No WEBHOOK_URL / WEBHOOK_TOKEN / ngrok needed for this email-only mode.
  */
 
 var FIELD_TITLES = {
@@ -65,107 +75,102 @@ function installFormSubmitTrigger() {
 }
 
 function onFormSubmit(e) {
-  var props = PropertiesService.getScriptProperties();
-  var webhookUrl = props.getProperty('WEBHOOK_URL');
-  var webhookToken = props.getProperty('WEBHOOK_TOKEN');
-
-  if (!webhookUrl || !webhookToken) {
-    Logger.log('Missing WEBHOOK_URL or WEBHOOK_TOKEN script properties.');
-    return;
-  }
-
-  var payload;
+  var details;
   if (e.response) {
-    payload = buildPayloadFromFormResponse_(e.response);
+    details = buildDetailsFromFormResponse_(e.response);
   } else if (e.namedValues) {
-    payload = buildPayloadFromNamedValues_(e.namedValues);
+    details = buildDetailsFromNamedValues_(e.namedValues);
   } else {
     Logger.log('Unsupported onFormSubmit event (missing response / namedValues).');
     return;
   }
 
-  var options = {
-    method: 'post',
-    contentType: 'application/json',
-    headers: { 'X-VISITOR-PRE-REGISTER-TOKEN': webhookToken },
-    payload: JSON.stringify(payload),
-    muteHttpExceptions: true,
-  };
-
-  var response = UrlFetchApp.fetch(webhookUrl, options);
-  var status = response.getResponseCode();
-  var bodyText = response.getContentText();
-
-  if (status >= 400) {
-    Logger.log('Webhook HTTP ' + status + ': ' + bodyText);
+  if (!details.email) {
+    Logger.log('No email on response — cannot send confirmation. Make Email required on the form.');
     return;
   }
 
-  var body = JSON.parse(bodyText);
-  if (!body.ok) {
-    Logger.log('Webhook rejected: ' + bodyText);
-    return;
+  var fullName = [details.first_name, details.middle_name, details.last_name]
+    .filter(Boolean)
+    .join(' ');
+  if (!fullName) {
+    fullName = 'Visitor';
   }
 
-  if (payload.email) {
-    MailApp.sendEmail({
-      to: payload.email,
-      subject: 'Your campus visit reference code',
-      body:
-        'Thank you for pre-registering, ' +
-        [payload.first_name, payload.middle_name, payload.last_name].filter(Boolean).join(' ') +
-        '.\n\n' +
-        'Show this email or the confirmation page to the guard.\n\n' +
-        'Your reference code: ' +
-        body.confirmation_code +
-        '\n\nRegistration details:\n' +
-        'Name: ' +
-        [payload.first_name, payload.middle_name, payload.last_name].filter(Boolean).join(' ') +
-        '\nContact: ' +
-        (payload.contact_number || '—') +
-        '\nEmail: ' +
-        (payload.email || '—') +
-        '\nPurpose: ' +
-        (payload.purpose || '—') +
-        '\nOffice / Person: ' +
-        (payload.office_to_visit || '—') +
-        '\nExpected exit: ' +
-        (payload.expected_exit_at || '—') +
-        '\nPlate: ' +
-        (payload.plate_number || '—') +
-        '\nVehicle: ' +
-        (payload.vehicle_name || payload.vehicle_id || '—') +
-        '\nColor: ' +
-        (payload.vehicle_color || '—') +
-        '\n\nStatus: Already pre-registered — waiting for temporary RFID at the booth.\n\n' +
-        'Open your full confirmation page (show this to the guard):\n' +
-        body.success_url +
-        '\n',
-    });
-  }
+  var submittedAt = Utilities.formatDate(
+    new Date(),
+    Session.getScriptTimeZone(),
+    'MMM d, yyyy · h:mm a'
+  );
+
+  var visitWhen = details.expected_exit_display || details.expected_exit_at || '—';
+
+  MailApp.sendEmail({
+    to: details.email,
+    subject: 'CSPC visit confirmation — ' + fullName,
+    body:
+      'Thank you, ' +
+      fullName +
+      '.\n\n' +
+      'Your visit is pre-registered via the campus Google Form.\n' +
+      'Show this email to the guard at the booth.\n\n' +
+      '========== VISIT CONFIRMATION ==========\n' +
+      'Name: ' +
+      fullName +
+      '\n' +
+      'Submitted: ' +
+      submittedAt +
+      '\n' +
+      'Expected exit: ' +
+      visitWhen +
+      '\n' +
+      'Purpose of visit: ' +
+      (details.purpose || '—') +
+      '\n' +
+      'Office / Person to visit: ' +
+      (details.office_to_visit || '—') +
+      '\n' +
+      'Contact: ' +
+      (details.contact_number || '—') +
+      '\n' +
+      'Plate number: ' +
+      (details.plate_number || '—') +
+      '\n' +
+      'Vehicle: ' +
+      (details.vehicle_name || '—') +
+      '\n' +
+      'Color: ' +
+      (details.vehicle_color || '—') +
+      '\n' +
+      '=======================================\n\n' +
+      'Status: Pre-registered (Google Form)\n' +
+      'Next: Guard will verify your ID and issue a temporary RFID.\n',
+  });
+
+  Logger.log('Confirmation email sent to ' + details.email + ' for ' + fullName);
 }
 
-function buildPayloadFromFormResponse_(formResponse) {
+function buildDetailsFromFormResponse_(formResponse) {
   var byTitle = {};
   formResponse.getItemResponses().forEach(function (itemResponse) {
     byTitle[itemResponse.getItem().getTitle()] = itemResponse.getResponse();
   });
 
-  return buildPayloadFromTitles_(byTitle);
+  return buildDetailsFromTitles_(byTitle);
 }
 
-function buildPayloadFromNamedValues_(namedValues) {
+function buildDetailsFromNamedValues_(namedValues) {
   var byTitle = {};
   Object.keys(namedValues).forEach(function (title) {
     var values = namedValues[title];
     byTitle[title] = values && values.length ? values[0] : '';
   });
 
-  return buildPayloadFromTitles_(byTitle);
+  return buildDetailsFromTitles_(byTitle);
 }
 
-function buildPayloadFromTitles_(byTitle) {
-  var exitAt = combineDateTime_(
+function buildDetailsFromTitles_(byTitle) {
+  var exitRaw = combineDateTime_(
     byTitle[FIELD_TITLES.exitDate],
     byTitle[FIELD_TITLES.exitTime]
   );
@@ -178,16 +183,20 @@ function buildPayloadFromTitles_(byTitle) {
     email: String(byTitle[FIELD_TITLES.email] || '').trim(),
     purpose: String(byTitle[FIELD_TITLES.purpose] || '').trim(),
     office_to_visit: String(byTitle[FIELD_TITLES.office] || '').trim(),
-    expected_exit_at: exitAt,
+    expected_exit_at: exitRaw.iso || '',
+    expected_exit_display: exitRaw.display || '',
     plate_number: String(byTitle[FIELD_TITLES.plate] || '').trim(),
     vehicle_name: String(byTitle[FIELD_TITLES.vehicleType] || '').trim(),
     vehicle_color: String(byTitle[FIELD_TITLES.vehicleColor] || '').trim(),
   };
 }
 
+/**
+ * @return {{iso: string, display: string}}
+ */
 function combineDateTime_(dateValue, timeValue) {
   if (!dateValue) {
-    return '';
+    return { iso: '', display: '' };
   }
 
   var date = new Date(dateValue);
@@ -198,5 +207,9 @@ function combineDateTime_(dateValue, timeValue) {
     }
   }
 
-  return Utilities.formatDate(date, Session.getScriptTimeZone(), "yyyy-MM-dd'T'HH:mm:ss");
+  var tz = Session.getScriptTimeZone();
+  return {
+    iso: Utilities.formatDate(date, tz, "yyyy-MM-dd'T'HH:mm:ss"),
+    display: Utilities.formatDate(date, tz, 'MMM d, yyyy · h:mm a'),
+  };
 }

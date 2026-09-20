@@ -27,7 +27,7 @@
                 <h2 class="text-sm font-semibold text-gray-900">Visitor self pre-registration</h2>
                 <p class="mt-1 text-sm text-gray-600">
                     @if ($preRegisterUsesGoogleForm ?? false)
-                        Print this QR at the entrance. Visitors scan it to open the Google Form. After submit, they receive their name and reference code (email / confirmation link) to show the guard.
+                        Print this QR at the entrance. Visitors scan it to open the Google Form. After submit, they get a confirmation email (name, date/time, purpose, who to visit) to show the guard. This does not auto-create a visitor in the system — the guard registers them at the booth.
                     @else
                         Print this QR at the entrance. Visitors scan it to submit their details, then see a confirmation page with all their registration info and reference code.
                     @endif
