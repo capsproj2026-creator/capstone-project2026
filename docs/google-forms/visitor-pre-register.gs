@@ -1,44 +1,33 @@
 /**
  * Visitor Pre-Registration — Google Form confirmation email (no Laravel webhook)
  *
- * Flow:
- *   Visitor submits Google Form (Email required)
- *        ↓
- *   This script reads their answers
- *        ↓
- *   Emails them a confirmation to show the guard
- *   (name, date/time, purpose, who to visit, plate, etc.)
+ * IMPORTANT — do these in order or email will NOT send:
+ * 1. Open the FORM (not only the spreadsheet): Form → Extensions → Apps Script
+ * 2. Delete any old script, paste THIS entire file, click Save
+ * 3. Select function: installFormSubmitTrigger → Run → Allow permissions
+ * 4. Select function: testSendConfirmationEmail → Run
+ *    (checks that MailApp can send; look in Inbox + Spam)
+ * 5. Select function: diagnoseFormTitles → Run
+ *    (prints your question titles — Email title must match or be close to "Email")
+ * 6. Make the Email question Required on the form
+ * 7. Submit a real test response, then: Executions (left menu) → open latest run → check logs
  *
- * This does NOT create a visitor in Smart Campus VMS.
- * Guards verify using the email the visitor shows on their phone,
- * then register / assign RFID in the app as usual.
- *
- * Setup:
- * 1. Form questions must use the exact titles in FIELD_TITLES below.
- * 2. Make "Email" Required on the form.
- * 3. Form → Settings → Presentation → Confirmation message, e.g.:
- *      "Thank you! Check your email for your visit confirmation — show that email to the guard."
- * 4. Form → Extensions → Apps Script → paste this file.
- * 5. Run installFormSubmitTrigger() once (authorize MailApp when prompted).
- * 6. Optional: set VISITOR_PRE_REGISTER_GOOGLE_FORM_URL in Laravel .env so the
- *    entrance QR opens this Google Form.
- *
- * No WEBHOOK_URL / WEBHOOK_TOKEN / ngrok needed for this email-only mode.
+ * No WEBHOOK_URL / ngrok needed.
  */
 
 var FIELD_TITLES = {
-  firstName: 'First Name',
-  middleName: 'Middle Name',
-  lastName: 'Last Name',
-  contactNumber: 'Contact Number',
-  email: 'Email',
-  purpose: 'Purpose of Visit',
-  office: 'Office / Person to Visit',
-  exitDate: 'Expected Exit Date',
-  exitTime: 'Expected Exit Time',
-  plate: 'Plate Number',
-  vehicleType: 'Vehicle Type',
-  vehicleColor: 'Vehicle Color',
+  firstName: ['First Name', 'First name', 'Given Name'],
+  middleName: ['Middle Name', 'Middle name'],
+  lastName: ['Last Name', 'Last name', 'Surname', 'Family Name'],
+  contactNumber: ['Contact Number', 'Contact No.', 'Contact No', 'Phone', 'Mobile Number', 'Mobile'],
+  email: ['Email', 'E-mail', 'Email Address', 'E-mail Address'],
+  purpose: ['Purpose of Visit', 'Purpose', 'Purpose of visit'],
+  office: ['Office / Person to Visit', 'Office/Person to Visit', 'Person to Visit', 'Office to Visit'],
+  exitDate: ['Expected Exit Date', 'Exit Date', 'Expected Date of Exit'],
+  exitTime: ['Expected Exit Time', 'Exit Time', 'Expected Time of Exit'],
+  plate: ['Plate Number', 'Plate No.', 'Plate No', 'Vehicle Plate'],
+  vehicleType: ['Vehicle Type', 'Type of Vehicle'],
+  vehicleColor: ['Vehicle Color', 'Color'],
 };
 
 function installFormSubmitTrigger() {
@@ -54,7 +43,8 @@ function installFormSubmitTrigger() {
       .forForm(form)
       .onFormSubmit()
       .create();
-    Logger.log('Installed onFormSubmit trigger (form-bound).');
+    Logger.log('OK: form-bound onFormSubmit trigger installed for "' + form.getTitle() + '".');
+    Logger.log('Next: run testSendConfirmationEmail, then submit the form once.');
     return;
   }
 
@@ -64,32 +54,111 @@ function installFormSubmitTrigger() {
       .forSpreadsheet(spreadsheet)
       .onFormSubmit()
       .create();
-    Logger.log('Installed onFormSubmit trigger (spreadsheet-bound).');
+    Logger.log('OK: spreadsheet-bound onFormSubmit trigger installed.');
+    Logger.log('Tip: prefer opening Apps Script from the Form itself (Extensions → Apps Script).');
     return;
   }
 
   throw new Error(
-    'Open this script from your Google Form (Extensions → Apps Script) ' +
-      'or from the linked response spreadsheet, then run installFormSubmitTrigger again.'
+    'No form or spreadsheet bound. Open Apps Script from the Google Form: ' +
+      'Form → Extensions → Apps Script, then run installFormSubmitTrigger again.'
   );
 }
 
-function onFormSubmit(e) {
-  var details;
-  if (e.response) {
-    details = buildDetailsFromFormResponse_(e.response);
-  } else if (e.namedValues) {
-    details = buildDetailsFromNamedValues_(e.namedValues);
+/** Sends a simple test email to YOUR Google account (the one running the script). */
+function testSendConfirmationEmail() {
+  var to = Session.getActiveUser().getEmail();
+  if (!to) {
+    throw new Error('Could not read your Google account email. Sign in and try again.');
+  }
+
+  MailApp.sendEmail({
+    to: to,
+    subject: 'CSPC test — visit confirmation mail works',
+    body:
+      'This is a test from the Visitor Pre-Registration Apps Script.\n\n' +
+      'If you received this, MailApp is authorized.\n' +
+      'Next: run installFormSubmitTrigger (if not done), then submit the real form.\n' +
+      'Check Spam/Promotions if you do not see confirmation emails.\n',
+  });
+
+  Logger.log('Test email sent to: ' + to + ' — check Inbox and Spam.');
+}
+
+/** Lists form question titles so you can fix FIELD_TITLES mismatches. */
+function diagnoseFormTitles() {
+  var form = FormApp.getActiveForm();
+  if (!form) {
+    Logger.log('No active form. Open script from Form → Extensions → Apps Script.');
+    return;
+  }
+
+  Logger.log('Form title: ' + form.getTitle());
+  form.getItems().forEach(function (item) {
+    Logger.log('Question title: [' + item.getTitle() + ']');
+  });
+
+  var sample = {};
+  form.getItems().forEach(function (item) {
+    sample[item.getTitle()] = '(sample)';
+  });
+  var parsed = buildDetailsFromTitles_(sample);
+  Logger.log('Email field resolved as: [' + (parsed.email || 'NOT FOUND') + ']');
+  if (!parsed.email || parsed.email === '(sample)') {
+    // email key exists if title matched; value is sample placeholder
+  }
+  if (!findValueByAliases_(sample, FIELD_TITLES.email)) {
+    Logger.log('PROBLEM: No question title matched Email aliases. Rename the question to "Email" or update FIELD_TITLES.email.');
   } else {
-    Logger.log('Unsupported onFormSubmit event (missing response / namedValues).');
+    Logger.log('OK: An Email-like question title was found.');
+  }
+}
+
+function listTriggers() {
+  var triggers = ScriptApp.getProjectTriggers();
+  if (!triggers.length) {
+    Logger.log('No triggers installed. Run installFormSubmitTrigger.');
     return;
   }
+  triggers.forEach(function (t) {
+    Logger.log('Trigger: ' + t.getHandlerFunction() + ' / ' + t.getEventType());
+  });
+}
 
-  if (!details.email) {
-    Logger.log('No email on response — cannot send confirmation. Make Email required on the form.');
-    return;
+function onFormSubmit(e) {
+  try {
+    if (!e) {
+      Logger.log('onFormSubmit called with no event (do not Run this manually — submit the form).');
+      return;
+    }
+
+    var details;
+    if (e.response) {
+      details = buildDetailsFromFormResponse_(e.response);
+    } else if (e.namedValues) {
+      details = buildDetailsFromNamedValues_(e.namedValues);
+    } else {
+      Logger.log('Unsupported event shape. Keys: ' + Object.keys(e).join(', '));
+      return;
+    }
+
+    Logger.log('Parsed email=[' + details.email + '] name=[' +
+      [details.first_name, details.last_name].filter(Boolean).join(' ') + ']');
+
+    if (!details.email) {
+      Logger.log('FAIL: Email empty. Make Email required and ensure the question title is "Email". Run diagnoseFormTitles.');
+      return;
+    }
+
+    sendConfirmationEmail_(details);
+    Logger.log('OK: Confirmation email sent to ' + details.email);
+  } catch (err) {
+    Logger.log('ERROR in onFormSubmit: ' + err);
+    throw err;
   }
+}
 
+function sendConfirmationEmail_(details) {
   var fullName = [details.first_name, details.middle_name, details.last_name]
     .filter(Boolean)
     .join(' ');
@@ -99,7 +168,7 @@ function onFormSubmit(e) {
 
   var submittedAt = Utilities.formatDate(
     new Date(),
-    Session.getScriptTimeZone(),
+    Session.getScriptTimeZone() || 'Asia/Manila',
     'MMM d, yyyy · h:mm a'
   );
 
@@ -146,8 +215,6 @@ function onFormSubmit(e) {
       'Status: Pre-registered (Google Form)\n' +
       'Next: Guard will verify your ID and issue a temporary RFID.\n',
   });
-
-  Logger.log('Confirmation email sent to ' + details.email + ' for ' + fullName);
 }
 
 function buildDetailsFromFormResponse_(formResponse) {
@@ -155,7 +222,6 @@ function buildDetailsFromFormResponse_(formResponse) {
   formResponse.getItemResponses().forEach(function (itemResponse) {
     byTitle[itemResponse.getItem().getTitle()] = itemResponse.getResponse();
   });
-
   return buildDetailsFromTitles_(byTitle);
 }
 
@@ -165,41 +231,62 @@ function buildDetailsFromNamedValues_(namedValues) {
     var values = namedValues[title];
     byTitle[title] = values && values.length ? values[0] : '';
   });
-
   return buildDetailsFromTitles_(byTitle);
 }
 
 function buildDetailsFromTitles_(byTitle) {
   var exitRaw = combineDateTime_(
-    byTitle[FIELD_TITLES.exitDate],
-    byTitle[FIELD_TITLES.exitTime]
+    findValueByAliases_(byTitle, FIELD_TITLES.exitDate),
+    findValueByAliases_(byTitle, FIELD_TITLES.exitTime)
   );
 
   return {
-    first_name: String(byTitle[FIELD_TITLES.firstName] || '').trim(),
-    middle_name: String(byTitle[FIELD_TITLES.middleName] || '').trim(),
-    last_name: String(byTitle[FIELD_TITLES.lastName] || '').trim(),
-    contact_number: String(byTitle[FIELD_TITLES.contactNumber] || '').trim(),
-    email: String(byTitle[FIELD_TITLES.email] || '').trim(),
-    purpose: String(byTitle[FIELD_TITLES.purpose] || '').trim(),
-    office_to_visit: String(byTitle[FIELD_TITLES.office] || '').trim(),
+    first_name: String(findValueByAliases_(byTitle, FIELD_TITLES.firstName) || '').trim(),
+    middle_name: String(findValueByAliases_(byTitle, FIELD_TITLES.middleName) || '').trim(),
+    last_name: String(findValueByAliases_(byTitle, FIELD_TITLES.lastName) || '').trim(),
+    contact_number: String(findValueByAliases_(byTitle, FIELD_TITLES.contactNumber) || '').trim(),
+    email: String(findValueByAliases_(byTitle, FIELD_TITLES.email) || '').trim(),
+    purpose: String(findValueByAliases_(byTitle, FIELD_TITLES.purpose) || '').trim(),
+    office_to_visit: String(findValueByAliases_(byTitle, FIELD_TITLES.office) || '').trim(),
     expected_exit_at: exitRaw.iso || '',
     expected_exit_display: exitRaw.display || '',
-    plate_number: String(byTitle[FIELD_TITLES.plate] || '').trim(),
-    vehicle_name: String(byTitle[FIELD_TITLES.vehicleType] || '').trim(),
-    vehicle_color: String(byTitle[FIELD_TITLES.vehicleColor] || '').trim(),
+    plate_number: String(findValueByAliases_(byTitle, FIELD_TITLES.plate) || '').trim(),
+    vehicle_name: String(findValueByAliases_(byTitle, FIELD_TITLES.vehicleType) || '').trim(),
+    vehicle_color: String(findValueByAliases_(byTitle, FIELD_TITLES.vehicleColor) || '').trim(),
   };
 }
 
-/**
- * @return {{iso: string, display: string}}
- */
+function findValueByAliases_(byTitle, aliases) {
+  var titles = Object.keys(byTitle);
+  for (var i = 0; i < aliases.length; i++) {
+    var want = normalizeTitle_(aliases[i]);
+    for (var j = 0; j < titles.length; j++) {
+      if (normalizeTitle_(titles[j]) === want) {
+        return byTitle[titles[j]];
+      }
+    }
+  }
+  return '';
+}
+
+function normalizeTitle_(title) {
+  return String(title || '')
+    .toLowerCase()
+    .replace(/\s+/g, ' ')
+    .replace(/[.:]/g, '')
+    .trim();
+}
+
 function combineDateTime_(dateValue, timeValue) {
   if (!dateValue) {
     return { iso: '', display: '' };
   }
 
   var date = new Date(dateValue);
+  if (isNaN(date.getTime())) {
+    return { iso: String(dateValue), display: String(dateValue) };
+  }
+
   if (timeValue) {
     var parts = String(timeValue).match(/(\d+):(\d+)/);
     if (parts) {
@@ -207,7 +294,7 @@ function combineDateTime_(dateValue, timeValue) {
     }
   }
 
-  var tz = Session.getScriptTimeZone();
+  var tz = Session.getScriptTimeZone() || 'Asia/Manila';
   return {
     iso: Utilities.formatDate(date, tz, "yyyy-MM-dd'T'HH:mm:ss"),
     display: Utilities.formatDate(date, tz, 'MMM d, yyyy · h:mm a'),
