@@ -316,6 +316,9 @@
             var banner = document.getElementById('sync-status-banner');
             if (!banner) return;
 
+            // Show the green "Online / Synced" banner once per login (browser tab session).
+            // Offline / local-mode warnings still show whenever they apply.
+            var onlineSeenKey = 'syncBannerOnlineSeen:{{ auth()->id() ?? 0 }}';
             var STYLES = {
                 online: 'border-emerald-200 bg-emerald-50 text-emerald-800',
                 offline: 'border-amber-200 bg-amber-50 text-amber-800',
@@ -329,6 +332,7 @@
                 });
                 if (!kind) {
                     banner.classList.add('hidden');
+                    banner.classList.remove('flex');
                     banner.textContent = '';
                     return;
                 }
@@ -343,20 +347,35 @@
                     .then(function (r) { return r.ok ? r.json() : null; })
                     .then(function (data) {
                         if (!data || !data.enabled) {
-                            // Sync feature is off on this deployment (e.g. cloud/Atlas-only) — no banner.
                             setBanner(null);
                             return;
                         }
                         if (!data.atlas_configured) {
                             setBanner('offline', 'Local Mode — MongoDB Atlas is not configured on this device. Changes are saved locally.');
-                        } else if (data.atlas_reachable) {
-                            setBanner('online', 'Online / Synced — connected to MongoDB Atlas (' + (data.device_id || 'this device') + ').');
-                        } else {
-                            setBanner('offline', 'Offline Mode — Changes are saved locally and will sync when connection is restored.');
+                            return;
                         }
+                        if (data.atlas_reachable) {
+                            try {
+                                if (sessionStorage.getItem(onlineSeenKey)) {
+                                    setBanner(null);
+                                    return;
+                                }
+                                sessionStorage.setItem(onlineSeenKey, '1');
+                            } catch (e) { /* private mode / blocked storage */ }
+                            setBanner('online', 'Online / Synced — connected to MongoDB Atlas (' + (data.device_id || 'this device') + ').');
+                            return;
+                        }
+                        setBanner('offline', 'Offline Mode — Changes are saved locally and will sync when connection is restored.');
                     })
-                    .catch(function () { /* Network hiccup on the status check itself: leave last known state. */ });
+                    .catch(function () { /* leave last known state */ });
             }
+
+            // Clear the once-per-login flag when the user logs out.
+            document.querySelectorAll('form[action="{{ route('logout') }}"]').forEach(function (form) {
+                form.addEventListener('submit', function () {
+                    try { sessionStorage.removeItem(onlineSeenKey); } catch (e) {}
+                });
+            });
 
             refreshSyncStatus();
             window.setInterval(refreshSyncStatus, 30000);
