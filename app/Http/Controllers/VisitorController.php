@@ -23,7 +23,7 @@ class VisitorController extends Controller
             'preRegisterUrl' => $preRegisterUrl,
             'preRegisterUsesGoogleForm' => VisitorPreRegister::usesGoogleForm(),
             'preRegisterQrUrl' => route('visitor.pre-register.qr'),
-            'preRegisterQrSvg' => VisitorPreRegisterQr::svg($preRegisterUrl),
+            'preRegisterQrSvg' => VisitorPreRegisterQr::svg($preRegisterUrl, 320),
         ]);
     }
 

@@ -35,7 +35,7 @@ Add questions with these **exact titles** (matches the Apps Script):
 | Middle Name | Short answer | No |
 | Last Name | Short answer | Yes |
 | Contact Number | Short answer | Yes |
-| Email | Short answer | No (recommended for code delivery) |
+| Email | Short answer | Yes (required for confirmation email) |
 | Purpose of Visit | Short answer | Yes |
 | Office / Person to Visit | Short answer | Yes |
 | Expected Exit Date | Date | Yes |
@@ -46,7 +46,7 @@ Add questions with these **exact titles** (matches the Apps Script):
 
 **Form confirmation message (suggested):**
 
-> Thank you! If you entered an email, check your inbox for your reference code. Otherwise, go to the guard booth and give your name and plate number.
+> Thank you! Check your email for your reference code, then show it (or your name and plate) to the guard.
 
 ## Install Apps Script
 

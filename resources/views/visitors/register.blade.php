@@ -18,25 +18,39 @@
         </div>
     @endif
 
-    <div class="mb-6 rounded-xl border border-blue-100 bg-blue-50/60 p-5 shadow-sm">
-        <div class="flex items-start gap-4">
-            <div class="shrink-0 rounded-lg border border-white bg-white p-2 shadow-sm">
-                {!! $preRegisterQrSvg !!}
-            </div>
-            <div class="min-w-0 flex-1">
-                <h2 class="text-sm font-semibold text-gray-900">Visitor self pre-registration</h2>
-                <p class="mt-1 text-sm text-gray-600">
-                    @if ($preRegisterUsesGoogleForm ?? false)
-                        Print this QR at the entrance. Visitors scan it to open the Google Form. After submit, they get a confirmation email (name, date/time, purpose, who to visit) to show the guard. This does not auto-create a visitor in the system — the guard registers them at the booth.
-                    @else
-                        Print this QR at the entrance. Visitors scan it to submit their details, then see a confirmation page with all their registration info and reference code.
-                    @endif
-                </p>
-                <p class="mt-2 break-all font-mono text-xs text-gray-500">{{ $preRegisterUrl }}</p>
-                <a href="{{ $preRegisterQrUrl }}" download="visitor-pre-register-qr.svg" class="mt-3 inline-flex items-center gap-1.5 text-sm font-semibold text-blue-700 hover:underline">
+    <div class="mb-6 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm print:border-slate-400 print:shadow-none">
+        <div class="border-b border-slate-100 bg-slate-50 px-5 py-3 sm:px-6">
+            <h2 class="text-sm font-semibold tracking-wide text-slate-800 uppercase">Entrance QR · Visitor pre-registration</h2>
+        </div>
+        <div class="grid gap-6 p-5 sm:grid-cols-[auto_minmax(0,1fr)] sm:items-center sm:gap-8 sm:p-6">
+            <div class="mx-auto flex w-full max-w-[280px] flex-col items-center text-center sm:mx-0 sm:max-w-none">
+                <div class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm ring-1 ring-slate-100 print:shadow-none print:ring-0">
+                    <div class="mx-auto aspect-square w-[220px] sm:w-[260px] [&_svg]:h-full [&_svg]:w-full">
+                        {!! $preRegisterQrSvg !!}
+                    </div>
+                </div>
+                <p class="mt-3 text-xs font-semibold tracking-wide text-slate-500 uppercase">Scan to pre-register</p>
+                <a href="{{ $preRegisterQrUrl }}" download="visitor-pre-register-qr.svg"
+                    class="mt-3 inline-flex items-center gap-1.5 rounded-lg bg-slate-900 px-3.5 py-2 text-sm font-semibold text-white hover:bg-slate-800 print:hidden">
                     <i data-lucide="download" class="h-4 w-4"></i>
                     Download QR (SVG)
                 </a>
+            </div>
+            <div class="min-w-0 space-y-3">
+                <p class="text-base font-semibold text-slate-900">Post this at the gate</p>
+                <p class="text-sm leading-relaxed text-slate-600">
+                    @if ($preRegisterUsesGoogleForm ?? false)
+                        Visitors scan the QR to open the Google Form. On submit, the system creates a <span class="font-medium text-slate-800">Waiting</span> visitor and emails them a confirmation with a reference code. Open Visitors → Active/Waiting to verify — no spreadsheet needed.
+                    @else
+                        Visitors scan the QR to submit their details, then see a confirmation page with their info and reference code. They also appear under Visitors as Waiting.
+                    @endif
+                </p>
+                <ol class="space-y-1.5 text-sm text-slate-600">
+                    <li class="flex gap-2"><span class="font-semibold text-slate-800">1.</span> Visitor scans QR and submits the form</li>
+                    <li class="flex gap-2"><span class="font-semibold text-slate-800">2.</span> Guard finds them under Waiting (name, plate, or code)</li>
+                    <li class="flex gap-2"><span class="font-semibold text-slate-800">3.</span> Verify ID, assign temporary RFID</li>
+                </ol>
+                <p class="break-all rounded-lg bg-slate-50 px-3 py-2 font-mono text-[11px] leading-relaxed text-slate-500 print:text-[10px]">{{ $preRegisterUrl }}</p>
             </div>
         </div>
     </div>

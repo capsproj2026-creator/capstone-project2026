@@ -76,7 +76,7 @@ class VisitorPreRegistrationController extends Controller
     public function qr(Request $request): Response
     {
         $url = VisitorPreRegisterQr::preRegisterUrl();
-        $svg = VisitorPreRegisterQr::svg($url);
+        $svg = VisitorPreRegisterQr::svg($url, 320);
 
         $disposition = $request->boolean('download')
             ? 'attachment; filename="visitor-pre-register-qr.svg"'
