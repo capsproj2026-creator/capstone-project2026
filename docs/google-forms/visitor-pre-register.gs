@@ -12,16 +12,8 @@
  * 4. Run installFormSubmitTrigger() once (authorize when prompted).
  * 5. Set VISITOR_PRE_REGISTER_GOOGLE_FORM_URL in Laravel .env to the form's public URL.
  *
- * After submit: Laravel creates the visitor and returns a reference code +
- * signed success_url (personalized confirmation with the visitor's name).
- * If the visitor entered Email, this script emails that confirmation link.
- *
- * IMPORTANT: Google Forms' on-screen thank-you page is ALWAYS static — it cannot
- * show the visitor's name or open the Laravel confirmation page. For a phone
- * screen the guard can verify, use the in-app QR (/visitor/pre-register), not
- * this Form's thank-you page. Optionally set Form → Settings → Presentation →
- * Confirmation message to:
- *   "Thank you! Check your email for your named confirmation to show the guard."
+ * After submit: Laravel creates the visitor and returns a reference code.
+ * If the visitor entered Email, this script emails the code + a signed success link.
  */
 
 var FIELD_TITLES = {

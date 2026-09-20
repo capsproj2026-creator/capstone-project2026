@@ -282,12 +282,12 @@
                                     @if (! empty($det['motion_label']) || ($det['motion_state'] ?? '') === 'parked')
                                         <span class="font-medium text-sky-700">{{ $det['motion_label'] ?? 'Parked' }}</span>
                                         ·
-                                    @endif
+                                @endif
                                     Role:
                                     <span class="font-medium text-gray-700">{{ $ownerRole ?: (($plate || in_array(($det['plate_status'] ?? ''), ['unreadable', 'not_read'], true)) ? 'Unregistered' : '—') }}</span>
                                     @if (! empty($det['vehicle_type']) || ! empty($det['class']))
                                         · {{ ucfirst((string) ($det['vehicle_type'] ?? $det['class'])) }}
-                                    @endif
+                                @endif
                                     @if (! empty($detCam))
                                         · {{ $detCam }}
                                     @endif
