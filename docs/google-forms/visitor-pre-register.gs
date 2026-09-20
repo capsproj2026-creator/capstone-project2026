@@ -4,16 +4,20 @@
  * IMPORTANT — do these in order or email will NOT send:
  * 1. Open the FORM (not only the spreadsheet): Form → Extensions → Apps Script
  * 2. Delete any old script, paste THIS entire file, click Save
- * 3. Select function: installFormSubmitTrigger → Run → Allow permissions
- * 4. Select function: testSendConfirmationEmail → Run
+ * 3. Set TEST_EMAIL below to YOUR inbox (for the test only)
+ * 4. Select function: installFormSubmitTrigger → Run → Allow permissions
+ * 5. Select function: testSendConfirmationEmail → Run
  *    (checks that MailApp can send; look in Inbox + Spam)
- * 5. Select function: diagnoseFormTitles → Run
+ * 6. Select function: diagnoseFormTitles → Run
  *    (prints your question titles — Email title must match or be close to "Email")
- * 6. Make the Email question Required on the form
- * 7. Submit a real test response, then: Executions (left menu) → open latest run → check logs
+ * 7. Make the Email question Required on the form
+ * 8. Submit a real test response, then: Executions (left menu) → open latest run → check logs
  *
  * No WEBHOOK_URL / ngrok needed.
  */
+
+// Used ONLY by testSendConfirmationEmail — put your real inbox here, then Run that function.
+var TEST_EMAIL = 'your.email@gmail.com';
 
 var FIELD_TITLES = {
   firstName: ['First Name', 'First name', 'Given Name'],
@@ -65,11 +69,13 @@ function installFormSubmitTrigger() {
   );
 }
 
-/** Sends a simple test email to YOUR Google account (the one running the script). */
+/** Sends a simple test email to TEST_EMAIL (set at the top of this file). */
 function testSendConfirmationEmail() {
-  var to = Session.getActiveUser().getEmail();
-  if (!to) {
-    throw new Error('Could not read your Google account email. Sign in and try again.');
+  var to = String(TEST_EMAIL || '').trim();
+  if (!to || to === 'your.email@gmail.com') {
+    throw new Error(
+      'Set TEST_EMAIL at the top of Code.gs to your real email address, Save, then Run again.'
+    );
   }
 
   MailApp.sendEmail({
