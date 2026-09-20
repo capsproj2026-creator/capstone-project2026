@@ -11,6 +11,10 @@ class VerifyVisitorPreRegisterWebhookToken
 {
     public function handle(Request $request, Closure $next): Response
     {
+        // Google Apps Script often omits Accept: application/json; without this,
+        // validation failures redirect (302) instead of returning a JSON 422.
+        $request->headers->set('Accept', 'application/json');
+
         $expected = VisitorPreRegister::webhookToken();
 
         if ($expected === '') {

@@ -38,8 +38,8 @@ Add questions with these **exact titles** (matches the Apps Script):
 | Email | Short answer | Yes (required for confirmation email) |
 | Purpose of Visit | Short answer | Yes |
 | Office / Person to Visit | Short answer | Yes |
-| Expected Exit Date | Date | Yes |
-| Expected Exit Time | Time | Yes |
+| Expected Exit Date | Date | Yes (must be today or later; time below) |
+| Expected Exit Time | Time | Yes (must be later than now — midnight-only dates get auto-adjusted) |
 | Plate Number | Short answer | Yes |
 | Vehicle Type | Dropdown: `Motorcycles`, `Automobiles` | Yes |
 | Vehicle Color | Short answer | Yes |

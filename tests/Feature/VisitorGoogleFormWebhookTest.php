@@ -111,6 +111,26 @@ class VisitorGoogleFormWebhookTest extends TestCase
         ])->assertUnprocessable();
     }
 
+    public function test_webhook_validation_errors_are_json_even_without_accept_header(): void
+    {
+        $this->post(route('api.visitor.pre-register.google'), [
+            'first_name' => 'Late',
+            'last_name' => 'Plain',
+            'contact_number' => '09171112233',
+            'purpose' => 'Test',
+            'office_to_visit' => 'Office',
+            'expected_exit_at' => now()->subHour()->format('Y-m-d\TH:i:s'),
+            'plate_number' => 'PLN'.random_int(100, 999),
+            'vehicle_id' => 1,
+            'vehicle_color' => 'Black',
+        ], [
+            'X-VISITOR-PRE-REGISTER-TOKEN' => self::TOKEN,
+            'CONTENT_TYPE' => 'application/json',
+            'HTTP_ACCEPT' => '*/*',
+        ])->assertUnprocessable()
+            ->assertJsonValidationErrors(['expected_exit_at']);
+    }
+
     public function test_qr_points_to_google_form_when_configured(): void
     {
         $googleUrl = 'https://docs.google.com/forms/d/e/test123/viewform';

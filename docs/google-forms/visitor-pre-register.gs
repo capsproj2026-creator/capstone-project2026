@@ -220,16 +220,7 @@ function onFormSubmit(e) {
     }
 
     ensureNameParts_(details);
-
-    if (!details.expected_exit_at) {
-      // Laravel requires expected_exit_at in the future — default +4 hours if form omitted it.
-      details.expected_exit_at = Utilities.formatDate(
-        new Date(Date.now() + 4 * 60 * 60 * 1000),
-        Session.getScriptTimeZone() || 'Asia/Manila',
-        "yyyy-MM-dd'T'HH:mm:ss"
-      );
-      details.expected_exit_display = details.expected_exit_display || 'Within ~4 hours (default)';
-    }
+    ensureFutureExit_(details);
 
     var webhook = postToLaravel_(detailsToWebhookPayload_(details));
     if (webhook.ok) {
@@ -264,12 +255,26 @@ function postToLaravel_(payload) {
     var response = UrlFetchApp.fetch(webhookUrl, {
       method: 'post',
       contentType: 'application/json',
-      headers: { 'X-VISITOR-PRE-REGISTER-TOKEN': webhookToken },
+      headers: {
+        'X-VISITOR-PRE-REGISTER-TOKEN': webhookToken,
+        Accept: 'application/json',
+      },
       payload: JSON.stringify(payload),
       muteHttpExceptions: true,
+      followRedirects: false,
     });
     var status = response.getResponseCode();
     var bodyText = response.getContentText();
+    if (status >= 300 && status < 400) {
+      return {
+        ok: false,
+        error:
+          'HTTP ' +
+          status +
+          ' redirect (usually validation failed or wrong WEBHOOK_URL). Body: ' +
+          bodyText,
+      };
+    }
     if (status >= 400) {
       return { ok: false, error: 'HTTP ' + status + ': ' + bodyText };
     }
@@ -314,6 +319,23 @@ function ensureNameParts_(details) {
   }
   if (!details.first_name) details.first_name = 'Visitor';
   if (!details.last_name) details.last_name = 'Guest';
+}
+
+/**
+ * Laravel rejects expected_exit_at unless it is after "now".
+ * Date-only answers become midnight and often fail the same day — bump those to +4h.
+ */
+function ensureFutureExit_(details) {
+  var tz = Session.getScriptTimeZone() || 'Asia/Manila';
+  var fallback = new Date(Date.now() + 4 * 60 * 60 * 1000);
+  var exitAt = details.expected_exit_at ? new Date(details.expected_exit_at) : null;
+
+  if (!exitAt || isNaN(exitAt.getTime()) || exitAt.getTime() <= Date.now()) {
+    details.expected_exit_at = Utilities.formatDate(fallback, tz, "yyyy-MM-dd'T'HH:mm:ss");
+    details.expected_exit_display = Utilities.formatDate(fallback, tz, 'MMM d, yyyy · h:mm a') +
+      (exitAt && !isNaN(exitAt.getTime()) ? ' (adjusted — exit must be in the future)' : ' (default)');
+    Logger.log('Adjusted expected_exit_at to ' + details.expected_exit_at);
+  }
 }
 
 function sendConfirmationEmail_(details) {
