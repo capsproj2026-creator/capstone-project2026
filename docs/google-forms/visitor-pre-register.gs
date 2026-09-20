@@ -28,7 +28,7 @@
  *   Plate Number, Vehicle Type, Vehicle Color
  */
 
-var TEST_EMAIL = 'your.email@gmail.com';
+var TEST_EMAIL = 'capsproj2026@gmail.com';
 
 var FIELD_TITLES = {
   fullName: ['Full Name', 'Complete Name', 'Visitor Name', 'Name'],
