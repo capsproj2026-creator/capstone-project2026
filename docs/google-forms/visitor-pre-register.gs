@@ -1,37 +1,53 @@
 /**
  * Visitor Pre-Registration — Google Form confirmation email (no Laravel webhook)
  *
- * IMPORTANT — do these in order or email will NOT send:
- * 1. Open the FORM (not only the spreadsheet): Form → Extensions → Apps Script
- * 2. Delete any old script, paste THIS entire file, click Save
- * 3. Set TEST_EMAIL below to YOUR inbox (for the test only)
- * 4. Select function: installFormSubmitTrigger → Run → Allow permissions
- * 5. Select function: testSendConfirmationEmail → Run
- *    (checks that MailApp can send; look in Inbox + Spam)
- * 6. Select function: diagnoseFormTitles → Run
- *    (prints your question titles — Email title must match or be close to "Email")
- * 7. Make the Email question Required on the form
- * 8. Submit a real test response, then: Executions (left menu) → open latest run → check logs
+ * Blank details in the email almost always mean question TITLES on the form
+ * do not match what this script looks for. Run diagnoseFormTitles after paste.
  *
- * No WEBHOOK_URL / ngrok needed.
+ * Setup:
+ * 1. Form → Extensions → Apps Script → paste this file → Save
+ * 2. Set TEST_EMAIL below → run testSendConfirmationEmail
+ * 3. Run installFormSubmitTrigger (Allow permissions)
+ * 4. Run diagnoseFormTitles — confirm name/email/purpose titles are found
+ * 5. Prefer these question titles (or close wording):
+ *      First Name, Middle Name, Last Name  (or one "Full Name")
+ *      Email (required), Contact Number
+ *      Purpose of Visit, Office / Person to Visit
+ *      Expected Exit Date + Expected Exit Time  (or one "Expected Exit")
+ *      Plate Number, Vehicle Type, Vehicle Color
+ * 6. Submit the form and show the email to the guard
  */
 
-// Used ONLY by testSendConfirmationEmail — put your real inbox here, then Run that function.
 var TEST_EMAIL = 'your.email@gmail.com';
 
 var FIELD_TITLES = {
-  firstName: ['First Name', 'First name', 'Given Name'],
-  middleName: ['Middle Name', 'Middle name'],
+  fullName: ['Full Name', 'Complete Name', 'Visitor Name', 'Name'],
+  firstName: ['First Name', 'First name', 'Given Name', 'Given name'],
+  middleName: ['Middle Name', 'Middle name', 'M.I.', 'MI'],
   lastName: ['Last Name', 'Last name', 'Surname', 'Family Name'],
-  contactNumber: ['Contact Number', 'Contact No.', 'Contact No', 'Phone', 'Mobile Number', 'Mobile'],
+  contactNumber: ['Contact Number', 'Contact No', 'Phone', 'Mobile Number', 'Mobile', 'Contact'],
   email: ['Email', 'E-mail', 'Email Address', 'E-mail Address'],
-  purpose: ['Purpose of Visit', 'Purpose', 'Purpose of visit'],
-  office: ['Office / Person to Visit', 'Office/Person to Visit', 'Person to Visit', 'Office to Visit'],
-  exitDate: ['Expected Exit Date', 'Exit Date', 'Expected Date of Exit'],
-  exitTime: ['Expected Exit Time', 'Exit Time', 'Expected Time of Exit'],
-  plate: ['Plate Number', 'Plate No.', 'Plate No', 'Vehicle Plate'],
-  vehicleType: ['Vehicle Type', 'Type of Vehicle'],
-  vehicleColor: ['Vehicle Color', 'Color'],
+  purpose: ['Purpose of Visit', 'Purpose', 'Purpose of visit', 'Reason for Visit'],
+  office: [
+    'Office / Person to Visit',
+    'Office/Person to Visit',
+    'Person to Visit',
+    'Office to Visit',
+    'Whom to Visit',
+    'Office',
+  ],
+  exitCombined: [
+    'Expected Exit',
+    'Expected Exit Date and Time',
+    'Expected Exit Date/Time',
+    'Date and Time of Exit',
+    'Expected date and time of exit',
+  ],
+  exitDate: ['Expected Exit Date', 'Exit Date', 'Expected Date of Exit', 'Date of Exit'],
+  exitTime: ['Expected Exit Time', 'Exit Time', 'Expected Time of Exit', 'Time of Exit'],
+  plate: ['Plate Number', 'Plate No', 'Vehicle Plate', 'Plate'],
+  vehicleType: ['Vehicle Type', 'Type of Vehicle', 'Vehicle'],
+  vehicleColor: ['Vehicle Color', 'Color of Vehicle', 'Color'],
 };
 
 function installFormSubmitTrigger() {
@@ -43,210 +59,263 @@ function installFormSubmitTrigger() {
 
   var form = FormApp.getActiveForm();
   if (form) {
-    ScriptApp.newTrigger('onFormSubmit')
-      .forForm(form)
-      .onFormSubmit()
-      .create();
-    Logger.log('OK: form-bound onFormSubmit trigger installed for "' + form.getTitle() + '".');
-    Logger.log('Next: run testSendConfirmationEmail, then submit the form once.');
+    ScriptApp.newTrigger('onFormSubmit').forForm(form).onFormSubmit().create();
+    Logger.log('OK: form-bound trigger installed for "' + form.getTitle() + '".');
     return;
   }
 
   var spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
   if (spreadsheet) {
-    ScriptApp.newTrigger('onFormSubmit')
-      .forSpreadsheet(spreadsheet)
-      .onFormSubmit()
-      .create();
-    Logger.log('OK: spreadsheet-bound onFormSubmit trigger installed.');
-    Logger.log('Tip: prefer opening Apps Script from the Form itself (Extensions → Apps Script).');
+    ScriptApp.newTrigger('onFormSubmit').forSpreadsheet(spreadsheet).onFormSubmit().create();
+    Logger.log('OK: spreadsheet-bound trigger installed.');
     return;
   }
 
-  throw new Error(
-    'No form or spreadsheet bound. Open Apps Script from the Google Form: ' +
-      'Form → Extensions → Apps Script, then run installFormSubmitTrigger again.'
-  );
+  throw new Error('Open Apps Script from the Google Form (Extensions → Apps Script).');
 }
 
-/** Sends a simple test email to TEST_EMAIL (set at the top of this file). */
 function testSendConfirmationEmail() {
   var to = String(TEST_EMAIL || '').trim();
   if (!to || to === 'your.email@gmail.com') {
-    throw new Error(
-      'Set TEST_EMAIL at the top of Code.gs to your real email address, Save, then Run again.'
-    );
+    throw new Error('Set TEST_EMAIL at the top of Code.gs, Save, then Run again.');
   }
 
-  MailApp.sendEmail({
-    to: to,
-    subject: 'CSPC test — visit confirmation mail works',
-    body:
-      'This is a test from the Visitor Pre-Registration Apps Script.\n\n' +
-      'If you received this, MailApp is authorized.\n' +
-      'Next: run installFormSubmitTrigger (if not done), then submit the real form.\n' +
-      'Check Spam/Promotions if you do not see confirmation emails.\n',
-  });
+  var sample = {
+    first_name: 'Juan',
+    middle_name: 'Santos',
+    last_name: 'Dela Cruz',
+    email: to,
+    contact_number: '09171234567',
+    purpose: 'Campus meeting',
+    office_to_visit: 'Registrar',
+    expected_exit_display: 'Sep 20, 2026 · 5:00 PM',
+    plate_number: 'ABC1234',
+    vehicle_name: 'Automobiles',
+    vehicle_color: 'White',
+    raw_rows: [],
+  };
 
-  Logger.log('Test email sent to: ' + to + ' — check Inbox and Spam.');
+  sendConfirmationEmail_(sample);
+  Logger.log('Sample designed confirmation sent to ' + to);
 }
 
-/** Lists form question titles so you can fix FIELD_TITLES mismatches. */
 function diagnoseFormTitles() {
   var form = FormApp.getActiveForm();
   if (!form) {
-    Logger.log('No active form. Open script from Form → Extensions → Apps Script.');
+    Logger.log('Open script from Form → Extensions → Apps Script.');
     return;
   }
 
-  Logger.log('Form title: ' + form.getTitle());
-  form.getItems().forEach(function (item) {
-    Logger.log('Question title: [' + item.getTitle() + ']');
-  });
-
+  Logger.log('Form: ' + form.getTitle());
   var sample = {};
   form.getItems().forEach(function (item) {
-    sample[item.getTitle()] = '(sample)';
+    var title = item.getTitle();
+    if (title) {
+      Logger.log('Question: [' + title + ']');
+      sample[title] = 'sample';
+    }
   });
-  var parsed = buildDetailsFromTitles_(sample);
-  Logger.log('Email field resolved as: [' + (parsed.email || 'NOT FOUND') + ']');
-  if (!parsed.email || parsed.email === '(sample)') {
-    // email key exists if title matched; value is sample placeholder
-  }
-  if (!findValueByAliases_(sample, FIELD_TITLES.email)) {
-    Logger.log('PROBLEM: No question title matched Email aliases. Rename the question to "Email" or update FIELD_TITLES.email.');
-  } else {
-    Logger.log('OK: An Email-like question title was found.');
-  }
+
+  var details = buildDetailsFromTitles_(sample);
+  Logger.log('Mapped first_name=' + !!details.first_name +
+    ' last_name=' + !!details.last_name +
+    ' full_name=' + !!details.full_name +
+    ' email=' + !!details.email +
+    ' purpose=' + !!details.purpose +
+    ' office=' + !!details.office_to_visit +
+    ' exit=' + !!(details.expected_exit_display || details.expected_exit_at) +
+    ' plate=' + !!details.plate_number);
 }
 
 function listTriggers() {
   var triggers = ScriptApp.getProjectTriggers();
   if (!triggers.length) {
-    Logger.log('No triggers installed. Run installFormSubmitTrigger.');
+    Logger.log('No triggers. Run installFormSubmitTrigger.');
     return;
   }
   triggers.forEach(function (t) {
-    Logger.log('Trigger: ' + t.getHandlerFunction() + ' / ' + t.getEventType());
+    Logger.log(t.getHandlerFunction() + ' / ' + t.getEventType());
   });
 }
 
 function onFormSubmit(e) {
   try {
     if (!e) {
-      Logger.log('onFormSubmit called with no event (do not Run this manually — submit the form).');
+      Logger.log('Do not Run onFormSubmit manually — submit the Google Form.');
       return;
     }
 
-    var details;
+    var byTitle;
     if (e.response) {
-      details = buildDetailsFromFormResponse_(e.response);
+      byTitle = mapFromFormResponse_(e.response);
     } else if (e.namedValues) {
-      details = buildDetailsFromNamedValues_(e.namedValues);
+      byTitle = mapFromNamedValues_(e.namedValues);
     } else {
-      Logger.log('Unsupported event shape. Keys: ' + Object.keys(e).join(', '));
+      Logger.log('Unsupported event. Keys: ' + Object.keys(e).join(', '));
       return;
     }
 
-    Logger.log('Parsed email=[' + details.email + '] name=[' +
-      [details.first_name, details.last_name].filter(Boolean).join(' ') + ']');
+    Logger.log('Raw answers: ' + JSON.stringify(byTitle));
+
+    var details = buildDetailsFromTitles_(byTitle);
+    Logger.log('Mapped: ' + JSON.stringify(details));
 
     if (!details.email) {
-      Logger.log('FAIL: Email empty. Make Email required and ensure the question title is "Email". Run diagnoseFormTitles.');
+      Logger.log('FAIL: could not find Email answer. Rename that question to "Email".');
       return;
     }
 
     sendConfirmationEmail_(details);
-    Logger.log('OK: Confirmation email sent to ' + details.email);
+    Logger.log('OK: confirmation sent to ' + details.email);
   } catch (err) {
-    Logger.log('ERROR in onFormSubmit: ' + err);
+    Logger.log('ERROR: ' + err);
     throw err;
   }
 }
 
 function sendConfirmationEmail_(details) {
-  var fullName = [details.first_name, details.middle_name, details.last_name]
-    .filter(Boolean)
-    .join(' ');
-  if (!fullName) {
-    fullName = 'Visitor';
-  }
-
+  var fullName = displayName_(details);
   var submittedAt = Utilities.formatDate(
     new Date(),
     Session.getScriptTimeZone() || 'Asia/Manila',
     'MMM d, yyyy · h:mm a'
   );
-
   var visitWhen = details.expected_exit_display || details.expected_exit_at || '—';
+
+  var rows = [
+    ['Full name', fullName],
+    ['Submitted', submittedAt],
+    ['Expected exit', visitWhen],
+    ['Purpose of visit', details.purpose || '—'],
+    ['Office / Person to visit', details.office_to_visit || '—'],
+    ['Contact number', details.contact_number || '—'],
+    ['Plate number', details.plate_number || '—'],
+    ['Vehicle type', details.vehicle_name || '—'],
+    ['Vehicle color', details.vehicle_color || '—'],
+  ];
+
+  // If mapping failed, still show every raw answer so the guard sees something useful.
+  var mappedCount = 0;
+  for (var i = 0; i < rows.length; i++) {
+    if (rows[i][1] && rows[i][1] !== '—' && rows[i][1] !== 'Visitor') mappedCount++;
+  }
+  if (mappedCount <= 2 && details.raw_rows && details.raw_rows.length) {
+    rows = [['Submitted', submittedAt]].concat(details.raw_rows);
+  }
+
+  var plain = [
+    'Thank you, ' + fullName + '.',
+    '',
+    'Your visit is pre-registered via the campus Google Form.',
+    'Show this email to the guard at the booth.',
+    '',
+    'VISIT CONFIRMATION',
+  ];
+  rows.forEach(function (row) {
+    plain.push(row[0] + ': ' + row[1]);
+  });
+  plain.push('', 'Status: Pre-registered (Google Form)', 'Next: Guard will verify your ID and issue a temporary RFID.');
 
   MailApp.sendEmail({
     to: details.email,
     subject: 'CSPC visit confirmation — ' + fullName,
-    body:
-      'Thank you, ' +
-      fullName +
-      '.\n\n' +
-      'Your visit is pre-registered via the campus Google Form.\n' +
-      'Show this email to the guard at the booth.\n\n' +
-      '========== VISIT CONFIRMATION ==========\n' +
-      'Name: ' +
-      fullName +
-      '\n' +
-      'Submitted: ' +
-      submittedAt +
-      '\n' +
-      'Expected exit: ' +
-      visitWhen +
-      '\n' +
-      'Purpose of visit: ' +
-      (details.purpose || '—') +
-      '\n' +
-      'Office / Person to visit: ' +
-      (details.office_to_visit || '—') +
-      '\n' +
-      'Contact: ' +
-      (details.contact_number || '—') +
-      '\n' +
-      'Plate number: ' +
-      (details.plate_number || '—') +
-      '\n' +
-      'Vehicle: ' +
-      (details.vehicle_name || '—') +
-      '\n' +
-      'Color: ' +
-      (details.vehicle_color || '—') +
-      '\n' +
-      '=======================================\n\n' +
-      'Status: Pre-registered (Google Form)\n' +
-      'Next: Guard will verify your ID and issue a temporary RFID.\n',
+    body: plain.join('\n'),
+    htmlBody: buildHtmlConfirmation_(fullName, rows),
+    name: 'CSPC Smart Campus VMS',
   });
 }
 
-function buildDetailsFromFormResponse_(formResponse) {
+function buildHtmlConfirmation_(fullName, rows) {
+  var rowHtml = rows
+    .map(function (row, index) {
+      var bg = index % 2 === 0 ? '#f8fafc' : '#ffffff';
+      return (
+        '<tr style="background:' +
+        bg +
+        ';">' +
+        '<td style="padding:12px 16px;font-size:13px;color:#64748b;width:42%;border-bottom:1px solid #e2e8f0;">' +
+        escapeHtml_(row[0]) +
+        '</td>' +
+        '<td style="padding:12px 16px;font-size:14px;color:#0f172a;font-weight:600;border-bottom:1px solid #e2e8f0;">' +
+        escapeHtml_(row[1]) +
+        '</td>' +
+        '</tr>'
+      );
+    })
+    .join('');
+
+  return (
+    '<div style="margin:0;padding:24px;background:#e2e8f0;font-family:Segoe UI,Arial,sans-serif;">' +
+    '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;margin:0 auto;background:#ffffff;border-radius:16px;overflow:hidden;box-shadow:0 10px 30px rgba(15,23,42,0.12);">' +
+    '<tr><td style="background:linear-gradient(135deg,#1A365D,#122844);padding:28px 24px;text-align:center;color:#ffffff;">' +
+    '<div style="font-size:12px;letter-spacing:0.14em;text-transform:uppercase;color:#bfdbfe;font-weight:700;">Camarines Sur Polytechnic Colleges</div>' +
+    '<div style="margin-top:8px;font-size:22px;font-weight:700;">Visit Confirmation</div>' +
+    '<div style="margin-top:10px;display:inline-block;padding:6px 12px;border-radius:999px;background:#059669;font-size:12px;font-weight:700;">PRE-REGISTERED</div>' +
+    '</td></tr>' +
+    '<tr><td style="padding:24px;">' +
+    '<p style="margin:0 0 6px;font-size:18px;font-weight:700;color:#0f172a;">Thank you, ' +
+    escapeHtml_(fullName) +
+    '</p>' +
+    '<p style="margin:0 0 18px;font-size:14px;line-height:1.5;color:#475569;">Your visit is pre-registered. Show this email to the guard at the booth for ID verification and temporary RFID.</p>' +
+    '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #e2e8f0;border-radius:12px;overflow:hidden;">' +
+    rowHtml +
+    '</table>' +
+    '<div style="margin-top:18px;padding:14px 16px;border-radius:12px;background:#fffbeb;border:1px solid #fcd34d;color:#92400e;font-size:13px;line-height:1.45;">' +
+    '<strong>For the guard:</strong> Verify the visitor ID against the name above, then assign a temporary RFID in Smart Campus VMS.' +
+    '</div>' +
+    '</td></tr>' +
+    '<tr><td style="padding:14px 24px 22px;text-align:center;font-size:11px;color:#94a3b8;">Smart Campus Vehicle Management System · CSPC</td></tr>' +
+    '</table></div>'
+  );
+}
+
+function displayName_(details) {
+  var parts = [details.first_name, details.middle_name, details.last_name].filter(Boolean);
+  if (parts.length) return parts.join(' ');
+  if (details.full_name) return details.full_name;
+  return 'Visitor';
+}
+
+function mapFromFormResponse_(formResponse) {
   var byTitle = {};
   formResponse.getItemResponses().forEach(function (itemResponse) {
-    byTitle[itemResponse.getItem().getTitle()] = itemResponse.getResponse();
+    byTitle[itemResponse.getItem().getTitle()] = stringifyAnswer_(itemResponse.getResponse());
   });
-  return buildDetailsFromTitles_(byTitle);
+  return byTitle;
 }
 
-function buildDetailsFromNamedValues_(namedValues) {
+function mapFromNamedValues_(namedValues) {
   var byTitle = {};
   Object.keys(namedValues).forEach(function (title) {
-    var values = namedValues[title];
-    byTitle[title] = values && values.length ? values[0] : '';
+    if (title === 'Timestamp') return;
+    byTitle[title] = stringifyAnswer_(namedValues[title]);
   });
-  return buildDetailsFromTitles_(byTitle);
+  return byTitle;
+}
+
+function stringifyAnswer_(value) {
+  if (value == null) return '';
+  if (Object.prototype.toString.call(value) === '[object Array]') {
+    return value.filter(Boolean).join(', ');
+  }
+  return String(value).trim();
 }
 
 function buildDetailsFromTitles_(byTitle) {
-  var exitRaw = combineDateTime_(
-    findValueByAliases_(byTitle, FIELD_TITLES.exitDate),
-    findValueByAliases_(byTitle, FIELD_TITLES.exitTime)
-  );
+  var rawRows = Object.keys(byTitle).map(function (title) {
+    return [title, byTitle[title] || '—'];
+  });
+
+  var combinedExit = findValueByAliases_(byTitle, FIELD_TITLES.exitCombined);
+  var exitRaw = combinedExit
+    ? combineDateTime_(combinedExit, '')
+    : combineDateTime_(
+        findValueByAliases_(byTitle, FIELD_TITLES.exitDate),
+        findValueByAliases_(byTitle, FIELD_TITLES.exitTime)
+      );
 
   return {
+    full_name: String(findValueByAliases_(byTitle, FIELD_TITLES.fullName) || '').trim(),
     first_name: String(findValueByAliases_(byTitle, FIELD_TITLES.firstName) || '').trim(),
     middle_name: String(findValueByAliases_(byTitle, FIELD_TITLES.middleName) || '').trim(),
     last_name: String(findValueByAliases_(byTitle, FIELD_TITLES.lastName) || '').trim(),
@@ -259,11 +328,14 @@ function buildDetailsFromTitles_(byTitle) {
     plate_number: String(findValueByAliases_(byTitle, FIELD_TITLES.plate) || '').trim(),
     vehicle_name: String(findValueByAliases_(byTitle, FIELD_TITLES.vehicleType) || '').trim(),
     vehicle_color: String(findValueByAliases_(byTitle, FIELD_TITLES.vehicleColor) || '').trim(),
+    raw_rows: rawRows,
   };
 }
 
 function findValueByAliases_(byTitle, aliases) {
   var titles = Object.keys(byTitle);
+
+  // 1) Exact normalized match
   for (var i = 0; i < aliases.length; i++) {
     var want = normalizeTitle_(aliases[i]);
     for (var j = 0; j < titles.length; j++) {
@@ -272,6 +344,19 @@ function findValueByAliases_(byTitle, aliases) {
       }
     }
   }
+
+  // 2) Fuzzy: form title contains the alias (or alias contains title)
+  for (var a = 0; a < aliases.length; a++) {
+    var alias = normalizeTitle_(aliases[a]);
+    if (alias.length < 4) continue;
+    for (var t = 0; t < titles.length; t++) {
+      var title = normalizeTitle_(titles[t]);
+      if (title.indexOf(alias) !== -1 || alias.indexOf(title) !== -1) {
+        return byTitle[titles[t]];
+      }
+    }
+  }
+
   return '';
 }
 
@@ -279,14 +364,13 @@ function normalizeTitle_(title) {
   return String(title || '')
     .toLowerCase()
     .replace(/\s+/g, ' ')
-    .replace(/[.:]/g, '')
+    .replace(/[.:/_|-]+/g, ' ')
+    .replace(/\s+/g, ' ')
     .trim();
 }
 
 function combineDateTime_(dateValue, timeValue) {
-  if (!dateValue) {
-    return { iso: '', display: '' };
-  }
+  if (!dateValue) return { iso: '', display: '' };
 
   var date = new Date(dateValue);
   if (isNaN(date.getTime())) {
@@ -305,4 +389,12 @@ function combineDateTime_(dateValue, timeValue) {
     iso: Utilities.formatDate(date, tz, "yyyy-MM-dd'T'HH:mm:ss"),
     display: Utilities.formatDate(date, tz, 'MMM d, yyyy · h:mm a'),
   };
+}
+
+function escapeHtml_(text) {
+  return String(text == null ? '' : text)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
 }
