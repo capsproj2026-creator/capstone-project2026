@@ -155,7 +155,6 @@
                                 $motionLabel = $det['motion_label'] ?? match ($det['motion_state'] ?? '') {
                                     'moving' => 'Moving',
                                     'parked' => 'Parked',
-                                    'idle' => 'Settling',
                                     default => null,
                                 };
                             @endphp

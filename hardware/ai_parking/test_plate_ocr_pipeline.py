@@ -69,12 +69,19 @@ class PlateDeadlineTests(unittest.TestCase):
         self.assertFalse(mem.maybe_retry_not_read())
         self.assertEqual(mem.plate_status, "not_read")
 
-        # Cooldown elapsed -> reopen for another attempt.
+        # Cooldown elapsed + vehicle moving -> reopen for another attempt.
         mem.not_read_at = time.time() - (OCR_RETRY_COOLDOWN_SEC + 1.0)
+        mem.motion_state = "moving"
         self.assertTrue(mem.maybe_retry_not_read())
         self.assertEqual(mem.plate_status, "pending")
         self.assertEqual(mem.ocr_attempts, 0)
         self.assertEqual(mem.reopen_count, 1)
+
+        # Stationary vehicles must not reopen OCR.
+        mem.plate_status = "not_read"
+        mem.not_read_at = time.time() - (OCR_RETRY_COOLDOWN_SEC + 1.0)
+        mem.motion_state = "parked"
+        self.assertFalse(mem.maybe_retry_not_read())
 
     def test_not_read_reopen_cap_is_bounded(self):
         """A genuinely unreadable plate must not retry forever."""

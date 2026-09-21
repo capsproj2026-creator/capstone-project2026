@@ -655,9 +655,19 @@ class AsyncPlateQueue:
         if mem is not None:
             mem.tick_plate_deadline()
             if mem.is_plate_terminal():
+                reason = mem.ocr_skip_reason() or "PLATE_TERMINAL"
+                if (time.time() - getattr(mem, "last_ocr_at", 0)) > 3.0:
+                    print(
+                        f"[OCR] tracking_id={track_id} skipped reason={reason}"
+                    )
+                    mem.last_ocr_at = time.time()
                 return
-            # Defense in depth: never queue OCR for stationary / idle vehicles.
+            # Defense in depth: never queue OCR past terminal / attempt budget.
             if not mem.allows_ocr():
+                reason = mem.ocr_skip_reason() or "OCR_NOT_ALLOWED"
+                if (time.time() - getattr(mem, "_last_submit_skip_log", 0.0)) > 3.0:
+                    mem._last_submit_skip_log = time.time()  # type: ignore[attr-defined]
+                    print(f"[OCR] tracking_id={track_id} skipped reason={reason}")
                 return
         now = time.time()
         if mem and (now - mem.last_ocr_at) < every_sec:
@@ -673,9 +683,14 @@ class AsyncPlateQueue:
         if crop is None:
             with self._lock:
                 self._inflight.discard(key)
+            # Plate detector found nothing — counts as a failed recognition attempt.
             if mem is not None:
                 mem.mark_ocr_attempt(now)
                 mem.tick_plate_deadline(now)
+                print(
+                    f"[OCR] tracking_id={track_id} attempt={mem.ocr_attempts}/{getattr(mem, 'ocr_attempts', 0)} "
+                    f"plate detector miss"
+                )
             return
         # Keep a private copy; the infer loop reuses the live frame buffer.
         crop = crop.copy()
@@ -687,7 +702,8 @@ class AsyncPlateQueue:
             mem.last_plate_crop = crop
             # OCR-frame box only — never overwrite infer-frame last_xyxy (breaks reattach).
             mem.last_ocr_xyxy = xyxy_i
-            mem.mark_ocr_attempt(now)
+            # Attempt count is incremented in the worker only after OCR actually runs
+            # (or is skipped without counting if the vehicle became stationary).
 
         try:
             self._q.put_nowait((key, crop, intelligence, int(track_id), cls_id, xyxy_i, camera_id))
@@ -712,15 +728,41 @@ class AsyncPlateQueue:
                 t0 = time.perf_counter()
                 self.ocr._debug_camera_id = str(camera_id or "CAM")
                 self.ocr._debug_track_id = int(track_id) if track_id is not None else None
-                # Always use fast path on the async worker when OCR_FAST is set (CPU default).
-                read = self.ocr.read_crop(crop, cls_id=cls_id, fast=OCR_FAST)
                 mem = intelligence.tracks.get(track_id)
                 if mem is None and xyxy is not None and hasattr(intelligence, "find_track_near_xyxy"):
                     # Track IDs often change while CPU OCR runs; reattach by bbox / session.
                     mem = intelligence.find_track_near_xyxy(
                         xyxy, pending_only=False, prefer_locked=True
                     )
+                # Re-check eligibility immediately before OCR executes.
                 if mem is not None:
+                    skip = mem.ocr_skip_reason()
+                    if skip is not None or not mem.allows_ocr():
+                        reason = skip or "OCR_NOT_ALLOWED"
+                        print(f"[OCR] tracking_id={track_id} skipped reason={reason}")
+                        continue
+
+                # Count only when OCR actually executes.
+                if mem is not None:
+                    mem.mark_ocr_attempt()
+                    print(
+                        f"[OCR] tracking_id={track_id} attempt={mem.ocr_attempts}"
+                    )
+
+                # Always use fast path on the async worker when OCR_FAST is set (CPU default).
+                read = self.ocr.read_crop(crop, cls_id=cls_id, fast=OCR_FAST)
+                if mem is None and xyxy is not None and hasattr(intelligence, "find_track_near_xyxy"):
+                    mem = intelligence.find_track_near_xyxy(
+                        xyxy, pending_only=False, prefer_locked=True
+                    )
+                if mem is not None:
+                    from parking_rules import plate_source_label as _ps_label
+
+                    if mem.is_plate_locked() or _ps_label(mem.plate_source) == "MANUAL":
+                        print(
+                            f"[OCR] tracking_id={track_id} skipped reason=PLATE_ALREADY_CONFIRMED"
+                        )
+                        continue
                     mem.last_plate_crop = crop
                     before = mem.plate_status
                     mem.apply_ocr_vote(read.plate, read.status, read.confidence)
@@ -736,6 +778,11 @@ class AsyncPlateQueue:
                         f"vote={before}->{mem.plate_status} plate={mem.plate!r} "
                         f"crop={cw}x{ch} ms={ms}"
                     )
+                    if mem.plate_status == "not_read":
+                        print(
+                            f"[OCR] tracking_id={track_id} stopped reason=MAX_ATTEMPTS "
+                            f"attempts={mem.ocr_attempts}"
+                        )
                     if mem.needs_owner_lookup():
                         from plate_owner_lookup import lookup_plate_async
 

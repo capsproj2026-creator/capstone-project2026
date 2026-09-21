@@ -72,7 +72,8 @@ Import-DotEnv $EnvFile
 # Occupancy ingest must hit local Laravel. APP_URL is often a public ngrok host
 # that is offline (ERR_NGROK_3200) and makes Live Cameras look like they are reconnecting.
 if (-not $env:AI_LARAVEL_API_BASE -or $env:AI_LARAVEL_API_BASE -match 'ngrok') {
-    $env:AI_LARAVEL_API_BASE = "http://127.0.0.1:8000"
+    # Hit Laravel directly (:8001). :8000 is the LAN front/proxy and is slower.
+    $env:AI_LARAVEL_API_BASE = "http://127.0.0.1:8001"
 }
 
 $laravelUrl = $env:AI_LARAVEL_API_BASE

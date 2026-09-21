@@ -28,6 +28,21 @@ class AiParkingViolationService
         'overtime' => 'Wrong Parking',
         // Unknown / access-denied plates map to Wrong Parking when a registered owner exists.
         'unauthorized' => 'Wrong Parking',
+        // Student (etc.) in faculty/staff/reserved lot.
+        'wrong_role' => 'Wrong Parking',
+        // Motorcycle in car slot / car in motorcycle lot.
+        'wrong_vehicle' => 'Wrong Parking',
+    ];
+
+    /** Human-readable reasons for AI Violation Events UI. */
+    public const REASON_LABELS = [
+        'no_parking' => 'Parked in no-parking zone',
+        'aisle_blocked' => 'Blocking aisle / drive lane',
+        'double_park' => 'Occupying multiple parking slots',
+        'overtime' => 'Overtime parking',
+        'unauthorized' => 'Unauthorized / restricted vehicle',
+        'wrong_role' => 'Wrong parking area for role',
+        'wrong_vehicle' => 'Wrong vehicle type for parking area',
     ];
 
     /** Violation types that are limited to one citation per calendar day per user/vehicle. */
@@ -69,19 +84,25 @@ class AiParkingViolationService
         $violationType = self::TYPE_MAP[$type];
         $rawPlate = (string) ($event['plate'] ?? '');
         $plate = PlateLookup::normalize($rawPlate);
-        if ($plate === '' && in_array(strtoupper(trim($rawPlate)), ['UNKNOWN', 'NOT_READ', 'N/A'], true)) {
-            $plate = 'UNKNOWN';
-        }
-        if ($plate === '' && in_array(strtolower((string) ($event['plate_status'] ?? '')), ['not_read', 'unreadable'], true)) {
-            $plate = 'UNKNOWN';
+        // Prefer null plate + plate_status over inventing a fake "UNKNOWN" plate number.
+        $plateStatus = strtolower((string) ($event['plate_status'] ?? ''));
+        if ($plate === '' && in_array($plateStatus, ['not_read', 'unreadable'], true)) {
+            $plate = '';
         }
         $zoneId = (string) ($event['zone_id'] ?? '');
         $trackId = $event['track_id'] ?? null;
         $cameraId = (string) ($event['camera_id'] ?? $cameraId);
         $vehicleEventId = (string) ($event['vehicle_event_id'] ?? $event['vehicleEventId'] ?? '');
-        if ($vehicleEventId === '' && $trackId !== null) {
-            $session = $event['recognition_session_id'] ?? $event['session_id'] ?? 't';
-            $vehicleEventId = $cameraId.':session:'.$session.':track:'.$trackId.':'.$type;
+        if ($vehicleEventId === '') {
+            $parkingSession = (string) ($event['parking_session_id'] ?? '');
+            $type = (string) ($event['type'] ?? '');
+            $zoneId = (string) ($event['zone_id'] ?? '');
+            if ($parkingSession !== '') {
+                $vehicleEventId = $parkingSession.':'.$type.':'.$zoneId;
+            } elseif ($trackId !== null) {
+                $session = $event['recognition_session_id'] ?? $event['session_id'] ?? 't';
+                $vehicleEventId = $cameraId.':session:'.$session.':track:'.$trackId.':'.$type;
+            }
         }
         // Never trust client area_id alone — resolve from camera registry.
         $areaId = app(AiCameraRegistry::class)->resolveAreaId(
@@ -92,8 +113,13 @@ class AiParkingViolationService
         $vehicleDetails = $event['vehicle_details'] ?? null;
         $confidence = isset($event['confidence']) ? (float) $event['confidence'] : null;
         $detectionSource = strtoupper((string) ($event['detection_source'] ?? $event['plate_source'] ?? 'AI'));
-        if ($detectionSource === '') {
-            $detectionSource = 'AI';
+        if (in_array($detectionSource, ['GUARD', 'MANUAL'], true)) {
+            $detectionSource = 'MANUAL';
+        } elseif (in_array($detectionSource, ['AI_OCR', 'OCR', 'AI', ''], true)) {
+            $detectionSource = $detectionSource === '' ? 'AI' : (str_starts_with($detectionSource, 'AI') ? 'AI' : 'OCR');
+            if ($detectionSource === 'OCR') {
+                $detectionSource = 'AI';
+            }
         }
 
         $description = $this->buildDescription($event, $cameraId);
@@ -101,16 +127,15 @@ class AiParkingViolationService
         AiParkingRealtime::emit(AiParkingRealtime::EVENT_VIOLATION_DETECTED, [
             'vehicleEventId' => $vehicleEventId !== '' ? $vehicleEventId : null,
             'trackingId' => is_numeric($trackId) ? (int) $trackId : $trackId,
-            'plateNumber' => $plate !== '' ? $plate : 'UNKNOWN',
+            'plateNumber' => $plate !== '' ? $plate : null,
+            'plateStatus' => $plateStatus !== '' ? $plateStatus : ($plate !== '' ? null : 'not_read'),
             'violationType' => $violationType,
+            'violationReason' => self::REASON_LABELS[$type] ?? $type,
+            'eventType' => $type,
             'cameraId' => $cameraId,
             'parkingArea' => $areaName,
             'detectionSource' => $detectionSource,
         ]);
-
-        if ($plate === '') {
-            $plate = 'UNKNOWN';
-        }
 
         // Idempotency: same physical vehicle event must not create multiple DB rows.
         if ($vehicleEventId !== '') {
@@ -122,16 +147,25 @@ class AiParkingViolationService
                     'status' => 'debounced',
                     'reason' => 'vehicle_event_id',
                     'type' => $type,
-                    'plate' => $plate,
+                    'plate' => $plate !== '' ? $plate : null,
                     'violation_log_id' => (string) $existing->getKey(),
                 ];
             }
         }
 
-        $user = $plate !== 'UNKNOWN' ? PlateLookup::findUser((string) ($event['plate'] ?? $plate)) : null;
-        $identity = $plate !== 'UNKNOWN'
-            ? PlateLookup::identity((string) ($event['plate'] ?? $plate))
-            : ['vehicle_details' => $vehicleDetails, 'role' => $event['owner_role'] ?? $event['role'] ?? null];
+        if ($plate === '') {
+            return [
+                'status' => 'queued_ui_only',
+                'reason' => 'no_plate',
+                'plate_status' => $plateStatus !== '' ? $plateStatus : 'not_read',
+                'type' => $type,
+                'zone_id' => $zoneId,
+                'track_id' => $trackId,
+            ];
+        }
+
+        $user = PlateLookup::findUser((string) ($event['plate'] ?? $plate));
+        $identity = PlateLookup::identity((string) ($event['plate'] ?? $plate));
         if ($vehicleDetails === null) {
             $vehicleDetails = $identity['vehicle_details'] ?? null;
         }
@@ -225,6 +259,8 @@ class AiParkingViolationService
                 ];
             }
         }
+
+        // wrong_role / wrong_vehicle always cite when plate resolves to a user.
 
         $evidencePath = $this->storeEvidenceJpeg($event['evidence_jpeg_base64'] ?? null);
 
@@ -535,10 +571,151 @@ class AiParkingViolationService
         if (! empty($event['slots']) && is_array($event['slots'])) {
             $parts[] = 'Slots: '.implode(', ', $event['slots']);
         }
+        if (! empty($event['reason'])) {
+            $parts[] = 'Reason: '.$event['reason'];
+        }
+        if (! empty($event['owner_role'])) {
+            $parts[] = 'Role: '.$event['owner_role'];
+        }
+        if (! empty($event['vehicle_class']) || ! empty($event['vehicle_details'])) {
+            $parts[] = 'Vehicle: '.($event['vehicle_class'] ?? $event['vehicle_details']);
+        }
         if (isset($event['track_id'])) {
             $parts[] = 'Track #'.$event['track_id'];
         }
 
         return implode(' ', $parts);
+    }
+
+    /**
+     * Role / vehicle-type wrong-parking from enriched detections vs parking area rules.
+     *
+     * @param  list<array<string, mixed>>  $detections
+     * @return list<array<string, mixed>>
+     */
+    public function wrongParkingFromDetections(array $detections, string $cameraId, ?int $areaId = null): array
+    {
+        $extra = [];
+        $dayKey = now()->toDateString();
+        $resolvedAreaId = app(AiCameraRegistry::class)->resolveAreaId($cameraId, $areaId);
+        $area = ParkingArea::query()->find($resolvedAreaId);
+        if (! $area) {
+            return [];
+        }
+
+        foreach ($detections as $det) {
+            if (! is_array($det)) {
+                continue;
+            }
+
+            // Only evaluate wrong-parking for vehicles parked inside a calibrated slot.
+            $slotId = trim((string) ($det['slot_id'] ?? ''));
+            $motion = strtolower((string) ($det['motion_state'] ?? ''));
+            $inZone = $slotId !== '' || ! empty($det['in_calibrated_zone']);
+            if (! $inZone) {
+                continue;
+            }
+            if ($motion !== '' && $motion !== 'parked') {
+                continue;
+            }
+
+            $plate = PlateLookup::normalize((string) ($det['plate'] ?? ''));
+            $trackId = $det['track_id'] ?? null;
+            $sessionId = $det['recognition_session_id'] ?? $det['parking_session_id'] ?? null;
+            $role = (string) ($det['role'] ?? $det['owner_role'] ?? '');
+            $vehicleRaw = (string) ($det['vehicle_details'] ?? $det['vehicle_type'] ?? $det['class'] ?? '');
+            $vehicleClass = ParkingArea::normalizeVehicleClass($vehicleRaw);
+
+            $stableIdent = $plate !== ''
+                ? 'p:'.$plate
+                : ($sessionId !== null && $sessionId !== ''
+                    ? 's:'.$sessionId
+                    : 't:'.($trackId ?? 'x'));
+            $parkingSessionKey = (string) ($det['parking_session_id']
+                ?? ($det['vehicle_event_id'] ?? ($cameraId.':'.$stableIdent.':'.($slotId !== '' ? $slotId : 'lot'))));
+
+            // Vehicle type vs lot designation (motorcycle ↔ automobile).
+            if ($vehicleClass !== null && ! $area->allowsVehicleClass($vehicleClass)) {
+                $cacheKey = 'ai_parking:wrong_vehicle:'.md5($cameraId.'|'.$parkingSessionKey.'|wrong_vehicle|'.$dayKey);
+                if (! Cache::has($cacheKey)) {
+                    Cache::put($cacheKey, 1, now()->endOfDay());
+                    $zoneLabel = $slotId !== '' ? $slotId : (string) ($area->slot_prefix ?? 'lot');
+                    $extra[] = [
+                        'type' => 'wrong_vehicle',
+                        'zone_id' => $zoneLabel,
+                        'track_id' => $trackId,
+                        'recognition_session_id' => is_numeric($sessionId) ? (int) $sessionId : $sessionId,
+                        'parking_session_id' => $parkingSessionKey,
+                        'vehicle_event_id' => $parkingSessionKey.':wrong_vehicle:'.$zoneLabel,
+                        'plate' => $plate !== '' ? $plate : null,
+                        'plate_status' => $det['plate_status'] ?? ($plate !== '' ? 'ok' : 'not_read'),
+                        'confidence' => $det['confidence'] ?? 0.5,
+                        'vehicle_details' => $det['vehicle_details'] ?? $vehicleRaw,
+                        'vehicle_type' => $det['vehicle_type'] ?? $vehicleRaw,
+                        'vehicle_class' => $vehicleClass,
+                        'camera_id' => $cameraId,
+                        'area_id' => $resolvedAreaId,
+                        'owner_name' => $det['owner_name'] ?? null,
+                        'owner_role' => $role !== '' ? $role : null,
+                        'owner_id_number' => $det['owner_id_number'] ?? $det['id_number'] ?? null,
+                        'registration_status' => $det['registration_status'] ?? null,
+                        'registered' => $det['registered'] ?? null,
+                        'role' => $role !== '' ? $role : null,
+                        'violation_type' => 'Wrong Parking',
+                        'violation_status' => 'Wrong Parking',
+                        'reason' => sprintf(
+                            '%s in %s parking area',
+                            ucfirst($vehicleClass),
+                            implode('/', $area->getAllowedVehicleClasses() ?? ['restricted'])
+                        ),
+                    ];
+                }
+            }
+
+            // Student (etc.) in faculty / staff / reserved area.
+            if ($plate === '' || $role === '') {
+                continue;
+            }
+            if ($area->allowsOccupantRole($role)) {
+                continue;
+            }
+
+            $cacheKey = 'ai_parking:wrong_role:'.md5($cameraId.'|'.$parkingSessionKey.'|wrong_role|'.$dayKey);
+            if (Cache::has($cacheKey)) {
+                continue;
+            }
+            Cache::put($cacheKey, 1, now()->endOfDay());
+            $zoneLabel = $slotId !== '' ? $slotId : (string) ($area->slot_prefix ?? 'lot');
+            $extra[] = [
+                'type' => 'wrong_role',
+                'zone_id' => $zoneLabel,
+                'track_id' => $trackId,
+                'recognition_session_id' => is_numeric($sessionId) ? (int) $sessionId : $sessionId,
+                'parking_session_id' => $parkingSessionKey,
+                'vehicle_event_id' => $parkingSessionKey.':wrong_role:'.$zoneLabel,
+                'plate' => $plate,
+                'plate_status' => $det['plate_status'] ?? 'ok',
+                'confidence' => $det['confidence'] ?? 0.5,
+                'vehicle_details' => $det['vehicle_details'] ?? null,
+                'vehicle_type' => $det['vehicle_type'] ?? $vehicleRaw,
+                'camera_id' => $cameraId,
+                'area_id' => $resolvedAreaId,
+                'owner_name' => $det['owner_name'] ?? null,
+                'owner_role' => $role,
+                'owner_id_number' => $det['owner_id_number'] ?? $det['id_number'] ?? null,
+                'registration_status' => $det['registration_status'] ?? null,
+                'role' => $role,
+                'violation_type' => 'Wrong Parking',
+                'violation_status' => 'Wrong Parking',
+                'reason' => sprintf(
+                    '%s not allowed in %s (allowed: %s)',
+                    $role,
+                    $area->area_name,
+                    implode(', ', $area->getAllowedRoles())
+                ),
+            ];
+        }
+
+        return $extra;
     }
 }

@@ -4,7 +4,8 @@
  * LAN front door on :8000
  *
  * - POST /api/rfid/heartbeat → answered here instantly (no Laravel)
- * - everything else → proxied to Laravel on 127.0.0.1:8001
+ * - Browser on localhost (non-API) → redirect to Laravel :8001 (avoids slow curl proxy)
+ * - LAN devices / ESP32 / API clients → proxied to Laravel on 127.0.0.1:8001
  *
  * Start with:
  *   php -S 0.0.0.0:8000 bootstrap/lan_front_router.php
@@ -15,9 +16,28 @@ declare(strict_types=1);
 
 $uri = parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH) ?: '/';
 $method = strtoupper($_SERVER['REQUEST_METHOD'] ?? 'GET');
+$hostHeader = strtolower((string) ($_SERVER['HTTP_HOST'] ?? ''));
+$query = (string) ($_SERVER['QUERY_STRING'] ?? '');
 
 if ($method === 'POST' && $uri === '/api/rfid/heartbeat') {
     require __DIR__.'/rfid_heartbeat_fast.php';
+
+    return true;
+}
+
+// Local browser traffic should hit Laravel directly — the curl proxy makes every
+// page feel slow (and php -S is single-threaded while waiting on :8001).
+// Keep /api/* on the proxy so AI/RFID clients are not broken by 307 redirects.
+$isLoopbackHost = str_starts_with($hostHeader, '127.0.0.1')
+    || str_starts_with($hostHeader, 'localhost');
+$isApi = str_starts_with($uri, '/api/');
+if ($isLoopbackHost && ! $isApi) {
+    $target = 'http://127.0.0.1:8001'.$uri;
+    if ($query !== '') {
+        $target .= '?'.$query;
+    }
+    header('Location: '.$target, true, 307);
+    header('Cache-Control: no-store');
 
     return true;
 }
@@ -29,8 +49,8 @@ if ($uri !== '/' && is_file($staticPath) && str_starts_with(realpath($staticPath
 }
 
 $backend = 'http://127.0.0.1:8001'.$uri;
-if (! empty($_SERVER['QUERY_STRING'])) {
-    $backend .= '?'.$_SERVER['QUERY_STRING'];
+if ($query !== '') {
+    $backend .= '?'.$query;
 }
 
 $body = file_get_contents('php://input');

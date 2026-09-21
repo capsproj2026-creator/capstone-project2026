@@ -8,6 +8,24 @@ namespace App\Support;
 class AiDetectionPresenter
 {
     /**
+     * Plate / wait text when OCR has not produced a plate yet.
+     * Loading ("Reading plate…") only while the vehicle is moving.
+     *
+     * @param  array<string, mixed>|null  $det
+     */
+    public static function unresolvedPlateLabel(?array $det): string
+    {
+        $motion = strtolower((string) ($det['motion_state'] ?? ''));
+
+        return match ($motion) {
+            'moving' => 'Reading plate…',
+            'parked' => '—',
+            'idle' => '—',
+            default => '—',
+        };
+    }
+
+    /**
      * @param  array<string, mixed>|null  $det
      */
     public static function plateLine(?array $det): string
@@ -25,10 +43,13 @@ class AiDetectionPresenter
             $bits[] = ucfirst((string) $det['class']);
         }
 
-        if (! empty($det['motion_label']) && ! str_contains(strtolower((string) $det['motion_label']), 'moving')) {
-            $bits[] = (string) $det['motion_label'];
-        } elseif (($det['motion_state'] ?? '') === 'parked') {
+        if (($det['motion_state'] ?? '') === 'parked') {
             $bits[] = 'Parked';
+        } elseif (! empty($det['motion_label'])) {
+            $ml = strtolower((string) $det['motion_label']);
+            if (! str_contains($ml, 'moving') && ! str_contains($ml, 'waiting') && ! str_contains($ml, 'settling')) {
+                $bits[] = (string) $det['motion_label'];
+            }
         }
 
         if (($det['plate_status'] ?? '') === 'unreadable') {
@@ -55,7 +76,7 @@ class AiDetectionPresenter
             $bits[] = (string) $det['plate'];
             $bits[] = 'Unknown Vehicle';
         } else {
-            $bits[] = 'Waiting for plate…';
+            $bits[] = self::unresolvedPlateLabel($det);
         }
 
         if (in_array(($det['plate_status'] ?? ''), ['unreadable', 'not_read'], true)) {
@@ -63,7 +84,10 @@ class AiDetectionPresenter
         }
 
         if (! empty($det['violation_status']) || ! empty($det['violation_flag'])) {
-            $bits[] = '⚠ '.((string) ($det['violation_status'] ?? 'violation'));
+            $bits[] = '⚠ '.((string) ($det['violation_status'] ?? 'Wrong Parking'));
+            if (! empty($det['violation_reason']) && ($det['violation_reason'] !== ($det['violation_status'] ?? ''))) {
+                $bits[] = (string) $det['violation_reason'];
+            }
         }
 
         return implode(' · ', $bits);

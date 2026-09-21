@@ -66,6 +66,24 @@ class MongoDsn
             || str_contains($lower, 'your_cluster');
     }
 
+    /**
+     * Which endpoint resolve() is effectively using (for offline/online UI).
+     */
+    public static function resolvedSource(): string
+    {
+        $dsn = self::resolve();
+
+        if (str_starts_with($dsn, 'mongodb+srv://') || str_contains($dsn, 'mongodb.net')) {
+            return 'atlas';
+        }
+
+        if (str_contains($dsn, '127.0.0.1') || str_contains($dsn, 'localhost')) {
+            return 'local';
+        }
+
+        return 'custom';
+    }
+
     public static function withTlsParams(string $dsn): string
     {
         if (! str_starts_with($dsn, 'mongodb+srv://')) {

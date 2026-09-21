@@ -119,6 +119,12 @@ def box_center(xyxy: tuple[int, int, int, int]) -> tuple[float, float]:
     return (x1 + x2) / 2.0, (y1 + y2) / 2.0
 
 
+def box_ground_point(xyxy: tuple[int, int, int, int]) -> tuple[float, float]:
+    """Bottom-center of the bbox — better proxy for where the vehicle sits on asphalt."""
+    x1, y1, x2, y2 = xyxy
+    return (x1 + x2) / 2.0, float(y2)
+
+
 def box_iou_with_polygon(xyxy: tuple[int, int, int, int], points: list[list[float]], frame_shape: tuple[int, int]) -> float:
     """Approximate IoU between axis-aligned box and polygon via ROI masks (not full-frame)."""
     h, w = frame_shape[:2]
@@ -181,17 +187,22 @@ def assign_zones_for_box(
     frame_shape: tuple[int, int],
     iou_threshold: float = 0.12,
 ) -> list[dict[str, Any]]:
-    """Return zones the vehicle belongs to (center inside or IoU above threshold)."""
-    cx, cy = box_center(xyxy)
+    """Return zones the vehicle belongs to.
+
+    Membership rule (in order):
+    1. Bottom-center (ground point) of the bbox is inside the polygon, OR
+    2. Box↔polygon IoU is above ``iou_threshold`` (enough overlap, not a grazing corner).
+    """
+    gx, gy = box_ground_point(xyxy)
     matched = []
     for z in zones:
         pts = z.get("points") or []
         if len(pts) < 3:
             continue
-        by_center = point_in_polygon(cx, cy, pts)
-        iou = box_iou_with_polygon(xyxy, pts, frame_shape) if not by_center else 1.0
-        if by_center or iou >= iou_threshold:
-            matched.append({**z, "_iou": round(float(iou if not by_center else max(iou, 0.5)), 3)})
+        by_ground = point_in_polygon(gx, gy, pts)
+        iou = box_iou_with_polygon(xyxy, pts, frame_shape) if not by_ground else 1.0
+        if by_ground or iou >= iou_threshold:
+            matched.append({**z, "_iou": round(float(iou if not by_ground else max(iou, 0.5)), 3)})
     return matched
 
 

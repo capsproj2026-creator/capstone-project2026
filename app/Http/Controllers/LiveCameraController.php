@@ -114,6 +114,7 @@ class LiveCameraController extends Controller
         return view('guard.ai-parking-monitor', [
             'streamUrl' => $health->streamBrowserUrl($primary, true),
             'ai' => $ai->latestSnapshot($primary),
+            'aiDayEvents' => $ai->dayViolationEvents(),
             'aiHealth' => $aiHealth,
             'aiCameras' => $ai->allSnapshots(),
             'aiCamerasHealth' => $health->statusAll(true, false),
@@ -198,7 +199,7 @@ class LiveCameraController extends Controller
             'trackingId' => $trackId,
             'recognitionSessionId' => $sessionId,
             'plateNumber' => $identity['plate'] ?? PlateLookup::normalize($validated['plate']),
-            'source' => 'GUARD',
+            'source' => 'MANUAL',
             'ownerName' => $identity['owner_name'] ?? $identity['owner_label'] ?? null,
             'userRole' => $identity['owner_role'] ?? $identity['role'] ?? null,
             'vehicleType' => $identity['vehicle_details'] ?? null,

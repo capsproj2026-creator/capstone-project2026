@@ -28,7 +28,7 @@ from urllib.error import URLError, HTTPError
 import cv2
 from ultralytics import YOLO
 
-from geometry import draw_zones, load_zones
+from geometry import draw_zones, has_calibrated_slots, load_zones
 from camera_registry import CameraConfig, load_cameras
 from load_env import load_project_env
 
@@ -73,6 +73,15 @@ USE_WEBCAM = os.getenv("AI_USE_WEBCAM", "0") == "1"
 TRACKER = os.getenv("AI_PARKING_TRACKER", "bytetrack.yaml")
 # Target YOLO cadence; actual rate is also limited by CPU + model lock.
 INFER_EVERY_SEC = float(os.getenv("AI_PARKING_INFER_EVERY_SEC", "0.22"))
+# Skip YOLO while the scene is still; resume on motion (or idle probe).
+YOLO_MOTION_ONLY = os.getenv("AI_PARKING_YOLO_MOTION_ONLY", "1").strip().lower() in (
+    "1",
+    "true",
+    "yes",
+    "on",
+)
+SCENE_MOTION_THRESH = float(os.getenv("AI_PARKING_SCENE_MOTION_THRESH", "0.012"))
+YOLO_IDLE_PROBE_SEC = float(os.getenv("AI_PARKING_YOLO_IDLE_PROBE_SEC", "2.5"))
 # Keep last boxes briefly when a frame misses, so overlays don't flicker.
 BOX_HOLD_SEC = float(os.getenv("AI_PARKING_BOX_HOLD_SEC", "0.9"))
 PREVIEW_MAX_WIDTH = int(os.getenv("AI_PARKING_PREVIEW_MAX_WIDTH", "1280"))
@@ -523,10 +532,14 @@ def _sync_detection_from_mem(det: dict, mem) -> None:
         det["department"] = mem.department
     if mem.registration_status:
         det["registration_status"] = mem.registration_status
-    if mem.registered is not None:
-        det["registered"] = mem.registered
-    if getattr(mem, "recognition_session_id", None):
-        det["recognition_session_id"] = mem.recognition_session_id
+        if mem.registered is not None:
+            det["registered"] = mem.registered
+        if getattr(mem, "plate_source", None):
+            from parking_rules import plate_source_label
+
+            det["plate_source"] = plate_source_label(mem.plate_source)
+        if getattr(mem, "recognition_session_id", None):
+            det["recognition_session_id"] = mem.recognition_session_id
     if mem.motion_state:
         _attach_motion(det, mem.motion_state)
 
@@ -720,8 +733,8 @@ def parse_tracks(
             if plate_queue is not None:
                 mem.maybe_retry_not_read(now)
             if plate_queue is not None and not mem.is_plate_terminal():
-                # HARD GATE: YOLO → tracking → movement check → OCR (never OCR while stationary).
-                ocr_ok = ocr_allowed_for_motion(motion_state) and mem.allows_ocr()
+                # OCR until success or max attempts (movement gate optional via OCR_MOVING_ONLY).
+                ocr_ok = mem.allows_ocr()
                 # Prefer real vehicles for OCR; still allow mid-size parked cars/multicabs.
                 box_w = max(1, ox2 - ox1)
                 box_h = max(1, oy2 - oy1)
@@ -733,8 +746,9 @@ def parse_tracks(
                     if (now - getattr(mem, "_last_ocr_gate_log_at", 0.0)) > 2.0:
                         mem._last_ocr_gate_log_at = now  # type: ignore[attr-defined]
                         print(
-                            f"[{camera_id}] Track #{track_id} OCR started "
-                            f"(moving, attempts={mem.ocr_attempts})"
+                            f"[{camera_id}] Track #{track_id} OCR queued "
+                            f"(attempts={mem.ocr_attempts}/{getattr(mem, 'ocr_attempts', 0)} "
+                            f"motion={motion_state})"
                         )
                     plate_queue.submit(
                         camera_id,
@@ -745,13 +759,13 @@ def parse_tracks(
                         OCR_EVERY_SEC,
                         cls_id=row.get("cls_id"),
                     )
-                elif motion_state != "moving":
+                elif mem.ocr_skip_reason():
                     if (now - getattr(mem, "_last_ocr_skip_log_at", 0.0)) > 3.0:
                         mem._last_ocr_skip_log_at = now  # type: ignore[attr-defined]
                         print(
                             f"[{camera_id}] Track #{track_id} OCR skipped "
-                            f"because vehicle is {motion_state or 'unknown'} "
-                            f"(attempts={mem.ocr_attempts} unchanged)"
+                            f"reason={mem.ocr_skip_reason()} "
+                            f"(attempts={mem.ocr_attempts})"
                         )
             elif plate_queue is not None and mem.is_plate_locked():
                 # One-line skip (rate-limit via last_ocr_at reuse).
@@ -810,6 +824,19 @@ def parse_tracks(
             if mem_sid is not None and getattr(mem_sid, "recognition_session_id", None):
                 det["recognition_session_id"] = mem_sid.recognition_session_id
                 det["ocr_attempts"] = int(getattr(mem_sid, "ocr_attempts", 0) or 0)
+                try:
+                    det["parking_session_id"] = mem_sid.parking_session_id(camera_id)
+                    det["vehicle_event_id"] = mem_sid.vehicle_event_id(camera_id)
+                except Exception:
+                    pass
+            if mem_sid is not None and getattr(mem_sid, "slot_id", None):
+                det["slot_id"] = mem_sid.slot_id
+                det["in_calibrated_zone"] = True
+            elif mem_sid is not None:
+                det["in_calibrated_zone"] = False
+            if mem_sid is not None and getattr(mem_sid, "violation_flag", False):
+                det["violation_flag"] = True
+                det["violation_status"] = "Wrong Parking"
         if plate:
             det["plate"] = plate
             det["ocr_text"] = plate
@@ -1168,6 +1195,45 @@ def attach_detection_thumbs(detections: list, intelligence: ParkingIntelligence)
     return out
 
 
+def filter_parking_detections(
+    detections: list,
+    intelligence: ParkingIntelligence,
+    *,
+    zones_calibrated: bool,
+) -> list:
+    """Latest Detections / parking workflow: only vehicles in calibrated slots.
+
+    When zones are calibrated, drop vehicles that are outside every parking polygon
+    (they may still be tracked for overlay, but must not create parking rows).
+    """
+    if not zones_calibrated:
+        return list(detections)
+    out = []
+    for det in detections:
+        if not isinstance(det, dict):
+            continue
+        tid = det.get("track_id")
+        mem = None
+        if tid is not None:
+            try:
+                mem = intelligence.tracks.get(int(tid))
+            except (TypeError, ValueError):
+                mem = None
+        slot = det.get("slot_id") or (getattr(mem, "slot_id", None) if mem else None)
+        if not slot:
+            continue
+        # Prefer parked; still allow in-zone pending so OCR progress is visible.
+        motion = str(det.get("motion_state") or (getattr(mem, "motion_state", "") if mem else "")).lower()
+        if motion in ("moving", "idle") and not det.get("plate") and det.get("plate_status") not in (
+            "ok", "unreadable", "not_read",
+        ):
+            # Passing through: skip until parked or OCR terminal for this session.
+            if motion == "moving":
+                continue
+        out.append(det)
+    return out
+
+
 def post_occupancy_async(camera_id: str, area_id: int, vehicle_count, detections, slots, events):
     payload = {
         "camera_id": camera_id,
@@ -1450,6 +1516,7 @@ class MjpegHandler(BaseHTTPRequestHandler):
             self.send_response(200)
             self.send_header("Content-Type", "image/jpeg")
             self.send_header("Cache-Control", "no-store, private")
+            self.send_header("Access-Control-Allow-Origin", "*")
             self.send_header("Content-Length", str(len(jpeg)))
             self.end_headers()
             self.wfile.write(jpeg)
@@ -1468,6 +1535,7 @@ class MjpegHandler(BaseHTTPRequestHandler):
         self.send_header("Age", "0")
         self.send_header("Cache-Control", "no-cache, private")
         self.send_header("Pragma", "no-cache")
+        self.send_header("Access-Control-Allow-Origin", "*")
         self.send_header("Content-Type", "multipart/x-mixed-replace; boundary=frame")
         self.end_headers()
 
@@ -1600,11 +1668,19 @@ class CameraWorker:
         self._ai_overlay_jpeg: bytes | None = None
         self._prev_preview_gray = None
         self._last_preview_push = 0.0
+        self._prev_infer_gray = None
+        self._last_yolo_at = 0.0
+        self._yolo_skip_log_at = 0.0
         zones_path = Path(config.zones_file)
         if not zones_path.is_file():
             zones_path = BASE_DIR / "zones.json"
         self.zones_holder = [load_zones(zones_path)]
         self.zones_path = zones_path
+        # Propagate calibration flag so OCR is zone/parked-gated from the first frame.
+        try:
+            self.intelligence.set_zones_calibrated(has_calibrated_slots(self.zones_holder[0]))
+        except Exception:
+            pass
         self.preview_max_width = int(config.preview_max_width or PREVIEW_MAX_WIDTH)
         self.infer_max_width = int(config.infer_max_width) if getattr(config, "infer_max_width", 0) else INFER_MAX_WIDTH
         cam_ai_cap = int(getattr(config, "ai_stream_max_width", 0) or 0)
@@ -2092,6 +2168,137 @@ class CameraWorker:
         if mem.needs_owner_lookup():
             lookup_plate_async(mem)
 
+    def _scene_motion_score(self, frame) -> float:
+        """Cheap full-frame motion score in 0..1 (mean absdiff on downscaled gray)."""
+        try:
+            import numpy as np
+
+            small = cv2.resize(frame, (320, 180), interpolation=cv2.INTER_AREA)
+            gray = cv2.cvtColor(small, cv2.COLOR_BGR2GRAY)
+            prev = self._prev_infer_gray
+            self._prev_infer_gray = gray
+            if prev is None or prev.shape != gray.shape:
+                return 1.0
+            return float(np.mean(cv2.absdiff(prev, gray))) / 255.0
+        except Exception:
+            return 1.0
+
+    def _should_run_yolo(self, motion_score: float, now: float) -> bool:
+        if not YOLO_MOTION_ONLY:
+            return True
+        if motion_score >= SCENE_MOTION_THRESH:
+            return True
+        # Periodic probe so a quiet arrival is not missed if frame-diff is weak.
+        if (now - self._last_yolo_at) >= YOLO_IDLE_PROBE_SEC:
+            return True
+        return False
+
+    def _continue_ocr_on_held(self, frame, now: float) -> None:
+        """When YOLO is paused, keep draining OCR attempts on known tracks."""
+        if self.plate_queue is None:
+            return
+        for mem in list(self.intelligence._unique_sessions()):
+            if not mem.allows_ocr() or mem.is_plate_terminal():
+                continue
+            mem.maybe_retry_not_read(now)
+            if not mem.allows_ocr():
+                continue
+            xyxy = getattr(mem, "last_ocr_xyxy", None) or getattr(mem, "last_xyxy", None)
+            if not xyxy or len(xyxy) < 4:
+                continue
+            tid = mem.current_tracker_id
+            if tid is None:
+                continue
+            self.plate_queue.submit(
+                self.config.camera_id,
+                int(tid),
+                frame,
+                tuple(int(v) for v in xyxy[:4]),
+                self.intelligence,
+                OCR_EVERY_SEC,
+                cls_id=getattr(mem, "cls_id", None),
+            )
+
+    def _publish_held_scene(self, frame, now: float, last_post: float) -> float:
+        """Reuse last YOLO boxes while the scene is still."""
+        annotated_boxes = list(self._held_boxes)
+        vehicles = list(self._held_vehicles)
+        detections = list(self._held_detections)
+        person_count, vehicle_count = self._held_counts
+        self._continue_ocr_on_held(frame, now)
+        self.intelligence.tick_all_plate_deadlines(now)
+        annotated_boxes = refresh_plates_from_tracks(
+            detections, vehicles, annotated_boxes, self.intelligence
+        )
+        slot_statuses, events, occupied_slots, use_poly = self.intelligence.analyze(
+            vehicles, self.zones_holder[0], frame.shape
+        )
+        self.scene.update(
+            annotated_boxes=annotated_boxes,
+            person_count=person_count,
+            vehicle_count=vehicle_count,
+            occupied_slots=occupied_slots,
+            active_events=list(self.intelligence.active_events),
+            use_poly=use_poly,
+            detections=detections,
+            source_shape=frame.shape,
+        )
+        self._publish_ai_overlay(frame, {
+            "annotated_boxes": annotated_boxes,
+            "person_count": person_count,
+            "vehicle_count": vehicle_count,
+            "occupied_slots": occupied_slots,
+            "active_events": list(self.intelligence.active_events),
+            "use_poly": use_poly,
+            "detections": detections,
+            "source_shape": frame.shape,
+        })
+        self._publish_plate_crops()
+        if now - last_post >= POST_EVERY_SEC:
+            refresh_plates_from_tracks(detections, vehicles, annotated_boxes, self.intelligence)
+            post_events = list(events)
+            for evt in post_events:
+                tid = evt.get("track_id")
+                if tid is not None:
+                    mem = self.intelligence.tracks.get(int(tid))
+                    if mem:
+                        if not evt.get("plate") and mem.plate:
+                            evt["plate"] = mem.plate
+                        if mem.plate_status:
+                            evt["plate_status"] = mem.plate_status
+                        mem.violation_flag = True
+                evt["camera_id"] = self.config.camera_id
+                evt["area_id"] = self.config.area_id
+            _UI_EVENTS_WITHOUT_PLATE = {
+                "overtime", "unauthorized", "double_park", "no_parking",
+                "aisle_blocked", "wrong_role", "wrong_vehicle",
+            }
+            post_events = [
+                evt for evt in post_events
+                if isinstance(evt, dict) and (
+                    (evt.get("plate") or "").strip()
+                    or evt.get("type") in _UI_EVENTS_WITHOUT_PLATE
+                )
+            ]
+            post_dets = detections
+            if os.getenv("AI_PARKING_POST_THUMBS", "0") == "1":
+                post_dets = attach_detection_thumbs(detections, self.intelligence)
+            post_dets = filter_parking_detections(
+                post_dets,
+                self.intelligence,
+                zones_calibrated=bool(use_poly) or self.intelligence.zones_calibrated,
+            )
+            post_occupancy_async(
+                self.config.camera_id,
+                self.config.area_id,
+                vehicle_count,
+                post_dets,
+                slot_statuses,
+                post_events,
+            )
+            return now
+        return last_post
+
     def _inference_loop(self):
         last_post = 0.0
         last_infer = 0.0
@@ -2104,6 +2311,9 @@ class CameraWorker:
                     if mtime != zones_mtime:
                         self.zones_holder[0] = load_zones(self.zones_path)
                         zones_mtime = mtime
+                        self.intelligence.set_zones_calibrated(
+                            has_calibrated_slots(self.zones_holder[0])
+                        )
                         print(f"[{self.config.camera_id}] Reloaded zones")
             except OSError:
                 pass
@@ -2126,6 +2336,22 @@ class CameraWorker:
             if not ret:
                 time.sleep(0.02)
                 continue
+
+            last_infer = now
+            motion_score = self._scene_motion_score(frame)
+            if YOLO_MOTION_ONLY and not self._should_run_yolo(motion_score, now):
+                if self._held_boxes:
+                    if (now - self._yolo_skip_log_at) > 5.0:
+                        self._yolo_skip_log_at = now
+                        print(
+                            f"[{self.config.camera_id}] YOLO paused "
+                            f"(no scene motion score={motion_score:.4f}; holding last boxes)"
+                        )
+                    last_post = self._publish_held_scene(frame, now, last_post)
+                    continue
+                # No held boxes yet — fall through to a probe YOLO run.
+
+            self._last_yolo_at = now
 
             # Faster live boxes; plate OCR still uses full-res crops asynchronously.
             # Tapo can set AI_CAMERA_N_INFER_MAX_WIDTH=2304 for sharper plate crops.
@@ -2298,19 +2524,48 @@ class CameraWorker:
                         evidence = encode_evidence_jpeg(frame, xyxy)
                         if evidence:
                             evt["evidence_jpeg_base64"] = evidence
-                # Only forward freshly emitted events (already debounced). Skip empty-plate
-                # spam to Laravel — monitor still shows overlay from AI active_events.
+                # Only forward freshly emitted events (already debounced).
+                # Wrong-parking geometry events (double_park / no_parking / aisle) must
+                # reach Laravel even before OCR locks a plate so the monitor can show them.
+                _UI_EVENTS_WITHOUT_PLATE = {
+                    "overtime",
+                    "unauthorized",
+                    "double_park",
+                    "no_parking",
+                    "aisle_blocked",
+                    "wrong_role",
+                    "wrong_vehicle",
+                }
                 post_events = [
                     evt for evt in post_events
                     if isinstance(evt, dict) and (
                         (evt.get("plate") or "").strip()
-                        or evt.get("type") in ("overtime", "unauthorized")
+                        or evt.get("type") in _UI_EVENTS_WITHOUT_PLATE
                     )
                 ]
+                # Annotate live detections so Latest Detections shows Wrong Parking (1 row / track).
+                if post_events:
+                    by_track: dict[int, str] = {}
+                    for evt in post_events:
+                        tid = evt.get("track_id")
+                        if tid is not None and evt.get("type"):
+                            by_track[int(tid)] = str(evt.get("violation_label") or "Wrong Parking")
+                    if by_track:
+                        for det in detections:
+                            tid = det.get("track_id")
+                            if tid is not None and int(tid) in by_track:
+                                det["violation_flag"] = True
+                                det["violation_status"] = by_track[int(tid)]
+                                det["violation_reason"] = by_track[int(tid)]
                 # Thumbs are optional — crop URLs on the monitor are enough and keep Laravel responsive.
                 post_dets = detections
                 if os.getenv("AI_PARKING_POST_THUMBS", "0") == "1":
                     post_dets = attach_detection_thumbs(detections, self.intelligence)
+                post_dets = filter_parking_detections(
+                    post_dets,
+                    self.intelligence,
+                    zones_calibrated=bool(use_poly) or self.intelligence.zones_calibrated,
+                )
                 post_occupancy_async(
                     self.config.camera_id,
                     self.config.area_id,

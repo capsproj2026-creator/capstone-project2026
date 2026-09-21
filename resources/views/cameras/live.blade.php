@@ -74,13 +74,15 @@
                     </span>
 
                     @if ($hasStream)
+                        {{-- Tiny finished placeholder so the tab can complete load; MJPEG is attached in JS after load. --}}
                         <img
-                            src="{{ $camera['stream_url'] }}"
+                            src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7"
+                            data-stream-src="{{ $camera['stream_url'] }}"
+                            data-stream-pending="1"
                             alt="{{ $camera['name'] }}"
                             class="absolute inset-0 h-full w-full object-cover {{ $isOnline ? '' : 'hidden' }}"
                             data-stream-img
                             decoding="async"
-                            loading="eager"
                         >
                         <div data-stream-fallback @class([
                             'absolute inset-0 flex flex-col items-center justify-center gap-2 text-slate-400',
@@ -179,6 +181,20 @@
         const modalBody = document.getElementById('camera-expand-body');
         const closeBtn = document.getElementById('camera-expand-close');
 
+        const ensureStreamAttached = (img) => {
+            if (!img) return false;
+            const url = img.getAttribute('data-stream-src') || img.dataset.streamSrc || '';
+            if (!url) return false;
+            const current = img.getAttribute('src') || '';
+            if (current === url || (current.startsWith(url) && !img.hasAttribute('data-stream-pending'))) {
+                img.removeAttribute('data-stream-pending');
+                return true;
+            }
+            img.removeAttribute('data-stream-pending');
+            img.src = url;
+            return true;
+        };
+
         const closeModal = () => {
             modal?.classList.add('hidden');
             modal?.classList.remove('flex');
@@ -194,8 +210,12 @@
                 if (modalTitle) modalTitle.textContent = title;
                 if (modalBody) {
                     modalBody.replaceChildren();
-                    if (stream && !stream.classList.contains('hidden')) {
-                        const clone = stream.cloneNode(true);
+                    const streamUrl = stream?.getAttribute('data-stream-src') || '';
+                    if (stream && streamUrl) {
+                        ensureStreamAttached(stream);
+                        const clone = document.createElement('img');
+                        clone.src = streamUrl;
+                        clone.alt = stream.getAttribute('alt') || title;
                         clone.className = 'h-full w-full object-contain';
                         modalBody.append(clone);
                     } else {
@@ -239,6 +259,7 @@
             const fb = tile.querySelector('[data-stream-fallback]');
             const img = tile.querySelector('[data-stream-img]');
             if (online) {
+                ensureStreamAttached(img);
                 img?.classList.remove('hidden');
                 fb?.classList.add('hidden');
             } else {
@@ -261,8 +282,25 @@
             refreshCounts();
         };
 
+        const attachDeferredStreams = () => {
+            document.querySelectorAll('[data-stream-img][data-stream-src]').forEach((img) => {
+                ensureStreamAttached(img);
+            });
+        };
+        const scheduleStreamAttach = () => {
+            attachDeferredStreams();
+            window.setTimeout(attachDeferredStreams, 0);
+            window.setTimeout(attachDeferredStreams, 250);
+        };
+        if (document.readyState === 'complete') {
+            scheduleStreamAttach();
+        } else {
+            window.addEventListener('load', scheduleStreamAttach, { once: true });
+            window.setTimeout(scheduleStreamAttach, 1500);
+        }
+
         document.querySelectorAll('[data-stream-img]').forEach((img) => {
-            const base = img.getAttribute('src');
+            const base = img.getAttribute('data-stream-src') || img.dataset.streamSrc;
             if (!base) return;
             const tile = img.closest('[data-camera-tile]');
             let retryTimer = null;
@@ -272,10 +310,13 @@
                 if (tile?.dataset.online === '1') {
                     img.classList.remove('hidden');
                 }
+                img.removeAttribute('data-stream-pending');
                 img.src = url.toString();
             };
-            // Blank offline placeholder frames still fire "load" — do not mark Online from that.
             img.addEventListener('error', () => {
+                if (img.hasAttribute('data-stream-pending')) return;
+                const src = img.getAttribute('src') || '';
+                if (src.startsWith('data:')) return;
                 setCameraOnline(tile, false);
                 if (retryTimer) return;
                 retryTimer = window.setTimeout(() => {

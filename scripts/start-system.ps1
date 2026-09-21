@@ -262,6 +262,10 @@ if (-not $SkipNgrok) {
 Start-ProjectWindow "Reverb" @("php", "artisan", "reverb:start")
 Start-Sleep -Milliseconds 400
 
+# Runs sync:run every 2 minutes (local <-> Atlas) when SYNC_ENABLED=true.
+Start-ProjectWindow "Scheduler" @("php", "artisan", "schedule:work")
+Start-Sleep -Milliseconds 400
+
 if (-not $SkipVite) {
     Start-ProjectWindow "Vite" @("npm", "run", "dev")
 }
@@ -291,7 +295,8 @@ Write-Host "========================================" -ForegroundColor Green
 Write-Host " Smart Campus VMS is starting" -ForegroundColor Green
 Write-Host "========================================" -ForegroundColor Green
 Write-Host ""
-Write-Host "  Website:  http://127.0.0.1:8000  (front → Laravel :8001)" -ForegroundColor Yellow
+Write-Host "  Website:  http://127.0.0.1:8001  (use this - fastest)" -ForegroundColor Yellow
+Write-Host "  LAN/ESP:  http://127.0.0.1:8000  (gates + phones on Wi-Fi)" -ForegroundColor DarkGray
 Write-Host "  ESP32 HB: answered on :8000 without waiting for Mongo" -ForegroundColor DarkGray
 if ($ngrokPublicUrl) {
     Write-Host ("  Public:   " + $ngrokPublicUrl) -ForegroundColor Yellow

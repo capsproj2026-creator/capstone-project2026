@@ -73,10 +73,11 @@ class AiParkingOccupancyService
             $detections = $this->applyPlateCorrections($cameraId, $detections);
             $detections = $this->enrichWithOwners($detections);
             $this->persistAutoMatchedPlates($cameraId, $detections);
-            $detections = $this->attachViolationStatus($detections, $previous['events'] ?? []);
+            $detections = $this->attachViolationStatus($detections, $this->dayViolationEvents($cameraId));
 
             $snapshot = array_merge($previous, [
                 'detections' => $detections,
+                'events' => $this->dayViolationEvents($cameraId),
                 'updated_at' => now()->toIso8601String(),
                 'updated_at_label' => now()->format('h:i:s A'),
             ]);
@@ -121,13 +122,32 @@ class AiParkingOccupancyService
             $events = array_merge($events, $authEvents);
         }
 
+        // Enrich owners first so role / registered vehicle type are available for rules.
         $events = $this->enrichWithOwners($events);
         $detections = $this->applyPlateCorrections($cameraId, $detections);
         $detections = $this->enrichWithOwners($detections);
+        $detections = $this->dedupeDetectionsByTrack($detections);
+
+        $ruleEvents = app(AiParkingViolationService::class)->wrongParkingFromDetections(
+            $detections,
+            $cameraId,
+            $areaId
+        );
+        if ($ruleEvents !== []) {
+            $violationResults = array_merge(
+                $violationResults,
+                app(AiParkingViolationService::class)->processEvents($ruleEvents, $cameraId)
+            );
+            $events = array_merge($events, $ruleEvents);
+        }
+
         $this->persistAutoMatchedPlates($cameraId, $detections);
         $detections = $this->attachViolationStatus($detections, $events);
         $events = $this->stripHeavyBinaryFields($events);
         $detections = $this->stripHeavyBinaryFields($detections, keepThumbs: true);
+
+        // Keep every violation for the calendar day (monitor must not wipe on refresh).
+        $dayEvents = $this->rememberDayEvents($cameraId, $events);
 
         $snapshot = [
             'camera_id' => $cameraId,
@@ -142,7 +162,7 @@ class AiParkingOccupancyService
             'maintenance' => $stats['maintenance'],
             'slots' => $stats['slot_details'],
             'detections' => $detections,
-            'events' => array_values(array_slice($events, -20)),
+            'events' => $dayEvents,
             'violation_results' => $violationResults,
             'updated_at' => now()->toIso8601String(),
             'updated_at_label' => now()->format('h:i:s A'),
@@ -325,21 +345,31 @@ class AiParkingOccupancyService
      */
     public function latestSnapshot(?string $cameraId = null): ?array
     {
+        $snap = null;
         if ($cameraId !== null && trim($cameraId) !== '') {
             $cached = Cache::get($this->cacheKeyForCamera($cameraId));
-
-            return is_array($cached) ? $this->sanitizeSnapshotForClients($cached) : null;
+            $snap = is_array($cached) ? $this->sanitizeSnapshotForClients($cached) : null;
+        } else {
+            $legacy = Cache::get(self::CACHE_KEY);
+            if (is_array($legacy)) {
+                $snap = $this->sanitizeSnapshotForClients($legacy);
+            } else {
+                $primary = app(AiCameraRegistry::class)->primaryCameraId();
+                $cached = Cache::get($this->cacheKeyForCamera($primary));
+                $snap = is_array($cached) ? $this->sanitizeSnapshotForClients($cached) : null;
+            }
         }
 
-        $legacy = Cache::get(self::CACHE_KEY);
-        if (is_array($legacy)) {
-            return $this->sanitizeSnapshotForClients($legacy);
+        if ($snap === null) {
+            return null;
         }
 
-        $primary = app(AiCameraRegistry::class)->primaryCameraId();
-        $cached = Cache::get($this->cacheKeyForCamera($primary));
+        // Always surface today's full violation list (not just the last occupancy post).
+        $snap['events'] = $this->dayViolationEvents(
+            $cameraId !== null && trim($cameraId) !== '' ? $cameraId : ($snap['camera_id'] ?? null)
+        );
 
-        return is_array($cached) ? $this->sanitizeSnapshotForClients($cached) : null;
+        return $snap;
     }
 
     /**
@@ -487,7 +517,66 @@ class AiParkingOccupancyService
         $identity['camera_id'] = $cameraId;
         $identity['plate_corrected'] = true;
 
+        // Patch today's AI violation events that belong to this detection/session.
+        $this->patchDayEventsForPlate(
+            $cameraId,
+            $trackId,
+            $recognitionSessionId,
+            $normalized,
+            $identity
+        );
+
         return $identity;
+    }
+
+    /**
+     * After a guard enters a plate, update matching day-event rows in place (no new rows).
+     *
+     * @param  array<string, mixed>  $identity
+     */
+    private function patchDayEventsForPlate(
+        string $cameraId,
+        ?int $trackId,
+        ?int $recognitionSessionId,
+        string $plate,
+        array $identity
+    ): void {
+        foreach ([$this->dayEventsCacheKey($cameraId), $this->dayEventsCacheKey(null)] as $cacheKey) {
+            $existing = Cache::get($cacheKey, []);
+            if (! is_array($existing) || $existing === []) {
+                continue;
+            }
+            $changed = false;
+            foreach ($existing as $i => $row) {
+                if (! is_array($row)) {
+                    continue;
+                }
+                if (strcasecmp((string) ($row['camera_id'] ?? ''), $cameraId) !== 0) {
+                    continue;
+                }
+                $rowTrack = isset($row['track_id']) ? (int) $row['track_id'] : null;
+                $rowSession = isset($row['recognition_session_id']) ? (int) $row['recognition_session_id'] : null;
+                $match = ($trackId !== null && $rowTrack === $trackId)
+                    || ($recognitionSessionId !== null && $recognitionSessionId > 0 && $rowSession === $recognitionSessionId);
+                if (! $match) {
+                    continue;
+                }
+                $existing[$i]['plate'] = $plate;
+                $existing[$i]['plate_status'] = 'ok';
+                $existing[$i]['owner_name'] = $identity['owner_name'] ?? null;
+                $existing[$i]['owner_role'] = $identity['role'] ?? null;
+                $existing[$i]['owner_id_number'] = $identity['id_number'] ?? null;
+                $existing[$i]['registration_status'] = $identity['registration_status']
+                    ?? (! empty($identity['registered']) ? 'Registered' : 'Unregistered');
+                $existing[$i]['registered'] = $identity['registered'] ?? false;
+                $existing[$i]['vehicle_details'] = $identity['vehicle_details']
+                    ?? ($existing[$i]['vehicle_details'] ?? null);
+                $changed = true;
+            }
+            if ($changed) {
+                Cache::put($cacheKey, $existing, now()->endOfDay()->addHours(2));
+            }
+        }
     }
 
     /**
@@ -679,7 +768,7 @@ class AiParkingOccupancyService
             if ($status === 'unreadable' || strcasecmp($plate, 'UNREADABLE') === 0) {
                 $row['plate'] = null;
                 $row['plate_status'] = 'unreadable';
-                $row['plate_label'] = 'Plate Unreadable';
+                $row['plate_label'] = 'Unknown';
                 $row['recognition_status'] = 'OCR_FAILED';
                 $row['owner_name'] = null;
                 $row['owner_label'] = 'Unknown';
@@ -688,9 +777,8 @@ class AiParkingOccupancyService
                 $row['role'] = null;
                 $row['user_id'] = null;
                 $row['registered'] = null;
-                $row['vehicle_details'] = null;
                 $row['department'] = null;
-                $row['registration_status'] = null;
+                $row['registration_status'] = 'Unknown';
                 $row['ocr_text'] = null;
                 $row['plate_text'] = null;
 
@@ -700,7 +788,7 @@ class AiParkingOccupancyService
             if ($status === 'not_read' || strcasecmp($plate, 'NOT_READ') === 0) {
                 $row['plate'] = null;
                 $row['plate_status'] = 'not_read';
-                $row['plate_label'] = 'Plate Not Read';
+                $row['plate_label'] = 'Unknown';
                 $row['recognition_status'] = 'OCR_FAILED';
                 $row['owner_name'] = null;
                 $row['owner_label'] = 'Unknown';
@@ -709,9 +797,8 @@ class AiParkingOccupancyService
                 $row['role'] = null;
                 $row['user_id'] = null;
                 $row['registered'] = null;
-                $row['vehicle_details'] = null;
                 $row['department'] = null;
-                $row['registration_status'] = null;
+                $row['registration_status'] = 'Unknown';
                 $row['ocr_text'] = null;
                 $row['plate_text'] = null;
 
@@ -758,7 +845,7 @@ class AiParkingOccupancyService
                 }
             } else {
                 $row['owner_label'] = 'Unknown';
-                $row['registration_status'] = 'Plate Not Registered';
+                $row['registration_status'] = 'Unregistered';
                 $row['owner_name'] = null;
                 $row['role'] = null;
                 $row['owner_role'] = null;
@@ -895,12 +982,63 @@ class AiParkingOccupancyService
             $plate = PlateLookup::normalize((string) ($row['plate'] ?? ''));
             $type = ($tid !== null ? ($byTrack[$tid] ?? null) : null) ?? ($plate !== '' ? ($byPlate[$plate] ?? null) : null);
             if ($type !== null) {
-                $row['violation_status'] = $type;
+                $label = AiParkingViolationService::TYPE_MAP[$type] ?? 'Wrong Parking';
+                $reason = AiParkingViolationService::REASON_LABELS[$type] ?? $type;
+                $row['violation_status'] = $label;
+                $row['violation_reason'] = $reason;
+                $row['violation_event_type'] = $type;
                 $row['violation_flag'] = true;
             }
 
             return $row;
         }, $detections);
+    }
+
+    /**
+     * One row per tracker id (straddling two slots must not duplicate the vehicle).
+     *
+     * @param  list<array<string, mixed>>  $detections
+     * @return list<array<string, mixed>>
+     */
+    private function dedupeDetectionsByTrack(array $detections): array
+    {
+        $byKey = [];
+        $noKey = [];
+        foreach ($detections as $det) {
+            if (! is_array($det)) {
+                continue;
+            }
+            $session = $det['parking_session_id'] ?? $det['recognition_session_id'] ?? null;
+            $tid = $det['track_id'] ?? null;
+            if ($session !== null && $session !== '') {
+                $key = 's:'.(string) $session;
+            } elseif ($tid !== null && $tid !== '') {
+                $key = 't:'.(string) $tid;
+            } else {
+                $noKey[] = $det;
+                continue;
+            }
+            if (! isset($byKey[$key])) {
+                $byKey[$key] = $det;
+                continue;
+            }
+            // Prefer the row that already has a plate / higher confidence / later last_seen.
+            $prev = $byKey[$key];
+            $prevScore = (! empty($prev['plate']) ? 2 : 0) + (float) ($prev['confidence'] ?? 0);
+            $nextScore = (! empty($det['plate']) ? 2 : 0) + (float) ($det['confidence'] ?? 0);
+            if ($nextScore >= $prevScore) {
+                $merged = array_merge($prev, $det);
+                if (! empty($prev['violation_flag']) || ! empty($det['violation_flag'])) {
+                    $merged['violation_flag'] = true;
+                    $merged['violation_status'] = $det['violation_status']
+                        ?? $prev['violation_status']
+                        ?? 'Wrong Parking';
+                }
+                $byKey[$key] = $merged;
+            }
+        }
+
+        return array_values(array_merge(array_values($byKey), $noKey));
     }
 
     public function monitoredAreaId(): int
@@ -981,11 +1119,208 @@ class AiParkingOccupancyService
             ])->values(),
             'ai' => $this->latestSnapshot(),
             'ai_cameras' => $this->allSnapshots(),
+            'ai_day_events' => $this->dayViolationEvents(),
             'ai_health' => $health->status($isGuard, null, false),
             'ai_cameras_health' => $health->statusAll($isGuard, false),
             'stream_url' => config('services.ai_parking.stream_url'),
             'cameras' => $registry->cameras(),
             'updated_at' => now()->format('h:i:s A'),
         ];
+    }
+
+    public function dayEventsCacheKey(?string $cameraId = null): string
+    {
+        $day = now()->toDateString();
+        if ($cameraId !== null && trim($cameraId) !== '') {
+            return 'ai_parking:day_events:'.strtoupper(trim($cameraId)).':'.$day;
+        }
+
+        return 'ai_parking:day_events:ALL:'.$day;
+    }
+
+    /**
+     * Append violation events to today's log (survives occupancy refreshes).
+     *
+     * @param  list<array<string, mixed>>  $events
+     * @return list<array<string, mixed>>
+     */
+    public function rememberDayEvents(string $cameraId, array $events): array
+    {
+        $events = array_values(array_filter($events, 'is_array'));
+        if ($events === []) {
+            return $this->dayViolationEvents($cameraId);
+        }
+
+        $nowIso = now()->toIso8601String();
+        $stamp = now()->format('h:i:s A');
+        $incoming = [];
+        foreach ($events as $event) {
+            $row = $this->stripHeavyBinaryFields([$event])[0] ?? $event;
+            if (! is_array($row)) {
+                continue;
+            }
+            $row['camera_id'] = (string) ($row['camera_id'] ?? $cameraId);
+            $row['logged_at'] = $row['logged_at'] ?? $nowIso;
+            $row['logged_at_label'] = $row['logged_at_label'] ?? $stamp;
+            if (empty($row['ts'])) {
+                $row['ts'] = microtime(true);
+            }
+            $row['_day_key'] = $this->dayEventDedupeKey($row);
+            $incoming[] = $row;
+        }
+
+        foreach ([$this->dayEventsCacheKey($cameraId), $this->dayEventsCacheKey(null)] as $cacheKey) {
+            $existing = Cache::get($cacheKey, []);
+            if (! is_array($existing)) {
+                $existing = [];
+            }
+            $byKey = [];
+            foreach ($existing as $row) {
+                if (! is_array($row)) {
+                    continue;
+                }
+                $byKey[$this->dayEventDedupeKey($row)] = $row;
+            }
+            foreach ($incoming as $row) {
+                $byKey[$row['_day_key']] = $row;
+            }
+            $merged = array_values($byKey);
+            usort($merged, function (array $a, array $b): int {
+                return ((float) ($b['ts'] ?? 0)) <=> ((float) ($a['ts'] ?? 0));
+            });
+            $merged = array_slice($merged, 0, 200);
+            Cache::put($cacheKey, $merged, now()->endOfDay()->addHours(2));
+        }
+
+        return $this->dayViolationEvents($cameraId);
+    }
+
+    /**
+     * Today's AI violation events for the monitor (cache + DB citations).
+     *
+     * @return list<array<string, mixed>>
+     */
+    public function dayViolationEvents(?string $cameraId = null): array
+    {
+        $cacheKey = $cameraId !== null && trim($cameraId) !== ''
+            ? $this->dayEventsCacheKey($cameraId)
+            : $this->dayEventsCacheKey(null);
+        $cached = Cache::get($cacheKey, []);
+        if (! is_array($cached)) {
+            $cached = [];
+        }
+
+        // Global ALL key may be empty early — merge per-camera if needed.
+        if ($cameraId === null || trim((string) $cameraId) === '') {
+            $registry = app(AiCameraRegistry::class);
+            foreach ($registry->cameras() as $cam) {
+                $id = (string) ($cam['id'] ?? '');
+                if ($id === '') {
+                    continue;
+                }
+                $perCam = Cache::get($this->dayEventsCacheKey($id), []);
+                if (is_array($perCam)) {
+                    $cached = array_merge($cached, $perCam);
+                }
+            }
+        }
+
+        $fromDb = $this->todayAiViolationLogsAsEvents($cameraId);
+        $byKey = [];
+        foreach (array_merge($cached, $fromDb) as $row) {
+            if (! is_array($row)) {
+                continue;
+            }
+            $byKey[$this->dayEventDedupeKey($row)] = $row;
+        }
+        $merged = array_values($byKey);
+        usort($merged, function (array $a, array $b): int {
+            return ((float) ($b['ts'] ?? 0)) <=> ((float) ($a['ts'] ?? 0));
+        });
+
+        return array_slice($merged, 0, 200);
+    }
+
+    /**
+     * @param  array<string, mixed>  $event
+     */
+    private function dayEventDedupeKey(array $event): string
+    {
+        if (! empty($event['vehicle_event_id'])) {
+            return 've:'.(string) $event['vehicle_event_id'];
+        }
+        if (! empty($event['parking_session_id']) && ! empty($event['type'])) {
+            return 'ps:'.(string) $event['parking_session_id'].':'.(string) $event['type'].':'.(string) ($event['zone_id'] ?? '');
+        }
+        if (! empty($event['violation_log_id'])) {
+            return 'vl:'.(string) $event['violation_log_id'];
+        }
+
+        $slots = $event['slots'] ?? [];
+        $slotPart = is_array($slots) ? implode(',', $slots) : '';
+        $session = (string) ($event['recognition_session_id'] ?? $event['parking_session_id'] ?? '');
+        // Prefer session over track_id so tracker ID churn cannot spawn duplicate day rows.
+        $identity = $session !== ''
+            ? 's:'.$session
+            : ((string) ($event['track_id'] ?? ''));
+
+        return md5(implode('|', [
+            strtolower((string) ($event['type'] ?? '')),
+            strtolower((string) ($event['camera_id'] ?? '')),
+            (string) ($event['zone_id'] ?? ''),
+            $identity,
+            strtoupper((string) ($event['plate'] ?? '')),
+            $slotPart,
+            (string) ($event['reason'] ?? ''),
+        ]));
+    }
+
+    /**
+     * @return list<array<string, mixed>>
+     */
+    private function todayAiViolationLogsAsEvents(?string $cameraId = null): array
+    {
+        try {
+            $query = \App\Models\ViolationLog::query()
+                ->where('created_at', '>=', now()->startOfDay())
+                ->where(function ($q): void {
+                    $q->where('guard_id', 'like', 'AI-%')
+                        ->orWhereIn('detection_source', ['AI', 'OCR', 'AI_OCR']);
+                })
+                ->orderByDesc('created_at')
+                ->limit(100);
+
+            if ($cameraId !== null && trim($cameraId) !== '') {
+                $query->where('camera_id', $cameraId);
+            }
+
+            $out = [];
+            foreach ($query->get() as $log) {
+                $created = $log->created_at;
+                $out[] = [
+                    'type' => 'wrong_parking_log',
+                    'violation_status' => 'Wrong Parking',
+                    'violation_type' => (string) ($log->violation_type ?? 'Wrong Parking'),
+                    'reason' => (string) ($log->description ?? 'Wrong Parking'),
+                    'zone_id' => (string) ($log->area_name ?? $log->area_id ?? ''),
+                    'track_id' => $log->track_id,
+                    'plate' => $log->plate_number,
+                    'camera_id' => (string) ($log->camera_id ?? ''),
+                    'area_id' => $log->area_id,
+                    'owner_name' => $log->violator_name,
+                    'owner_role' => $log->owner_role ?? $log->user_type,
+                    'vehicle_details' => $log->vehicle_details,
+                    'violation_log_id' => (string) $log->getKey(),
+                    'vehicle_event_id' => $log->vehicle_event_id,
+                    'logged_at' => $created?->toIso8601String(),
+                    'logged_at_label' => $created?->format('h:i:s A'),
+                    'ts' => $created ? (float) $created->format('U.u') : microtime(true),
+                ];
+            }
+
+            return $out;
+        } catch (\Throwable) {
+            return [];
+        }
     }
 }

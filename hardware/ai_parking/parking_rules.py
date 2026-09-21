@@ -13,6 +13,8 @@ from geometry import assign_zones_for_box, has_calibrated_slots, usable_zones_fo
 OVERTIME_MINUTES = float(os.getenv("AI_PARKING_OVERTIME_MINUTES", "30"))
 DEBOUNCE_MINUTES = float(os.getenv("AI_PARKING_VIOLATION_DEBOUNCE_MINUTES", "10"))
 IOU_THRESHOLD = float(os.getenv("AI_PARKING_ZONE_IOU", "0.08"))
+# Second (and further) slots need at least this IoU to count as straddling / double-park.
+STRADDLE_MIN_IOU = float(os.getenv("AI_PARKING_STRADDLE_MIN_IOU", "0.12"))
 # Keep lost tracker aliases briefly (IoU tracker max age).
 TRACK_HOLD_SEC = float(os.getenv("AI_PARKING_TRACK_HOLD_SEC", "20.0"))
 # Keep recognition sessions alive after tracker miss so ID churn can reattach.
@@ -33,13 +35,19 @@ TRACK_MATCH_IOU = float(os.getenv("AI_PARKING_TRACK_MATCH_IOU", "0.25"))
 TRACK_MATCH_CENTER_FRAC = float(os.getenv("AI_PARKING_TRACK_MATCH_CENTER_FRAC", "0.22"))
 TRACK_MATCH_SIZE_RATIO = float(os.getenv("AI_PARKING_TRACK_MATCH_SIZE_RATIO", "0.45"))
 # Cap OCR retries / pending "Reading plate…" time so tracks reach a terminal state.
-OCR_MAX_ATTEMPTS = int(os.getenv("AI_PARKING_OCR_MAX_ATTEMPTS", "6"))
+# Prefer AI_PARKING_OCR_MAX_ATTEMPTS; accept AI_PARKING_MAX_OCR_ATTEMPTS as alias.
+OCR_MAX_ATTEMPTS = int(
+    os.getenv(
+        "AI_PARKING_OCR_MAX_ATTEMPTS",
+        os.getenv("AI_PARKING_MAX_OCR_ATTEMPTS", "6"),
+    )
+)
 OCR_PENDING_TIMEOUT_SEC = float(os.getenv("AI_PARKING_OCR_PENDING_TIMEOUT_SEC", "12"))
 # A "PLATE NOT READ" vehicle that is still sitting in frame gets another OCR pass
 # after this cooldown, instead of staying stuck forever. Bounded by MAX_REOPENS so
 # a genuinely unreadable/damaged plate does not retry endlessly.
 OCR_RETRY_COOLDOWN_SEC = float(os.getenv("AI_PARKING_OCR_RETRY_COOLDOWN_SEC", "15"))
-OCR_MAX_REOPENS = int(os.getenv("AI_PARKING_OCR_MAX_REOPENS", "6"))
+OCR_MAX_REOPENS = int(os.getenv("AI_PARKING_OCR_MAX_REOPENS", "0"))
 # Prefer plate-YOLO/OpenCV crop only; skip EasyOCR on huge bumper bands when no plate ROI.
 OCR_PLATE_ONLY = os.getenv("AI_PARKING_OCR_PLATE_ONLY", "1").strip().lower() in (
     "1",
@@ -48,15 +56,49 @@ OCR_PLATE_ONLY = os.getenv("AI_PARKING_OCR_PLATE_ONLY", "1").strip().lower() in 
     "on",
 )
 # Normalized center movement (px/sec ÷ bbox diagonal). Below = parked, above = moving.
-MOTION_SPEED_THRESH = float(os.getenv("AI_PARKING_MOTION_SPEED_THRESH", "0.12"))
+# Prefer AI_PARKING_MOTION_SPEED_THRESH; accept AI_PARKING_MOVEMENT_THRESHOLD as alias.
+MOTION_SPEED_THRESH = float(
+    os.getenv(
+        "AI_PARKING_MOTION_SPEED_THRESH",
+        os.getenv("AI_PARKING_MOVEMENT_THRESHOLD", "0.12"),
+    )
+)
 MOTION_PARK_SEC = float(os.getenv("AI_PARKING_MOTION_PARK_SEC", "0.8"))
 MOTION_SMOOTH_ALPHA = float(os.getenv("AI_PARKING_MOTION_SMOOTH_ALPHA", "0.35"))
 # Require N consecutive above-threshold frames before MOVING (rejects single-frame jitter).
-MOVEMENT_CONFIRMATION_FRAMES = max(1, int(os.getenv("AI_PARKING_MOVEMENT_CONFIRMATION_FRAMES", "3")))
+MOVEMENT_CONFIRMATION_FRAMES = max(
+    1,
+    int(
+        os.getenv(
+            "AI_PARKING_MOVEMENT_CONFIRMATION_FRAMES",
+            os.getenv("AI_PARKING_MOVEMENT_CONFIRM_FRAMES", "3"),
+        )
+    ),
+)
 # Require N consecutive below-threshold frames before STATIONARY/parked.
-STATIONARY_CONFIRMATION_FRAMES = max(1, int(os.getenv("AI_PARKING_STATIONARY_CONFIRMATION_FRAMES", "3")))
-# OCR is only allowed while motion_state == "moving" (hard gate).
-OCR_MOVING_ONLY = os.getenv("AI_PARKING_OCR_MOVING_ONLY", "1").strip().lower() in (
+STATIONARY_CONFIRMATION_FRAMES = max(
+    1, int(os.getenv("AI_PARKING_STATIONARY_CONFIRMATION_FRAMES", "3"))
+)
+# Alias for track hold / lost-session timeout.
+if os.getenv("AI_PARKING_VEHICLE_TRACK_TIMEOUT"):
+    TRACK_HOLD_SEC = float(os.getenv("AI_PARKING_VEHICLE_TRACK_TIMEOUT"))
+# OCR is attempt-budgeted (max attempts / success), not movement-gated by default.
+# Set AI_PARKING_OCR_MOVING_ONLY=1 to restore the old "OCR only while moving" rule.
+OCR_MOVING_ONLY = os.getenv("AI_PARKING_OCR_MOVING_ONLY", "0").strip().lower() in (
+    "1",
+    "true",
+    "yes",
+    "on",
+)
+# Parking-monitor workflow: OCR only after the vehicle is parked inside a calibrated slot.
+# Default ON — set AI_PARKING_OCR_REQUIRE_ZONE=0 / AI_PARKING_OCR_REQUIRE_PARKED=0 to disable.
+OCR_REQUIRE_ZONE = os.getenv("AI_PARKING_OCR_REQUIRE_ZONE", "1").strip().lower() in (
+    "1",
+    "true",
+    "yes",
+    "on",
+)
+OCR_REQUIRE_PARKED = os.getenv("AI_PARKING_OCR_REQUIRE_PARKED", "1").strip().lower() in (
     "1",
     "true",
     "yes",
@@ -69,6 +111,18 @@ def ocr_allowed_for_motion(motion_state: str | None) -> bool:
     if not OCR_MOVING_ONLY:
         return True
     return (motion_state or "").lower() == "moving"
+
+
+def plate_source_label(raw: str | None, *, manual: bool = False) -> str:
+    """Canonical plate_source: OCR | MANUAL (legacy AI_OCR/GUARD accepted)."""
+    if manual:
+        return "MANUAL"
+    s = (raw or "").upper().strip()
+    if s in ("MANUAL", "GUARD"):
+        return "MANUAL"
+    if s in ("OCR", "AI_OCR", "AI"):
+        return "OCR"
+    return "OCR" if not manual else "MANUAL"
 
 
 def _iou_xyxy(a, b) -> float:
@@ -256,6 +310,11 @@ class TrackMemory:
     stationary_streak: int = 0
     # AI_OCR | GUARD — manual entry must not be overwritten by later OCR.
     plate_source: str | None = None
+    # Set True when this camera has calibrated slot polygons loaded.
+    zones_calibrated: bool = False
+    # Stable parking-session key for this dwell in a slot (session_id + slot).
+    parking_session_key: str | None = None
+    violation_emitted_types: set = field(default_factory=set)
 
     def note_seen(self, now: float) -> None:
         self.last_seen = now
@@ -270,9 +329,55 @@ class TrackMemory:
         sid = int(self.recognition_session_id or 0)
         return f"{cam}:session:{sid}"
 
+    def parking_session_id(self, camera_id: str | None = None) -> str:
+        """One identity per camera + recognition session + current slot dwell."""
+        cam = (camera_id or self.camera_id or "CAM").strip() or "CAM"
+        sid = int(self.recognition_session_id or 0)
+        slot = (self.slot_id or "none").strip() or "none"
+        if self.parking_session_key:
+            return self.parking_session_key
+        return f"{cam}:ps:{sid}:{slot}"
+
     def allows_ocr(self) -> bool:
-        """Hard rule: never OCR while stationary / unknown / parked."""
-        return ocr_allowed_for_motion(self.motion_state)
+        """OCR until success lock or attempt budget exhausted.
+
+        When calibrated zones are present (default):
+        - vehicle must be inside a slot (slot_id set)
+        - vehicle must be parked/stationary (not just passing through)
+        """
+        if self.is_plate_locked():
+            return False
+        if self.plate_status in ("unreadable", "not_read"):
+            return False
+        if plate_source_label(self.plate_source) == "MANUAL":
+            return False
+        if OCR_MAX_ATTEMPTS > 0 and self.ocr_attempts >= OCR_MAX_ATTEMPTS:
+            return False
+        if OCR_MOVING_ONLY and not ocr_allowed_for_motion(self.motion_state):
+            return False
+        if self.zones_calibrated and OCR_REQUIRE_ZONE and not self.slot_id:
+            return False
+        if self.zones_calibrated and OCR_REQUIRE_PARKED and (self.motion_state or "") != "parked":
+            return False
+        return True
+
+    def ocr_skip_reason(self) -> str | None:
+        """Why OCR must not run right now (for structured logs)."""
+        if self.is_plate_locked():
+            return "PLATE_ALREADY_CONFIRMED"
+        if plate_source_label(self.plate_source) == "MANUAL":
+            return "PLATE_ALREADY_CONFIRMED"
+        if self.plate_status in ("unreadable", "not_read"):
+            return "MAX_ATTEMPTS" if self.ocr_attempts >= OCR_MAX_ATTEMPTS else "PLATE_TERMINAL"
+        if OCR_MAX_ATTEMPTS > 0 and self.ocr_attempts >= OCR_MAX_ATTEMPTS:
+            return "MAX_ATTEMPTS"
+        if OCR_MOVING_ONLY and not ocr_allowed_for_motion(self.motion_state):
+            return "VEHICLE_STATIONARY"
+        if self.zones_calibrated and OCR_REQUIRE_ZONE and not self.slot_id:
+            return "OUTSIDE_CALIBRATED_ZONE"
+        if self.zones_calibrated and OCR_REQUIRE_PARKED and (self.motion_state or "") != "parked":
+            return "NOT_PARKED_YET"
+        return None
 
     def update_motion(self, xyxy: tuple[int, int, int, int], now: float) -> str:
         """Classify vehicle as moving vs parked from bbox center drift.
@@ -405,13 +510,14 @@ class TrackMemory:
         return self.plate_status in ("ok", "unreadable", "not_read")
 
     def mark_ocr_attempt(self, now: float | None = None) -> None:
-        """Count only real OCR attempts (caller must already pass the movement gate)."""
+        """Count a real OCR attempt toward the max-attempts budget."""
         if self.is_plate_terminal():
             return
-        if not self.allows_ocr():
-            # Stationary / idle frames must never inflate the 6-attempt budget.
+        if OCR_MAX_ATTEMPTS > 0 and self.ocr_attempts >= OCR_MAX_ATTEMPTS:
+            return
+        if OCR_MOVING_ONLY and not ocr_allowed_for_motion(self.motion_state):
             print(
-                f"[OCR] SKIPPED attempt count (vehicle {self.motion_state}, not moving) "
+                f"[OCR] SKIPPED attempt count (vehicle {self.motion_state}, moving-only mode) "
                 f"session={self.session_label()} attempts={self.ocr_attempts}/{OCR_MAX_ATTEMPTS}"
             )
             return
@@ -455,13 +561,16 @@ class TrackMemory:
         return True
 
     def maybe_retry_not_read(self, now: float | None = None) -> bool:
-        """Give a vehicle stuck on 'PLATE NOT READ' another OCR pass while it is
-        still sitting in frame, instead of freezing forever after one bad attempt
-        run. Bounded by OCR_MAX_REOPENS so a genuinely unreadable/damaged plate
-        does not retry endlessly and never touches an already-locked plate."""
+        """Optionally reopen PLATE NOT READ for another attempt cycle.
+
+        Default OCR_MAX_REOPENS=0: stop after one 6-attempt budget (user rule).
+        When reopens are enabled, still require movement if OCR_MOVING_ONLY.
+        """
         if self.plate_status != "not_read":
             return False
         if OCR_MAX_REOPENS <= 0 or self.reopen_count >= OCR_MAX_REOPENS:
+            return False
+        if OCR_MOVING_ONLY and not ocr_allowed_for_motion(self.motion_state):
             return False
         now = now if now is not None else time.time()
         if self.not_read_at <= 0 or (now - self.not_read_at) < OCR_RETRY_COOLDOWN_SEC:
@@ -473,8 +582,8 @@ class TrackMemory:
         self.not_read_at = 0.0
         self.reopen_count += 1
         print(
-            f"[OCR] Retry #{self.reopen_count}/{OCR_MAX_REOPENS}: reopening "
-            f"PLATE NOT READ for another OCR pass"
+            f"[OCR] tracking_id={self.current_tracker_id} Retry #{self.reopen_count}/{OCR_MAX_REOPENS}: "
+            f"reopening PLATE NOT READ"
         )
         return True
 
@@ -484,7 +593,7 @@ class TrackMemory:
         # Guard manual entry always wins and must not be overwritten by OCR.
         if (
             self.is_plate_locked()
-            and (self.plate_source or "").upper() == "GUARD"
+            and plate_source_label(self.plate_source) == "MANUAL"
             and not manual
         ):
             return
@@ -498,14 +607,14 @@ class TrackMemory:
         self.ocr_confidence = max(self.ocr_confidence, float(confidence or 0.0))
         self.plate_locked_at = time.time()
         self.plate_lock_reason = reason
-        self.plate_source = "GUARD" if manual else "AI_OCR"
+        self.plate_source = plate_source_label(None, manual=manual)
         self.unreadable_votes = 0
         # Manual guard overrides must stick even if OCR later votes differently.
         if manual:
             self.plate_votes = {plate: max(99, int(self.plate_votes.get(plate, 0) or 0))}
             self.plate_vote_scores = {plate: max(99.0, float(self.plate_vote_scores.get(plate, 0.0) or 0.0))}
             print(
-                f"[OCR] Guard manually entered plate={plate} source=GUARD "
+                f"[OCR] Guard manually entered plate={plate} source=MANUAL "
                 f"attempts={self.ocr_attempts}"
             )
         print(
@@ -570,7 +679,7 @@ class TrackMemory:
         if self.is_plate_locked():
             print(f"[OCR] OCR skipped: plate already locked ({self.plate})")
             return
-        if (self.plate_source or "").upper() == "GUARD":
+        if plate_source_label(self.plate_source) == "MANUAL":
             return
         if self.plate_status in ("unreadable", "not_read"):
             return
@@ -707,6 +816,12 @@ class ParkingIntelligence:
         self.camera_id = str(camera_id or "")
         self._debounce: dict[tuple, float] = {}
         self.active_events: list[dict[str, Any]] = []
+        self.zones_calibrated: bool = False
+
+    def set_zones_calibrated(self, calibrated: bool) -> None:
+        self.zones_calibrated = bool(calibrated)
+        for mem in self._unique_sessions():
+            mem.zones_calibrated = self.zones_calibrated
 
     def _unique_sessions(self) -> list[TrackMemory]:
         seen: set[int] = set()
@@ -826,6 +941,7 @@ class ParkingIntelligence:
         if mem is not None:
             mem.note_seen(now)
             mem.current_tracker_id = tid
+            mem.zones_calibrated = self.zones_calibrated
             if cam:
                 mem.camera_id = cam
             if vehicle_type:
@@ -853,6 +969,7 @@ class ParkingIntelligence:
                 old_tid = donor.current_tracker_id
                 self._bind_tracker(tid, donor)
                 donor.note_seen(now)
+                donor.zones_calibrated = self.zones_calibrated
                 if cam:
                     donor.camera_id = cam
                 if vehicle_type:
@@ -891,6 +1008,7 @@ class ParkingIntelligence:
             camera_id=cam,
             vehicle_type=vehicle_type,
             cls_id=int(cls_id) if cls_id is not None else None,
+            zones_calibrated=self.zones_calibrated,
         )
         if xyxy is not None:
             mem.last_xyxy = tuple(int(v) for v in xyxy[:4])
@@ -1007,7 +1125,18 @@ class ParkingIntelligence:
         plate: str | None = None,
         extra: dict | None = None,
     ) -> dict | None:
-        key = (track_id, event_type, zone_id)
+        # Debounce by parking session (stable), not raw track_id (churns).
+        session_key = None
+        mem = None
+        if track_id is not None:
+            mem = self.tracks.get(int(track_id))
+            if mem is not None:
+                session_key = mem.parking_session_id(self.camera_id)
+                # Per-session hard lock: one emit of this type for this parking session.
+                emit_tag = f"{event_type}:{zone_id}"
+                if emit_tag in mem.violation_emitted_types:
+                    return None
+        key = (session_key or track_id, event_type, zone_id)
         if not self._should_emit(key):
             return None
         plate_out = plate
@@ -1015,24 +1144,36 @@ class ParkingIntelligence:
         plate_source = None
         session_id = None
         vehicle_event_id = None
+        parking_session_id = None
         owner_name = None
         owner_role = None
+        owner_id_number = None
         vehicle_details = None
-        if track_id is not None:
-            mem = self.tracks.get(int(track_id))
-            if mem is not None:
-                if not plate_out:
-                    if mem.is_plate_locked() and mem.plate:
-                        plate_out = mem.plate
-                    elif mem.plate_status in ("not_read", "unreadable"):
-                        plate_out = "UNKNOWN"
-                plate_status = mem.plate_status
-                plate_source = mem.plate_source or ("GUARD" if str(mem.plate_lock_reason or "").startswith("manual") else "AI_OCR")
-                session_id = mem.recognition_session_id
-                vehicle_event_id = mem.vehicle_event_id(self.camera_id) + f":{event_type}:{zone_id}"
-                owner_name = mem.owner_name or mem.owner_label
-                owner_role = mem.owner_role
-                vehicle_details = mem.vehicle_details or mem.vehicle_type
+        registration_status = None
+        registered = None
+        motion_state = None
+        if mem is not None:
+            if not plate_out:
+                if mem.is_plate_locked() and mem.plate:
+                    plate_out = mem.plate
+                # Do NOT invent "UNKNOWN" as a fake plate for not_read.
+            plate_status = mem.plate_status
+            plate_source = plate_source_label(
+                mem.plate_source,
+                manual=str(mem.plate_lock_reason or "").startswith("manual"),
+            )
+            session_id = mem.recognition_session_id
+            parking_session_id = mem.parking_session_id(self.camera_id)
+            # Stable id for this parking session + violation type (no track churn).
+            vehicle_event_id = f"{parking_session_id}:{event_type}:{zone_id}"
+            owner_name = mem.owner_name or mem.owner_label
+            owner_role = mem.owner_role
+            owner_id_number = getattr(mem, "owner_id_number", None) or getattr(mem, "id_number", None)
+            vehicle_details = mem.vehicle_details or mem.vehicle_type
+            registration_status = mem.registration_status
+            registered = mem.registered
+            motion_state = mem.motion_state
+            mem.violation_emitted_types.add(f"{event_type}:{zone_id}")
         evt = {
             "type": event_type,
             "zone_id": zone_id,
@@ -1042,15 +1183,29 @@ class ParkingIntelligence:
             "plate_source": plate_source,
             "detection_source": plate_source or "AI",
             "recognition_session_id": session_id,
+            "parking_session_id": parking_session_id,
             "vehicle_event_id": vehicle_event_id,
             "owner_name": owner_name,
             "owner_role": owner_role,
+            "owner_id_number": owner_id_number,
             "vehicle_details": vehicle_details,
+            "vehicle_type": vehicle_details,
+            "registration_status": registration_status,
+            "registered": registered,
+            "motion_state": motion_state,
             "confidence": 0.8,
             "ts": time.time(),
+            "camera_id": self.camera_id,
         }
         if extra:
             evt.update(extra)
+        cam_tag = self.camera_id or "CAM"
+        tid_tag = track_id if track_id is not None else "?"
+        print(
+            f"[{cam_tag}][Track {tid_tag}] violation: {event_type} "
+            f"zone={zone_id} session={parking_session_id or session_key} "
+            f"(first emit for this parking session)"
+        )
         return evt
 
     def analyze(
@@ -1088,6 +1243,8 @@ class ParkingIntelligence:
                     vehicle_type=v.get("class") or v.get("vehicle_type"),
                     cls_id=v.get("cls_id"),
                 )
+                mem.zones_calibrated = bool(use_poly)
+                self.zones_calibrated = bool(use_poly)
                 # Never let a stale vehicle payload downgrade a locked plate.
                 if mem.is_plate_locked():
                     pass
@@ -1119,16 +1276,48 @@ class ParkingIntelligence:
 
             if tid is not None:
                 mem = self.tracks[int(tid)]
+                prev_slot = mem.slot_id
                 sid = str(primary_slot["id"]) if primary_slot else None
                 if sid != mem.slot_id:
+                    if prev_slot and not sid:
+                        print(
+                            f"[{self.camera_id or 'CAM'}][Track {tid}] left zone: {prev_slot} "
+                            f"— parking session closed"
+                        )
+                        mem.parking_session_key = None
+                        mem.violation_emitted_types.clear()
+                    elif sid and sid != prev_slot:
+                        print(
+                            f"[{self.camera_id or 'CAM'}][Track {tid}] entered zone: {sid} "
+                            f"vehicle={mem.vehicle_type or '?'}"
+                        )
                     mem.slot_id = sid
                     mem.slot_since = now if sid else None
+                    if sid:
+                        mem.parking_session_key = (
+                            f"{self.camera_id or 'CAM'}:ps:{int(mem.recognition_session_id or 0)}:{sid}"
+                        )
+                        mem.violation_emitted_types.clear()
                 elif sid and mem.slot_since is None:
                     mem.slot_since = now
+                    if not mem.parking_session_key:
+                        mem.parking_session_key = (
+                            f"{self.camera_id or 'CAM'}:ps:{int(mem.recognition_session_id or 0)}:{sid}"
+                        )
 
-                # overtime
+                # Only evaluate parking violations for vehicles parked inside a slot.
+                is_parked_in_slot = bool(sid) and (mem.motion_state or "") == "parked"
+                if is_parked_in_slot and (now - getattr(mem, "_last_parked_log_at", 0.0)) > 5.0:
+                    mem._last_parked_log_at = now  # type: ignore[attr-defined]
+                    print(
+                        f"[{self.camera_id or 'CAM'}][Track {tid}] parked confirmed "
+                        f"zone={sid} session={mem.parking_session_id(self.camera_id)} "
+                        f"movement={mem.motion_speed:.3f}"
+                    )
+
+                # overtime — only when parked in slot
                 if (
-                    sid
+                    is_parked_in_slot
                     and mem.slot_since is not None
                     and (now - mem.slot_since) >= OVERTIME_MINUTES * 60
                 ):
@@ -1145,45 +1334,83 @@ class ParkingIntelligence:
                     if evt:
                         events.append(evt)
 
-                # double park: one vehicle spanning 2+ slots
-                if len(matched_slots) >= 2:
-                    zone_key = "+".join(sorted(str(z["id"]) for z in matched_slots[:3]))
-                    evt = self._emit(
-                        "double_park",
-                        zone_key,
-                        int(tid),
-                        mem.plate,
-                        {
-                            "slots": [str(z["id"]) for z in matched_slots],
-                            **({"owner_name": mem.owner_name} if mem.owner_name else {}),
-                        },
-                    )
-                    if evt:
-                        events.append(evt)
+                # double park: one vehicle spanning 2+ slots (beyond the line)
+                if is_parked_in_slot:
+                    straddle = [
+                        z for z in matched_slots
+                        if float(z.get("_iou") or 0.0) >= STRADDLE_MIN_IOU
+                    ]
+                    if len(straddle) < 2 and len(matched_slots) >= 2:
+                        # Fall back: primary + any other matched slot (center / low IoU edge).
+                        straddle = matched_slots[:2]
+                    if len(straddle) >= 2:
+                        zone_key = "+".join(sorted(str(z["id"]) for z in straddle[:3]))
+                        evt = self._emit(
+                            "double_park",
+                            zone_key,
+                            int(tid),
+                            mem.plate,
+                            {
+                                "slots": [str(z["id"]) for z in straddle],
+                                "reason": "Vehicle occupying multiple parking slots",
+                                "violation_label": "Wrong Parking",
+                                **({"owner_name": mem.owner_name} if mem.owner_name else {}),
+                                **({"owner_role": mem.owner_role} if mem.owner_role else {}),
+                            },
+                        )
+                        if evt:
+                            events.append(evt)
+                            mem.violation_flag = True
 
-                # no parking / aisle
-                for rz in matched_rules:
-                    et = "no_parking" if rz.get("type") == "no_parking" else "aisle_blocked"
-                    evt = self._emit(
-                        et,
-                        str(rz.get("id")),
-                        int(tid),
-                        mem.plate,
-                        {
-                            "label": rz.get("label"),
-                            **({"owner_name": mem.owner_name} if mem.owner_name else {}),
-                        },
-                    )
-                    if evt:
-                        events.append(evt)
+                # no parking / aisle — only when parked (not driving through)
+                if is_parked_in_slot or (
+                    (mem.motion_state or "") == "parked" and matched_rules
+                ):
+                    for rz in matched_rules:
+                        et = "no_parking" if rz.get("type") == "no_parking" else "aisle_blocked"
+                        evt = self._emit(
+                            et,
+                            str(rz.get("id")),
+                            int(tid),
+                            mem.plate,
+                            {
+                                "label": rz.get("label"),
+                                "reason": (
+                                    "Parked in no-parking zone"
+                                    if et == "no_parking"
+                                    else "Blocking aisle / drive lane"
+                                ),
+                                "violation_label": "Wrong Parking",
+                                **({"owner_name": mem.owner_name} if mem.owner_name else {}),
+                                **({"owner_role": mem.owner_role} if mem.owner_role else {}),
+                            },
+                        )
+                        if evt:
+                            events.append(evt)
+                            mem.violation_flag = True
 
-        # double park: 2+ vehicles in same slot
+        # double park: 2+ vehicles in same slot — attach to one parked occupant when possible
         if use_poly:
             for sid, count in slot_vehicle_counts.items():
-                if count >= 2:
-                    evt = self._emit("double_park", sid, None, None, {"vehicles_in_slot": count})
-                    if evt:
-                        events.append(evt)
+                if count < 2:
+                    continue
+                # Prefer a parked track currently assigned to this slot (stable session id).
+                occupant_tid = None
+                for tid, mem in self.tracks.items():
+                    if mem.slot_id == sid and (mem.motion_state or "") == "parked":
+                        occupant_tid = tid
+                        break
+                if occupant_tid is None:
+                    continue
+                evt = self._emit(
+                    "double_park",
+                    sid,
+                    int(occupant_tid),
+                    None,
+                    {"vehicles_in_slot": count, "reason": "Multiple vehicles in the same parking slot"},
+                )
+                if evt:
+                    events.append(evt)
 
         # Soft-prune: keep sessions through grace; do not treat tracker ID as identity.
         self.prune_stale_sessions(seen_tracks, now)

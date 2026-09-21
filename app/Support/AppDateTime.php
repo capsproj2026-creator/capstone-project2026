@@ -15,11 +15,17 @@ class AppDateTime
     {
         $tz = (string) config('app.timezone', self::DEFAULT_TIMEZONE);
 
-        if ($tz === '' || ! in_array($tz, timezone_identifiers_list(), true)) {
+        if ($tz === '') {
             return self::DEFAULT_TIMEZONE;
         }
 
-        return $tz;
+        try {
+            new \DateTimeZone($tz);
+
+            return $tz;
+        } catch (Throwable) {
+            return self::DEFAULT_TIMEZONE;
+        }
     }
 
     public static function now(): CarbonInterface

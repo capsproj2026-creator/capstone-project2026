@@ -135,10 +135,8 @@ class AiParkingController extends Controller
             'area_id' => $registry->resolveAreaId($cameraId),
             'events' => [],
         ];
-        $latest['events'] = array_values(array_slice(
-            array_merge($latest['events'] ?? [], $validated['events']),
-            -20
-        ));
+        $dayEvents = $service->rememberDayEvents($cameraId, $validated['events']);
+        $latest['events'] = $dayEvents;
         $latest['violation_results'] = $results;
         $latest['updated_at'] = now()->toIso8601String();
         $latest['updated_at_label'] = now()->format('h:i:s A');

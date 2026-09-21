@@ -9,10 +9,12 @@ use App\Services\NavigationService;
 use App\Services\SystemSettingService;
 use App\Support\AppDateTime;
 use App\Support\MongoConnection;
+use DateTimeZone;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Foundation\Events\DiagnosingHealth;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Facades\View;
@@ -120,18 +122,22 @@ class AppServiceProvider extends ServiceProvider
                 return;
             }
 
-            if ($roleId === NavigationService::ROLE_GUARD) {
-                $notificationCount = Notification::query()
+            // Avoid a Mongo count on every page paint (badge can lag ~30s).
+            $cacheKey = 'layout.unread_notifications.'.$user->id.'.'.$roleId;
+            $notificationCount = Cache::remember($cacheKey, 30, function () use ($user, $roleId) {
+                if ($roleId === NavigationService::ROLE_GUARD) {
+                    return Notification::query()
+                        ->unread()
+                        ->where('user_id', $user->id)
+                        ->whereIn('type', ['System', 'General', 'Parking', 'Update'])
+                        ->count();
+                }
+
+                return Notification::query()
                     ->unread()
                     ->where('user_id', $user->id)
-                    ->whereIn('type', ['System', 'General', 'Parking', 'Update'])
                     ->count();
-            } else {
-                $notificationCount = Notification::query()
-                    ->unread()
-                    ->where('user_id', $user->id)
-                    ->count();
-            }
+            });
 
             $view->with([
                 'notificationCount' => $notificationCount,
@@ -146,7 +152,9 @@ class AppServiceProvider extends ServiceProvider
 
         try {
             $configured = app(SystemSettingService::class)->get('timezone', AppDateTime::DEFAULT_TIMEZONE);
-            if (is_string($configured) && $configured !== '' && in_array($configured, timezone_identifiers_list(), true)) {
+            if (is_string($configured) && $configured !== '') {
+                // DateTimeZone construct is cheap; timezone_identifiers_list() is not.
+                new DateTimeZone($configured);
                 $timezone = $configured;
             }
         } catch (Throwable) {
