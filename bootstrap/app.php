@@ -91,4 +91,38 @@ return Application::configure(basePath: dirname(__DIR__))
 
             return $handleExpiredSession($request);
         });
+
+        $exceptions->render(function (\Throwable $e, Request $request) {
+            if (! \App\Support\DatabaseUnavailable::matches($e)) {
+                return null;
+            }
+
+            report($e);
+
+            if ($request->is('api/rfid/*') || $request->routeIs('api.rfid.*')) {
+                return response()->json([
+                    'status' => 'Access Denied',
+                    'code' => 'database_unavailable',
+                    'granted' => false,
+                    'action' => null,
+                    'gate_id' => (string) $request->input('gate_id', ''),
+                    'message' => \App\Support\DatabaseUnavailable::RFID_MESSAGE,
+                    'user' => null,
+                    'log_id' => null,
+                    'open_shared_boom' => false,
+                ], 503);
+            }
+
+            if ($request->expectsJson() || $request->is('api/*')) {
+                return response()->json([
+                    'ok' => false,
+                    'code' => 'database_unavailable',
+                    'message' => \App\Support\DatabaseUnavailable::MESSAGE,
+                ], 503);
+            }
+
+            return response()->view('errors.database-unavailable', [
+                'message' => \App\Support\DatabaseUnavailable::MESSAGE,
+            ], 503);
+        });
     })->create();
