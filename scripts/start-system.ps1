@@ -105,20 +105,41 @@ function Initialize-ServiceLauncher {
     Write-Host "  Install: winget install Microsoft.WindowsTerminal" -ForegroundColor DarkYellow
 }
 
+function Quote-Win32Arg([string]$Value) {
+    if ($null -eq $Value) { return '""' }
+    # CreateProcess needs quotes around args with whitespace; escape embedded quotes.
+    if ($Value -notmatch '[ \t\n\v"]') {
+        return $Value
+    }
+    $escaped = $Value -replace '(\\*)"', '$1$1\"'
+    $escaped = $escaped -replace '(\\+)$', '$1$1'
+    return '"' + $escaped + '"'
+}
+
+function ConvertTo-CommandLineJson([string[]]$CommandArgs) {
+    # Base64(JSON) so powershell.exe -File cannot strip quotes from the payload.
+    # -InputObject keeps a single-element argv as a JSON array, not a bare string.
+    $json = ConvertTo-Json -InputObject @($CommandArgs) -Compress
+    $bytes = [System.Text.Encoding]::UTF8.GetBytes([string]$json)
+    return [Convert]::ToBase64String($bytes)
+}
+
 function Start-SeparatePowerShellWindow([string]$Title, [string[]]$CommandArgs) {
     Initialize-DevPath
     $launcher = Join-Path $PSScriptRoot "launch-window.ps1"
-    # Quote every arg — paths like "...main (3)..." break Start-Process otherwise.
+    $psExe = Join-Path $env:SystemRoot "System32\WindowsPowerShell\v1.0\powershell.exe"
+    $cmdJson = ConvertTo-CommandLineJson -CommandArgs $CommandArgs
     $allArgs = @(
         "-NoExit",
         "-NoProfile",
         "-ExecutionPolicy", "Bypass",
         "-File", $launcher,
         "-Title", $Title,
-        "-WorkingDirectory", $Root
-    ) + $CommandArgs
-    $argLine = ($allArgs | ForEach-Object { Quote-Arg $_ }) -join " "
-    Start-Process powershell -WorkingDirectory $Root -ArgumentList $argLine | Out-Null
+        "-WorkingDirectory", $Root,
+        "-CommandLine", $cmdJson
+    )
+    $argLine = ($allArgs | ForEach-Object { Quote-Win32Arg $_ }) -join " "
+    Start-Process -FilePath $psExe -WorkingDirectory $Root -ArgumentList $argLine | Out-Null
 }
 
 function Start-ProjectWindow([string]$Title, [string[]]$CommandArgs) {
@@ -138,17 +159,6 @@ function Wait-ServiceGap([int]$Milliseconds) {
     if (-not $script:UseWindowsTerminal -and $Milliseconds -gt 0) {
         Start-Sleep -Milliseconds $Milliseconds
     }
-}
-
-function Quote-Win32Arg([string]$Value) {
-    if ($null -eq $Value) { return '""' }
-    # CreateProcess needs quotes around args with whitespace; escape embedded quotes.
-    if ($Value -notmatch '[ \t\n\v"]') {
-        return $Value
-    }
-    $escaped = $Value -replace '(\\*)"', '$1$1\"'
-    $escaped = $escaped -replace '(\\+)$', '$1$1'
-    return '"' + $escaped + '"'
 }
 
 function Start-QueuedWindowsTerminalTabs {
@@ -172,6 +182,8 @@ function Start-QueuedWindowsTerminalTabs {
         # WT tab label: no spaces (Start-Process arg joining breaks on spaces).
         $wtLabel = ($tabTitle -replace '[^\w\-]+', '-').Trim('-')
         if ([string]::IsNullOrWhiteSpace($wtLabel)) { $wtLabel = "Service$i" }
+
+        $cmdJson = ConvertTo-CommandLineJson -CommandArgs @($tab.CommandArgs)
 
         $parts = New-Object System.Collections.Generic.List[string]
         if ($i -eq 0) {
@@ -197,9 +209,8 @@ function Start-QueuedWindowsTerminalTabs {
         $parts.Add($tabTitle) | Out-Null
         $parts.Add('-WorkingDirectory') | Out-Null
         $parts.Add($Root) | Out-Null
-        foreach ($arg in @($tab.CommandArgs)) {
-            $parts.Add([string]$arg) | Out-Null
-        }
+        $parts.Add('-CommandLine') | Out-Null
+        $parts.Add($cmdJson) | Out-Null
 
         $argLine = ($parts | ForEach-Object { Quote-Win32Arg $_ }) -join ' '
         Start-Process -FilePath $script:WindowsTerminalExe -WorkingDirectory $Root -ArgumentList $argLine | Out-Null

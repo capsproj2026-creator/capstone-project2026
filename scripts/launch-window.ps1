@@ -4,14 +4,31 @@ param(
     [string]$Title,
 
     [Parameter(Mandatory = $true)]
-    [string]$WorkingDirectory
+    [string]$WorkingDirectory,
+
+    # JSON array of command tokens, base64-encoded so powershell.exe -File
+    # cannot strip quotes (e.g. ["php","-S","0.0.0.0:8000",...]).
+    [Parameter(Mandatory = $true)]
+    [string]$CommandLine
 )
 
-# Remaining argv after -Title/-WorkingDirectory (ValueFromRemainingArguments is
-# unreliable with powershell.exe -File and breaks nested "powershell" launches).
-$CommandArgs = @($args)
-
 $ErrorActionPreference = "Continue"
+
+try {
+    $json = [System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($CommandLine))
+    # [string[]] unwraps the PS 5.1 ConvertFrom-Json nested-array quirk
+    # (@(ConvertFrom-Json ...) yields Count=1 with the whole argv inside).
+    $CommandArgs = [string[]](ConvertFrom-Json -InputObject $json)
+} catch {
+    Write-Host "Invalid -CommandLine payload." -ForegroundColor Red
+    Write-Host $_.Exception.Message -ForegroundColor Red
+    exit 1
+}
+
+if (-not $CommandArgs -or $CommandArgs.Count -eq 0) {
+    Write-Error "No command provided."
+    exit 1
+}
 
 $extraPaths = @(
     "$env:ProgramFiles\nodejs",
@@ -40,7 +57,7 @@ Set-Location -LiteralPath $WorkingDirectory
 Write-Host ("=== $Title ===") -ForegroundColor Cyan
 
 $envFile = Join-Path $WorkingDirectory ".env"
-$cmdLine = $CommandArgs -join " "
+$cmdLine = ($CommandArgs | ForEach-Object { [string]$_ }) -join " "
 if ((Test-Path $envFile) -and ($cmdLine -match "artisan serve")) {
     $workers = $null
     foreach ($line in Get-Content $envFile) {
@@ -57,20 +74,15 @@ if ((Test-Path $envFile) -and ($cmdLine -match "artisan serve")) {
     # PHP only honors PHP_CLI_SERVER_WORKERS when --no-reload is set.
     if ($cmdLine -notmatch "--no-reload") {
         $CommandArgs = @($CommandArgs) + @("--no-reload")
-        $cmdLine = $CommandArgs -join " "
+        $cmdLine = ($CommandArgs | ForEach-Object { [string]$_ }) -join " "
         Write-Host "Added --no-reload so worker pool is active" -ForegroundColor DarkGray
     }
 }
 
-if (-not $CommandArgs -or $CommandArgs.Count -eq 0) {
-    Write-Error "No command provided."
-    exit 1
-}
-
-$exe = $CommandArgs[0]
+$exe = [string]$CommandArgs[0]
 $params = @()
 if ($CommandArgs.Count -gt 1) {
-    $params = $CommandArgs[1..($CommandArgs.Count - 1)]
+    $params = @($CommandArgs[1..($CommandArgs.Count - 1)] | ForEach-Object { [string]$_ })
 }
 
 if ($exe -eq "npm" -and (Test-Path -LiteralPath "$env:ProgramFiles\nodejs\npm.cmd")) {
@@ -102,7 +114,7 @@ if ($exe -eq "pwsh" -or $exe -eq "pwsh.exe") {
     if ($pwsh) { $exe = $pwsh.Source }
 }
 
-Write-Host ("> " + ($CommandArgs -join " ")) -ForegroundColor DarkGray
+Write-Host ("> " + $cmdLine) -ForegroundColor DarkGray
 & $exe @params
 if ($null -ne $LASTEXITCODE -and $LASTEXITCODE -ne 0) {
     Write-Host ("Command exited with code " + $LASTEXITCODE) -ForegroundColor Red
