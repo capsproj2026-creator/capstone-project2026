@@ -123,37 +123,87 @@ if (-not $SkipWebStack) {
         }
         Write-Host "Waiting for Laravel..." -ForegroundColor DarkGray
         $ready = $false
-        for ($i = 0; $i -lt 60; $i++) {
+        for ($i = 0; $i -lt 45; $i++) {
             Start-Sleep -Seconds 1
             if (Test-HttpOk $laravelUrl) {
                 $ready = $true
                 break
             }
+            if (($i -eq 12) -and (Test-PortListening 8000) -and -not (Test-HttpOk $laravelUrl)) {
+                Write-Host "Still hung - recycling port 8000 and reopening Laravel..." -ForegroundColor Yellow
+                Stop-PortListeners 8000
+                Stop-PortListeners 8001
+                $laravelLaunch = @"
+`$Host.UI.RawUI.WindowTitle = 'Laravel'
+Set-Location -LiteralPath '$Root'
+php artisan serve --host=127.0.0.1 --port=8001 --no-reload
+"@
+                $frontLaunch = @"
+`$Host.UI.RawUI.WindowTitle = 'LAN Front (ESP32)'
+Set-Location -LiteralPath '$Root'
+php -S 0.0.0.0:8000 bootstrap/lan_front_router.php
+"@
+                Start-Process powershell -WorkingDirectory $Root -ArgumentList @(
+                    "-NoExit",
+                    "-NoProfile",
+                    "-ExecutionPolicy", "Bypass",
+                    "-Command", $laravelLaunch
+                ) | Out-Null
+                Start-Process powershell -WorkingDirectory $Root -ArgumentList @(
+                    "-NoExit",
+                    "-NoProfile",
+                    "-ExecutionPolicy", "Bypass",
+                    "-Command", $frontLaunch
+                ) | Out-Null
+            }
         }
         if (-not $ready) {
-            Write-Host "Laravel did not respond at $laravelUrl - check the Laravel / LAN Front tabs." -ForegroundColor Red
-            Write-Host "Tip: close old Terminal windows, then run: .\scripts\start-system.ps1" -ForegroundColor DarkYellow
+            Write-Host "Laravel did not respond at $laravelUrl - check the Laravel window for errors." -ForegroundColor Red
+            Write-Host "Tip: close all 'Laravel' PowerShell windows, then run: .\scripts\start-ai-parking.ps1" -ForegroundColor DarkYellow
             exit 1
         }
     }
     Write-Host "  Laravel: OK ($laravelUrl)" -ForegroundColor Green
 } else {
-    # -SkipWebStack: Laravel/LAN are already starting in other Terminal tabs.
-    # Only wait — do not open extra PowerShell windows for them.
+    # -SkipWebStack: still recover a hung/dead Laravel so AI can start.
+    if ((Test-PortListening 8000) -and -not (Test-HttpOk $laravelUrl)) {
+        Write-Host "Laravel port 8000 is open but not responding - restarting it..." -ForegroundColor Yellow
+        Stop-PortListeners 8000
+        Stop-PortListeners 8001
+    }
     if (-not (Test-HttpOk $laravelUrl)) {
-        Write-Host "Waiting for Laravel tab ($laravelUrl)..." -ForegroundColor DarkGray
+        Write-Host "Laravel is down - starting LAN front + Laravel..." -ForegroundColor Yellow
+        $laravelLaunch = @"
+`$Host.UI.RawUI.WindowTitle = 'Laravel'
+Set-Location -LiteralPath '$Root'
+php artisan serve --host=127.0.0.1 --port=8001 --no-reload
+"@
+        $frontLaunch = @"
+`$Host.UI.RawUI.WindowTitle = 'LAN Front (ESP32)'
+Set-Location -LiteralPath '$Root'
+php -S 0.0.0.0:8000 bootstrap/lan_front_router.php
+"@
+        Start-Process powershell -WorkingDirectory $Root -ArgumentList @(
+            "-NoExit",
+            "-NoProfile",
+            "-ExecutionPolicy", "Bypass",
+            "-Command", $laravelLaunch
+        ) | Out-Null
+        Start-Process powershell -WorkingDirectory $Root -ArgumentList @(
+            "-NoExit",
+            "-NoProfile",
+            "-ExecutionPolicy", "Bypass",
+            "-Command", $frontLaunch
+        ) | Out-Null
         $ready = $false
-        for ($i = 0; $i -lt 90; $i++) {
+        for ($i = 0; $i -lt 25; $i++) {
             Start-Sleep -Seconds 1
-            if (Test-HttpOk $laravelUrl) {
-                $ready = $true
-                break
-            }
+            if (Test-HttpOk $laravelUrl) { $ready = $true; break }
         }
         if (-not $ready) {
-            Write-Host "Laravel did not respond at $laravelUrl" -ForegroundColor Red
-            Write-Host "  Check the Laravel and LAN Front tabs in Windows Terminal." -ForegroundColor DarkYellow
-            Write-Host "  Or run: .\scripts\start-system.ps1" -ForegroundColor DarkYellow
+            Write-Host "Laravel did not respond at $laravelUrl - open windows manually:" -ForegroundColor Red
+            Write-Host "  php artisan serve --host=127.0.0.1 --port=8001 --no-reload" -ForegroundColor DarkYellow
+            Write-Host "  php -S 0.0.0.0:8000 bootstrap/lan_front_router.php" -ForegroundColor DarkYellow
             exit 1
         }
     }
@@ -203,7 +253,7 @@ Write-Host ""
 Write-Host "  Admin: admin@my.cspc.edu.ph / admin123" -ForegroundColor Cyan
 Write-Host "  Guard: guard@my.cspc.edu.ph / password123" -ForegroundColor Cyan
 Write-Host ""
-Write-Host "Keep the Windows Terminal tabs open while using the site." -ForegroundColor DarkGray
+Write-Host "Keep ALL PowerShell windows open while using the site." -ForegroundColor DarkGray
 Write-Host ""
 
 Set-Location $AiDir
