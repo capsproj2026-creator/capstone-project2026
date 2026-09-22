@@ -4,8 +4,9 @@
   Start Smart Campus VMS demo stack: Laravel (LAN), Reverb, Vite, and YOLOv9 AI parking.
 
 .DESCRIPTION
-  Opens PowerShell windows for each service so you can leave this script after launch.
-  YOLOv9 AI parking starts by default. Use -SkipAi to leave it out.
+  Opens each service in a Windows Terminal tab (one window) when wt.exe is available.
+  Falls back to separate PowerShell windows if Windows Terminal is missing, or when
+  -SeparateWindows is passed. YOLOv9 AI parking starts by default. Use -SkipAi to leave it out.
 
 .EXAMPLE
   powershell -ExecutionPolicy Bypass -File .\scripts\start-system.ps1
@@ -15,6 +16,9 @@
 
 .EXAMPLE
   powershell -ExecutionPolicy Bypass -File .\scripts\start-system.ps1 -SkipVite
+
+.EXAMPLE
+  powershell -ExecutionPolicy Bypass -File .\scripts\start-system.ps1 -SeparateWindows
 #>
 param(
     [switch]$WithAi,
@@ -22,7 +26,8 @@ param(
     [switch]$SkipVite,
     [switch]$WithGitSync,
     [switch]$SkipNgrok,
-    [switch]$SkipMongoCheck
+    [switch]$SkipMongoCheck,
+    [switch]$SeparateWindows
 )
 
 $ErrorActionPreference = "Stop"
@@ -61,7 +66,45 @@ function Quote-Arg([string]$Value) {
     return $Value
 }
 
-function Start-ProjectWindow([string]$Title, [string[]]$CommandArgs) {
+function Find-WindowsTerminal {
+    $cmd = Get-Command wt -ErrorAction SilentlyContinue
+    if ($cmd -and $cmd.Source) { return $cmd.Source }
+
+    $candidates = @(
+        "$env:LOCALAPPDATA\Microsoft\WindowsApps\wt.exe",
+        "$env:ProgramFiles\Windows Terminal\wt.exe",
+        "$env:LOCALAPPDATA\Programs\Microsoft\Windows Terminal\wt.exe"
+    )
+    foreach ($path in $candidates) {
+        if ($path -and (Test-Path -LiteralPath $path)) { return $path }
+    }
+    return $null
+}
+
+$script:PendingTabs = New-Object System.Collections.Generic.List[hashtable]
+$script:WindowsTerminalExe = $null
+$script:UseWindowsTerminal = $false
+
+function Initialize-ServiceLauncher {
+    if ($SeparateWindows) {
+        $script:UseWindowsTerminal = $false
+        Write-Host "Using separate PowerShell windows (-SeparateWindows)." -ForegroundColor DarkGray
+        return
+    }
+
+    $script:WindowsTerminalExe = Find-WindowsTerminal
+    if ($script:WindowsTerminalExe) {
+        $script:UseWindowsTerminal = $true
+        Write-Host "Using Windows Terminal tabs (one window)." -ForegroundColor Cyan
+        return
+    }
+
+    $script:UseWindowsTerminal = $false
+    Write-Host "Windows Terminal not found; using separate PowerShell windows." -ForegroundColor DarkYellow
+    Write-Host "  Install: winget install Microsoft.WindowsTerminal" -ForegroundColor DarkYellow
+}
+
+function Start-SeparatePowerShellWindow([string]$Title, [string[]]$CommandArgs) {
     Initialize-DevPath
     $launcher = Join-Path $PSScriptRoot "launch-window.ps1"
     # Quote every arg — paths like "...main (3)..." break Start-Process otherwise.
@@ -77,7 +120,68 @@ function Start-ProjectWindow([string]$Title, [string[]]$CommandArgs) {
     Start-Process powershell -WorkingDirectory $Root -ArgumentList $argLine | Out-Null
 }
 
+function Start-ProjectWindow([string]$Title, [string[]]$CommandArgs) {
+    if ($script:UseWindowsTerminal) {
+        $script:PendingTabs.Add(@{
+            Title = $Title
+            CommandArgs = @($CommandArgs)
+        }) | Out-Null
+        return
+    }
+
+    Start-SeparatePowerShellWindow -Title $Title -CommandArgs $CommandArgs
+}
+
+function Wait-ServiceGap([int]$Milliseconds) {
+    # Only needed when launching separate windows sequentially.
+    if (-not $script:UseWindowsTerminal -and $Milliseconds -gt 0) {
+        Start-Sleep -Milliseconds $Milliseconds
+    }
+}
+
+function Start-QueuedWindowsTerminalTabs {
+    if (-not $script:UseWindowsTerminal -or $script:PendingTabs.Count -eq 0) {
+        return
+    }
+
+    Initialize-DevPath
+    $launcher = Join-Path $PSScriptRoot "launch-window.ps1"
+    $wtArgs = New-Object System.Collections.Generic.List[string]
+
+    for ($i = 0; $i -lt $script:PendingTabs.Count; $i++) {
+        $tab = $script:PendingTabs[$i]
+        if ($i -gt 0) {
+            # Windows Terminal command separator (must be its own argv entry).
+            $wtArgs.Add(';') | Out-Null
+        }
+
+        $wtArgs.Add('new-tab') | Out-Null
+        $wtArgs.Add('--title') | Out-Null
+        $wtArgs.Add([string]$tab.Title) | Out-Null
+        $wtArgs.Add('-d') | Out-Null
+        $wtArgs.Add($Root) | Out-Null
+        $wtArgs.Add('powershell') | Out-Null
+        $wtArgs.Add('-NoExit') | Out-Null
+        $wtArgs.Add('-NoProfile') | Out-Null
+        $wtArgs.Add('-ExecutionPolicy') | Out-Null
+        $wtArgs.Add('Bypass') | Out-Null
+        $wtArgs.Add('-File') | Out-Null
+        $wtArgs.Add($launcher) | Out-Null
+        $wtArgs.Add('-Title') | Out-Null
+        $wtArgs.Add([string]$tab.Title) | Out-Null
+        $wtArgs.Add('-WorkingDirectory') | Out-Null
+        $wtArgs.Add($Root) | Out-Null
+        foreach ($arg in @($tab.CommandArgs)) {
+            $wtArgs.Add([string]$arg) | Out-Null
+        }
+    }
+
+    Start-Process -FilePath $script:WindowsTerminalExe -WorkingDirectory $Root -ArgumentList $wtArgs.ToArray() | Out-Null
+    $script:PendingTabs.Clear()
+}
+
 Initialize-DevPath
+Initialize-ServiceLauncher
 
 function Get-DotEnvValue {
     param(
@@ -233,26 +337,16 @@ if (Test-Path $arduinoSync) {
 # Laravel stays on loopback :8001. LAN front on :8000 answers ESP32 heartbeats
 # instantly so a slow Mongo/page load cannot starve the gates (HTTP -11).
 Start-ProjectWindow "Laravel" @("php", "artisan", "serve", "--host=127.0.0.1", "--port=8001", "--no-reload")
-Start-Sleep -Milliseconds 600
+Wait-ServiceGap 600
 Start-ProjectWindow "LAN Front (ESP32)" @("php", "-S", "0.0.0.0:8000", "bootstrap/lan_front_router.php")
-Start-Sleep -Milliseconds 500
+Wait-ServiceGap 500
 
-$ngrokPublicUrl = $null
+$ngrokQueued = $false
 if (-not $SkipNgrok) {
     $ngrokExe = Find-NgrokCommand
     if ($ngrokExe) {
         Start-ProjectWindow "ngrok" @($ngrokExe, "http", "8000")
-        Start-Sleep -Seconds 2
-        for ($i = 0; $i -lt 8; $i++) {
-            $ngrokPublicUrl = Get-NgrokPublicUrl
-            if ($ngrokPublicUrl) { break }
-            Start-Sleep -Milliseconds 750
-        }
-        if ($ngrokPublicUrl) {
-            Write-Host ("  ngrok tunnel: " + $ngrokPublicUrl) -ForegroundColor Green
-        } else {
-            Write-Host "  ngrok: started (open http://127.0.0.1:4040 for the public URL)" -ForegroundColor DarkYellow
-        }
+        $ngrokQueued = $true
     } else {
         Write-Host "  ngrok: not found (install from https://ngrok.com or winget install ngrok)" -ForegroundColor DarkYellow
         Write-Host "         Google Form webhook needs ngrok when running locally." -ForegroundColor DarkYellow
@@ -260,34 +354,53 @@ if (-not $SkipNgrok) {
 }
 
 Start-ProjectWindow "Reverb" @("php", "artisan", "reverb:start")
-Start-Sleep -Milliseconds 400
+Wait-ServiceGap 400
 
 # Runs sync:run every 2 minutes (local <-> Atlas) when SYNC_ENABLED=true.
 Start-ProjectWindow "Scheduler" @("php", "artisan", "schedule:work")
-Start-Sleep -Milliseconds 400
+Wait-ServiceGap 400
 
 if (-not $SkipVite) {
     Start-ProjectWindow "Vite" @("npm", "run", "dev")
 }
 
 if ($startAi) {
-    Start-Sleep -Milliseconds 400
+    Wait-ServiceGap 400
     $aiScript = Join-Path $PSScriptRoot "start-ai-parking.ps1"
     Start-ProjectWindow "YOLOv9 AI Parking" @(
         "powershell",
         "-ExecutionPolicy", "Bypass",
-        "-File", $aiScript
+        "-File", $aiScript,
+        "-SkipWebStack"
     )
 }
 
 if ($WithGitSync) {
-    Start-Sleep -Milliseconds 400
+    Wait-ServiceGap 400
     $gitSync = Join-Path $PSScriptRoot "auto-sync-github.ps1"
     Start-ProjectWindow "GitHub Auto Sync" @(
         "powershell",
         "-ExecutionPolicy", "Bypass",
         "-File", $gitSync
     )
+}
+
+# Open one Windows Terminal with all queued tabs (no-op for separate-window mode).
+Start-QueuedWindowsTerminalTabs
+
+$ngrokPublicUrl = $null
+if ($ngrokQueued) {
+    Start-Sleep -Seconds 2
+    for ($i = 0; $i -lt 8; $i++) {
+        $ngrokPublicUrl = Get-NgrokPublicUrl
+        if ($ngrokPublicUrl) { break }
+        Start-Sleep -Milliseconds 750
+    }
+    if ($ngrokPublicUrl) {
+        Write-Host ("  ngrok tunnel: " + $ngrokPublicUrl) -ForegroundColor Green
+    } else {
+        Write-Host "  ngrok: started (open http://127.0.0.1:4040 for the public URL)" -ForegroundColor DarkYellow
+    }
 }
 
 Write-Host ""
@@ -318,11 +431,16 @@ Write-Host ""
 Write-Host "  Admin:  admin@my.cspc.edu.ph / admin123" -ForegroundColor Cyan
 Write-Host "  Guard:  guard@my.cspc.edu.ph / password123" -ForegroundColor Cyan
 Write-Host ""
-Write-Host "Keep the PowerShell windows open while using the site." -ForegroundColor DarkGray
-Write-Host "One command next time:  .\start.ps1" -ForegroundColor DarkGray
-Write-Host "  -SkipAi    skip AI cameras" -ForegroundColor DarkGray
-Write-Host "  -SkipVite  skip npm dev (use if npm run build already done)" -ForegroundColor DarkGray
-Write-Host "  -SkipNgrok skip ngrok tunnel (Google Form webhook)" -ForegroundColor DarkGray
+if ($script:UseWindowsTerminal) {
+    Write-Host "Keep the Windows Terminal tabs open while using the site." -ForegroundColor DarkGray
+} else {
+    Write-Host "Keep the PowerShell windows open while using the site." -ForegroundColor DarkGray
+}
+Write-Host "One command next time:  .\scripts\start-system.ps1" -ForegroundColor DarkGray
+Write-Host "  -SkipAi             skip AI cameras" -ForegroundColor DarkGray
+Write-Host "  -SkipVite           skip npm dev (use if npm run build already done)" -ForegroundColor DarkGray
+Write-Host "  -SkipNgrok          skip ngrok tunnel (Google Form webhook)" -ForegroundColor DarkGray
+Write-Host "  -SeparateWindows    old behavior (one PowerShell window per service)" -ForegroundColor DarkGray
 if ($WithGitSync) {
     Write-Host "  GitHub:   auto-sync watcher running (pull + push every 90s)" -ForegroundColor DarkGray
 }

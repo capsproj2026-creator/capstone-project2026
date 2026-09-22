@@ -5,15 +5,16 @@
 
 .DESCRIPTION
   One command for the full Smart Campus VMS demo.
-  Opens Laravel/Reverb/Vite in separate windows if they are not running yet,
-  then runs AI parking in this window.
+  Opens Laravel/Reverb/Vite/AI in Windows Terminal tabs when available
+  (falls back to separate PowerShell windows). Use -SeparateWindows for the old layout.
 
 .EXAMPLE
   powershell -ExecutionPolicy Bypass -File .\scripts\start-ai-parking.ps1
 #>
 param(
     [switch]$SkipWebStack,
-    [switch]$SkipNgrok
+    [switch]$SkipNgrok,
+    [switch]$SeparateWindows
 )
 
 $ErrorActionPreference = "Stop"
@@ -110,6 +111,7 @@ if (-not $SkipWebStack) {
         Write-Host "Starting website stack (LAN front + Laravel + Reverb + Vite)..." -ForegroundColor Cyan
         $sysArgs = @("-SkipAi", "-SkipMongoCheck")
         if ($SkipNgrok) { $sysArgs += "-SkipNgrok" }
+        if ($SeparateWindows) { $sysArgs += "-SeparateWindows" }
         if (Test-Path (Join-Path $Root "public\build\manifest.json")) {
             $sysArgs += "-SkipVite"
         }

@@ -48,14 +48,15 @@ Or double-click `start.bat`.
 | Website only (no YOLO) | `.\scripts\start-system.ps1 -SkipAi` |
 | AI cameras only (Laravel already up) | `.\start.ps1 -SkipWebStack` |
 
-Open **http://127.0.0.1:8000**
+Open **http://127.0.0.1:8001** (fastest) or **http://127.0.0.1:8000** (LAN / ESP32).
 
 | Role | Email | Password |
 |------|-------|----------|
 | Admin | `admin@my.cspc.edu.ph` | `admin123` |
 | Guard | `guard@my.cspc.edu.ph` | `password123` |
 
-Keep the PowerShell windows open while using the system.
+Services open in **Windows Terminal tabs** (one window). Keep that window open while using the system.  
+Legacy separate windows: `.\scripts\start-system.ps1 -SeparateWindows`
 
 ---
 
