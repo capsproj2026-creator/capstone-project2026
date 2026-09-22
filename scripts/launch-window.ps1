@@ -83,6 +83,23 @@ if ($exe -eq "php") {
         exit 1
     }
 }
+if ($exe -eq "powershell" -or $exe -eq "powershell.exe") {
+    $psExe = Join-Path $env:SystemRoot "System32\WindowsPowerShell\v1.0\powershell.exe"
+    if (Test-Path -LiteralPath $psExe) {
+        $exe = $psExe
+    } else {
+        $ps = Get-Command powershell -ErrorAction SilentlyContinue
+        if ($ps) { $exe = $ps.Source }
+        else {
+            Write-Host "powershell.exe not found." -ForegroundColor Red
+            exit 1
+        }
+    }
+}
+if ($exe -eq "pwsh" -or $exe -eq "pwsh.exe") {
+    $pwsh = Get-Command pwsh -ErrorAction SilentlyContinue
+    if ($pwsh) { $exe = $pwsh.Source }
+}
 
 Write-Host ("> " + ($CommandArgs -join " ")) -ForegroundColor DarkGray
 & $exe @params
