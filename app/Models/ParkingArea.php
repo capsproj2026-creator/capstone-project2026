@@ -213,11 +213,12 @@ class ParkingArea extends MongoModel
         }
         $role = trim($roleName);
         $aliases = [$role];
-        if (strcasecmp($role, 'Faculty') === 0) {
+        if (strcasecmp($role, 'Faculty') === 0 || strcasecmp($role, User::STAFF_DISPLAY_LABEL) === 0) {
             $aliases[] = 'Staff';
         }
         if (strcasecmp($role, 'Staff') === 0) {
             $aliases[] = 'Faculty';
+            $aliases[] = User::STAFF_DISPLAY_LABEL;
         }
         if (strcasecmp($role, 'Student / Faculty') === 0) {
             $aliases[] = 'Student';

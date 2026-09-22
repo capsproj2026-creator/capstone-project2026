@@ -154,8 +154,8 @@
                             <td class="px-5 py-4 sm:px-6">
                                 @if ($role === 'Student')
                                     <span class="inline-flex rounded-full bg-blue-50 px-2.5 py-1 text-xs font-semibold text-blue-700">Student</span>
-                                @elseif (in_array($role, ['Staff', 'Faculty'], true))
-                                    <span class="inline-flex rounded-full bg-purple-50 px-2.5 py-1 text-xs font-semibold text-purple-700">Faculty</span>
+                                @elseif (in_array($role, ['Staff', 'Faculty', \App\Models\User::STAFF_DISPLAY_LABEL], true))
+                                    <span class="inline-flex rounded-full bg-purple-50 px-2.5 py-1 text-xs font-semibold text-purple-700">{{ \App\Models\User::STAFF_DISPLAY_LABEL }}</span>
                                 @elseif ($role === 'Visitor')
                                     <span class="inline-flex rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700">Visitor</span>
                                 @elseif ($role === 'Student / Faculty')

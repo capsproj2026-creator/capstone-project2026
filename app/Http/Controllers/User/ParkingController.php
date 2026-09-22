@@ -55,7 +55,7 @@ class ParkingController extends Controller
 
         $roleLabel = match ($roleName) {
             'Student' => 'Student',
-            'Staff' => 'Faculty / Staff',
+            'Staff' => \App\Models\User::STAFF_DISPLAY_LABEL,
             default => $roleName,
         };
 

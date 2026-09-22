@@ -38,6 +38,9 @@ class User extends Authenticatable implements MustVerifyEmail
     /** @deprecated Legacy value; treat the same as GRANTED in hasGateAccess() */
     public const GATE_ACCESS_LEGACY = 'Access';
 
+    /** User-facing name for the stored Staff role. */
+    public const STAFF_DISPLAY_LABEL = 'Teaching / Non-teaching Staff';
+
     public const GATE_ACCESS_REMEDIAL = 'Remedial';
 
     public const REGISTRATION_PENDING = 'pending';
@@ -190,7 +193,7 @@ class User extends Authenticatable implements MustVerifyEmail
 
         $name = $this->roleName();
 
-        return strcasecmp($name, 'Staff') === 0 ? 'Faculty' : $name;
+        return strcasecmp($name, 'Staff') === 0 ? self::STAFF_DISPLAY_LABEL : $name;
     }
 
     public function displayEmail(): string

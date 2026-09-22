@@ -118,7 +118,7 @@
                             $roleLabel = $u->displayRoleLabel();
                             $isUnregistered = $u->isUnregisteredStudentFaculty();
                             $isStudent = ! $isUnregistered && strcasecmp($roleLabel, 'Student') === 0;
-                            $isStaff = ! $isUnregistered && in_array($roleLabel, ['Staff', 'Faculty'], true);
+                            $isStaff = ! $isUnregistered && in_array($roleLabel, ['Staff', 'Faculty', \App\Models\User::STAFF_DISPLAY_LABEL], true);
                             $hasRfid = filled($u->rfid_uid);
                             $gate = $u->Gate_access ?: \App\Models\User::GATE_ACCESS_PENDING;
                             $isDenied = $gate === \App\Models\User::GATE_ACCESS_DENIED || $u->status === \App\Models\User::STATUS_DENIED;

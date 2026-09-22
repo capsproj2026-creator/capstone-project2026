@@ -274,7 +274,7 @@
                             >
                                 <option value="" @selected(old('user_type') === '')>Select user type</option>
                                 <option value="Student" @selected(old('user_type') === 'Student')>Student</option>
-                                <option value="Staff" @selected(old('user_type') === 'Staff')>Faculty / Staff</option>
+                                <option value="Staff" @selected(old('user_type') === 'Staff')>{{ \App\Models\User::STAFF_DISPLAY_LABEL }}</option>
                             </select>
                             @error('user_type')
                                 <p class="mt-1 text-xs text-red-600">{{ $message }}</p>

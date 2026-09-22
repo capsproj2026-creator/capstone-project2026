@@ -237,7 +237,7 @@
                     $roleLower = strtolower($role);
                     $roleClass = match (true) {
                         $roleLower === 'student' => 'bg-blue-50 text-blue-700',
-                        in_array($roleLower, ['staff', 'faculty'], true) => 'bg-violet-50 text-violet-700',
+                        in_array($roleLower, ['staff', 'faculty', strtolower(\App\Models\User::STAFF_DISPLAY_LABEL)], true) => 'bg-violet-50 text-violet-700',
                         $roleLower === 'visitor' => 'bg-teal-50 text-teal-700',
                         $roleLower === 'temporary' => 'bg-amber-50 text-amber-800',
                         $unk || str_contains($roleLower, 'unknown') => 'bg-red-50 text-red-700',
@@ -413,7 +413,7 @@
         const roleClasses = (role) => {
             const r = String(role || '').toLowerCase();
             if (r === 'student') return 'bg-blue-50 text-blue-700';
-            if (r === 'staff' || r === 'faculty') return 'bg-violet-50 text-violet-700';
+            if (r === 'staff' || r === 'faculty' || r === @json(strtolower(\App\Models\User::STAFF_DISPLAY_LABEL))) return 'bg-violet-50 text-violet-700';
             if (r === 'visitor') return 'bg-teal-50 text-teal-700';
             if (r === 'temporary') return 'bg-amber-50 text-amber-800';
             if (r.includes('unknown')) return 'bg-red-50 text-red-700';

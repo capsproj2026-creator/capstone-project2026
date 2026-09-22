@@ -120,7 +120,7 @@
                             $isUnregistered = $row->isUnregisteredStudentFaculty();
                             $roleLabel = $row->displayRoleLabel();
                             $isStudent = ! $isUnregistered && (strcasecmp((string) $roleLabel, 'Student') === 0);
-                            $isStaff = ! $isUnregistered && in_array($roleLabel, ['Staff', 'Faculty'], true);
+                            $isStaff = ! $isUnregistered && in_array($roleLabel, ['Staff', 'Faculty', \App\Models\User::STAFF_DISPLAY_LABEL], true);
                             $email = $row->displayEmail();
                             if ($isIncompleteTemp || str_ends_with(strtolower((string) $email), '.invalid')) {
                                 $email = '—';

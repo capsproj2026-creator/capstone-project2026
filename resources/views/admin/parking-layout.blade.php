@@ -42,13 +42,13 @@
             <div class="sm:col-span-2 lg:col-span-4">
                 <label class="mb-1.5 block text-sm font-medium text-gray-700">Designation notes</label>
                 <input type="text" name="designation_notes" value="{{ old('designation_notes') }}" maxlength="255"
-                    placeholder="Students / Faculty / Visitors"
+                    placeholder="Students / {{ \App\Models\User::STAFF_DISPLAY_LABEL }} / Visitors"
                     class="w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20">
             </div>
             <div class="sm:col-span-2 lg:col-span-3">
                 <p class="mb-1.5 text-sm font-medium text-gray-700">Who can see this zone?</p>
                 <div class="flex flex-wrap gap-2">
-                    @foreach (['Student' => 'Students', 'Staff' => 'Faculty / Staff', 'Visitor' => 'Visitors'] as $role => $label)
+                    @foreach (['Student' => 'Students', 'Staff' => \App\Models\User::STAFF_DISPLAY_LABEL, 'Visitor' => 'Visitors'] as $role => $label)
                         <label class="cursor-pointer">
                             <input type="checkbox" name="allowed_roles[]" value="{{ $role }}" class="peer sr-only"
                                 @checked(in_array($role, old('allowed_roles', ['Student', 'Staff']), true))>

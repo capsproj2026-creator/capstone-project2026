@@ -9,13 +9,13 @@ use Tests\TestCase;
 
 class UserDisplayRoleTest extends TestCase
 {
-    public function test_staff_role_displays_as_faculty(): void
+    public function test_staff_role_displays_as_teaching_or_non_teaching_staff(): void
     {
         $user = new User(['fullname' => 'Jane Faculty']);
         $user->setRelation('role', new UserRole(['role_name' => 'Staff']));
 
-        $this->assertSame('Faculty', $user->displayRoleLabel());
-        $this->assertSame('Faculty', $user->gateRoleLabel());
+        $this->assertSame(User::STAFF_DISPLAY_LABEL, $user->displayRoleLabel());
+        $this->assertSame(User::STAFF_DISPLAY_LABEL, $user->gateRoleLabel());
         $this->assertSame('Staff', $user->roleName());
     }
 

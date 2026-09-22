@@ -71,7 +71,7 @@
         >
             <option value="all" @selected($typeFilter === 'all')>All Types</option>
             <option value="Student" @selected($typeFilter === 'Student')>Student</option>
-            <option value="Staff" @selected($typeFilter === 'Staff')>Faculty</option>
+            <option value="Staff" @selected($typeFilter === 'Staff')>{{ \App\Models\User::STAFF_DISPLAY_LABEL }}</option>
             <option value="Visitor" @selected($typeFilter === 'Visitor')>Visitor</option>
         </select>
 
@@ -152,8 +152,8 @@
                         <td class="px-5 py-4 sm:px-6">
                             @if ($role === 'Student')
                                 <span class="inline-flex rounded-full bg-blue-50 px-2.5 py-1 text-xs font-semibold text-blue-700">Student</span>
-                            @elseif (in_array($role, ['Staff', 'Faculty'], true))
-                                <span class="inline-flex rounded-full bg-purple-50 px-2.5 py-1 text-xs font-semibold text-purple-700">Faculty</span>
+                            @elseif (in_array($role, ['Staff', 'Faculty', \App\Models\User::STAFF_DISPLAY_LABEL], true))
+                                <span class="inline-flex rounded-full bg-purple-50 px-2.5 py-1 text-xs font-semibold text-purple-700">{{ \App\Models\User::STAFF_DISPLAY_LABEL }}</span>
                             @elseif ($role === 'Visitor')
                                 <span class="inline-flex rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700">Visitor</span>
                             @elseif ($role === 'Student / Faculty')
@@ -263,7 +263,8 @@
         const roleBadge = (role) => {
             const r = String(role || '');
             if (r === 'Student') return '<span class="inline-flex rounded-full bg-blue-50 px-2.5 py-1 text-xs font-semibold text-blue-700">Student</span>';
-            if (r === 'Staff' || r === 'Faculty') return '<span class="inline-flex rounded-full bg-purple-50 px-2.5 py-1 text-xs font-semibold text-purple-700">Faculty</span>';
+            const staffLabel = @json(\App\Models\User::STAFF_DISPLAY_LABEL);
+            if (r === 'Staff' || r === 'Faculty' || r === staffLabel) return `<span class="inline-flex rounded-full bg-purple-50 px-2.5 py-1 text-xs font-semibold text-purple-700">${esc(staffLabel)}</span>`;
             if (r === 'Visitor') return '<span class="inline-flex rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700">Visitor</span>';
             if (r === 'Student / Faculty') return '<span class="inline-flex rounded-full bg-sky-50 px-2.5 py-1 text-xs font-semibold text-sky-800">Student / Faculty</span>';
             return `<span class="inline-flex rounded-full bg-gray-100 px-2.5 py-1 text-xs font-semibold text-gray-600">${esc(r) || '—'}</span>`;

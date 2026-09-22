@@ -102,7 +102,7 @@
                                     <input type="checkbox" name="roles[{{ $zone->id }}][]" value="Staff"
                                         @checked(in_array('Staff', $allowedRoles, true)) class="peer sr-only">
                                     <span class="inline-flex items-center gap-1.5 rounded-full border border-gray-200 bg-gray-50 px-3 py-1.5 text-sm font-medium text-gray-600 peer-checked:border-indigo-600 peer-checked:bg-indigo-600 peer-checked:text-white">
-                                        Faculty / Staff
+                                        {{ \App\Models\User::STAFF_DISPLAY_LABEL }}
                                     </span>
                                 </label>
                                 <label class="cursor-pointer">
