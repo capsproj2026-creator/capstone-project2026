@@ -18,7 +18,8 @@ $extraPaths = @(
     "$env:LOCALAPPDATA\Programs\nodejs",
     "$env:APPDATA\npm",
     "$env:ProgramFiles\PHP",
-    "${env:ProgramFiles(x86)}\PHP"
+    "${env:ProgramFiles(x86)}\PHP",
+    "C:\xampp\php"
 )
 $wingetPhp = Get-ChildItem -Path "$env:LOCALAPPDATA\Microsoft\WinGet\Packages" -Filter "PHP.*" -Directory -ErrorAction SilentlyContinue |
     ForEach-Object { $_.FullName }

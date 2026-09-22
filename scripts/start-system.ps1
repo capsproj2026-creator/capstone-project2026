@@ -45,7 +45,8 @@ function Initialize-DevPath {
         "$env:LOCALAPPDATA\Programs\nodejs",
         "$env:APPDATA\npm",
         "$env:ProgramFiles\PHP",
-        "${env:ProgramFiles(x86)}\PHP"
+        "${env:ProgramFiles(x86)}\PHP",
+        "C:\xampp\php"
     )
     # WinGet PHP installs under LocalAppData\Microsoft\WinGet\Packages\PHP.*
     $wingetPhp = Get-ChildItem -Path "$env:LOCALAPPDATA\Microsoft\WinGet\Packages" -Filter "PHP.*" -Directory -ErrorAction SilentlyContinue |
@@ -146,6 +147,12 @@ function Start-QueuedWindowsTerminalTabs {
 
     Initialize-DevPath
     $launcher = Join-Path $PSScriptRoot "launch-window.ps1"
+    $psExe = Join-Path $env:SystemRoot "System32\WindowsPowerShell\v1.0\powershell.exe"
+    if (-not (Test-Path -LiteralPath $psExe)) {
+        $psCmd = Get-Command powershell -ErrorAction SilentlyContinue
+        if ($psCmd) { $psExe = $psCmd.Source }
+    }
+
     $wtArgs = New-Object System.Collections.Generic.List[string]
 
     for ($i = 0; $i -lt $script:PendingTabs.Count; $i++) {
@@ -160,7 +167,10 @@ function Start-QueuedWindowsTerminalTabs {
         $wtArgs.Add([string]$tab.Title) | Out-Null
         $wtArgs.Add('-d') | Out-Null
         $wtArgs.Add($Root) | Out-Null
-        $wtArgs.Add('powershell') | Out-Null
+        # Everything after -- is the command line (required; otherwise wt.exe
+        # treats -NoExit/-File as its own options and fails with 0x80070002).
+        $wtArgs.Add('--') | Out-Null
+        $wtArgs.Add($psExe) | Out-Null
         $wtArgs.Add('-NoExit') | Out-Null
         $wtArgs.Add('-NoProfile') | Out-Null
         $wtArgs.Add('-ExecutionPolicy') | Out-Null
