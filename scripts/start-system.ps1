@@ -46,7 +46,11 @@ function Initialize-DevPath {
         "$env:APPDATA\npm",
         "$env:ProgramFiles\PHP",
         "${env:ProgramFiles(x86)}\PHP",
-        "C:\xampp\php"
+        "C:\xampp\php",
+        "$env:ProgramFiles\Git\cmd",
+        "$env:ProgramFiles\Git\bin",
+        "$env:LOCALAPPDATA\Programs\Git\cmd",
+        "$env:LOCALAPPDATA\GitHubDesktop\bin"
     )
     # WinGet PHP installs under LocalAppData\Microsoft\WinGet\Packages\PHP.*
     $wingetPhp = Get-ChildItem -Path "$env:LOCALAPPDATA\Microsoft\WinGet\Packages" -Filter "PHP.*" -Directory -ErrorAction SilentlyContinue |
@@ -174,25 +178,22 @@ function Start-QueuedWindowsTerminalTabs {
         if ($psCmd) { $psExe = $psCmd.Source }
     }
 
-    # Open tabs one-by-one into the same WT window. More reliable than a single
-    # "new-tab ; new-tab" command line when titles/paths contain spaces.
+    # One wt.exe invocation with "new-tab ; new-tab ..." so Laravel/LAN and the
+    # rest share a single window. Sequential "wt -w last" races put early tabs
+    # in a different window ("outside").
+    $parts = New-Object System.Collections.Generic.List[string]
     for ($i = 0; $i -lt $script:PendingTabs.Count; $i++) {
         $tab = $script:PendingTabs[$i]
         $tabTitle = [string]$tab.Title
-        # WT tab label: no spaces (Start-Process arg joining breaks on spaces).
         $wtLabel = ($tabTitle -replace '[^\w\-]+', '-').Trim('-')
         if ([string]::IsNullOrWhiteSpace($wtLabel)) { $wtLabel = "Service$i" }
 
         $cmdJson = ConvertTo-CommandLineJson -CommandArgs @($tab.CommandArgs)
 
-        $parts = New-Object System.Collections.Generic.List[string]
-        if ($i -eq 0) {
-            $parts.Add('new-tab') | Out-Null
-        } else {
-            $parts.Add('-w') | Out-Null
-            $parts.Add('last') | Out-Null
-            $parts.Add('new-tab') | Out-Null
+        if ($i -gt 0) {
+            $parts.Add(';') | Out-Null
         }
+        $parts.Add('new-tab') | Out-Null
         $parts.Add('--title') | Out-Null
         $parts.Add($wtLabel) | Out-Null
         $parts.Add('-d') | Out-Null
@@ -211,15 +212,12 @@ function Start-QueuedWindowsTerminalTabs {
         $parts.Add($Root) | Out-Null
         $parts.Add('-CommandLine') | Out-Null
         $parts.Add($cmdJson) | Out-Null
-
-        $argLine = ($parts | ForEach-Object { Quote-Win32Arg $_ }) -join ' '
-        Start-Process -FilePath $script:WindowsTerminalExe -WorkingDirectory $Root -ArgumentList $argLine | Out-Null
-        if ($i -eq 0) {
-            Start-Sleep -Milliseconds 700
-        } else {
-            Start-Sleep -Milliseconds 250
-        }
     }
+
+    $argLine = ($parts | ForEach-Object {
+        if ($_ -eq ';') { ';' } else { Quote-Win32Arg $_ }
+    }) -join ' '
+    Start-Process -FilePath $script:WindowsTerminalExe -WorkingDirectory $Root -ArgumentList $argLine | Out-Null
 
     $script:PendingTabs.Clear()
 }

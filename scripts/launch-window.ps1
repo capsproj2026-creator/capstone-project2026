@@ -37,7 +37,12 @@ $extraPaths = @(
     "$env:APPDATA\npm",
     "$env:ProgramFiles\PHP",
     "${env:ProgramFiles(x86)}\PHP",
-    "C:\xampp\php"
+    "C:\xampp\php",
+    # artisan/sebastian Version.php runs `git describe` via proc_open
+    "$env:ProgramFiles\Git\cmd",
+    "$env:ProgramFiles\Git\bin",
+    "$env:LOCALAPPDATA\Programs\Git\cmd",
+    "$env:LOCALAPPDATA\GitHubDesktop\bin"
 )
 $wingetPhp = Get-ChildItem -Path "$env:LOCALAPPDATA\Microsoft\WinGet\Packages" -Filter "PHP.*" -Directory -ErrorAction SilentlyContinue |
     ForEach-Object { $_.FullName }

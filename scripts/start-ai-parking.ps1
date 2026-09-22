@@ -70,6 +70,19 @@ function Test-PortListening([int]$Port) {
 
 Import-DotEnv $EnvFile
 
+# Ensure php/git are visible in stripped Windows Terminal tab PATH.
+foreach ($dir in @(
+    "C:\xampp\php",
+    "$env:ProgramFiles\Git\cmd",
+    "$env:ProgramFiles\Git\bin",
+    "$env:LOCALAPPDATA\Programs\Git\cmd",
+    "$env:LOCALAPPDATA\GitHubDesktop\bin"
+)) {
+    if ($dir -and (Test-Path -LiteralPath $dir) -and ($env:Path -notlike "*$dir*")) {
+        $env:Path = "$dir;$env:Path"
+    }
+}
+
 # Occupancy ingest must hit local Laravel. APP_URL is often a public ngrok host
 # that is offline (ERR_NGROK_3200) and makes Live Cameras look like they are reconnecting.
 if (-not $env:AI_LARAVEL_API_BASE -or $env:AI_LARAVEL_API_BASE -match 'ngrok') {
@@ -86,9 +99,14 @@ Write-Host ""
 
 Set-Location $Root
 Write-Host "Checking MongoDB (capstone)..." -ForegroundColor Cyan
+# Native php stderr (e.g. missing git for sebastian/version) must not abort under Stop.
+$prevEap = $ErrorActionPreference
+$ErrorActionPreference = "Continue"
 & php artisan config:clear *> $null
 & php scripts/mongo_ping.php *> $null
-if ($LASTEXITCODE -ne 0) {
+$mongoExit = $LASTEXITCODE
+$ErrorActionPreference = $prevEap
+if ($mongoExit -ne 0) {
     Write-Host ""
     Write-Host "MongoDB is not connected." -ForegroundColor Red
     Write-Host "  Local .env:" -ForegroundColor Yellow
@@ -98,6 +116,14 @@ if ($LASTEXITCODE -ne 0) {
     exit 1
 }
 Write-Host "  MongoDB: OK" -ForegroundColor Green
+
+function Wait-LaravelReady([string]$Url, [int]$Seconds = 45) {
+    for ($i = 0; $i -lt $Seconds; $i++) {
+        if (Test-HttpOk $Url) { return $true }
+        Start-Sleep -Seconds 1
+    }
+    return $false
+}
 
 if (-not $SkipWebStack) {
     # Port open but HTTP hung (common after many restarts) - recycle Laravel first.
@@ -122,88 +148,26 @@ if (-not $SkipWebStack) {
             exit 1
         }
         Write-Host "Waiting for Laravel..." -ForegroundColor DarkGray
-        $ready = $false
-        for ($i = 0; $i -lt 45; $i++) {
-            Start-Sleep -Seconds 1
-            if (Test-HttpOk $laravelUrl) {
-                $ready = $true
-                break
-            }
-            if (($i -eq 12) -and (Test-PortListening 8000) -and -not (Test-HttpOk $laravelUrl)) {
-                Write-Host "Still hung - recycling port 8000 and reopening Laravel..." -ForegroundColor Yellow
-                Stop-PortListeners 8000
-                Stop-PortListeners 8001
-                $laravelLaunch = @"
-`$Host.UI.RawUI.WindowTitle = 'Laravel'
-Set-Location -LiteralPath '$Root'
-php artisan serve --host=127.0.0.1 --port=8001 --no-reload
-"@
-                $frontLaunch = @"
-`$Host.UI.RawUI.WindowTitle = 'LAN Front (ESP32)'
-Set-Location -LiteralPath '$Root'
-php -S 0.0.0.0:8000 bootstrap/lan_front_router.php
-"@
-                Start-Process powershell -WorkingDirectory $Root -ArgumentList @(
-                    "-NoExit",
-                    "-NoProfile",
-                    "-ExecutionPolicy", "Bypass",
-                    "-Command", $laravelLaunch
-                ) | Out-Null
-                Start-Process powershell -WorkingDirectory $Root -ArgumentList @(
-                    "-NoExit",
-                    "-NoProfile",
-                    "-ExecutionPolicy", "Bypass",
-                    "-Command", $frontLaunch
-                ) | Out-Null
-            }
-        }
-        if (-not $ready) {
+        if (-not (Wait-LaravelReady -Url $laravelUrl -Seconds 45)) {
             Write-Host "Laravel did not respond at $laravelUrl - check the Laravel window for errors." -ForegroundColor Red
-            Write-Host "Tip: close all 'Laravel' PowerShell windows, then run: .\scripts\start-ai-parking.ps1" -ForegroundColor DarkYellow
+            Write-Host "Tip: close old Laravel/LAN windows, then run: .\scripts\start-system.ps1" -ForegroundColor DarkYellow
             exit 1
         }
     }
     Write-Host "  Laravel: OK ($laravelUrl)" -ForegroundColor Green
 } else {
-    # -SkipWebStack: still recover a hung/dead Laravel so AI can start.
+    # -SkipWebStack (from start-system WT tab): Laravel/LAN are sibling tabs.
+    # Wait for them — do NOT Start-Process separate PowerShell windows (that
+    # put Laravel/LAN "outside" the Windows Terminal).
     if ((Test-PortListening 8000) -and -not (Test-HttpOk $laravelUrl)) {
-        Write-Host "Laravel port 8000 is open but not responding - restarting it..." -ForegroundColor Yellow
-        Stop-PortListeners 8000
-        Stop-PortListeners 8001
+        Write-Host "Laravel port is open but not responding - waiting for recycle..." -ForegroundColor Yellow
     }
     if (-not (Test-HttpOk $laravelUrl)) {
-        Write-Host "Laravel is down - starting LAN front + Laravel..." -ForegroundColor Yellow
-        $laravelLaunch = @"
-`$Host.UI.RawUI.WindowTitle = 'Laravel'
-Set-Location -LiteralPath '$Root'
-php artisan serve --host=127.0.0.1 --port=8001 --no-reload
-"@
-        $frontLaunch = @"
-`$Host.UI.RawUI.WindowTitle = 'LAN Front (ESP32)'
-Set-Location -LiteralPath '$Root'
-php -S 0.0.0.0:8000 bootstrap/lan_front_router.php
-"@
-        Start-Process powershell -WorkingDirectory $Root -ArgumentList @(
-            "-NoExit",
-            "-NoProfile",
-            "-ExecutionPolicy", "Bypass",
-            "-Command", $laravelLaunch
-        ) | Out-Null
-        Start-Process powershell -WorkingDirectory $Root -ArgumentList @(
-            "-NoExit",
-            "-NoProfile",
-            "-ExecutionPolicy", "Bypass",
-            "-Command", $frontLaunch
-        ) | Out-Null
-        $ready = $false
-        for ($i = 0; $i -lt 25; $i++) {
-            Start-Sleep -Seconds 1
-            if (Test-HttpOk $laravelUrl) { $ready = $true; break }
-        }
-        if (-not $ready) {
-            Write-Host "Laravel did not respond at $laravelUrl - open windows manually:" -ForegroundColor Red
-            Write-Host "  php artisan serve --host=127.0.0.1 --port=8001 --no-reload" -ForegroundColor DarkYellow
-            Write-Host "  php -S 0.0.0.0:8000 bootstrap/lan_front_router.php" -ForegroundColor DarkYellow
+        Write-Host "Waiting for Laravel tab ($laravelUrl)..." -ForegroundColor DarkGray
+        if (-not (Wait-LaravelReady -Url $laravelUrl -Seconds 50)) {
+            Write-Host "Laravel did not respond at $laravelUrl" -ForegroundColor Red
+            Write-Host "  Check the Laravel / LAN Front tabs in this Windows Terminal window." -ForegroundColor DarkYellow
+            Write-Host "  Or re-run: .\scripts\start-system.ps1" -ForegroundColor DarkYellow
             exit 1
         }
     }
