@@ -78,10 +78,15 @@ if ($exe -eq "npm" -and (Test-Path -LiteralPath "$env:ProgramFiles\nodejs\npm.cm
 if ($exe -eq "php") {
     $php = Get-Command php -ErrorAction SilentlyContinue
     if ($php) { $exe = $php.Source }
+    elseif (Test-Path -LiteralPath "C:\xampp\php\php.exe") { $exe = "C:\xampp\php\php.exe" }
     else {
         Write-Host "php not found on PATH. Install PHP 8.2+ or add it to PATH." -ForegroundColor Red
         exit 1
     }
+}
+if ($exe -eq "powershell" -or $exe -eq "powershell.exe") {
+    $psFull = Join-Path $env:SystemRoot "System32\WindowsPowerShell\v1.0\powershell.exe"
+    if (Test-Path -LiteralPath $psFull) { $exe = $psFull }
 }
 
 Write-Host ("> " + ($CommandArgs -join " ")) -ForegroundColor DarkGray

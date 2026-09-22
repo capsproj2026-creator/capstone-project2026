@@ -67,6 +67,23 @@ function Quote-Arg([string]$Value) {
     return $Value
 }
 
+function Resolve-PhpExe {
+    $php = Get-Command php -ErrorAction SilentlyContinue
+    if ($php -and $php.Source) { return $php.Source }
+    foreach ($candidate in @("C:\xampp\php\php.exe", "$env:ProgramFiles\PHP\php.exe")) {
+        if (Test-Path -LiteralPath $candidate) { return $candidate }
+    }
+    return "php"
+}
+
+function Resolve-PowerShellExe {
+    $psExe = Join-Path $env:SystemRoot "System32\WindowsPowerShell\v1.0\powershell.exe"
+    if (Test-Path -LiteralPath $psExe) { return $psExe }
+    $cmd = Get-Command powershell -ErrorAction SilentlyContinue
+    if ($cmd) { return $cmd.Source }
+    return "powershell.exe"
+}
+
 function Find-WindowsTerminal {
     $cmd = Get-Command wt -ErrorAction SilentlyContinue
     if ($cmd -and $cmd.Source) { return $cmd.Source }
@@ -346,9 +363,11 @@ if (Test-Path $arduinoSync) {
 
 # Laravel stays on loopback :8001. LAN front on :8000 answers ESP32 heartbeats
 # instantly so a slow Mongo/page load cannot starve the gates (HTTP -11).
-Start-ProjectWindow "Laravel" @("php", "artisan", "serve", "--host=127.0.0.1", "--port=8001", "--no-reload")
+$phpExe = Resolve-PhpExe
+$psExeForTabs = Resolve-PowerShellExe
+Start-ProjectWindow "Laravel" @($phpExe, "artisan", "serve", "--host=127.0.0.1", "--port=8001", "--no-reload")
 Wait-ServiceGap 600
-Start-ProjectWindow "LAN Front (ESP32)" @("php", "-S", "0.0.0.0:8000", "bootstrap/lan_front_router.php")
+Start-ProjectWindow "LAN Front" @($phpExe, "-S", "0.0.0.0:8000", "bootstrap/lan_front_router.php")
 Wait-ServiceGap 500
 
 $ngrokQueued = $false
@@ -363,11 +382,11 @@ if (-not $SkipNgrok) {
     }
 }
 
-Start-ProjectWindow "Reverb" @("php", "artisan", "reverb:start")
+Start-ProjectWindow "Reverb" @($phpExe, "artisan", "reverb:start")
 Wait-ServiceGap 400
 
 # Runs sync:run every 2 minutes (local <-> Atlas) when SYNC_ENABLED=true.
-Start-ProjectWindow "Scheduler" @("php", "artisan", "schedule:work")
+Start-ProjectWindow "Scheduler" @($phpExe, "artisan", "schedule:work")
 Wait-ServiceGap 400
 
 if (-not $SkipVite) {
@@ -377,8 +396,10 @@ if (-not $SkipVite) {
 if ($startAi) {
     Wait-ServiceGap 400
     $aiScript = Join-Path $PSScriptRoot "start-ai-parking.ps1"
-    Start-ProjectWindow "YOLOv9 AI Parking" @(
-        "powershell",
+    # Full powershell.exe path + -SkipWebStack: wait for Laravel/LAN tabs, never spawn extras.
+    Start-ProjectWindow "AI Parking" @(
+        $psExeForTabs,
+        "-NoProfile",
         "-ExecutionPolicy", "Bypass",
         "-File", $aiScript,
         "-SkipWebStack"
@@ -388,8 +409,9 @@ if ($startAi) {
 if ($WithGitSync) {
     Wait-ServiceGap 400
     $gitSync = Join-Path $PSScriptRoot "auto-sync-github.ps1"
-    Start-ProjectWindow "GitHub Auto Sync" @(
-        "powershell",
+    Start-ProjectWindow "GitHub Sync" @(
+        $psExeForTabs,
+        "-NoProfile",
         "-ExecutionPolicy", "Bypass",
         "-File", $gitSync
     )
