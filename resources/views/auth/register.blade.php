@@ -9,6 +9,46 @@
 @endsection
 
 @section('content')
+    {{-- Privacy notice: shown on arrival until the applicant accepts --}}
+    <div id="privacy-notice-modal"
+        class="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/70 p-4 backdrop-blur-sm"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="privacy-notice-title"
+        aria-describedby="privacy-notice-body">
+        <div class="max-h-[90vh] w-full max-w-lg overflow-hidden rounded-2xl bg-white shadow-2xl ring-1 ring-slate-200">
+            <div class="border-b border-slate-100 bg-gradient-to-br from-[#1A365D] via-[#122844] to-slate-900 px-5 py-4 text-white sm:px-6">
+                <p class="text-[11px] font-semibold tracking-[0.14em] text-blue-200 uppercase">Camarines Sur Polytechnic Colleges</p>
+                <h2 id="privacy-notice-title" class="mt-1 text-lg font-bold tracking-tight sm:text-xl">Privacy Notice</h2>
+                <p class="mt-1 text-sm text-blue-100">Please read before continuing with vehicle registration</p>
+            </div>
+            <div id="privacy-notice-body" class="max-h-[50vh] space-y-3 overflow-y-auto px-5 py-4 text-sm leading-relaxed text-slate-600 sm:px-6">
+                <p>
+                    Smart Campus VMS collects and processes personal and vehicle information you submit on this page
+                    (including your name, contact details, driver’s license, OR/CR documents, plate number, and related campus ID data)
+                    for campus vehicle registration, gate access, security monitoring, and official CSPC records.
+                </p>
+                <p>
+                    Your data will be used only for these purposes, accessed by authorized campus personnel, and retained
+                    according to institutional policy. By continuing, you acknowledge this notice under the
+                    <span class="font-medium text-slate-800">Data Privacy Act of 2012 (Republic Act No. 10173)</span>
+                    and consent to the processing of your personal information for Smart Campus VMS.
+                </p>
+                <p class="text-xs text-slate-500">
+                    For privacy concerns, contact the CSPC Data Protection Officer or the campus administration office.
+                </p>
+            </div>
+            <div class="flex flex-col gap-2 border-t border-slate-100 bg-slate-50 px-5 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-6">
+                <p class="text-xs text-slate-500">You must accept to use the registration form.</p>
+                <button type="button"
+                    id="privacy-notice-accept"
+                    class="inline-flex items-center justify-center rounded-xl bg-[#1A365D] px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-[#122844] focus:outline-none focus:ring-2 focus:ring-[#1A365D]/40 focus:ring-offset-2">
+                    Accept
+                </button>
+            </div>
+        </div>
+    </div>
+
     <div class="overflow-hidden rounded-2xl border border-white/30 bg-white/95 shadow-2xl backdrop-blur-sm">
         <div class="relative overflow-hidden bg-gradient-to-br from-[#1A365D] via-[#122844] to-slate-900 px-6 py-7 text-center text-white sm:px-8">
             <div class="pointer-events-none absolute inset-0 opacity-25" style="background-image: radial-gradient(circle at 20% 20%, #fff 0, transparent 40%), radial-gradient(circle at 80% 0%, #93c5fd 0, transparent 35%), radial-gradient(circle at 50% 100%, #1A365D 0, transparent 45%);"></div>
@@ -366,6 +406,46 @@
 @push('scripts')
     <script>
         document.addEventListener('DOMContentLoaded', function () {
+            const privacyModal = document.getElementById('privacy-notice-modal');
+            const privacyAccept = document.getElementById('privacy-notice-accept');
+            const privacyKey = 'scvms_register_privacy_accepted';
+
+            const closePrivacyNotice = () => {
+                if (!privacyModal) return;
+                privacyModal.classList.add('hidden');
+                privacyModal.classList.remove('flex');
+                document.body.classList.remove('overflow-hidden');
+                try {
+                    sessionStorage.setItem(privacyKey, '1');
+                } catch (e) {
+                    // Ignore storage errors (private mode, etc.)
+                }
+            };
+
+            const openPrivacyNotice = () => {
+                if (!privacyModal) return;
+                privacyModal.classList.remove('hidden');
+                privacyModal.classList.add('flex');
+                document.body.classList.add('overflow-hidden');
+                privacyAccept?.focus();
+            };
+
+            let alreadyAccepted = false;
+            try {
+                alreadyAccepted = sessionStorage.getItem(privacyKey) === '1';
+            } catch (e) {
+                alreadyAccepted = false;
+            }
+
+            if (alreadyAccepted) {
+                privacyModal?.classList.add('hidden');
+                privacyModal?.classList.remove('flex');
+            } else {
+                openPrivacyNotice();
+            }
+
+            privacyAccept?.addEventListener('click', closePrivacyNotice);
+
             const form = document.getElementById('register-form');
 
             const setStatus = (el, message, tone) => {

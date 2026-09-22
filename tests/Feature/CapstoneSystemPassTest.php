@@ -204,6 +204,15 @@ class CapstoneSystemPassTest extends TestCase
         }
     }
 
+    public function test_register_page_shows_privacy_notice_modal(): void
+    {
+        $this->get(route('register'))
+            ->assertOk()
+            ->assertSee('Privacy Notice', false)
+            ->assertSee('privacy-notice-accept', false)
+            ->assertSee('Data Privacy Act of 2012', false);
+    }
+
     public function test_session_mismatch_redirects_to_login_with_friendly_message(): void
     {
         $request = \Illuminate\Http\Request::create('/login', 'POST', [
