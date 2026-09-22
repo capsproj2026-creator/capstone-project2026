@@ -35,7 +35,7 @@ from load_env import load_project_env
 # Load .env before parking_rules / plate_ocr read tunables at import time.
 load_project_env()
 
-from parking_rules import ParkingIntelligence, SimpleIoUTracker, ocr_allowed_for_motion
+from parking_rules import OCR_MAX_ATTEMPTS, ParkingIntelligence, SimpleIoUTracker, ocr_allowed_for_motion
 from plate_ocr import OCR_EVERY_SEC, OCR_SYNC_ENABLED, OCR_SYNC_EVERY_SEC, AsyncPlateQueue, PlateOCR
 from plate_text import _clean_raw
 from monitor_scan import encode_crop_jpeg, encode_crop_jpeg_bytes, enhance_monitor_frame, scan_visible_region
@@ -824,6 +824,7 @@ def parse_tracks(
             if mem_sid is not None and getattr(mem_sid, "recognition_session_id", None):
                 det["recognition_session_id"] = mem_sid.recognition_session_id
                 det["ocr_attempts"] = int(getattr(mem_sid, "ocr_attempts", 0) or 0)
+                det["ocr_max_attempts"] = int(OCR_MAX_ATTEMPTS)
                 try:
                     det["parking_session_id"] = mem_sid.parking_session_id(camera_id)
                     det["vehicle_event_id"] = mem_sid.vehicle_event_id(camera_id)
@@ -881,7 +882,12 @@ def parse_tracks(
             mem_ov = intelligence.tracks.get(int(track_id))
             if mem_ov is not None and getattr(mem_ov, "ocr_attempts", 0) <= 0:
                 overlay_status = "detecting"
-        annotated_boxes.append((x1, y1, x2, y2, name, conf, track_id, plate, overlay_status, owner_label, motion_state, vehicle_details))
+        overlay_attempts = 0
+        if track_id is not None:
+            mem_attempts = intelligence.tracks.get(int(track_id))
+            if mem_attempts is not None:
+                overlay_attempts = int(getattr(mem_attempts, "ocr_attempts", 0) or 0)
+        annotated_boxes.append((x1, y1, x2, y2, name, conf, track_id, plate, overlay_status, owner_label, motion_state, vehicle_details, overlay_attempts))
         vehicles.append({
             "xyxy": (x1, y1, x2, y2),
             "track_id": track_id,
@@ -944,7 +950,16 @@ def _draw_label_block(annotated, x, y, lines, color, lite=False):
         )
 
 
-def _draw_box_labels(annotated, x1, y1, x2, y2, name, conf, track_id, plate, plate_status, owner_label, lite=False, motion_state=None, vehicle_details=None):
+def _box_ocr_attempts(box: tuple) -> int:
+    if len(box) < 13 or box[12] is None:
+        return 0
+    try:
+        return max(0, int(box[12]))
+    except (TypeError, ValueError):
+        return 0
+
+
+def _draw_box_labels(annotated, x1, y1, x2, y2, name, conf, track_id, plate, plate_status, owner_label, lite=False, motion_state=None, vehicle_details=None, ocr_attempts=0):
     # Color by vehicle type (registered type when known, else YOLO class) — consistent across cameras.
     type_key = _overlay_type_key(name, vehicle_details)
     color = CLASS_COLORS.get(type_key, CLASS_COLORS.get(name, (40, 180, 40)))
@@ -971,8 +986,11 @@ def _draw_box_labels(annotated, x1, y1, x2, y2, name, conf, track_id, plate, pla
         lines.append(str(plate))
     elif plate_status == "detecting":
         lines.append("Detecting…")
+    elif int(ocr_attempts or 0) > 0:
+        cap = max(int(OCR_MAX_ATTEMPTS or 0), int(ocr_attempts))
+        lines.append(f"Scanning... {int(ocr_attempts)}/{cap}")
     elif track_id is not None:
-        lines.append("Reading plate…")
+        lines.append("Scanning...")
     _draw_label_block(annotated, x1, y1, lines[:4], color, lite=lite)
 
 
@@ -1016,6 +1034,7 @@ def draw_scene(frame, annotated_boxes, zones_data, occupied_slots, active_events
             lite=False,
             motion_state=motion_state,
             vehicle_details=vehicle_details,
+            ocr_attempts=_box_ocr_attempts(box),
         )
 
     mode = "slots" if use_poly else "count-fallback"
@@ -1068,6 +1087,7 @@ def draw_scene_lite(frame, annotated_boxes, occupied_slots, person_count, vehicl
             lite=True,
             motion_state=motion_state,
             vehicle_details=vehicle_details,
+            ocr_attempts=_box_ocr_attempts(box),
         )
     n_occ = len(occupied_slots) if occupied_slots else 0
     summary = f"V:{vehicle_count} Occ:{n_occ}" if VEHICLES_ONLY else f"P:{person_count} V:{vehicle_count} Occ:{n_occ}"

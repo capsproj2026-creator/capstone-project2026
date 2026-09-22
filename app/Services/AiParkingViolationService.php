@@ -124,6 +124,34 @@ class AiParkingViolationService
 
         $description = $this->buildDescription($event, $cameraId);
 
+        if ($vehicleEventId !== '') {
+            $existingEarly = ViolationLog::query()
+                ->where('vehicle_event_id', $vehicleEventId)
+                ->first();
+            if ($existingEarly) {
+                return [
+                    'status' => 'debounced',
+                    'reason' => 'vehicle_event_id',
+                    'type' => $type,
+                    'plate' => $plate !== '' ? $plate : null,
+                    'violation_log_id' => (string) $existingEarly->getKey(),
+                ];
+            }
+        }
+
+        if ($plate !== '' && $this->shouldLimitOncePerDay($violationType)) {
+            $knownUser = PlateLookup::findUser((string) ($event['plate'] ?? $plate));
+            if ($knownUser && $this->alreadyCitedToday((int) $knownUser->id, $plate, $violationType)) {
+                return [
+                    'status' => 'debounced',
+                    'reason' => 'once_per_day',
+                    'type' => $type,
+                    'plate' => $plate,
+                    'user_id' => $knownUser->id,
+                ];
+            }
+        }
+
         AiParkingRealtime::emit(AiParkingRealtime::EVENT_VIOLATION_DETECTED, [
             'vehicleEventId' => $vehicleEventId !== '' ? $vehicleEventId : null,
             'trackingId' => is_numeric($trackId) ? (int) $trackId : $trackId,
@@ -636,7 +664,8 @@ class AiParkingViolationService
 
             // Vehicle type vs lot designation (motorcycle ↔ automobile).
             if ($vehicleClass !== null && ! $area->allowsVehicleClass($vehicleClass)) {
-                $cacheKey = 'ai_parking:wrong_vehicle:'.md5($cameraId.'|'.$parkingSessionKey.'|wrong_vehicle|'.$dayKey);
+                $vehicleKey = $plate !== '' ? 'p:'.$plate : $parkingSessionKey;
+                $cacheKey = 'ai_parking:wrong_vehicle:'.md5($vehicleKey.'|wrong_vehicle|'.$dayKey);
                 if (! Cache::has($cacheKey)) {
                     Cache::put($cacheKey, 1, now()->endOfDay());
                     $zoneLabel = $slotId !== '' ? $slotId : (string) ($area->slot_prefix ?? 'lot');
@@ -680,7 +709,8 @@ class AiParkingViolationService
                 continue;
             }
 
-            $cacheKey = 'ai_parking:wrong_role:'.md5($cameraId.'|'.$parkingSessionKey.'|wrong_role|'.$dayKey);
+            $vehicleKey = $plate !== '' ? 'p:'.$plate : $parkingSessionKey;
+            $cacheKey = 'ai_parking:wrong_role:'.md5($vehicleKey.'|wrong_role|'.$dayKey);
             if (Cache::has($cacheKey)) {
                 continue;
             }

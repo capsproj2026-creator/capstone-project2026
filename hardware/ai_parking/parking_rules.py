@@ -39,7 +39,7 @@ TRACK_MATCH_SIZE_RATIO = float(os.getenv("AI_PARKING_TRACK_MATCH_SIZE_RATIO", "0
 OCR_MAX_ATTEMPTS = int(
     os.getenv(
         "AI_PARKING_OCR_MAX_ATTEMPTS",
-        os.getenv("AI_PARKING_MAX_OCR_ATTEMPTS", "6"),
+        os.getenv("AI_PARKING_MAX_OCR_ATTEMPTS", "10"),
     )
 )
 OCR_PENDING_TIMEOUT_SEC = float(os.getenv("AI_PARKING_OCR_PENDING_TIMEOUT_SEC", "12"))
@@ -540,13 +540,16 @@ class TrackMemory:
         if self.plate_status != "pending":
             return False
         now = now if now is not None else time.time()
-        timed_out = (
-            self.ocr_started_at > 0
+        # A clock timeout must not end the budget before 10 real OCR runs.
+        # Timeout only applies when no OCR has executed yet (stuck with no crop).
+        stalled_without_attempt = (
+            self.ocr_attempts <= 0
+            and self.ocr_started_at > 0
             and OCR_PENDING_TIMEOUT_SEC > 0
             and (now - self.ocr_started_at) >= OCR_PENDING_TIMEOUT_SEC
         )
         attempts_exhausted = OCR_MAX_ATTEMPTS > 0 and self.ocr_attempts >= OCR_MAX_ATTEMPTS
-        if not timed_out and not attempts_exhausted:
+        if not stalled_without_attempt and not attempts_exhausted:
             return False
         self.plate = None
         self.plate_status = "not_read"
@@ -563,7 +566,7 @@ class TrackMemory:
     def maybe_retry_not_read(self, now: float | None = None) -> bool:
         """Optionally reopen PLATE NOT READ for another attempt cycle.
 
-        Default OCR_MAX_REOPENS=0: stop after one 6-attempt budget (user rule).
+        Default OCR_MAX_REOPENS=0: stop after one attempt budget.
         When reopens are enabled, still require movement if OCR_MOVING_ONLY.
         """
         if self.plate_status != "not_read":

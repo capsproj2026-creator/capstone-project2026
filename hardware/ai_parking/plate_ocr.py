@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING, Optional
 import cv2
 import numpy as np
 
+from parking_rules import OCR_MAX_ATTEMPTS
 from plate_text import (
     best_from_results,
     is_known_ph_format,
@@ -683,13 +684,11 @@ class AsyncPlateQueue:
         if crop is None:
             with self._lock:
                 self._inflight.discard(key)
-            # Plate detector found nothing — counts as a failed recognition attempt.
+            # No plate crop — not an OCR attempt. The budget counts only real reads.
             if mem is not None:
-                mem.mark_ocr_attempt(now)
-                mem.tick_plate_deadline(now)
                 print(
-                    f"[OCR] tracking_id={track_id} attempt={mem.ocr_attempts}/{getattr(mem, 'ocr_attempts', 0)} "
-                    f"plate detector miss"
+                    f"[OCR] tracking_id={track_id} skipped reason=NO_PLATE_CROP "
+                    f"attempts={mem.ocr_attempts}/{OCR_MAX_ATTEMPTS}"
                 )
             return
         # Keep a private copy; the infer loop reuses the live frame buffer.
@@ -746,7 +745,7 @@ class AsyncPlateQueue:
                 if mem is not None:
                     mem.mark_ocr_attempt()
                     print(
-                        f"[OCR] tracking_id={track_id} attempt={mem.ocr_attempts}"
+                        f"[OCR] tracking_id={track_id} attempt={mem.ocr_attempts}/{OCR_MAX_ATTEMPTS}"
                     )
 
                 # Always use fast path on the async worker when OCR_FAST is set (CPU default).

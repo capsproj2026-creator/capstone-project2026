@@ -9,20 +9,30 @@ class AiDetectionPresenter
 {
     /**
      * Plate / wait text when OCR has not produced a plate yet.
-     * Loading ("Reading plate…") only while the vehicle is moving.
+     * Shows the real attempt count once OCR has started.
      *
      * @param  array<string, mixed>|null  $det
      */
     public static function unresolvedPlateLabel(?array $det): string
     {
-        $motion = strtolower((string) ($det['motion_state'] ?? ''));
+        $status = strtolower((string) ($det['plate_status'] ?? ''));
+        $attempts = (int) ($det['ocr_attempts'] ?? 0);
+        $max = (int) ($det['ocr_max_attempts'] ?? 10);
+        if ($max < 1) {
+            $max = 10;
+        }
 
-        return match ($motion) {
-            'moving' => 'Reading plate…',
-            'parked' => '—',
-            'idle' => '—',
-            default => '—',
-        };
+        if ($attempts > 0 && ! in_array($status, ['ok', 'not_read', 'unreadable'], true)) {
+            $shown = min(max($attempts, 1), $max);
+
+            return 'Scanning... '.$shown.'/'.$max;
+        }
+
+        if ($status === 'pending') {
+            return 'Scanning...';
+        }
+
+        return '—';
     }
 
     /**

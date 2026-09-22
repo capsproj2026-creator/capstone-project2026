@@ -329,7 +329,7 @@
                                     @else
                                         @php
                                             $waitLabel = \App\Support\AiDetectionPresenter::unresolvedPlateLabel($det);
-                                            $isScanning = ($det['motion_state'] ?? '') === 'moving';
+                                            $isScanning = $waitLabel !== '—';
                                         @endphp
                                         <span @class([
                                             'font-sans text-sm font-medium',
@@ -563,8 +563,14 @@
     };
 
     const unresolvedPlateLabel = (det) => {
-        const motion = String(det?.motion_state || '').toLowerCase();
-        if (motion === 'moving') return 'Reading plate…';
+        const status = String(det?.plate_status || '').toLowerCase();
+        const attempts = Number(det?.ocr_attempts || 0);
+        const max = Number(det?.ocr_max_attempts || 10) || 10;
+        if (attempts > 0 && status !== 'ok' && status !== 'not_read' && status !== 'unreadable' && !det?.plate) {
+            const shown = Math.min(Math.max(attempts, 1), max);
+            return `Scanning... ${shown}/${max}`;
+        }
+        if (status === 'pending') return 'Scanning...';
         return '—';
     };
 
@@ -710,7 +716,7 @@
             plateEl.textContent = det.plate;
         } else {
             const wait = unresolvedPlateLabel(det);
-            const scanning = isMovingDet(det);
+            const scanning = wait !== '—';
             plateEl.innerHTML = scanning
                 ? `<span class="font-sans text-sm font-medium text-indigo-500 animate-pulse">${wait}</span>`
                 : `<span class="font-sans text-sm font-medium text-gray-400">${wait}</span>`;

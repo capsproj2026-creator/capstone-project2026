@@ -40,10 +40,20 @@ class TrackReattachTests(unittest.TestCase):
 
 
 class PlateDeadlineTests(unittest.TestCase):
-    def test_timeout_marks_not_read(self):
+    def test_timeout_does_not_stop_before_attempt_budget(self):
         mem = TrackMemory(first_seen=time.time())
+        mem.plate_status = "pending"
         mem.ocr_started_at = time.time() - (OCR_PENDING_TIMEOUT_SEC + 1.0)
         mem.ocr_attempts = 1
+        changed = mem.tick_plate_deadline()
+        self.assertFalse(changed)
+        self.assertEqual(mem.plate_status, "pending")
+
+    def test_timeout_marks_not_read_when_no_ocr_ran(self):
+        mem = TrackMemory(first_seen=time.time())
+        mem.plate_status = "pending"
+        mem.ocr_started_at = time.time() - (OCR_PENDING_TIMEOUT_SEC + 1.0)
+        mem.ocr_attempts = 0
         changed = mem.tick_plate_deadline()
         self.assertTrue(changed)
         self.assertEqual(mem.plate_status, "not_read")
@@ -60,18 +70,22 @@ class PlateDeadlineTests(unittest.TestCase):
         """A vehicle stuck on PLATE NOT READ must get another OCR pass instead of
         freezing forever, as long as it's still in frame and under the reopen cap."""
         mem = TrackMemory(first_seen=time.time())
-        mem.ocr_started_at = time.time() - (OCR_PENDING_TIMEOUT_SEC + 1.0)
+        mem.plate_status = "not_read"
         mem.ocr_attempts = 1
-        self.assertTrue(mem.tick_plate_deadline())
-        self.assertEqual(mem.plate_status, "not_read")
+        mem.not_read_at = time.time()
 
         # Too soon — cooldown not elapsed yet.
         self.assertFalse(mem.maybe_retry_not_read())
         self.assertEqual(mem.plate_status, "not_read")
 
-        # Cooldown elapsed + vehicle moving -> reopen for another attempt.
+        # Cooldown elapsed. Default budget does not reopen; extra cycles only
+        # when AI_PARKING_OCR_MAX_REOPENS is set above zero.
         mem.not_read_at = time.time() - (OCR_RETRY_COOLDOWN_SEC + 1.0)
         mem.motion_state = "moving"
+        if OCR_MAX_REOPENS <= 0:
+            self.assertFalse(mem.maybe_retry_not_read())
+            self.assertEqual(mem.plate_status, "not_read")
+            return
         self.assertTrue(mem.maybe_retry_not_read())
         self.assertEqual(mem.plate_status, "pending")
         self.assertEqual(mem.ocr_attempts, 0)
