@@ -5,41 +5,23 @@
 #pragma once
 
 // ========== NETWORK ==========
-#define WIFI_SSID     "Redmi Note 14 5G"
-#define WIFI_PASSWORD "sabater123"
-// PC/server IPv4 (ipconfig). Laravel: php artisan serve --host=0.0.0.0 --port=8000
-#define API_HOST       "192.168.1.103"
+#define WIFI_SSID     "YOUR_WIFI_SSID"
+#define WIFI_PASSWORD "YOUR_WIFI_PASSWORD"
+// PC/server IPv4 (ipconfig). Laravel LAN front: port 8000
+#define API_HOST       "192.168.1.100"
 #define API_PORT       8000
-#define API_BASE       "http://192.168.1.103:8000"
+#define API_BASE       "http://192.168.1.100:8000"
 #define RFID_API_TOKEN "capstone-rfid-dev-token-change-me"
 
-#ifndef GATE_ID
-#define GATE_ID   "GATE-IN-1"
-#endif
-#ifndef DIRECTION
-#define DIRECTION "Entry"
-#endif
+#define USE_WIFI_MANAGER 0
 
-// Wire ONE servo to Entry ESP32 only. Exit uses ACTUATOR_NONE (set in exit .ino).
-#ifndef ACTUATOR_NONE
-#define ACTUATOR_NONE 0
-#endif
-#ifndef ACTUATOR_RELAY
-#define ACTUATOR_RELAY 1
-#endif
-#ifndef ACTUATOR_SERVO
-#define ACTUATOR_SERVO 2
-#endif
-#ifndef ACTUATOR_MODE
-#define ACTUATOR_MODE  ACTUATOR_SERVO
-#endif
+#define GATE_OPEN_MS         5000UL
+#define GATE_COOLDOWN_MS      400UL
+#define SAME_UID_COOLDOWN_MS  900UL
+#define SCAN_BLOCK_MS        1000UL
+#define HEARTBEAT_MS         1500UL
+#define SERVO_TEST_ON_BOOT       0
 
-#define GATE_OPEN_MS   8000UL
-#define GATE_COOLDOWN_MS 2500UL
-#define SCAN_BLOCK_MS  8500UL
-#define HEARTBEAT_MS   2500UL
-#define SERVO_TEST_ON_BOOT 1
-
-#define SERVO_OPEN_ANGLE  90
-#define SERVO_CLOSE_ANGLE 0
+#define SERVO_OPEN_ANGLE      90
+#define SERVO_CLOSE_ANGLE      0
 #define SERVO_CLOSE_DELAY_MS 800UL

@@ -7,15 +7,10 @@
  *
  * Flash THIS board with RC522 + servo on GPIO 14.
  * Exit board uses hardware/arduino/Exit/Exit.ino (RFID only).
- *
- * WiFi: WiFiManager portal AP "Gate-Setup" / "capstone123"
  */
 
 #define GATE_ID "GATE-IN-1"
 #define DIRECTION "Entry"
-
-// Boom stays UP for 5 seconds on Entry taps and on Exit-triggered opens.
-#define GATE_OPEN_MS 5000UL
 
 #include "rfid_gate_common.h"
 

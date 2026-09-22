@@ -9,23 +9,20 @@
  * The Entry ESP32 (with the servo) opens the boom on its next heartbeat.
  *
  * Arduino IDE: open OneDrive\Documents\Arduino\Exit\Exit.ino after sync-arduino.bat
- * (that copy includes rfid_gate_common.h from the same folder).
  */
 
 #define GATE_ID "GATE-OUT-1"
 #define DIRECTION "Exit"
-
-// No local servo — shared boom is on the Entry board.
-#define ACTUATOR_NONE 0
-#define ACTUATOR_MODE ACTUATOR_NONE
-
-// Must match Entry: Exit grant opens Entry boom for 5 seconds.
-#define GATE_OPEN_MS 5000UL
+// No local servo — shared boom is on the Entry board (ACTUATOR_NONE = 0).
+#define ACTUATOR_MODE 0
 
 #include "rfid_gate_common.h"
 
 void setup() {
   Serial.begin(115200);
+  delay(200);
+  Serial.println();
+  Serial.println("=== Capstone Exit gate (GATE-OUT-1) ===");
   setupGateHardware();
 }
 
