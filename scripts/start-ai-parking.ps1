@@ -86,12 +86,43 @@ function Test-PortListening([int]$Port) {
     return [bool]$hit
 }
 
+function Resolve-PythonExe {
+    $candidates = @(
+        (Join-Path $AiDir ".venv\Scripts\python.exe"),
+        (Join-Path $Root ".venv\Scripts\python.exe"),
+        "C:\Python312\python.exe",
+        "C:\Python311\python.exe",
+        "C:\Python310\python.exe",
+        "$env:LOCALAPPDATA\Programs\Python\Python312\python.exe",
+        "$env:LOCALAPPDATA\Programs\Python\Python311\python.exe",
+        "$env:LOCALAPPDATA\Programs\Python\Python310\python.exe"
+    )
+    foreach ($c in $candidates) {
+        if ($c -and (Test-Path -LiteralPath $c)) { return $c }
+    }
+    foreach ($name in @("python", "python3", "py")) {
+        $cmd = Get-Command $name -ErrorAction SilentlyContinue
+        if ($cmd -and $cmd.Source -and ($cmd.Source -notlike "*\WindowsApps\*")) {
+            return $cmd.Source
+        }
+    }
+    $py = Get-Command py -ErrorAction SilentlyContinue
+    if ($py) { return $py.Source }
+    return $null
+}
+
 Import-DotEnv $EnvFile
 
-# Ensure System32/php/git are visible in stripped Windows Terminal tab PATH.
+# Ensure System32/php/git/python are visible in stripped Windows Terminal tab PATH.
 foreach ($dir in @(
     "$env:SystemRoot\System32",
     "C:\xampp\php",
+    "C:\Python312",
+    "C:\Python312\Scripts",
+    "C:\Python311",
+    "C:\Python311\Scripts",
+    "$env:LOCALAPPDATA\Programs\Python\Python312",
+    "$env:LOCALAPPDATA\Programs\Python\Python312\Scripts",
     "$env:ProgramFiles\Git\cmd",
     "$env:ProgramFiles\Git\bin",
     "$env:LOCALAPPDATA\Programs\Git\cmd",
@@ -102,10 +133,20 @@ foreach ($dir in @(
     }
 }
 
-# Occupancy ingest must hit local Laravel. APP_URL is often a public ngrok host
-# that is offline (ERR_NGROK_3200) and makes Live Cameras look like they are reconnecting.
-if (-not $env:AI_LARAVEL_API_BASE -or $env:AI_LARAVEL_API_BASE -match 'ngrok') {
-    # Hit Laravel directly (:8001). :8000 is the LAN front/proxy and is slower.
+$PythonExe = Resolve-PythonExe
+if (-not $PythonExe) {
+    Write-Host "Python not found. Install Python 3.12+ or add it to PATH." -ForegroundColor Red
+    Write-Host "  Expected: C:\Python312\python.exe" -ForegroundColor DarkYellow
+    exit 1
+}
+
+# Occupancy ingest must hit local Laravel. APP_URL / AI_LARAVEL_API_BASE are often
+# :8000 (LAN front) or a public ngrok host — use :8001 directly for speed/reliability.
+if (
+    -not $env:AI_LARAVEL_API_BASE -or
+    $env:AI_LARAVEL_API_BASE -match 'ngrok' -or
+    $env:AI_LARAVEL_API_BASE -match ':8000/?$'
+) {
     $env:AI_LARAVEL_API_BASE = "http://127.0.0.1:8001"
 }
 
@@ -214,14 +255,14 @@ $model = Join-Path $AiDir "models\$modelName.pt"
 if (-not (Test-Path $model)) {
     Write-Host ("Downloading YOLO model ({0})..." -f $modelName) -ForegroundColor Yellow
     Set-Location $AiDir
-    python download_model.py --model $modelName
+    & $PythonExe download_model.py --model $modelName
 }
 
 $plateModel = Join-Path $AiDir "models\plate.pt"
 if ($env:AI_PARKING_OCR_ENABLED -eq "1" -and -not (Test-Path $plateModel)) {
     Write-Host "Downloading plate YOLO model (OCR enabled, plate.pt missing)..." -ForegroundColor Yellow
     Set-Location $AiDir
-    python download_plate_model.py
+    & $PythonExe download_plate_model.py
 }
 
 $streamPort = if ($env:AI_STREAM_PORT) { [int]$env:AI_STREAM_PORT } else { 8090 }
@@ -232,6 +273,7 @@ Write-Host ("  Website:  " + $laravelUrl) -ForegroundColor Yellow
 Write-Host ("  Database: MongoDB capstone") -ForegroundColor Yellow
 Write-Host ("  AI stream: http://127.0.0.1:" + $streamPort + "/stream.mjpg") -ForegroundColor Yellow
 Write-Host ("  Model:    " + $modelName) -ForegroundColor DarkGray
+Write-Host ("  Python:   " + $PythonExe) -ForegroundColor DarkGray
 Write-Host ""
 Write-Host "  Admin: admin@my.cspc.edu.ph / admin123" -ForegroundColor Cyan
 Write-Host "  Guard: guard@my.cspc.edu.ph / password123" -ForegroundColor Cyan
@@ -240,4 +282,4 @@ Write-Host "Keep ALL PowerShell windows open while using the site." -ForegroundC
 Write-Host ""
 
 Set-Location $AiDir
-python -u ai_parking_service.py
+& $PythonExe -u ai_parking_service.py

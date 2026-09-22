@@ -47,6 +47,8 @@ function Initialize-DevPath {
         "$env:ProgramFiles\PHP",
         "${env:ProgramFiles(x86)}\PHP",
         "C:\xampp\php",
+        "C:\Python312",
+        "C:\Python312\Scripts",
         "$env:ProgramFiles\Git\cmd",
         "$env:ProgramFiles\Git\bin",
         "$env:LOCALAPPDATA\Programs\Git\cmd",
