@@ -67,23 +67,6 @@ function Quote-Arg([string]$Value) {
     return $Value
 }
 
-function Resolve-PhpExe {
-    $php = Get-Command php -ErrorAction SilentlyContinue
-    if ($php -and $php.Source) { return $php.Source }
-    foreach ($candidate in @("C:\xampp\php\php.exe", "$env:ProgramFiles\PHP\php.exe")) {
-        if (Test-Path -LiteralPath $candidate) { return $candidate }
-    }
-    return "php"
-}
-
-function Resolve-PowerShellExe {
-    $psExe = Join-Path $env:SystemRoot "System32\WindowsPowerShell\v1.0\powershell.exe"
-    if (Test-Path -LiteralPath $psExe) { return $psExe }
-    $cmd = Get-Command powershell -ErrorAction SilentlyContinue
-    if ($cmd) { return $cmd.Source }
-    return "powershell.exe"
-}
-
 function Find-WindowsTerminal {
     $cmd = Get-Command wt -ErrorAction SilentlyContinue
     if ($cmd -and $cmd.Source) { return $cmd.Source }
@@ -157,6 +140,17 @@ function Wait-ServiceGap([int]$Milliseconds) {
     }
 }
 
+function Quote-Win32Arg([string]$Value) {
+    if ($null -eq $Value) { return '""' }
+    # CreateProcess needs quotes around args with whitespace; escape embedded quotes.
+    if ($Value -notmatch '[ \t\n\v"]') {
+        return $Value
+    }
+    $escaped = $Value -replace '(\\*)"', '$1$1\"'
+    $escaped = $escaped -replace '(\\+)$', '$1$1'
+    return '"' + $escaped + '"'
+}
+
 function Start-QueuedWindowsTerminalTabs {
     if (-not $script:UseWindowsTerminal -or $script:PendingTabs.Count -eq 0) {
         return
@@ -170,40 +164,52 @@ function Start-QueuedWindowsTerminalTabs {
         if ($psCmd) { $psExe = $psCmd.Source }
     }
 
-    $wtArgs = New-Object System.Collections.Generic.List[string]
-
+    # Open tabs one-by-one into the same WT window. More reliable than a single
+    # "new-tab ; new-tab" command line when titles/paths contain spaces.
     for ($i = 0; $i -lt $script:PendingTabs.Count; $i++) {
         $tab = $script:PendingTabs[$i]
-        if ($i -gt 0) {
-            # Windows Terminal command separator (must be its own argv entry).
-            $wtArgs.Add(';') | Out-Null
+        $tabTitle = [string]$tab.Title
+        # WT tab label: no spaces (Start-Process arg joining breaks on spaces).
+        $wtLabel = ($tabTitle -replace '[^\w\-]+', '-').Trim('-')
+        if ([string]::IsNullOrWhiteSpace($wtLabel)) { $wtLabel = "Service$i" }
+
+        $parts = New-Object System.Collections.Generic.List[string]
+        if ($i -eq 0) {
+            $parts.Add('new-tab') | Out-Null
+        } else {
+            $parts.Add('-w') | Out-Null
+            $parts.Add('last') | Out-Null
+            $parts.Add('new-tab') | Out-Null
+        }
+        $parts.Add('--title') | Out-Null
+        $parts.Add($wtLabel) | Out-Null
+        $parts.Add('-d') | Out-Null
+        $parts.Add($Root) | Out-Null
+        $parts.Add('--') | Out-Null
+        $parts.Add($psExe) | Out-Null
+        $parts.Add('-NoExit') | Out-Null
+        $parts.Add('-NoProfile') | Out-Null
+        $parts.Add('-ExecutionPolicy') | Out-Null
+        $parts.Add('Bypass') | Out-Null
+        $parts.Add('-File') | Out-Null
+        $parts.Add($launcher) | Out-Null
+        $parts.Add('-Title') | Out-Null
+        $parts.Add($tabTitle) | Out-Null
+        $parts.Add('-WorkingDirectory') | Out-Null
+        $parts.Add($Root) | Out-Null
+        foreach ($arg in @($tab.CommandArgs)) {
+            $parts.Add([string]$arg) | Out-Null
         }
 
-        $wtArgs.Add('new-tab') | Out-Null
-        $wtArgs.Add('--title') | Out-Null
-        $wtArgs.Add([string]$tab.Title) | Out-Null
-        $wtArgs.Add('-d') | Out-Null
-        $wtArgs.Add($Root) | Out-Null
-        # Everything after -- is the command line (required; otherwise wt.exe
-        # treats -NoExit/-File as its own options and fails with 0x80070002).
-        $wtArgs.Add('--') | Out-Null
-        $wtArgs.Add($psExe) | Out-Null
-        $wtArgs.Add('-NoExit') | Out-Null
-        $wtArgs.Add('-NoProfile') | Out-Null
-        $wtArgs.Add('-ExecutionPolicy') | Out-Null
-        $wtArgs.Add('Bypass') | Out-Null
-        $wtArgs.Add('-File') | Out-Null
-        $wtArgs.Add($launcher) | Out-Null
-        $wtArgs.Add('-Title') | Out-Null
-        $wtArgs.Add([string]$tab.Title) | Out-Null
-        $wtArgs.Add('-WorkingDirectory') | Out-Null
-        $wtArgs.Add($Root) | Out-Null
-        foreach ($arg in @($tab.CommandArgs)) {
-            $wtArgs.Add([string]$arg) | Out-Null
+        $argLine = ($parts | ForEach-Object { Quote-Win32Arg $_ }) -join ' '
+        Start-Process -FilePath $script:WindowsTerminalExe -WorkingDirectory $Root -ArgumentList $argLine | Out-Null
+        if ($i -eq 0) {
+            Start-Sleep -Milliseconds 700
+        } else {
+            Start-Sleep -Milliseconds 250
         }
     }
 
-    Start-Process -FilePath $script:WindowsTerminalExe -WorkingDirectory $Root -ArgumentList $wtArgs.ToArray() | Out-Null
     $script:PendingTabs.Clear()
 }
 
@@ -363,11 +369,9 @@ if (Test-Path $arduinoSync) {
 
 # Laravel stays on loopback :8001. LAN front on :8000 answers ESP32 heartbeats
 # instantly so a slow Mongo/page load cannot starve the gates (HTTP -11).
-$phpExe = Resolve-PhpExe
-$psExeForTabs = Resolve-PowerShellExe
-Start-ProjectWindow "Laravel" @($phpExe, "artisan", "serve", "--host=127.0.0.1", "--port=8001", "--no-reload")
+Start-ProjectWindow "Laravel" @("php", "artisan", "serve", "--host=127.0.0.1", "--port=8001", "--no-reload")
 Wait-ServiceGap 600
-Start-ProjectWindow "LAN Front" @($phpExe, "-S", "0.0.0.0:8000", "bootstrap/lan_front_router.php")
+Start-ProjectWindow "LAN Front (ESP32)" @("php", "-S", "0.0.0.0:8000", "bootstrap/lan_front_router.php")
 Wait-ServiceGap 500
 
 $ngrokQueued = $false
@@ -382,11 +386,11 @@ if (-not $SkipNgrok) {
     }
 }
 
-Start-ProjectWindow "Reverb" @($phpExe, "artisan", "reverb:start")
+Start-ProjectWindow "Reverb" @("php", "artisan", "reverb:start")
 Wait-ServiceGap 400
 
 # Runs sync:run every 2 minutes (local <-> Atlas) when SYNC_ENABLED=true.
-Start-ProjectWindow "Scheduler" @($phpExe, "artisan", "schedule:work")
+Start-ProjectWindow "Scheduler" @("php", "artisan", "schedule:work")
 Wait-ServiceGap 400
 
 if (-not $SkipVite) {
@@ -396,10 +400,8 @@ if (-not $SkipVite) {
 if ($startAi) {
     Wait-ServiceGap 400
     $aiScript = Join-Path $PSScriptRoot "start-ai-parking.ps1"
-    # Full powershell.exe path + -SkipWebStack: wait for Laravel/LAN tabs, never spawn extras.
-    Start-ProjectWindow "AI Parking" @(
-        $psExeForTabs,
-        "-NoProfile",
+    Start-ProjectWindow "YOLOv9 AI Parking" @(
+        "powershell",
         "-ExecutionPolicy", "Bypass",
         "-File", $aiScript,
         "-SkipWebStack"
@@ -409,9 +411,8 @@ if ($startAi) {
 if ($WithGitSync) {
     Wait-ServiceGap 400
     $gitSync = Join-Path $PSScriptRoot "auto-sync-github.ps1"
-    Start-ProjectWindow "GitHub Sync" @(
-        $psExeForTabs,
-        "-NoProfile",
+    Start-ProjectWindow "GitHub Auto Sync" @(
+        "powershell",
         "-ExecutionPolicy", "Bypass",
         "-File", $gitSync
     )
