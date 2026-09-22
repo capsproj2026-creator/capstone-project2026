@@ -47,7 +47,7 @@ class ParkingArea extends MongoModel
      */
     public function getAllowedRoles(): array
     {
-        if ($this->allowed_roles !== null) {
+        if (is_array($this->allowed_roles) && $this->allowed_roles !== []) {
             return array_values(array_unique($this->allowed_roles));
         }
 
