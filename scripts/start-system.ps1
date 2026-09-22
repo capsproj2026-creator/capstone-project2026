@@ -400,8 +400,9 @@ if (-not $SkipVite) {
 if ($startAi) {
     Wait-ServiceGap 400
     $aiScript = Join-Path $PSScriptRoot "start-ai-parking.ps1"
+    $psExe = Join-Path $env:SystemRoot "System32\WindowsPowerShell\v1.0\powershell.exe"
     Start-ProjectWindow "YOLOv9 AI Parking" @(
-        "powershell",
+        $psExe,
         "-ExecutionPolicy", "Bypass",
         "-File", $aiScript,
         "-SkipWebStack"
@@ -411,8 +412,9 @@ if ($startAi) {
 if ($WithGitSync) {
     Wait-ServiceGap 400
     $gitSync = Join-Path $PSScriptRoot "auto-sync-github.ps1"
+    $psExe = Join-Path $env:SystemRoot "System32\WindowsPowerShell\v1.0\powershell.exe"
     Start-ProjectWindow "GitHub Auto Sync" @(
-        "powershell",
+        $psExe,
         "-ExecutionPolicy", "Bypass",
         "-File", $gitSync
     )
