@@ -31,6 +31,9 @@ if (-not $CommandArgs -or $CommandArgs.Count -eq 0) {
 }
 
 $extraPaths = @(
+    # WT tabs sometimes inherit a stripped PATH without System32 (netstat, etc.).
+    "$env:SystemRoot\System32",
+    "$env:SystemRoot\System32\WindowsPowerShell\v1.0",
     "$env:ProgramFiles\nodejs",
     "${env:ProgramFiles(x86)}\nodejs",
     "$env:LOCALAPPDATA\Programs\nodejs",

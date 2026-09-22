@@ -28,6 +28,11 @@ if (-not (Test-Path $EnvFile)) {
 }
 
 function Import-DotEnv([string]$Path) {
+    # Never clobber process PATH / system vars from .env keys.
+    $blocked = @{
+        'PATH' = $true; 'PATHEXT' = $true; 'SYSTEMROOT' = $true
+        'WINDIR' = $true; 'COMSPEC' = $true; 'PSMODULEPATH' = $true
+    }
     Get-Content $Path | ForEach-Object {
         $line = $_.Trim()
         if (-not $line -or $line.StartsWith("#") -or -not $line.Contains("=")) { return }
@@ -35,8 +40,17 @@ function Import-DotEnv([string]$Path) {
         $key = $parts[0].Trim()
         $value = $parts[1].Trim().Trim('"').Trim("'")
         if (-not $key) { return }
+        if ($blocked.ContainsKey($key.ToUpperInvariant())) { return }
         [Environment]::SetEnvironmentVariable($key, $value, "Process")
     }
+}
+
+function Get-NetstatExe {
+    $candidate = Join-Path $env:SystemRoot "System32\netstat.exe"
+    if (Test-Path -LiteralPath $candidate) { return $candidate }
+    $cmd = Get-Command netstat -ErrorAction SilentlyContinue
+    if ($cmd) { return $cmd.Source }
+    return $null
 }
 
 function Test-HttpOk([string]$Url) {
@@ -50,7 +64,9 @@ function Test-HttpOk([string]$Url) {
 }
 
 function Stop-PortListeners([int]$Port) {
-    $lines = netstat -ano | Select-String ":$Port\s+.*LISTENING"
+    $netstat = Get-NetstatExe
+    if (-not $netstat) { return }
+    $lines = & $netstat -ano 2>$null | Select-String ":$Port\s+.*LISTENING"
     $procIds = @()
     foreach ($line in $lines) {
         $procId = ($line.ToString() -split '\s+')[-1]
@@ -64,14 +80,17 @@ function Stop-PortListeners([int]$Port) {
 }
 
 function Test-PortListening([int]$Port) {
-    $hit = netstat -ano | Select-String (":{0}\s+.*LISTENING" -f $Port)
+    $netstat = Get-NetstatExe
+    if (-not $netstat) { return $false }
+    $hit = & $netstat -ano 2>$null | Select-String (":{0}\s+.*LISTENING" -f $Port)
     return [bool]$hit
 }
 
 Import-DotEnv $EnvFile
 
-# Ensure php/git are visible in stripped Windows Terminal tab PATH.
+# Ensure System32/php/git are visible in stripped Windows Terminal tab PATH.
 foreach ($dir in @(
+    "$env:SystemRoot\System32",
     "C:\xampp\php",
     "$env:ProgramFiles\Git\cmd",
     "$env:ProgramFiles\Git\bin",
