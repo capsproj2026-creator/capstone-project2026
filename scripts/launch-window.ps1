@@ -4,11 +4,12 @@ param(
     [string]$Title,
 
     [Parameter(Mandatory = $true)]
-    [string]$WorkingDirectory,
-
-    [Parameter(ValueFromRemainingArguments = $true)]
-    [string[]]$CommandArgs
+    [string]$WorkingDirectory
 )
+
+# Remaining argv after -Title/-WorkingDirectory (ValueFromRemainingArguments is
+# unreliable with powershell.exe -File and breaks nested "powershell" launches).
+$CommandArgs = @($args)
 
 $ErrorActionPreference = "Continue"
 
