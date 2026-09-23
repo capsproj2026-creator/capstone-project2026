@@ -48,7 +48,8 @@ class AiParkingOccupancyService
         ?array $slots = null,
         array $events = [],
         string $mode = 'count',
-        bool $detectionsProvided = false
+        bool $detectionsProvided = false,
+        bool $sceneMoving = false
     ): array {
         $area = ParkingArea::query()->findOrFail($areaId);
 
@@ -86,6 +87,7 @@ class AiParkingOccupancyService
                 $snapshot['slot_signature'] = $slotSignature;
             }
             $snapshot = array_merge($snapshot, $this->summarizeMotion($detections));
+            $snapshot['scene_moving'] = $sceneMoving || ((int) ($snapshot['moving_count'] ?? 0) > 0);
 
             $ttl = now()->addMinutes(30);
             Cache::put($cacheKey, $snapshot, $ttl);
@@ -168,6 +170,7 @@ class AiParkingOccupancyService
             'updated_at_label' => now()->format('h:i:s A'),
         ];
         $snapshot = array_merge($snapshot, $this->summarizeMotion($detections));
+        $snapshot['scene_moving'] = $sceneMoving || ((int) ($snapshot['moving_count'] ?? 0) > 0);
 
         $ttl = now()->addMinutes(30);
         Cache::put($this->cacheKeyForCamera($cameraId), $snapshot, $ttl);

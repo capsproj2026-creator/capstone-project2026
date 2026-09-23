@@ -693,6 +693,16 @@ class AsyncPlateQueue:
             return
         # Keep a private copy; the infer loop reuses the live frame buffer.
         crop = crop.copy()
+        crop_h, crop_w = crop.shape[:2]
+        if crop_w < OCR_MIN_PLATE_CROP_W or crop_h < OCR_MIN_PLATE_CROP_H:
+            with self._lock:
+                self._inflight.discard(key)
+            if mem is not None:
+                print(
+                    f"[OCR] tracking_id={track_id} skipped reason=CROP_TOO_SMALL "
+                    f"crop={crop_w}x{crop_h} attempts={mem.ocr_attempts}/{OCR_MAX_ATTEMPTS}"
+                )
+            return
         xyxy_i = tuple(int(v) for v in xyxy)
 
         if mem is not None:

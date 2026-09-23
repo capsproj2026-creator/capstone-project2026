@@ -52,6 +52,8 @@ class AiParkingController extends Controller
             'detections.*.registered' => ['nullable', 'boolean'],
             'detections.*.recognition_session_id' => ['nullable', 'integer'],
             'detections.*.ocr_attempts' => ['nullable', 'integer', 'min:0'],
+            'detections.*.ocr_max_attempts' => ['nullable', 'integer', 'min:1', 'max:30'],
+            'scene_moving' => ['nullable', 'boolean'],
             'detections.*.plate_label' => ['nullable', 'string', 'max:64'],
             'slots' => ['nullable', 'array', 'max:100'],
             'slots.*.slot_number' => ['required_with:slots', 'string', 'max:32'],
@@ -90,7 +92,8 @@ class AiParkingController extends Controller
             $validated['slots'] ?? null,
             $validated['events'] ?? [],
             (string) ($validated['mode'] ?? 'count'),
-            $request->exists('detections')
+            $request->exists('detections'),
+            $request->boolean('scene_moving')
         );
 
         return response()->json([

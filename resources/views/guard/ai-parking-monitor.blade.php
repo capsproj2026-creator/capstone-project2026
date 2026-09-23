@@ -1449,11 +1449,15 @@
             };
 
             const allDets = [];
+            let sceneMoving = !!(ai && (ai.scene_moving || Number(ai.moving_count || 0) > 0));
             Object.entries(cams).forEach(([camId, snap]) => {
                 const health = findByCamera(healthMap, camId) || {};
-                if (!(health.connected || health.stream_reachable)) return;
+                const online = !!(health.connected || health.stream_reachable);
+                const snapDets = Array.isArray(snap?.detections) ? snap.detections : [];
+                if (!online && snapDets.length === 0) return;
                 if (snap?.camera_id && String(snap.camera_id).toLowerCase() !== String(camId).toLowerCase()) return;
-                (snap.detections || []).forEach((det) => {
+                if (snap?.scene_moving || Number(snap?.moving_count || 0) > 0) sceneMoving = true;
+                snapDets.forEach((det) => {
                     if (!isVisibleDet(det)) return;
                     allDets.push({ ...det, _camera: camId });
                 });
@@ -1465,7 +1469,7 @@
                 });
             }
 
-            if (!ai && allDets.length === 0) return;
+            window.__aiSceneMoving = sceneMoving;
 
             if (ai && updatedAt) {
                 updatedAt.textContent = ai.updated_at_label || data.updated_at;
@@ -1570,7 +1574,13 @@
 
     refresh();
     window.__aiParkingRefresh = refresh;
-    window.setInterval(refresh, 2000);
+    const scheduleRefresh = () => {
+        const wait = window.__aiSceneMoving ? 400 : 1500;
+        window.setTimeout(() => {
+            refresh().finally(scheduleRefresh);
+        }, wait);
+    };
+    scheduleRefresh();
     document.addEventListener('visibilitychange', () => { if (!document.hidden) refresh(); });
 
     const prependAiEvent = (evt) => {

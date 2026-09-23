@@ -1272,7 +1272,7 @@ def filter_parking_detections(
     return out
 
 
-def post_occupancy_async(camera_id: str, area_id: int, vehicle_count, detections, slots, events):
+def post_occupancy_async(camera_id: str, area_id: int, vehicle_count, detections, slots, events, scene_moving=None):
     payload = {
         "camera_id": camera_id,
         "area_id": area_id,
@@ -1282,6 +1282,8 @@ def post_occupancy_async(camera_id: str, area_id: int, vehicle_count, detections
         "events": list(events),
         "mode": "slots" if slots else "count",
     }
+    if scene_moving is not None:
+        payload["scene_moving"] = bool(scene_moving)
     thread = threading.Thread(
         target=post_json,
         args=("/api/ai-parking/occupancy", payload),
@@ -1710,6 +1712,7 @@ class CameraWorker:
         self._last_yolo_at = 0.0
         self._yolo_skip_log_at = 0.0
         self._last_occ_sig: tuple[str, ...] | None = None
+        self._scene_moving = False
         zones_path = Path(config.zones_file)
         if not zones_path.is_file():
             zones_path = BASE_DIR / "zones.json"
@@ -2232,10 +2235,21 @@ class CameraWorker:
             return True
         return False
 
-    def _occupancy_due(self, occupied_slots, now: float, last_post: float) -> bool:
-        """Post at once when the occupied bays change, otherwise on a short heartbeat."""
+    def _note_scene_motion(self, moving: bool) -> bool:
+        """Return True only on the frame motion starts or stops."""
+        changed = bool(moving) != bool(self._scene_moving)
+        self._scene_moving = bool(moving)
+        if changed:
+            print(
+                f"[{self.config.camera_id}] scene motion "
+                f"{'started' if self._scene_moving else 'stopped'}"
+            )
+        return changed
+
+    def _occupancy_due(self, occupied_slots, now: float, last_post: float, force: bool = False) -> bool:
+        """Post at once when the occupied bays change or motion starts/stops."""
         sig = tuple(sorted(str(slot) for slot in (occupied_slots or [])))
-        if sig != self._last_occ_sig:
+        if force or sig != self._last_occ_sig:
             self._last_occ_sig = sig
             return True
         return (now - last_post) >= POST_EVERY_SEC
@@ -2266,7 +2280,7 @@ class CameraWorker:
                 cls_id=getattr(mem, "cls_id", None),
             )
 
-    def _publish_held_scene(self, frame, now: float, last_post: float) -> float:
+    def _publish_held_scene(self, frame, now: float, last_post: float, force: bool = False) -> float:
         """Reuse last YOLO boxes while the scene is still."""
         annotated_boxes = list(self._held_boxes)
         vehicles = list(self._held_vehicles)
@@ -2301,7 +2315,7 @@ class CameraWorker:
             "source_shape": frame.shape,
         })
         self._publish_plate_crops()
-        if self._occupancy_due(occupied_slots, now, last_post):
+        if self._occupancy_due(occupied_slots, now, last_post, force=force):
             refresh_plates_from_tracks(detections, vehicles, annotated_boxes, self.intelligence)
             post_events = list(events)
             for evt in post_events:
@@ -2342,6 +2356,7 @@ class CameraWorker:
                 post_dets,
                 slot_statuses,
                 post_events,
+                scene_moving=self._scene_moving,
             )
             return now
         return last_post
@@ -2386,6 +2401,8 @@ class CameraWorker:
 
             last_infer = now
             motion_score = self._scene_motion_score(frame)
+            moving_now = motion_score >= SCENE_MOTION_THRESH
+            motion_edge = self._note_scene_motion(moving_now)
             if YOLO_MOTION_ONLY and not self._should_run_yolo(motion_score, now):
                 if self._held_boxes:
                     if (now - self._yolo_skip_log_at) > 5.0:
@@ -2394,7 +2411,7 @@ class CameraWorker:
                             f"[{self.config.camera_id}] YOLO paused "
                             f"(no scene motion score={motion_score:.4f}; holding last boxes)"
                         )
-                    last_post = self._publish_held_scene(frame, now, last_post)
+                    last_post = self._publish_held_scene(frame, now, last_post, force=motion_edge)
                     continue
                 # No held boxes yet — fall through to a probe YOLO run.
 
@@ -2541,7 +2558,7 @@ class CameraWorker:
             self._publish_plate_crops()
             last_infer = time.time()
 
-            if self._occupancy_due(occupied_slots, now, last_post):
+            if self._occupancy_due(occupied_slots, now, last_post, force=motion_edge):
                 refresh_plates_from_tracks(
                     detections, vehicles, annotated_boxes, self.intelligence
                 )
@@ -2621,6 +2638,7 @@ class CameraWorker:
                     post_dets,
                     slot_statuses,
                     post_events,
+                    scene_moving=self._scene_moving,
                 )
                 last_post = now
 
