@@ -89,7 +89,9 @@ def main() -> int:
                 for k in order
                 if (BASE / lots[k]["zones_file"]).is_file()
             ) else ""
-            print(f"  {key:12} area_id={lot['area_id']:2}  cam={int(lot.get('camera') or 1)}  {lot['name'][:36]:36}  [{status}]{marker}")
+            cam_n = int(lot["camera"]) if lot.get("camera") else 0
+            cam_label = str(cam_n) if cam_n else "off"
+            print(f"  {key:12} area_id={lot['area_id']:2}  cam={cam_label:3}  {lot['name'][:36]:36}  [{status}]{marker}")
         if not args.lot:
             print("\nRun: python select_lot.py acad1")
         return 0
@@ -103,17 +105,21 @@ def main() -> int:
     src = BASE / lot["zones_file"]
     ensure_zones_file(src, lot)
     shutil.copy2(src, ACTIVE_ZONES)
-    cam_n = int(lot.get("camera") or 1)
+    cam_n = int(lot["camera"]) if lot.get("camera") else 0
     print(f"Active lot: {lot['name']} (area_id={lot['area_id']})")
     print(f"Copied {src.name} -> zones.json")
     print()
-    print("Update .env:")
-    if cam_n == 1:
-        print(f"  AI_PARKING_AREA_ID={lot['area_id']}")
-    print(f"  AI_CAMERA_{cam_n}_AREA_ID={lot['area_id']}")
-    print(f'  AI_CAMERA_{cam_n}_NAME="{lot["name"]}"')
-    print(f'  AI_CAMERA_{cam_n}_LOCATION="{lot["env_location"]}"')
-    print(f"  AI_CAMERA_{cam_n}_ZONES={lot['zones_file']}")
+    if cam_n == 0:
+        print("This lot is not connected to a camera.")
+        print(f"Polygons remain in {lot['zones_file']}.")
+    else:
+        print("Update .env:")
+        if cam_n == 1:
+            print(f"  AI_PARKING_AREA_ID={lot['area_id']}")
+        print(f"  AI_CAMERA_{cam_n}_AREA_ID={lot['area_id']}")
+        print(f'  AI_CAMERA_{cam_n}_NAME="{lot["name"]}"')
+        print(f'  AI_CAMERA_{cam_n}_LOCATION="{lot["env_location"]}"')
+        print(f"  AI_CAMERA_{cam_n}_ZONES={lot['zones_file']}")
     print()
     print("Calibrate (camera at this lot):")
     snapshot = lot.get("snapshot")

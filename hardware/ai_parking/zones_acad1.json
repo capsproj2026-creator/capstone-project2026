@@ -1,10 +1,10 @@
 {
   "version": 1,
   "calibrated": true,
-  "image_width": 704,
-  "image_height": 480,
+  "image_width": 2560,
+  "image_height": 1440,
   "snapshot": "snapshot_acad1.jpg",
-  "notes": "ACAD 1 calibrated on the full snapshot_acad1.jpg frame (no crop). AC-1 is nearest the ENTRANCE sign.",
+  "notes": "ACAD 1 \u2014 calibrate EACH bay (AC-1\u2026AC-10) on LIVE MAIN RTSP via scripts/calibrate-cam1.ps1 -Fresh. Do NOT copy screenshot pixels. Current AC-1/AC-2 points are legacy 704x480 preview-era coords \u2014 redraw on live MAIN frame before production use. AC-1 nearest ENTRANCE sign.",
   "zones": [
     {
       "id": "AC-1",
@@ -12,20 +12,20 @@
       "label": "AC-1",
       "points": [
         [
-          511,
-          334
+          732,
+          1110
         ],
         [
-          510,
-          393
+          404,
+          1332
         ],
         [
-          571,
-          386
+          652,
+          1350
         ],
         [
-          559,
-          327
+          914,
+          1116
         ]
       ]
     },
@@ -35,24 +35,20 @@
       "label": "AC-2",
       "points": [
         [
-          568,
-          325
+          956,
+          1106
         ],
         [
-          579,
-          381
+          694,
+          1350
         ],
         [
-          630,
-          375
+          982,
+          1342
         ],
         [
-          611,
-          329
-        ],
-        [
-          601,
-          318
+          1160,
+          1094
         ]
       ]
     },
@@ -60,19 +56,74 @@
       "id": "AC-3",
       "type": "slot",
       "label": "AC-3",
-      "points": []
+      "points": [
+        [
+          1200,
+          1100
+        ],
+        [
+          1018,
+          1352
+        ],
+        [
+          1310,
+          1332
+        ],
+        [
+          1416,
+          1076
+        ]
+      ]
     },
     {
       "id": "AC-4",
       "type": "slot",
       "label": "AC-4",
-      "points": []
+      "points": [
+        [
+          1454,
+          1078
+        ],
+        [
+          1368,
+          1314
+        ],
+        [
+          1634,
+          1296
+        ],
+        [
+          1654,
+          1054
+        ]
+      ]
     },
     {
       "id": "AC-5",
       "type": "slot",
       "label": "AC-5",
-      "points": []
+      "points": [
+        [
+          1696,
+          1046
+        ],
+        [
+          1680,
+          1282
+        ],
+        [
+          1940,
+          1244
+        ],
+        [
+          1890,
+          1054
+        ],
+        [
+          1860,
+          1022
+        ]
+      ]
     },
     {
       "id": "AC-6",
@@ -116,5 +167,7 @@
       "label": "Drive Lane / Aisle",
       "points": []
     }
-  ]
+  ],
+  "calibration_source": "live_main_rtsp",
+  "camera_id": "CAM-1"
 }

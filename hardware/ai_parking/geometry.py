@@ -187,11 +187,9 @@ def assign_zones_for_box(
     frame_shape: tuple[int, int],
     iou_threshold: float = 0.12,
 ) -> list[dict[str, Any]]:
-    """Return zones the vehicle belongs to.
+    """Return zones the vehicle overlaps (ground point or IoU).
 
-    Membership rule (in order):
-    1. Bottom-center (ground point) of the bbox is inside the polygon, OR
-    2. Box↔polygon IoU is above ``iou_threshold`` (enough overlap, not a grazing corner).
+    For occupancy use :func:`primary_slot_for_box` (ground point only).
     """
     gx, gy = box_ground_point(xyxy)
     matched = []
@@ -202,8 +200,75 @@ def assign_zones_for_box(
         by_ground = point_in_polygon(gx, gy, pts)
         iou = box_iou_with_polygon(xyxy, pts, frame_shape) if not by_ground else 1.0
         if by_ground or iou >= iou_threshold:
-            matched.append({**z, "_iou": round(float(iou if not by_ground else max(iou, 0.5)), 3)})
+            matched.append({
+                **z,
+                "_iou": round(float(iou if not by_ground else max(iou, 0.5)), 3),
+                "_by_ground": bool(by_ground),
+            })
     return matched
+
+
+def _zone_bbox_area(zone: dict[str, Any]) -> float:
+    pts = zone.get("points") or []
+    xs = [float(p[0]) for p in pts]
+    ys = [float(p[1]) for p in pts]
+    if not xs or not ys:
+        return 1.0
+    return max(1.0, (max(xs) - min(xs)) * (max(ys) - min(ys)))
+
+
+def _bottom_sample_points(xyxy: tuple[int, int, int, int]) -> list[tuple[float, float]]:
+    """Points along the tire line, used when the exact bottom-center misses the bay."""
+    x1, _y1, x2, y2 = xyxy
+    width = float(x2) - float(x1)
+    height = float(y2) - float(_y1)
+    bottom = float(y2)
+    points = [(float(x1) + width * frac, bottom) for frac in (0.15, 0.30, 0.50, 0.70, 0.85)]
+    points.append((float(x1) + width * 0.5, bottom - max(1.0, height * 0.12)))
+    return points
+
+
+def primary_slot_for_box(
+    xyxy: tuple[int, int, int, int],
+    zones: list[dict[str, Any]],
+) -> dict[str, Any] | None:
+    """One slot per vehicle.
+
+    Bottom-center inside a polygon wins (tightest polygon if several overlap).
+    If that point falls on a line, the bay that contains the most of the tire
+    line wins, and only when it beats every other bay. A box sitting in the
+    gap between bays stays unmatched.
+    """
+    gx, gy = box_ground_point(xyxy)
+    hits: list[tuple[float, dict[str, Any]]] = []
+    for z in zones:
+        pts = z.get("points") or []
+        if len(pts) < 3:
+            continue
+        if not point_in_polygon(gx, gy, pts):
+            continue
+        hits.append((_zone_bbox_area(z), {**z, "_by_ground": True, "_iou": 1.0}))
+    if hits:
+        hits.sort(key=lambda item: item[0])
+        return hits[0][1]
+
+    votes: dict[str, tuple[int, float, dict[str, Any]]] = {}
+    for px, py in _bottom_sample_points(xyxy):
+        for z in zones:
+            pts = z.get("points") or []
+            if len(pts) < 3 or not point_in_polygon(px, py, pts):
+                continue
+            sid = str(z.get("id"))
+            count, _area, _zone = votes.get(sid, (0, 0.0, z))
+            votes[sid] = (count + 1, _zone_bbox_area(z), z)
+    if not votes:
+        return None
+    ranked = sorted(votes.values(), key=lambda item: (-item[0], item[1]))
+    best_count, _best_area, best = ranked[0]
+    second_count = ranked[1][0] if len(ranked) > 1 else 0
+    if best_count >= 2 and best_count > second_count:
+        return {**best, "_by_ground": False, "_iou": 0.5}
+    return None
 
 
 def draw_zones(frame, zones_data: dict[str, Any], occupied_slot_ids: set[str] | None = None):
@@ -221,6 +286,8 @@ def draw_zones(frame, zones_data: dict[str, Any], occupied_slot_ids: set[str] | 
         cv2.addWeighted(overlay, 0.18, annotated, 0.82, 0, annotated)
         cv2.polylines(annotated, [pts], True, color, 2)
         label = z.get("label") or zid
+        if ztype == "slot" and zid in occupied_slot_ids:
+            label = f"{label} OCC"
         mx, my = int(pts[:, 0].mean()), int(pts[:, 1].mean())
         cv2.putText(
             annotated,

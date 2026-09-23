@@ -8,11 +8,20 @@ from collections import defaultdict
 from dataclasses import dataclass, field
 from typing import Any
 
-from geometry import assign_zones_for_box, has_calibrated_slots, usable_zones_for_frame
+from geometry import (
+    assign_zones_for_box,
+    has_calibrated_slots,
+    primary_slot_for_box,
+    usable_zones_for_frame,
+)
 
 OVERTIME_MINUTES = float(os.getenv("AI_PARKING_OVERTIME_MINUTES", "30"))
 DEBOUNCE_MINUTES = float(os.getenv("AI_PARKING_VIOLATION_DEBOUNCE_MINUTES", "10"))
 IOU_THRESHOLD = float(os.getenv("AI_PARKING_ZONE_IOU", "0.08"))
+# How long a track may miss its slot (jitter / 1-frame loss) before clearing occupancy.
+ZONE_EXIT_GRACE_SEC = float(os.getenv("AI_PARKING_ZONE_EXIT_GRACE_SEC", "1.5"))
+# Keep a bay occupied across a few missed YOLO frames so the monitor does not flicker.
+OCCUPANCY_HOLD_SEC = float(os.getenv("AI_PARKING_OCCUPANCY_HOLD_SEC", "1.2"))
 # Second (and further) slots need at least this IoU to count as straddling / double-park.
 STRADDLE_MIN_IOU = float(os.getenv("AI_PARKING_STRADDLE_MIN_IOU", "0.12"))
 # Keep lost tracker aliases briefly (IoU tracker max age).
@@ -1263,24 +1272,39 @@ class ParkingIntelligence:
 
             matched_slots = []
             matched_rules = []
+            primary_slot = None
             if use_poly:
+                # Occupancy uses ground-point only (one slot). IoU list is for straddle/aisle.
+                primary_slot = primary_slot_for_box(xyxy, slot_zones)
                 matched_slots = assign_zones_for_box(xyxy, slot_zones, frame_shape, IOU_THRESHOLD)
                 matched_rules = assign_zones_for_box(xyxy, rule_zones, frame_shape, IOU_THRESHOLD)
 
-            # --- slot occupancy ---
-            primary_slot = None
-            if matched_slots:
-                matched_slots.sort(key=lambda z: z.get("_iou", 0), reverse=True)
-                primary_slot = matched_slots[0]
-                for ms in matched_slots:
-                    sid = str(ms.get("id"))
-                    occupied.add(sid)
-                    slot_vehicle_counts[sid] += 1
+            # --- slot occupancy (IMMEDIATE; independent of OCR / parked) ---
+            if primary_slot is not None:
+                sid0 = str(primary_slot.get("id"))
+                occupied.add(sid0)
+                slot_vehicle_counts[sid0] += 1
 
             if tid is not None:
                 mem = self.tracks[int(tid)]
                 prev_slot = mem.slot_id
                 sid = str(primary_slot["id"]) if primary_slot else None
+
+                # Exit hysteresis: ignore brief YOLO jitter outside the polygon.
+                if sid is None and prev_slot and ZONE_EXIT_GRACE_SEC > 0:
+                    left_at = float(getattr(mem, "_zone_left_at", 0.0) or 0.0)
+                    if left_at <= 0:
+                        mem._zone_left_at = now  # type: ignore[attr-defined]
+                        left_at = now
+                    if (now - left_at) < ZONE_EXIT_GRACE_SEC:
+                        sid = prev_slot
+                        occupied.add(sid)
+                        slot_vehicle_counts[sid] += 1
+                    else:
+                        mem._zone_left_at = 0.0  # type: ignore[attr-defined]
+                elif sid is not None:
+                    mem._zone_left_at = 0.0  # type: ignore[attr-defined]
+
                 if sid != mem.slot_id:
                     if prev_slot and not sid:
                         print(
@@ -1292,7 +1316,8 @@ class ParkingIntelligence:
                     elif sid and sid != prev_slot:
                         print(
                             f"[{self.camera_id or 'CAM'}][Track {tid}] entered zone: {sid} "
-                            f"vehicle={mem.vehicle_type or '?'}"
+                            f"vehicle={mem.vehicle_type or '?'} "
+                            f"(OCCUPIED immediately; OCR independent)"
                         )
                     mem.slot_id = sid
                     mem.slot_since = now if sid else None
@@ -1417,6 +1442,16 @@ class ParkingIntelligence:
 
         # Soft-prune: keep sessions through grace; do not treat tracker ID as identity.
         self.prune_stale_sessions(seen_tracks, now)
+
+        # A one-frame miss must not flip the bay back to available while the car is still there.
+        if use_poly and OCCUPANCY_HOLD_SEC > 0:
+            for mem in self.tracks.values():
+                sid = str(mem.slot_id or "")
+                if not sid:
+                    continue
+                last = float(mem.last_seen or 0.0)
+                if last > 0 and (now - last) <= OCCUPANCY_HOLD_SEC:
+                    occupied.add(sid)
 
         slot_statuses: list[dict[str, Any]] = []
         if use_poly:

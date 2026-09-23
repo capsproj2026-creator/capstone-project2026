@@ -373,7 +373,7 @@
         }
 
         refresh();
-        window.setInterval(refresh, 5000);
+        window.setInterval(refresh, 2000);
     })();
 </script>
 @endpush

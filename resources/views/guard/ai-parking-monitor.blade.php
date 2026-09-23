@@ -46,13 +46,14 @@
         'subtitle' => 'Live YOLOv9 · cars & motorcycles · parked vehicles · plate scan',
     ])
 
-    <div id="ai-scan-status" class="mb-4 flex items-center gap-2 text-sm text-gray-600" aria-live="polite">
+    <div id="ai-scan-status" class="mb-4 flex flex-wrap items-center gap-3 text-sm text-gray-600" aria-live="polite">
         <span
             id="ai-scan-spinner"
             class="inline-block h-3.5 w-3.5 shrink-0 rounded-full border-2 border-slate-300 border-t-indigo-500 opacity-40"
             aria-hidden="true"
         ></span>
         <span id="ai-scan-label">Monitoring — waiting for vehicle movement</span>
+        <span class="text-xs text-gray-400">CAM-1 Prototype slots (PT-1..PT-5): <code class="rounded bg-gray-100 px-1">scripts\calibrate-cam1.ps1 -Fresh</code></span>
     </div>
 
     @php
@@ -377,6 +378,9 @@
                                     @endif
                                     @if (! empty($det['track_id']))
                                         · #{{ $det['track_id'] }}
+                                    @endif
+                                    @if (! empty($det['slot_id']))
+                                        · <span class="font-semibold text-emerald-700">Parking: {{ $det['slot_id'] }} OCCUPIED</span>
                                     @endif
                                     @if (! empty($det['violation_flag']) || ! empty($det['violation_status']))
                                         · <span class="font-semibold text-amber-700">⚠ {{ $det['violation_status'] ?? 'Wrong Parking' }}</span>
@@ -735,6 +739,7 @@
         if (motion) bits.push(motion);
         bits.push(`Role: ${role}`);
         if (det.class) bits.push(String(det.class).charAt(0).toUpperCase() + String(det.class).slice(1));
+        if (det.slot_id) bits.push(`Parking: ${det.slot_id} OCCUPIED`);
         if (camId) bits.push(camId);
         if (det.violation_flag || det.violation_status) {
             bits.push(`⚠ ${det.violation_status || 'Wrong Parking'}`);
@@ -1565,7 +1570,7 @@
 
     refresh();
     window.__aiParkingRefresh = refresh;
-    window.setInterval(refresh, 2500);
+    window.setInterval(refresh, 2000);
     document.addEventListener('visibilitychange', () => { if (!document.hidden) refresh(); });
 
     const prependAiEvent = (evt) => {

@@ -1,6 +1,15 @@
 {
-  "order": ["acad1", "duran", "auditorium"],
+  "order": ["prototype", "acad1", "duran", "auditorium"],
   "lots": {
+    "prototype": {
+      "area_id": 904,
+      "name": "Prototype",
+      "prefix": "PT",
+      "capacity": 5,
+      "zones_file": "zones_prototype.json",
+      "env_location": "Prototype",
+      "camera": 1
+    },
     "acad1": {
       "area_id": 4,
       "name": "ACAD 1 Building (Front)",
@@ -9,7 +18,7 @@
       "zones_file": "zones_acad1.json",
       "snapshot": "snapshot_acad1.jpg",
       "env_location": "ACAD 1 Building (Front)",
-      "camera": 1
+      "camera": null
     },
     "duran": {
       "area_id": 3,

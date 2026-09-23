@@ -63,24 +63,28 @@ class AiParkingOccupancyService
         $cacheKey = $this->cacheKeyForCamera($cameraId);
         $previous = Cache::get($cacheKey);
         $usedSlots = is_array($slots) && count($slots) > 0;
-        if (
-            is_array($previous)
-            && ! $usedSlots
+        $slotSignature = $usedSlots ? $this->slotOccupancySignature($slots) : null;
+        $slotsUnchanged = $usedSlots
+            && is_array($previous)
+            && ($previous['area_id'] ?? null) === $areaId
+            && ($previous['slot_signature'] ?? null) === $slotSignature
+            && $events === [];
+        $countUnchanged = ! $usedSlots
+            && is_array($previous)
             && $events === []
             && ($previous['reported_vehicle_count'] ?? null) === $vehicleCount
-            && ($previous['area_id'] ?? null) === $areaId
-        ) {
-            $detections = $this->applyPlateCorrections($cameraId, $detections);
-            $detections = $this->enrichWithOwners($detections);
-            $this->persistAutoMatchedPlates($cameraId, $detections);
-            $detections = $this->attachViolationStatus($detections, $this->dayViolationEvents($cameraId));
-
+            && ($previous['area_id'] ?? null) === $areaId;
+        if ($slotsUnchanged || $countUnchanged) {
+            // Keep the site responsive: unchanged bay map must not re-run plate/Mongo work.
             $snapshot = array_merge($previous, [
-                'detections' => $detections,
-                'events' => $this->dayViolationEvents($cameraId),
+                'detections' => $this->stripHeavyBinaryFields($detections, keepThumbs: true),
+                'reported_vehicle_count' => $vehicleCount,
                 'updated_at' => now()->toIso8601String(),
                 'updated_at_label' => now()->format('h:i:s A'),
             ]);
+            if ($slotSignature !== null) {
+                $snapshot['slot_signature'] = $slotSignature;
+            }
             $snapshot = array_merge($snapshot, $this->summarizeMotion($detections));
 
             $ttl = now()->addMinutes(30);
@@ -94,15 +98,10 @@ class AiParkingOccupancyService
         }
 
         if ($usedSlots) {
+            // Calibrated bays are the source of truth. Filling the first N slots
+            // from a raw vehicle count marks the wrong spaces and drifts from the monitor.
             $stats = $this->applySlotStatuses($areaId, $slots);
             $mode = 'slots';
-            $occupiedFromSlots = (int) ($stats['occupied'] ?? 0);
-            // Calibrated zones can miss a parked car (aspect mismatch / partial view).
-            // Prefer YOLO vehicle_count when it is higher than polygon matches.
-            if ($vehicleCount > $occupiedFromSlots) {
-                $stats = $this->applyVehicleCountInternal($areaId, $vehicleCount);
-                $mode = $occupiedFromSlots === 0 ? 'count_fallback' : 'count_boost';
-            }
         } else {
             $stats = $this->applyVehicleCountInternal($areaId, $vehicleCount);
             $mode = 'count';
@@ -161,6 +160,7 @@ class AiParkingOccupancyService
             'available' => $stats['available'],
             'maintenance' => $stats['maintenance'],
             'slots' => $stats['slot_details'],
+            'slot_signature' => $slotSignature,
             'detections' => $detections,
             'events' => $dayEvents,
             'violation_results' => $violationResults,
@@ -179,6 +179,33 @@ class AiParkingOccupancyService
         }
 
         return $snapshot;
+    }
+
+    /**
+     * Stable fingerprint of which bays are occupied so unchanged AI posts skip Mongo writes.
+     *
+     * @param  list<array{slot_number?: string, occupied?: bool}>  $slots
+     */
+    private function slotOccupancySignature(array $slots): string
+    {
+        $parts = [];
+        foreach ($slots as $row) {
+            if (! is_array($row)) {
+                continue;
+            }
+            $num = strtoupper(trim((string) ($row['slot_number'] ?? '')));
+            if ($num === '') {
+                continue;
+            }
+            $parts[$num] = ! empty($row['occupied']) ? '1' : '0';
+        }
+        ksort($parts);
+        $encoded = [];
+        foreach ($parts as $num => $flag) {
+            $encoded[] = $num.'='.$flag;
+        }
+
+        return implode('|', $encoded);
     }
 
     /**

@@ -67,7 +67,7 @@ if os.getenv("AI_PARKING_LONG_RANGE", "0") == "1":
 INFER_MAX_WIDTH = int(os.getenv("AI_PARKING_INFER_MAX_WIDTH", "1280"))
 # Shared YOLO + ByteTrack persist=True breaks multi-cam; default to predict + IoU IDs.
 USE_ULTRALYTICS_TRACK = os.getenv("AI_PARKING_USE_TRACKER", "0") == "1"
-POST_EVERY_SEC = float(os.getenv("AI_PARKING_POST_EVERY_SEC", "2.5"))
+POST_EVERY_SEC = float(os.getenv("AI_PARKING_POST_EVERY_SEC", "0.5"))
 POST_EVIDENCE = os.getenv("AI_PARKING_POST_EVIDENCE", "0") == "1"
 USE_WEBCAM = os.getenv("AI_USE_WEBCAM", "0") == "1"
 TRACKER = os.getenv("AI_PARKING_TRACKER", "bytetrack.yaml")
@@ -1014,11 +1014,35 @@ def _attach_motion(det: dict, motion_state: str | None) -> None:
 
 
 def draw_scene(frame, annotated_boxes, zones_data, occupied_slots, active_events, person_count, vehicle_count, use_poly):
+    from geometry import primary_slot_for_box, usable_zones_for_frame
+
     annotated = frame.copy()
     draw_zones(annotated, zones_data, occupied_slots)
+    slot_zones = [
+        z for z in usable_zones_for_frame(zones_data, frame.shape)
+        if z.get("type") == "slot" and len(z.get("points") or []) >= 3
+    ]
 
     for box in annotated_boxes:
         x1, y1, x2, y2, name, conf, track_id, plate, plate_status, owner_label, motion_state, vehicle_details = _unpack_box(box)
+        # Vehicle reference point (bottom-center) used for slot membership.
+        gx = int(round((x1 + x2) / 2.0))
+        gy = int(y2)
+        cv2.circle(annotated, (gx, gy), 6, (0, 255, 255), -1)
+        cv2.circle(annotated, (gx, gy), 8, (0, 0, 0), 1)
+        hit = primary_slot_for_box((x1, y1, x2, y2), slot_zones) if use_poly else None
+        if hit is not None:
+            sid = str(hit.get("id") or "")
+            cv2.putText(
+                annotated,
+                f"{sid} OCCUPIED",
+                (gx - 40, gy + 18),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.45,
+                (0, 0, 255),
+                2,
+                cv2.LINE_AA,
+            )
         _draw_box_labels(
             annotated,
             x1,
@@ -1039,6 +1063,8 @@ def draw_scene(frame, annotated_boxes, zones_data, occupied_slots, active_events
 
     mode = "slots" if use_poly else "count-fallback"
     summary = f"Vehicles: {vehicle_count} | Mode: {mode}" if VEHICLES_ONLY else f"People: {person_count} | Vehicles: {vehicle_count} | Mode: {mode}"
+    if occupied_slots:
+        summary += f" | Occ: {','.join(sorted(str(s) for s in occupied_slots)[:6])}"
     # Bottom-left so we do not cover the camera OSD date/time (usually top of frame).
     h, w = annotated.shape[:2]
     bar_top = h - 40
@@ -1221,10 +1247,10 @@ def filter_parking_detections(
     *,
     zones_calibrated: bool,
 ) -> list:
-    """Latest Detections / parking workflow: only vehicles in calibrated slots.
+    """Latest Detections: only vehicles inside calibrated slots.
 
-    When zones are calibrated, drop vehicles that are outside every parking polygon
-    (they may still be tracked for overlay, but must not create parking rows).
+    Occupancy is already computed separately. Keep in-zone rows even while OCR
+    is still Scanning… so Parking zone shows immediately.
     """
     if not zones_calibrated:
         return list(detections)
@@ -1242,14 +1268,6 @@ def filter_parking_detections(
         slot = det.get("slot_id") or (getattr(mem, "slot_id", None) if mem else None)
         if not slot:
             continue
-        # Prefer parked; still allow in-zone pending so OCR progress is visible.
-        motion = str(det.get("motion_state") or (getattr(mem, "motion_state", "") if mem else "")).lower()
-        if motion in ("moving", "idle") and not det.get("plate") and det.get("plate_status") not in (
-            "ok", "unreadable", "not_read",
-        ):
-            # Passing through: skip until parked or OCR terminal for this session.
-            if motion == "moving":
-                continue
         out.append(det)
     return out
 
@@ -1691,6 +1709,7 @@ class CameraWorker:
         self._prev_infer_gray = None
         self._last_yolo_at = 0.0
         self._yolo_skip_log_at = 0.0
+        self._last_occ_sig: tuple[str, ...] | None = None
         zones_path = Path(config.zones_file)
         if not zones_path.is_file():
             zones_path = BASE_DIR / "zones.json"
@@ -2213,6 +2232,14 @@ class CameraWorker:
             return True
         return False
 
+    def _occupancy_due(self, occupied_slots, now: float, last_post: float) -> bool:
+        """Post at once when the occupied bays change, otherwise on a short heartbeat."""
+        sig = tuple(sorted(str(slot) for slot in (occupied_slots or [])))
+        if sig != self._last_occ_sig:
+            self._last_occ_sig = sig
+            return True
+        return (now - last_post) >= POST_EVERY_SEC
+
     def _continue_ocr_on_held(self, frame, now: float) -> None:
         """When YOLO is paused, keep draining OCR attempts on known tracks."""
         if self.plate_queue is None:
@@ -2274,7 +2301,7 @@ class CameraWorker:
             "source_shape": frame.shape,
         })
         self._publish_plate_crops()
-        if now - last_post >= POST_EVERY_SEC:
+        if self._occupancy_due(occupied_slots, now, last_post):
             refresh_plates_from_tracks(detections, vehicles, annotated_boxes, self.intelligence)
             post_events = list(events)
             for evt in post_events:
@@ -2453,6 +2480,12 @@ class CameraWorker:
                 self._held_detections = list(detections)
                 self._held_counts = (person_count, vehicle_count)
                 self._held_until = now + BOX_HOLD_SEC
+            elif now < self._held_until and self._held_boxes:
+                # One empty YOLO frame must not clear the bay while the last box is still valid.
+                annotated_boxes = list(self._held_boxes)
+                vehicles = list(self._held_vehicles)
+                detections = list(self._held_detections)
+                person_count, vehicle_count = self._held_counts
             elif vehicle_count == 0 and VEHICLES_ONLY:
                 self._held_boxes = []
                 self._held_vehicles = []
@@ -2462,11 +2495,6 @@ class CameraWorker:
                 vehicles = []
                 detections = []
                 person_count = 0
-            elif now < self._held_until and self._held_boxes:
-                annotated_boxes = list(self._held_boxes)
-                vehicles = list(self._held_vehicles)
-                detections = list(self._held_detections)
-                person_count, vehicle_count = self._held_counts
 
             self._try_sync_plate_ocr(frame, now)
             self.intelligence.tick_all_plate_deadlines(now)
@@ -2513,7 +2541,7 @@ class CameraWorker:
             self._publish_plate_crops()
             last_infer = time.time()
 
-            if now - last_post >= POST_EVERY_SEC:
+            if self._occupancy_due(occupied_slots, now, last_post):
                 refresh_plates_from_tracks(
                     detections, vehicles, annotated_boxes, self.intelligence
                 )
