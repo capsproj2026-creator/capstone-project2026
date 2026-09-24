@@ -9,8 +9,8 @@ from typing import Iterable, Optional
 _PH_CAR_RE = re.compile(r"^[A-Z]{2,3}\d{3,4}$")
 # LTO motorcycle: 05010401328 (4 + 7 digits)
 _PH_MC_RE = re.compile(r"^\d{11}$")
-# Government / diplomatic / broader alphanumeric fallback
-_PLATE_RE = re.compile(r"^[A-Z0-9]{5,12}$")
+# Government / diplomatic / prototype / broader alphanumeric fallback (min 4 for Z94M-style)
+_PLATE_RE = re.compile(r"^[A-Z0-9]{4,12}$")
 
 _LETTERS = set("ABCDEFGHIJKLMNOPQRSTUVWXYZ")
 _DIGITS = set("0123456789")
@@ -54,9 +54,13 @@ def is_known_ph_format(text: str) -> bool:
 
 
 def looks_like_plate_text(text: str) -> bool:
-    """Loose gate: alphanumeric plate-like string (OCR success ≠ PH validation)."""
+    """Loose gate: alphanumeric plate-like string (OCR success ≠ PH validation).
+
+    Accepts short prototype / handwritten plates (e.g. Z94M) as well as
+    non-standard mixes like S31N999 that are not official LTO car formats.
+    """
     cleaned = re.sub(r"[^A-Z0-9]", "", _clean_raw(text or ""))
-    if len(cleaned) < 5 or len(cleaned) > 12:
+    if len(cleaned) < 4 or len(cleaned) > 12:
         return False
     # Brand junk checked after _BRAND_OR_HEADER is defined — inline common ones here.
     if cleaned in {
@@ -235,7 +239,8 @@ def correction_variants(text: str, max_variants: int = 12) -> list[str]:
         "0": "OQD",
         "O": "0QD",
         "1": "IL",
-        "I": "1L",
+        "I": "1L9",
+        "9": "Ig",
         "8": "B",
         "B": "8",
         "5": "S",
@@ -244,6 +249,8 @@ def correction_variants(text: str, max_variants: int = 12) -> list[str]:
         "Z": "2",
         "6": "G",
         "G": "6",
+        "4": "A",
+        "A": "4",
     }
     for idx, ch in enumerate(parsed):
         for alt in confusable.get(ch, ""):
@@ -280,12 +287,11 @@ _BRAND_OR_HEADER = {
 
 def prefer_stable_car_plate(candidate: str | None, pool: Iterable[str]) -> Optional[str]:
     """
-    Prefer a reliable shorter PH plate over an overlong extension.
+    Prefer a complete plate over common OCR truncations / trailing scrap.
 
-    Example: pool has EBD814 and EBD8147 → keep EBD814 (extra trailing digit
-    often comes from bull-bar OCR noise, not a real character).
-
-    Do NOT invent a shorter plate from a lone 4-digit reading (NAR6011 must stay).
+    - NNV1234 beats NNV123 (full 3+4 over truncated 3+3)
+    - EBD814 beats EBD8147 only when the extra digit is scrap (handled by join rules);
+      here we never demote a clean 3+4 down to 3+3.
     """
     if not candidate:
         return None
@@ -306,24 +312,47 @@ def prefer_stable_car_plate(candidate: str | None, pool: Iterable[str]) -> Optio
         known_pool.append(parsed)
 
     if not known_pool:
-        return parsed
+        return prefer_complete_car_plate(parsed, list(raw_forms) + [parsed])
 
-    # Demote 3+4 only when a true 3+3 reading also appeared as its own OCR string.
-    m_long = re.fullmatch(r"([A-Z]{2,3})(\d{3,4})", parsed)
-    if m_long and len(m_long.group(2)) == 4:
-        letters, digits = m_long.group(1), m_long.group(2)
-        shorter = letters + digits[:3]
+    # Prefer full 3+4 over truncated 3+3 with the same letter block (NNV1234 > NNV123).
+    m_short = re.fullmatch(r"([A-Z]{2,3})(\d{3})$", parsed)
+    if m_short:
+        letters = m_short.group(1)
+        longer = [
+            p for p in known_pool
+            if re.fullmatch(rf"{re.escape(letters)}\d{{4}}$", p)
+        ]
+        # Prefer a longer form that was actually OCR'd (not only constructed).
+        longer_raw = [p for p in longer if p in raw_forms]
+        pick = longer_raw or longer
+        if pick:
+            return prefer_complete_car_plate(
+                max(pick, key=len),
+                list(raw_forms) + known_pool,
+            )
+
+    # Demote scrap-extension 3+4 → 3+3 only when the shorter plate was a direct
+    # OCR token and the longer form was not (e.g. EBD814 + lone "7" → EBD8147).
+    m_long = re.fullmatch(r"([A-Z]{2,3})(\d{4})$", parsed)
+    if m_long:
+        shorter = m_long.group(1) + m_long.group(2)[:3]
         if (
             is_ph_car_plate(shorter)
             and shorter in raw_forms
-            and shorter != parsed
+            and parsed not in raw_forms
         ):
-            return shorter
+            return prefer_complete_car_plate(shorter, list(raw_forms) + known_pool)
+
+    # Demote overlong scrap beyond a complete 3+4 (EBD81478 → EBD8147).
+    if len(parsed) >= 8 and is_ph_car_plate(parsed[:7]):
+        head = parsed[:7]
+        if head in raw_forms or head in known_pool:
+            return prefer_complete_car_plate(head, list(raw_forms) + known_pool)
 
     best = parsed
     best_key = (
         0 if is_ph_car_plate(parsed) else -1,
-        -len(parsed),
+        len(parsed) if is_ph_car_plate(parsed) else -len(parsed),
         sum(1 for ch in parsed if ch.isalpha()),
     )
     for p in known_pool:
@@ -331,13 +360,66 @@ def prefer_stable_car_plate(candidate: str | None, pool: Iterable[str]) -> Optio
             continue
         key = (
             1 if is_ph_car_plate(p) else 0,
-            -len(p),
+            len(p) if is_ph_car_plate(p) else -len(p),
             sum(1 for ch in p if ch.isalpha()),
         )
         if p == parsed or parsed.startswith(p) or p.startswith(parsed[: max(5, len(p) - 1)]):
             if key > best_key:
                 best_key = key
                 best = p
+    return prefer_complete_car_plate(best, list(raw_forms) + known_pool + [best])
+
+
+def prefer_complete_car_plate(candidate: str | None, pool: Iterable[str]) -> Optional[str]:
+    """
+    Prefer a fuller letter prefix when digit tails match.
+
+    EasyOCR often drops/misreads the first letter(s): WTC259 → FC259 / RC259 / C259.
+    When several candidates share the same digit block, keep the longest coherent prefix.
+    """
+    if not candidate:
+        return None
+    parsed, _ = parse_plate_candidate(candidate)
+    if not parsed:
+        return candidate
+
+    m0 = re.fullmatch(r"([A-Z]{1,3})(\d{3,4})", parsed)
+    if not m0:
+        return parsed
+
+    best = parsed
+    best_letters = m0.group(1)
+    digits = m0.group(2)
+
+    for raw in pool:
+        p, known = parse_plate_candidate(str(raw))
+        if not p:
+            continue
+        if not (known and is_ph_car_plate(p)) and not looks_like_plate_text(p):
+            continue
+        m = re.fullmatch(r"([A-Z]{1,3})(\d{3,4})", p)
+        if not m or m.group(2) != digits:
+            continue
+        letters = m.group(1)
+        if letters == best_letters:
+            continue
+        # Longer prefix that ends with the shorter one (WTC vs TC / C).
+        if len(letters) > len(best_letters) and letters.endswith(best_letters):
+            best, best_letters = p, letters
+            continue
+        # Same digit tail, last letter agrees, prefer 3-letter series over 2-letter
+        # mix-ups (WTC259 vs FC259 / RC259).
+        if (
+            len(letters) == 3
+            and len(best_letters) == 2
+            and letters[-1] == best_letters[-1]
+        ):
+            best, best_letters = p, letters
+            continue
+        # Prefer more letters when tails already match and lengths differ.
+        if len(letters) > len(best_letters) and letters[-1] == best_letters[-1]:
+            best, best_letters = p, letters
+
     return best
 
 
@@ -356,16 +438,26 @@ def score_candidate(parsed: str, known_format: bool, conf: float) -> float:
         digits = sum(1 for ch in parsed if ch.isdigit())
         if 2 <= letters <= 3 and 3 <= digits <= 4:
             score += 0.08
-        # Prefer 3-letter series (EBD814) over truncated 2-letter false positives (EB248).
+        # Prefer 3-letter series (WTC259 / EBD814 / NNV1234) over truncated forms.
         if letters == 3:
-            score += 0.12
+            score += 0.18
+            if digits == 4:
+                score += 0.12  # full modern series beats truncated 3+3 (NNV1234 > NNV123)
+            elif digits == 3:
+                score -= 0.06
         elif letters == 2:
-            score -= 0.08
+            # FC259 / RC259 style truncations of WTC259 — demote hard.
+            score -= 0.22
+            if digits == 3:
+                score -= 0.08
     elif known_format:
         score += 0.08
     else:
-        # Generic alphanumeric (not PH layout) — keep weak so real plates win.
-        score *= 0.45
+        # Generic alphanumeric (prototype / non-LTO). Keep usable vs OCR_MIN_CONF.
+        if any(ch.isalpha() for ch in parsed) and any(ch.isdigit() for ch in parsed):
+            score = max(score * 0.85, float(conf) * 0.80)
+        else:
+            score *= 0.45
         if parsed.isdigit() and len(parsed) < 11:
             score *= 0.85
     return score
@@ -480,6 +572,10 @@ def _joined_ocr_candidates(results: list[tuple]) -> list[tuple[str, float]]:
             chunk = parts[start : start + width]
             # Skip joins that append a lone character with large horizontal gap.
             if any(len(p[2]) == 1 for p in chunk):
+                # Do not glue a scrap digit onto an already-complete PH plate (EBD814+"7").
+                core_join = "".join(p[2] for p in chunk if len(p[2]) > 1)
+                if is_ph_car_plate(core_join):
+                    continue
                 xs = [p[0] for p in chunk]
                 if max(xs) - min(xs) > 120:
                     continue
@@ -570,5 +666,14 @@ def best_from_results(
 
     if best:
         best = prefer_stable_car_plate(best, pool + [best]) or best
+        best = prefer_complete_car_plate(best, pool + [best]) or best
+        # Handwritten prototype plates: EasyOCR often reads 9 as I (Z94M → ZI4M).
+        if "I" in best and not is_known_ph_format(best):
+            alt = best.replace("I", "9")
+            if looks_like_plate_text(alt):
+                dig_best = sum(1 for ch in best if ch.isdigit())
+                dig_alt = sum(1 for ch in alt if ch.isdigit())
+                if dig_alt > dig_best:
+                    best = alt
 
     return best, best_score, best_any

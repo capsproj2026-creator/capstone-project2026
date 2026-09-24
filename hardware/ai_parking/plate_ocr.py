@@ -31,6 +31,9 @@ OCR_UNREADABLE_BELOW = float(os.getenv("AI_PARKING_OCR_UNREADABLE_BELOW", "0.18"
 OCR_QUEUE_SIZE = int(os.getenv("AI_PARKING_OCR_QUEUE_SIZE", "8"))
 OCR_UPSCALE_MIN_WIDTH = int(os.getenv("AI_PARKING_OCR_UPSCALE_MIN_WIDTH", "640"))
 OCR_UPSCALE_FACTOR = float(os.getenv("AI_PARKING_OCR_UPSCALE_FACTOR", "6"))
+# Cap EasyOCR input width — large LANCZOS upscales hang for minutes on CPU.
+OCR_UPSCALE_MAX_WIDTH = int(os.getenv("AI_PARKING_OCR_UPSCALE_MAX_WIDTH", "420"))
+OCR_READ_TIMEOUT_SEC = float(os.getenv("AI_PARKING_OCR_READ_TIMEOUT_SEC", "10"))
 OCR_GPU = os.getenv("AI_PARKING_OCR_GPU", "0") == "1"
 OCR_HIGH_CONF_LOCK = float(os.getenv("AI_PARKING_OCR_HIGH_CONF_LOCK", "0.90"))
 OCR_PLATE_ONLY = os.getenv("AI_PARKING_OCR_PLATE_ONLY", "1").strip().lower() in (
@@ -152,15 +155,29 @@ class PlateOCR:
         _ch, cw = crop.shape[:2]
         factor = OCR_UPSCALE_FACTOR
         min_w = OCR_UPSCALE_MIN_WIDTH
+        max_w = max(160, OCR_UPSCALE_MAX_WIDTH)
         if fast:
             # Large LANCZOS upscales dominate CPU time before EasyOCR even runs.
-            factor = min(factor, 3.0)
-            min_w = min(min_w, 420)
+            factor = min(factor, 2.0)
+            min_w = min(min_w, 280)
+            max_w = min(max_w, 360)
         elif cw < 64:
             factor = max(factor, 10.0)
             min_w = max(min_w, 800)
+            max_w = max(max_w, 800)
         target = max(min_w, int(cw * factor))
+        target = min(target, max_w)
         if cw >= target:
+            # Still shrink oversized plate-YOLO crops so EasyOCR stays responsive.
+            if cw > max_w:
+                scale = max_w / float(cw)
+                return cv2.resize(
+                    crop,
+                    None,
+                    fx=scale,
+                    fy=scale,
+                    interpolation=cv2.INTER_AREA,
+                )
             return crop
         scale = target / max(cw, 1)
         interp = cv2.INTER_LINEAR if fast else cv2.INTER_LANCZOS4
@@ -213,11 +230,9 @@ class PlateOCR:
             pass
 
         if quick or fast:
-            # 2–3 EasyOCR calls max — enough for most clear PH plates on CPU.
-            bright = PlateOCR._gamma_correct(clahe_img, 0.72)
+            # clahe first; color as backup when the first pass looks truncated.
             return [
                 ("clahe", clahe_img),
-                ("bright", bright),
                 ("color", crop),
             ]
 
@@ -268,6 +283,7 @@ class PlateOCR:
         quick: bool = False,
         *,
         fast: bool = False,
+        deadline: float | None = None,
     ) -> tuple[Optional[str], float, float]:
         best: Optional[str] = None
         best_score = 0.0
@@ -276,9 +292,21 @@ class PlateOCR:
         # Accept a solid known-PH hit early so CPU OCR does not burn every variant.
         # Typical clear-plate EasyOCR scores are 0.50–0.80 (not 0.90).
         early_lock = max(OCR_MIN_CONF, 0.48 if (fast or quick) else max(0.55, OCR_HIGH_CONF_LOCK - 0.25))
-        for _label, img in self._ocr_variants(crop, quick=quick, fast=fast):
+        variants = self._ocr_variants(crop, quick=quick, fast=fast)
+        # Fast path: try clahe first; only run color if the first result looks truncated.
+        if fast or quick:
+            variants = variants[:2]
+        for idx, (_label, img) in enumerate(variants):
+            if deadline is not None and time.perf_counter() >= deadline:
+                print(f"[OCR] variant budget exhausted ({OCR_READ_TIMEOUT_SEC:.0f}s) — stopping")
+                break
+            # Skip 2nd variant when first already looks like a solid 3-letter plate.
+            if idx > 0 and best and best_score >= early_lock and is_known_ph_format(best):
+                letters = sum(1 for ch in best if ch.isalpha())
+                if letters >= 3:
+                    break
             try:
-                results = self._readtext(img, fast=fast or quick)
+                results = self._readtext(img, fast=fast or quick, deadline=deadline)
             except Exception as e:
                 print(f"OCR read error: {e}")
                 continue
@@ -292,10 +320,19 @@ class PlateOCR:
             if s > best_score:
                 best_score = s
                 best = b
-            if best and is_known_ph_format(best) and best_score >= early_lock:
-                break
-            if best and best_score >= OCR_HIGH_CONF_LOCK and is_known_ph_format(best):
-                break
+            if best and best_score >= early_lock and (
+                is_known_ph_format(best) or looks_like_plate_text(best)
+            ):
+                letters = sum(1 for ch in best if ch.isalpha())
+                # Keep going to 2nd variant when result looks like FC259 truncation.
+                if letters >= 3 or not is_known_ph_format(best):
+                    break
+            if best and best_score >= OCR_HIGH_CONF_LOCK and (
+                is_known_ph_format(best) or looks_like_plate_text(best)
+            ):
+                letters = sum(1 for ch in best if ch.isalpha())
+                if letters >= 3:
+                    break
 
         # Merge truncated bull-bar reads across preprocess variants (EBD81 + EBD84).
         merged = reconcile_partial_plates(raw_texts + ([best] if best else []))
@@ -305,25 +342,61 @@ class PlateOCR:
                 best_score = max(best_score, 0.55)
         return best, best_score, best_any_score
 
-    def _readtext(self, img, *, fast: bool = False):
+    def _readtext(self, img, *, fast: bool = False, deadline: float | None = None):
         short = min(img.shape[:2])
         if fast:
-            mag = 1.4 if short < 80 else 1.2
+            mag = 1.2 if short < 80 else 1.0
         else:
             mag = 2.0 if short < 80 else 1.6
-        with self._lock:
-            return self._reader.readtext(
-                img,
-                allowlist=_OCR_ALLOWLIST,
-                paragraph=False,
-                min_size=4 if not fast else 6,
-                contrast_ths=0.05,
-                adjust_contrast=0.7,
-                text_threshold=0.42,
-                low_text=0.18,
-                mag_ratio=mag,
-                slope_ths=0.15,
-            )
+        timeout = float(OCR_READ_TIMEOUT_SEC) if OCR_READ_TIMEOUT_SEC > 0 else 10.0
+        if deadline is not None:
+            timeout = max(0.4, min(timeout, deadline - time.perf_counter()))
+        if timeout <= 0.05:
+            return []
+
+        canvas = 720 if fast else 960
+        kwargs = dict(
+            allowlist=_OCR_ALLOWLIST,
+            paragraph=False,
+            min_size=4 if not fast else 6,
+            text_threshold=0.5 if not fast else 0.55,
+            low_text=0.3 if not fast else 0.35,
+            link_threshold=0.3 if not fast else 0.4,
+            canvas_size=canvas,
+            mag_ratio=mag,
+            detail=1,
+            batch_size=1,
+        )
+        # Run EasyOCR in a worker thread with a hard join timeout. A hung call may keep
+        # holding the lock until it finishes, but later attempts fail-fast on lock busy
+        # so tracks are not stuck on "Scanning... 1/10" forever.
+        box: list = []
+        err: list = []
+
+        def _call() -> None:
+            acquired = False
+            try:
+                acquired = self._lock.acquire(timeout=min(1.5, timeout))
+                if not acquired:
+                    err.append(TimeoutError("OCR engine busy"))
+                    return
+                box.append(self._reader.readtext(img, **kwargs))
+            except Exception as e:
+                err.append(e)
+            finally:
+                if acquired:
+                    self._lock.release()
+
+        worker = threading.Thread(target=_call, daemon=True, name="easyocr-readtext")
+        worker.start()
+        worker.join(timeout=timeout)
+        if worker.is_alive():
+            print(f"[OCR] readtext timed out after {timeout:.1f}s — skipping")
+            return []
+        if err:
+            print(f"[OCR] readtext skipped: {err[0]}")
+            return []
+        return box[0] if box else []
 
     def read_plate(
         self,
@@ -454,25 +527,25 @@ class PlateOCR:
             uniq.append(roi)
 
         if uniq:
-            # Fast path: plate YOLO hit alone is enough when present.
+            # Fast path: prefer plate-YOLO ROI only (1 crop) so EasyOCR finishes.
             if fast and out:
-                return (out + uniq)[:2]
-            return uniq[:3] if fast else uniq[:4]
+                return out[:1]
+            return uniq[:2] if fast else uniq[:4]
 
         if use_plate_only:
-            return targets[:2] if fast else targets[:3]
+            return targets[:1] if fast else targets[:3]
 
-        out = list(targets[:2]) if targets else []
+        out = list(targets[:1]) if targets else []
         if fast:
-            if cls_id == MOTORCYCLE_CLS_ID and ch >= 24:
+            if not out and cls_id == MOTORCYCLE_CLS_ID and ch >= 24:
                 mid = crop[max(0, int(ch * 0.10)) : min(ch, int(ch * 0.70)), :]
                 if mid.size > 0 and mid.shape[0] >= 12:
                     out.append(mid)
-            elif ch >= 24:
+            elif not out and ch >= 24:
                 bottom = crop[max(0, int(ch * 0.35)) : ch, :]
                 if bottom.size > 0 and bottom.shape[0] >= 12:
                     out.append(bottom)
-            return out[:3] or [crop]
+            return out[:1] or [crop]
 
         if not out:
             out = [crop]
@@ -510,11 +583,18 @@ class PlateOCR:
         best_any_score = 0.0
         seen_plates: list[str] = []
         t0 = time.perf_counter()
+        deadline = (
+            (t0 + float(OCR_READ_TIMEOUT_SEC))
+            if OCR_READ_TIMEOUT_SEC and OCR_READ_TIMEOUT_SEC > 0
+            else None
+        )
         crop_meta = f"{crop.shape[1]}x{crop.shape[0]}" if hasattr(crop, "shape") else "?"
         first_sub = None
 
         try:
             subs = self._sub_crops(crop, cls_id=cls_id, fast=use_fast, plate_only=use_plate_only)
+            if use_fast and subs:
+                subs = subs[:1]
             if not subs:
                 ms = int((time.perf_counter() - t0) * 1000)
                 print(f"[OCR] plate=no crop={crop_meta} OCR='' conf=0 valid=NO ms={ms} (no plate ROI)")
@@ -541,27 +621,29 @@ class PlateOCR:
 
             if use_fast:
                 for sub in subs:
-                    b, s, any_s = self._scan_variants(sub, quick=True, fast=True)
+                    if deadline is not None and time.perf_counter() >= deadline:
+                        print(f"[OCR] read_crop budget exhausted ({OCR_READ_TIMEOUT_SEC:.0f}s)")
+                        break
+                    b, s, any_s = self._scan_variants(
+                        sub, quick=True, fast=True, deadline=deadline
+                    )
                     _note(b, s, any_s)
-                    # Known PH at typical EasyOCR confidence — stop extra subs.
-                    if best and is_known_ph_format(best) and best_score >= max(OCR_MIN_CONF, 0.48):
+                    # Accept known PH or loose prototype plates — stop extra subs.
+                    if best and best_score >= max(OCR_MIN_CONF, 0.40) and (
+                        is_known_ph_format(best) or looks_like_plate_text(best)
+                    ):
                         break
-                    if best and is_known_ph_format(best) and best_score >= max(OCR_MIN_CONF, OCR_HIGH_CONF_LOCK - 0.05):
-                        break
-                if not (best and is_known_ph_format(best) and best_score >= max(OCR_MIN_CONF, 0.48)):
-                    if best_any_score >= OCR_UNREADABLE_BELOW or best is not None:
-                        for sub in self._sub_crops(
-                            crop, cls_id=cls_id, fast=False, plate_only=use_plate_only
-                        )[:2]:
-                            b, s, any_s = self._scan_variants(sub, quick=True, fast=False)
-                            _note(b, s, any_s)
-                            if best and is_known_ph_format(best) and best_score >= max(OCR_MIN_CONF, 0.48):
-                                break
+                # Do NOT fall back to slow/non-fast OCR on CPU — that path hangs for minutes
+                # and freezes the single OCR worker (UI stuck on "Scanning... 1/10").
             else:
                 quick_crop = subs[0]
-                b, s, any_s = self._scan_variants(quick_crop, quick=True, fast=False)
+                b, s, any_s = self._scan_variants(
+                    quick_crop, quick=True, fast=False, deadline=deadline
+                )
                 _note(b, s, any_s)
-                if best and best_score >= OCR_HIGH_CONF_LOCK and is_known_ph_format(best):
+                if best and best_score >= OCR_HIGH_CONF_LOCK and (
+                    is_known_ph_format(best) or looks_like_plate_text(best)
+                ):
                     ms = int((time.perf_counter() - t0) * 1000)
                     print(
                         f"[OCR] OCR_SUCCESS plate={best!r} conf={best_score:.2f} "
@@ -574,9 +656,15 @@ class PlateOCR:
                     )
 
                 for sub in subs:
-                    b, s, any_s = self._scan_variants(sub, quick=False, fast=False)
+                    if deadline is not None and time.perf_counter() >= deadline:
+                        break
+                    b, s, any_s = self._scan_variants(
+                        sub, quick=False, fast=False, deadline=deadline
+                    )
                     _note(b, s, any_s)
-                    if best and best_score >= OCR_HIGH_CONF_LOCK and is_known_ph_format(best):
+                    if best and best_score >= OCR_HIGH_CONF_LOCK and (
+                        is_known_ph_format(best) or looks_like_plate_text(best)
+                    ):
                         break
         except Exception as e:
             print(f"OCR pipeline error: {e}")
@@ -599,16 +687,20 @@ class PlateOCR:
             else "?"
         )
         if best and best_score >= OCR_MIN_CONF and (known or loose):
+            # For loose/prototype plates, prefer raw EasyOCR confidence for lock voting.
+            out_conf = best_score
+            if loose and not known:
+                out_conf = max(best_score, best_any_score * 0.85)
             print(
                 f"[{cam}][Track #{tid}] PlateCrop={sub_meta} "
                 f"RawOCR={best!r} Normalized={best} Valid={'YES' if known else 'LOOSE'} "
-                f"conf={best_score:.2f} OCR={ms}ms"
+                f"conf={out_conf:.2f} OCR={ms}ms"
             )
             print(
-                f"[OCR] OCR_SUCCESS plate={best!r} conf={best_score:.2f} "
+                f"[OCR] OCR_SUCCESS plate={best!r} conf={out_conf:.2f} "
                 f"validation={'PASS' if known else 'LOOSE'} ms={ms} crop={crop_meta}"
             )
-            return PlateRead(plate=best, confidence=round(min(best_score, 1.0), 3), status="ok")
+            return PlateRead(plate=best, confidence=round(min(out_conf, 1.0), 3), status="ok")
 
         print(
             f"[{cam}][Track #{tid}] PlateCrop={sub_meta} "
@@ -633,6 +725,7 @@ class AsyncPlateQueue:
         self.ocr = ocr
         self._q: queue.Queue = queue.Queue(maxsize=max(1, maxsize))
         self._inflight: set[tuple] = set()
+        self._inflight_since: dict[tuple, float] = {}
         self._lock = threading.Lock()
         self._thread = threading.Thread(target=self._loop, daemon=True, name="plate-ocr-async")
         self._thread.start()
@@ -676,14 +769,27 @@ class AsyncPlateQueue:
 
         key = (camera_id, int(track_id))
         with self._lock:
+            # If a prior job has been "in flight" longer than the OCR budget, drop the
+            # reservation so a hung EasyOCR call cannot block this track forever.
+            started = self._inflight_since.get(key)
+            stale_after = max(20.0, float(OCR_READ_TIMEOUT_SEC or 10) * 2.5)
+            if key in self._inflight and started and (now - started) >= stale_after:
+                print(
+                    f"[OCR] tracking_id={track_id} clearing stale inflight "
+                    f"age={now - started:.0f}s"
+                )
+                self._inflight.discard(key)
+                self._inflight_since.pop(key, None)
             if key in self._inflight:
                 return
             self._inflight.add(key)
+            self._inflight_since[key] = now
 
         crop = PlateOCR.crop_plate_region(frame, xyxy, cls_id=cls_id)
         if crop is None:
             with self._lock:
                 self._inflight.discard(key)
+                self._inflight_since.pop(key, None)
             # No plate crop — not an OCR attempt. The budget counts only real reads.
             if mem is not None:
                 print(
@@ -721,6 +827,7 @@ class AsyncPlateQueue:
                 mem.last_ocr_at = 0.0
             with self._lock:
                 self._inflight.discard(key)
+                self._inflight_since.pop(key, None)
 
     def _loop(self):
         while True:
@@ -773,6 +880,7 @@ class AsyncPlateQueue:
                         )
                         continue
                     mem.last_plate_crop = crop
+                    mem.last_ocr_at = time.time()
                     before = mem.plate_status
                     mem.apply_ocr_vote(read.plate, read.status, read.confidence)
                     mem.tick_plate_deadline()
@@ -801,3 +909,4 @@ class AsyncPlateQueue:
             finally:
                 with self._lock:
                     self._inflight.discard(key)
+                    self._inflight_since.pop(key, None)

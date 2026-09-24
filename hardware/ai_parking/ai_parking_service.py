@@ -91,8 +91,9 @@ STREAM_TARGET_FPS = float(os.getenv("AI_PARKING_STREAM_FPS", "18"))
 STREAM_JPEG_QUALITY = int(os.getenv("AI_PARKING_STREAM_JPEG_QUALITY", "72"))
 # AI overlay stream (monitor). Higher than live preview so ~20 m plates stay readable.
 AI_STREAM_JPEG_QUALITY = int(os.getenv("AI_PARKING_AI_STREAM_JPEG_QUALITY", "78"))
-# CCTV Live Cameras: only push a new JPEG when the scene moves (saves CPU/bandwidth).
-CCTV_MOTION_ONLY = os.getenv("AI_PARKING_CCTV_MOTION_ONLY", "1") == "1"
+# Live MJPEG stays continuous so the picture is not frozen between detections.
+# Set AI_PARKING_CCTV_MOTION_ONLY=1 to skip still frames (saves CPU, looks choppy).
+CCTV_MOTION_ONLY = os.getenv("AI_PARKING_CCTV_MOTION_ONLY", "0") == "1"
 CCTV_MOTION_MEAN = float(os.getenv("AI_PARKING_CCTV_MOTION_MEAN", "2.8"))
 CCTV_FORCE_REFRESH_SEC = float(os.getenv("AI_PARKING_CCTV_FORCE_REFRESH_SEC", "10"))
 MONITOR_SHARPEN = os.getenv("AI_PARKING_MONITOR_SHARPEN", "0") == "1"
@@ -410,8 +411,9 @@ def open_rtsp(
                 )
             else:
                 # Tapo / Wi-Fi: max_delay;0 drops the first GOP and never recovers.
+                # nobuffer + low_delay still cuts the TCP queue without that stall.
                 os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = (
-                    "rtsp_transport;tcp|stimeout;5000000"
+                    "rtsp_transport;tcp|stimeout;5000000|fflags;nobuffer|flags;low_delay"
                 )
             cap = cv2.VideoCapture(url, cv2.CAP_FFMPEG)
             cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
@@ -453,6 +455,139 @@ def _box_iou(a, b) -> float:
     area_b = max(0, bx2 - bx1) * max(0, by2 - by1)
     union = area_a + area_b - inter
     return inter / union if union > 0 else 0.0
+
+
+def _xyxy_of(row) -> tuple | None:
+    """Extract xyxy from an annotated box, detection, or vehicle dict/tuple."""
+    if row is None:
+        return None
+    if isinstance(row, (list, tuple)) and len(row) >= 4 and not isinstance(row[0], dict):
+        try:
+            return tuple(float(v) for v in row[:4])
+        except (TypeError, ValueError):
+            return None
+    if isinstance(row, dict):
+        xy = row.get("xyxy") or row.get("bbox") or row.get("box")
+        if xy is not None and len(xy) >= 4:
+            try:
+                return tuple(float(v) for v in xy[:4])
+            except (TypeError, ValueError):
+                return None
+        for keys in (("x1", "y1", "x2", "y2"),):
+            if all(k in row for k in keys):
+                try:
+                    return tuple(float(row[k]) for k in keys)
+                except (TypeError, ValueError):
+                    return None
+    return None
+
+
+def merge_held_scene(
+    annotated_boxes: list,
+    detections: list,
+    vehicles: list,
+    held_boxes: list,
+    held_detections: list,
+    held_vehicles: list,
+    *,
+    iou_thresh: float = 0.25,
+) -> tuple[list, list, list, tuple[int, int]]:
+    """Keep previously-seen vehicles when YOLO only returns a subset this frame.
+
+    Prevents the second parked car from vanishing (and its Latest Detection
+    thumb/session from glitching) when detection briefly drops from 2→1.
+    """
+    if not held_boxes:
+        person_count = 0
+        vehicle_count = len(vehicles) if vehicles else len(annotated_boxes)
+        return annotated_boxes, detections, vehicles, (person_count, vehicle_count)
+
+    used_held: set[int] = set()
+    new_boxes = list(annotated_boxes or [])
+    new_dets = list(detections or [])
+    new_vehs = list(vehicles or [])
+
+    for row in new_boxes:
+        xy = _xyxy_of(row)
+        if xy is None:
+            continue
+        best_i, best_iou = -1, 0.0
+        for i, held in enumerate(held_boxes):
+            if i in used_held:
+                continue
+            hxy = _xyxy_of(held)
+            if hxy is None:
+                continue
+            iou = _box_iou(xy, hxy)
+            if iou > best_iou:
+                best_iou = iou
+                best_i = i
+        if best_i >= 0 and best_iou >= iou_thresh:
+            used_held.add(best_i)
+
+    # Also match detections/vehicles by track_id when available.
+    held_det_by_tid = {}
+    for hd in held_detections or []:
+        if isinstance(hd, dict) and hd.get("track_id") is not None:
+            held_det_by_tid[int(hd["track_id"])] = hd
+    new_tids = set()
+    for nd in new_dets:
+        if isinstance(nd, dict) and nd.get("track_id") is not None:
+            new_tids.add(int(nd["track_id"]))
+
+    for i, held in enumerate(held_boxes):
+        if i in used_held:
+            continue
+        new_boxes.append(held)
+        # Prefer matching held detection by spatial IoU, else by index.
+        matched_det = None
+        hxy = _xyxy_of(held)
+        if hxy is not None:
+            best_j, best_iou = -1, 0.0
+            for j, hd in enumerate(held_detections or []):
+                dxy = _xyxy_of(hd)
+                if dxy is None:
+                    continue
+                iou = _box_iou(hxy, dxy)
+                if iou > best_iou:
+                    best_iou = iou
+                    best_j = j
+            if best_j >= 0 and best_iou >= iou_thresh:
+                matched_det = held_detections[best_j]
+        if matched_det is None and i < len(held_detections or []):
+            matched_det = held_detections[i]
+        if matched_det is not None:
+            tid = matched_det.get("track_id") if isinstance(matched_det, dict) else None
+            if tid is None or int(tid) not in new_tids:
+                new_dets.append(matched_det)
+                if tid is not None:
+                    new_tids.add(int(tid))
+        if i < len(held_vehicles or []):
+            new_vehs.append(held_vehicles[i])
+        elif matched_det is not None and isinstance(matched_det, dict):
+            # Reconstruct a minimal vehicle row so occupancy/OCR keep the car.
+            dxy = _xyxy_of(matched_det)
+            if dxy is not None:
+                new_vehs.append({
+                    "xyxy": dxy,
+                    "track_id": matched_det.get("track_id"),
+                    "class": matched_det.get("vehicle_type") or matched_det.get("class") or "car",
+                    "confidence": matched_det.get("confidence", 0.3),
+                })
+
+    # Re-add held detections by track_id that still aren't present.
+    for tid, hd in held_det_by_tid.items():
+        if tid in new_tids:
+            continue
+        new_dets.append(hd)
+        new_tids.add(tid)
+
+    vehicle_count = len(new_vehs) if new_vehs else sum(
+        1 for b in new_boxes
+        if isinstance(b, dict) and str(b.get("class") or b.get("label") or "").lower()
+        not in ("person", "people")
+    )
+    return new_boxes, new_dets, new_vehs, (0, vehicle_count)
 
 
 def _vehicle_box_valid(x1: int, y1: int, x2: int, y2: int, cls_id: int, frame_shape=None) -> bool:
@@ -881,7 +1016,13 @@ def parse_tracks(
         if track_id is not None and plate_status == "pending":
             mem_ov = intelligence.tracks.get(int(track_id))
             if mem_ov is not None and getattr(mem_ov, "ocr_attempts", 0) <= 0:
-                overlay_status = "detecting"
+                skip = mem_ov.ocr_skip_reason() if hasattr(mem_ov, "ocr_skip_reason") else None
+                if skip == "OUTSIDE_CALIBRATED_ZONE":
+                    overlay_status = "outside_bay"
+                elif skip == "NOT_PARKED_YET":
+                    overlay_status = "detecting"
+                else:
+                    overlay_status = "detecting"
         overlay_attempts = 0
         if track_id is not None:
             mem_attempts = intelligence.tracks.get(int(track_id))
@@ -984,6 +1125,8 @@ def _draw_box_labels(annotated, x1, y1, x2, y2, name, conf, track_id, plate, pla
         # Detection box shows the plate number only. Owner/role is intentionally
         # NOT drawn here — it belongs in the Latest Detections panel only.
         lines.append(str(plate))
+    elif plate_status == "outside_bay":
+        lines.append("Outside bay")
     elif plate_status == "detecting":
         lines.append("Detecting…")
     elif int(ocr_attempts or 0) > 0:
@@ -1230,7 +1373,9 @@ def attach_detection_thumbs(detections: list, intelligence: ParkingIntelligence)
             row["has_plate_crop"] = True
             out.append(row)
             continue
-        thumb_src = getattr(mem, "last_plate_crop", None) or getattr(mem, "last_vehicle_crop", None)
+        thumb_src = getattr(mem, "last_plate_crop", None)
+        if thumb_src is None:
+            thumb_src = getattr(mem, "last_vehicle_crop", None)
         thumb_b64 = encode_crop_jpeg(thumb_src, quality=55, max_side=140) if thumb_src is not None else None
         if thumb_b64:
             mem.thumb_jpeg_base64 = thumb_b64
@@ -1789,10 +1934,12 @@ class CameraWorker:
             )
 
         flush = self.config.flush_frames
+        # Substream preview: one frame per read. Extra grab() calls block and stutter the feed.
+        # Infer keeps flushing so YOLO still sees the newest main-stream frame.
         self.preview_reader = LatestFrameReader(
             lambda: open_path(preview_path, "preview"),
             label=f"{self.config.camera_id}-preview",
-            flush_frames=flush,
+            flush_frames=1,
         )
         if dual:
             self.infer_reader = LatestFrameReader(
@@ -1808,6 +1955,11 @@ class CameraWorker:
         threading.Thread(
             target=self._preview_loop,
             name=f"preview-{self.config.camera_id}",
+            daemon=True,
+        ).start()
+        threading.Thread(
+            target=self._ai_display_loop,
+            name=f"ai-display-{self.config.camera_id}",
             daemon=True,
         ).start()
         threading.Thread(
@@ -1837,11 +1989,9 @@ class CameraWorker:
     def _preview_loop(self):
         interval = 1.0 / max(1.0, self.stream_fps)
         encode_params = [int(cv2.IMWRITE_JPEG_QUALITY), self.jpeg_quality]
-        ai_encode_params = [int(cv2.IMWRITE_JPEG_QUALITY), int(self.ai_jpeg_quality)]
         last_seq = -1
         while self.running.is_set():
             started = time.perf_counter()
-            zones_data = self.zones_holder[0]
             offline_reason = f"{self.config.camera_id} offline"
             if not self.config.has_credentials:
                 offline_reason = f"{self.config.camera_id}: set USER/PASS in .env"
@@ -1852,7 +2002,6 @@ class CameraWorker:
 
             if self.preview_reader is None:
                 frame = blank_frame(offline_reason)
-                src_shape = frame.shape
                 is_new = True
             else:
                 ret, frame, last_seq = self.preview_reader.read_if_newer(last_seq)
@@ -1862,14 +2011,12 @@ class CameraWorker:
                         time.sleep(0.05)
                         continue
                     frame = blank_frame(offline_reason)
-                    src_shape = frame.shape
                     is_new = True
                 elif frame is None:
                     # No newer frame — skip encode to stay caught up
                     time.sleep(0.001)
                     continue
                 else:
-                    src_shape = frame.shape
                     is_new = True
 
             if not is_new:
@@ -1908,28 +2055,39 @@ class CameraWorker:
             if ok_raw:
                 raw_jpeg = buf_raw.tobytes()
 
-            # Dual-stream cameras: YOLO boxes are in main-stream coords. Never paste them onto the
-            # substream preview (FOV/aspect differ → boxes land on walls). AI MJPEG comes from infer.
-            ai_jpeg = None
-            vehicle_count = self.state.vehicle_count
-            detections = self.state.detections
-            if self._shared_reader:
-                state = self.scene.snapshot()
-                vehicle_count = state["vehicle_count"]
-                detections = state["detections"]
-                ai_jpeg = self._encode_ai_overlay(frame, state, zones_data, ai_encode_params)
-            else:
-                with self._ai_overlay_lock:
-                    ai_jpeg = self._ai_overlay_jpeg
-
-            if raw_jpeg or ai_jpeg:
+            # Live tile is the substream only. AI overlay is painted on its own thread
+            # so a main-stream JPEG cannot stall this feed or the YOLO loop.
+            if raw_jpeg:
+                snap = self.scene.snapshot()
                 self.state.set_frame(
                     raw_jpeg,
-                    ai_jpeg,
-                    vehicle_count,
-                    detections,
+                    None,
+                    snap["vehicle_count"],
+                    snap["detections"],
                     rtsp_online=live,
                 )
+            elapsed = time.perf_counter() - started
+            time.sleep(max(0.0, interval - elapsed))
+
+    def _ai_display_loop(self):
+        """Paint the monitor MJPEG from the latest infer frame and the last boxes.
+
+        Runs beside YOLO so the picture keeps moving between detections.
+        Detection interval, model size, and OCR are unchanged.
+        """
+        interval = 1.0 / max(1.0, self.stream_fps)
+        last_seq = -1
+        while self.running.is_set():
+            started = time.perf_counter()
+            reader = self.infer_reader or self.preview_reader
+            if reader is None:
+                time.sleep(interval)
+                continue
+            ret, frame, last_seq = reader.read_if_newer(last_seq)
+            if not ret or frame is None:
+                time.sleep(0.01)
+                continue
+            self._publish_ai_overlay(frame)
             elapsed = time.perf_counter() - started
             time.sleep(max(0.0, interval - elapsed))
 
@@ -1978,16 +2136,19 @@ class CameraWorker:
         return buf_ai.tobytes() if ok_ai else None
 
     def _publish_ai_overlay(self, frame, state: dict | None = None) -> None:
-        """Publish AI MJPEG from the infer frame so dual-stream FOV cannot misplace boxes."""
-        zones_data = self.zones_holder[0]
+        """Paint the monitor JPEG from the latest infer frame and the last boxes.
+
+        Only the display thread calls this. YOLO keeps its own cadence and does not
+        wait on this encode, so plate/occupancy scanning stays the same.
+        """
         snap = state or self.scene.snapshot()
+        zones_data = self.zones_holder[0]
         ai_encode_params = [int(cv2.IMWRITE_JPEG_QUALITY), int(self.ai_jpeg_quality)]
         ai_jpeg = self._encode_ai_overlay(frame, snap, zones_data, ai_encode_params)
         if ai_jpeg is None:
             return
         with self._ai_overlay_lock:
             self._ai_overlay_jpeg = ai_jpeg
-        # Keep counts/detections fresh even when preview is on a different RTSP path.
         self.state.set_frame(
             None,
             ai_jpeg,
@@ -2304,16 +2465,8 @@ class CameraWorker:
             detections=detections,
             source_shape=frame.shape,
         )
-        self._publish_ai_overlay(frame, {
-            "annotated_boxes": annotated_boxes,
-            "person_count": person_count,
-            "vehicle_count": vehicle_count,
-            "occupied_slots": occupied_slots,
-            "active_events": list(self.intelligence.active_events),
-            "use_poly": use_poly,
-            "detections": detections,
-            "source_shape": frame.shape,
-        })
+        # Boxes are stored on the scene. The preview loop paints the MJPEG so this
+        # thread is not stuck encoding JPEG between plate/YOLO cycles.
         self._publish_plate_crops()
         if self._occupancy_due(occupied_slots, now, last_post, force=force):
             refresh_plates_from_tracks(detections, vehicles, annotated_boxes, self.intelligence)
@@ -2371,12 +2524,22 @@ class CameraWorker:
                 if self.zones_path.is_file():
                     mtime = self.zones_path.stat().st_mtime
                     if mtime != zones_mtime:
-                        self.zones_holder[0] = load_zones(self.zones_path)
+                        loaded = load_zones(self.zones_path)
+                        # Ignore empty / mid-write reloads so CAM-1 keeps the last good polygons.
+                        if has_calibrated_slots(loaded) or any(
+                            len(z.get("points") or []) >= 3 for z in (loaded.get("zones") or [])
+                        ):
+                            self.zones_holder[0] = loaded
+                            self.intelligence.set_zones_calibrated(
+                                has_calibrated_slots(self.zones_holder[0])
+                            )
+                            print(f"[{self.config.camera_id}] Reloaded zones")
+                        else:
+                            print(
+                                f"[{self.config.camera_id}] Zones reload skipped "
+                                f"(empty or incomplete JSON) — keeping previous"
+                            )
                         zones_mtime = mtime
-                        self.intelligence.set_zones_calibrated(
-                            has_calibrated_slots(self.zones_holder[0])
-                        )
-                        print(f"[{self.config.camera_id}] Reloaded zones")
             except OSError:
                 pass
 
@@ -2491,7 +2654,23 @@ class CameraWorker:
             annotated_boxes = scale_annotated_boxes(annotated_boxes, scale)
 
             # Hold last boxes briefly when YOLO misses a frame (smoother overlay).
+            # When YOLO returns a *subset* of vehicles, merge in unmatched held
+            # boxes so the second parked car does not vanish mid-frame.
             if annotated_boxes and vehicle_count > 0:
+                if (
+                    self._held_boxes
+                    and now < self._held_until
+                    and vehicle_count < len(self._held_vehicles or self._held_boxes)
+                ):
+                    annotated_boxes, detections, vehicles, counts = merge_held_scene(
+                        annotated_boxes,
+                        detections,
+                        vehicles,
+                        self._held_boxes,
+                        self._held_detections,
+                        self._held_vehicles,
+                    )
+                    person_count, vehicle_count = counts
                 self._held_boxes = list(annotated_boxes)
                 self._held_vehicles = list(vehicles)
                 self._held_detections = list(detections)
@@ -2543,18 +2722,7 @@ class CameraWorker:
                 events=events,
                 source_shape=frame.shape,
             )
-            scene_snap = {
-                "annotated_boxes": annotated_boxes,
-                "person_count": person_count,
-                "vehicle_count": vehicle_count,
-                "occupied_slots": occupied_slots,
-                "active_events": list(self.intelligence.active_events),
-                "use_poly": use_poly,
-                "detections": detections,
-                "source_shape": frame.shape,
-            }
-            # Draw AI overlay on the infer RTSP frame (same FOV/coords as boxes), never the substream.
-            self._publish_ai_overlay(frame, scene_snap)
+            # Preview/display threads paint the MJPEG. This thread only updates boxes.
             self._publish_plate_crops()
             last_infer = time.time()
 

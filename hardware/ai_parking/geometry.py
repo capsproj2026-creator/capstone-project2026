@@ -16,27 +16,46 @@ ZONE_COLORS = {
 }
 
 
+def _empty_zones() -> dict[str, Any]:
+    return {
+        "version": 1,
+        "calibrated": False,
+        "image_width": 0,
+        "image_height": 0,
+        "zones": [],
+    }
+
+
 def load_zones(path: Path) -> dict[str, Any]:
+    """Load zone JSON. Empty / half-written files return an empty template (never raise)."""
     if not path.is_file():
-        return {
-            "version": 1,
-            "calibrated": False,
-            "image_width": 0,
-            "image_height": 0,
-            "zones": [],
-        }
-    with path.open("r", encoding="utf-8") as f:
-        data = json.load(f)
+        return _empty_zones()
+    try:
+        raw = path.read_text(encoding="utf-8").strip()
+    except OSError:
+        return _empty_zones()
+    if not raw:
+        # Common while another process is still writing (or OneDrive syncing).
+        return _empty_zones()
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError:
+        return _empty_zones()
+    if not isinstance(data, dict):
+        return _empty_zones()
     data.setdefault("calibrated", False)
     data.setdefault("zones", [])
     return data
 
 
 def save_zones(path: Path, data: dict[str, Any]) -> None:
+    """Atomic write so live reload never reads a truncated file."""
+    path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("w", encoding="utf-8") as f:
-        json.dump(data, f, indent=2)
-        f.write("\n")
+    payload = json.dumps(data, indent=2) + "\n"
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    tmp.write_text(payload, encoding="utf-8")
+    tmp.replace(path)
 
 
 def usable_zones(zones_data: dict[str, Any]) -> list[dict[str, Any]]:
@@ -218,12 +237,16 @@ def _zone_bbox_area(zone: dict[str, Any]) -> float:
 
 
 def _bottom_sample_points(xyxy: tuple[int, int, int, int]) -> list[tuple[float, float]]:
-    """Points along the tire line, used when the exact bottom-center misses the bay."""
-    x1, _y1, x2, y2 = xyxy
+    """Points along the tire line + lower body, used when bottom-center misses the bay."""
+    x1, y1, x2, y2 = xyxy
     width = float(x2) - float(x1)
-    height = float(y2) - float(_y1)
+    height = float(y2) - float(y1)
     bottom = float(y2)
-    points = [(float(x1) + width * frac, bottom) for frac in (0.15, 0.30, 0.50, 0.70, 0.85)]
+    points = [(float(x1) + width * frac, bottom) for frac in (0.10, 0.25, 0.40, 0.50, 0.60, 0.75, 0.90)]
+    # Slightly above the bumper — helps when the tire line sits just outside the polygon.
+    for frac in (0.25, 0.50, 0.75):
+        points.append((float(x1) + width * frac, bottom - max(1.0, height * 0.08)))
+        points.append((float(x1) + width * frac, bottom - max(1.0, height * 0.18)))
     points.append((float(x1) + width * 0.5, bottom - max(1.0, height * 0.12)))
     return points
 
@@ -236,8 +259,7 @@ def primary_slot_for_box(
 
     Bottom-center inside a polygon wins (tightest polygon if several overlap).
     If that point falls on a line, the bay that contains the most of the tire
-    line wins, and only when it beats every other bay. A box sitting in the
-    gap between bays stays unmatched.
+    line wins. A clear single-bay hit is enough; only contested ties stay unmatched.
     """
     gx, gy = box_ground_point(xyxy)
     hits: list[tuple[float, dict[str, Any]]] = []
@@ -266,7 +288,8 @@ def primary_slot_for_box(
     ranked = sorted(votes.values(), key=lambda item: (-item[0], item[1]))
     best_count, _best_area, best = ranked[0]
     second_count = ranked[1][0] if len(ranked) > 1 else 0
-    if best_count >= 2 and best_count > second_count:
+    # Clear winner: majority of samples, or any unique hit with ≥1 sample.
+    if best_count > second_count and best_count >= 1:
         return {**best, "_by_ground": False, "_iou": 0.5}
     return None
 

@@ -40,6 +40,23 @@ class ParkingArea extends MongoModel
     }
 
     /**
+     * True when Student, Staff, and Visitor may all use this lot (campus-open bays).
+     * Unknown / unregistered plates are not treated as Wrong Parking in open lots.
+     */
+    public function isOpenToEveryone(): bool
+    {
+        $roles = array_map('strval', $this->getAllowedRoles());
+        $needed = ['Student', 'Staff', 'Visitor'];
+        foreach ($needed as $role) {
+            if (! in_array($role, $roles, true)) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /**
      * Resolved role list for this zone.
      * Uses the stored allowed_roles when present; otherwise infers from legacy designation notes.
      *

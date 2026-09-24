@@ -365,7 +365,10 @@ class TrackMemory:
         if OCR_MOVING_ONLY and not ocr_allowed_for_motion(self.motion_state):
             return False
         if self.zones_calibrated and OCR_REQUIRE_ZONE and not self.slot_id:
-            return False
+            # Occupancy still needs a bay, but plate OCR must run for parked cars that
+            # sit slightly outside the polygon (prototype / calibration drift).
+            if (self.motion_state or "") != "parked":
+                return False
         if self.zones_calibrated and OCR_REQUIRE_PARKED and (self.motion_state or "") != "parked":
             return False
         return True
@@ -383,7 +386,8 @@ class TrackMemory:
         if OCR_MOVING_ONLY and not ocr_allowed_for_motion(self.motion_state):
             return "VEHICLE_STATIONARY"
         if self.zones_calibrated and OCR_REQUIRE_ZONE and not self.slot_id:
-            return "OUTSIDE_CALIBRATED_ZONE"
+            if (self.motion_state or "") != "parked":
+                return "OUTSIDE_CALIBRATED_ZONE"
         if self.zones_calibrated and OCR_REQUIRE_PARKED and (self.motion_state or "") != "parked":
             return "NOT_PARKED_YET"
         return None
@@ -423,7 +427,10 @@ class TrackMemory:
                             f"[MOTION] {self.session_label()} -> MOVING "
                             f"speed={self.motion_speed:.3f} streak={self.moving_streak}"
                         )
-                    self.motion_state = "moving"
+                        self.motion_state = "moving"
+                        self.release_ocr_lock_after_move()
+                    else:
+                        self.motion_state = "moving"
             else:
                 self.stationary_streak += 1
                 self.moving_streak = 0
@@ -453,6 +460,37 @@ class TrackMemory:
         self.last_motion_at = now
         self.last_xyxy = xyxy
         return self.motion_state
+
+    def release_ocr_lock_after_move(self) -> bool:
+        """Drop this track's OCR lock so it can be scanned again after it moves.
+
+        A guard-entered plate stays locked. Other vehicles are not affected.
+        """
+        if plate_source_label(self.plate_source) == "MANUAL":
+            return False
+        if not self.is_plate_locked():
+            return False
+        previous = self.plate
+        self.plate = None
+        self.plate_status = "pending"
+        self.ocr_confidence = 0.0
+        self.ocr_attempts = 0
+        self.ocr_started_at = 0.0
+        self.plate_locked_at = 0.0
+        self.plate_lock_reason = None
+        self.plate_votes = {}
+        self.plate_vote_scores = {}
+        self.plate_vote_counts = {}
+        self.unreadable_votes = 0
+        self.not_read_at = 0.0
+        self.last_ocr_at = 0.0
+        self.reopen_count = 0
+        self.clear_owner()
+        print(
+            f"[OCR] lock released after movement session={self.session_label()} "
+            f"was={previous}"
+        )
+        return True
 
     def clear_owner(self) -> None:
         self.owner_name = None
@@ -549,7 +587,7 @@ class TrackMemory:
         if self.plate_status != "pending":
             return False
         now = now if now is not None else time.time()
-        # A clock timeout must not end the budget before 10 real OCR runs.
+        # A clock timeout must not end the budget before real OCR runs.
         # Timeout only applies when no OCR has executed yet (stuck with no crop).
         stalled_without_attempt = (
             self.ocr_attempts <= 0
@@ -557,18 +595,30 @@ class TrackMemory:
             and OCR_PENDING_TIMEOUT_SEC > 0
             and (now - self.ocr_started_at) >= OCR_PENDING_TIMEOUT_SEC
         )
+        # Mid-scan stall: EasyOCR hung after attempt 1 → UI stuck on Scanning... 1/N.
+        # If no OCR activity finishes for long enough, exit pending so guards can Add plate.
+        last_activity = max(float(self.last_ocr_at or 0.0), float(self.ocr_started_at or 0.0))
+        stall_sec = max(28.0, float(OCR_PENDING_TIMEOUT_SEC or 18) * 1.5)
+        stalled_mid_scan = (
+            self.ocr_attempts > 0
+            and last_activity > 0
+            and (now - last_activity) >= stall_sec
+        )
         attempts_exhausted = OCR_MAX_ATTEMPTS > 0 and self.ocr_attempts >= OCR_MAX_ATTEMPTS
-        if not stalled_without_attempt and not attempts_exhausted:
+        if not stalled_without_attempt and not stalled_mid_scan and not attempts_exhausted:
             return False
         self.plate = None
         self.plate_status = "not_read"
         self.plate_locked_at = 0.0
-        self.plate_lock_reason = "timeout_or_max_attempts"
+        reason = "timeout_or_max_attempts"
+        if stalled_mid_scan and not attempts_exhausted:
+            reason = "ocr_stalled"
+        self.plate_lock_reason = reason
         self.not_read_at = now
         self.clear_owner()
         print(
             f"[OCR] PLATE NOT READ attempts={self.ocr_attempts}/{OCR_MAX_ATTEMPTS} "
-            f"timeout={OCR_PENDING_TIMEOUT_SEC}s"
+            f"timeout={OCR_PENDING_TIMEOUT_SEC}s reason={reason}"
         )
         return True
 
@@ -683,6 +733,7 @@ class TrackMemory:
         from plate_text import (
             is_known_ph_format,
             looks_like_plate_text,
+            prefer_complete_car_plate,
             prefer_stable_car_plate,
             reconcile_partial_plates,
         )
@@ -707,13 +758,31 @@ class TrackMemory:
                 self.tick_plate_deadline()
                 return
 
-            # Demote overlong outliers (EBD8147) when a stable shorter plate is supported.
+            # Demote overlong OCR scrap (N123VA7 / EBD8147) when a stable shorter form fits.
             plate = prefer_stable_car_plate(plate, list(self.plate_votes.keys()) + [plate]) or plate
+            plate = prefer_complete_car_plate(plate, list(self.plate_votes.keys()) + [plate]) or plate
+            if len(plate) >= 5 and plate[-1].isdigit():
+                shorter = plate[:-1]
+                if looks_like_plate_text(shorter) and (
+                    shorter in self.plate_votes
+                    or (looks_like_plate_text(shorter) and sum(1 for c in shorter if c.isalpha()) >= 1)
+                ):
+                    # Keep shorter when trailing digit is likely bumper noise.
+                    if shorter in self.plate_votes or (
+                        not is_known_ph_format(plate) and looks_like_plate_text(shorter)
+                    ):
+                        plate = shorter
             known = is_known_ph_format(plate)
             loose = looks_like_plate_text(plate)
 
             weight = max(1, int(round(conf * 4)))
             if known:
+                weight += 2
+            # Short 2-letter PH mixes (FC259) are common truncations — less vote weight.
+            letters_n = sum(1 for ch in plate if ch.isalpha())
+            if known and letters_n == 2:
+                weight = max(1, weight - 2)
+            if known and letters_n == 3:
                 weight += 2
             if conf >= PLATE_LOCK_CONFIDENCE:
                 weight += 2
@@ -725,6 +794,7 @@ class TrackMemory:
             merged = reconcile_partial_plates(list(self.plate_votes.keys()) + [plate])
             if merged:
                 merged = prefer_stable_car_plate(merged, list(self.plate_votes.keys()) + [merged, plate]) or merged
+                merged = prefer_complete_car_plate(merged, list(self.plate_votes.keys()) + [merged, plate]) or merged
             if merged and is_known_ph_format(merged):
                 if merged not in self.plate_votes:
                     self.plate_votes[merged] = self.plate_votes.get(merged, 0) + max(3, weight)
@@ -738,6 +808,7 @@ class TrackMemory:
                 max(self.plate_votes.items(), key=lambda kv: (kv[1], self.plate_vote_scores.get(kv[0], 0.0)))[0],
                 list(self.plate_votes.keys()),
             ) or plate
+            leader = prefer_complete_car_plate(leader, list(self.plate_votes.keys()) + [leader]) or leader
             vote_weight = self.plate_votes.get(leader, 0)
             total_weight = sum(self.plate_votes.values())
             consensus = vote_weight / max(total_weight, 1)
@@ -745,6 +816,9 @@ class TrackMemory:
             hit_count = max(1, int(self.plate_vote_counts.get(leader, 0) or 0))
             leader_conf = self.plate_vote_scores.get(leader, 0.0) / float(hit_count)
             leader_known = is_known_ph_format(leader)
+            leader_letters = sum(1 for ch in leader if ch.isalpha())
+            # Truncated 2-letter series (FC259 / RC259) must not lock on a single frame.
+            risky_short = leader_known and leader_letters == 2 and len(leader) <= 5
 
             print(
                 f"[OCR] attempt {self.ocr_attempts}/{OCR_MAX_ATTEMPTS} "
@@ -753,34 +827,70 @@ class TrackMemory:
                 f"({consensus:.0%}) mean_conf={leader_conf:.2f}"
             )
 
-            # A) Exceptional single strong known-PH read
+            votes_needed = max(2, PLATE_VOTE_NEEDED) if risky_short else max(1, PLATE_VOTE_NEEDED)
+
+            # Never auto-lock 2-letter PH truncations (FC259 / WC259 / RC259 for WTC259).
+            # Keep voting until a 3-letter series appears, attempts exhaust, or the guard edits.
+            if risky_short:
+                print(
+                    f"[OCR] holding lock — risky short plate {leader!r} "
+                    f"(need 3-letter series or manual edit)"
+                )
+                self.tick_plate_deadline()
+                return
+
+            # A) Exceptional single strong known-PH read (never for risky short truncations)
             high_conf_lock = (
                 leader_known
-                and conf >= PLATE_LOCK_CONFIDENCE
+                and conf >= max(PLATE_LOCK_CONFIDENCE, 0.82)
                 and plate == leader
                 and known
+                and leader_letters >= 3
             )
             # B) Multi-frame consensus on known PH (use hit counts, not weights)
             consensus_lock = (
-                hit_count >= PLATE_VOTE_NEEDED
+                hit_count >= votes_needed
                 and consensus >= PLATE_VOTE_CONSENSUS_RATIO
                 and leader_known
-                and leader_conf >= max(0.35, PLATE_LOCK_CONFIDENCE - 0.40)
+                and leader_conf >= max(0.40, PLATE_LOCK_CONFIDENCE - 0.35)
+                and leader_letters >= 3
             )
             # C) Two matching known-PH reads with solid mean confidence
             dual_strong = (
                 leader_known
                 and hit_count >= 2
-                and leader_conf >= max(0.40, PLATE_LOCK_CONFIDENCE - 0.45)
+                and leader_conf >= max(0.42, PLATE_LOCK_CONFIDENCE - 0.40)
                 and consensus >= 0.5
+                and leader_letters >= 3
             )
-            # D) One clear known-PH read (typical EasyOCR 0.50–0.80 on good crops)
+            # D) One clear known-PH read — 3-letter series only (blocks FC259 one-shots)
             single_solid = (
                 leader_known
                 and known
                 and plate == leader
                 and hit_count >= 1
-                and conf >= max(0.50, min(0.70, PLATE_LOCK_CONFIDENCE - 0.35))
+                and leader_letters >= 3
+                and conf >= max(0.58, min(0.78, PLATE_LOCK_CONFIDENCE - 0.15))
+            )
+            # E) Prototype / handwritten plates (Z94M, S31N999) — not official LTO format
+            leader_loose = looks_like_plate_text(leader)
+            loose_consensus = (
+                not leader_known
+                and leader_loose
+                and hit_count >= max(1, PLATE_VOTE_NEEDED)
+                and consensus >= max(0.50, PLATE_VOTE_CONSENSUS_RATIO)
+                and leader_conf >= max(0.40, PLATE_LOCK_CONFIDENCE - 0.35)
+            )
+            # Prototype plates (N123VA / Z94M): one clear read is enough — waiting for a
+            # 2nd pass often adds OCR noise (N123VA7) and never locks.
+            loose_single = (
+                not known
+                and loose
+                and plate == leader
+                and leader_loose
+                and hit_count >= 1
+                and conf >= max(0.52, PLATE_LOCK_CONFIDENCE - 0.25)
+                and len(leader) >= 4
             )
 
             if high_conf_lock:
@@ -798,6 +908,12 @@ class TrackMemory:
                 return
             if single_solid:
                 self.lock_plate(leader, conf, f"known_ph_solid conf>={conf:.2f}")
+                return
+            if loose_consensus:
+                self.lock_plate(leader, leader_conf, "loose_plate_consensus")
+                return
+            if loose_single:
+                self.lock_plate(leader, conf, f"loose_plate_solid conf>={conf:.2f}")
                 return
 
             self.tick_plate_deadline()
@@ -1102,9 +1218,13 @@ class ParkingIntelligence:
                 del self.tracks[tid]
 
         # Expire recognition sessions that have not been seen within grace.
+        # Keep locked plates longer so YOLO flicker does not wipe a finished read.
         for sid, mem in list(self.sessions.items()):
             age = now - float(mem.last_seen or mem.first_seen or now)
-            if age <= grace:
+            hold = grace
+            if mem.is_plate_locked() or (mem.plate and mem.plate_status == "ok"):
+                hold = max(grace, 45.0)
+            if age <= hold:
                 continue
             for tid, m in list(self.tracks.items()):
                 if m is mem:
@@ -1113,7 +1233,7 @@ class ParkingIntelligence:
             cam_tag = mem.camera_id or "CAM"
             print(
                 f"[{cam_tag}] Session #{sid} expired "
-                f"(grace={grace:.1f}s, last_plate={mem.plate!r})"
+                f"(grace={hold:.1f}s, last_plate={mem.plate!r})"
             )
 
     def tick_all_plate_deadlines(self, now: float | None = None) -> None:

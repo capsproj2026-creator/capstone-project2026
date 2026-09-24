@@ -1268,7 +1268,158 @@ class AiParkingOccupancyService
             return ((float) ($b['ts'] ?? 0)) <=> ((float) ($a['ts'] ?? 0));
         });
 
-        return array_slice($merged, 0, 200);
+        return $this->alignEventsWithLiveDetections(array_slice($merged, 0, 200), $cameraId);
+    }
+
+    /**
+     * Show the same plate and owner on a violation row as Latest Detections
+     * when that vehicle is still on screen. The stored citation is not changed.
+     *
+     * @param  list<array<string, mixed>>  $events
+     * @return list<array<string, mixed>>
+     */
+    private function alignEventsWithLiveDetections(array $events, ?string $cameraId): array
+    {
+        $detections = $this->liveDetectionsForDisplay($cameraId);
+        if ($detections === []) {
+            return $events;
+        }
+
+        foreach ($events as $i => $event) {
+            if (! is_array($event)) {
+                continue;
+            }
+            $match = null;
+            foreach ($detections as $det) {
+                if ($this->eventMatchesLiveDetection($event, $det)) {
+                    $match = $det;
+                    break;
+                }
+            }
+            if ($match === null) {
+                continue;
+            }
+            $events[$i] = $this->overlayLiveIdentity($event, $match);
+        }
+
+        return $events;
+    }
+
+    /**
+     * @return list<array<string, mixed>>
+     */
+    private function liveDetectionsForDisplay(?string $cameraId): array
+    {
+        $ids = [];
+        if ($cameraId !== null && trim($cameraId) !== '') {
+            $ids[] = $cameraId;
+        } else {
+            foreach (app(AiCameraRegistry::class)->cameras() as $cam) {
+                $id = (string) ($cam['id'] ?? '');
+                if ($id !== '') {
+                    $ids[] = $id;
+                }
+            }
+        }
+
+        $out = [];
+        foreach ($ids as $id) {
+            $cached = Cache::get($this->cacheKeyForCamera($id));
+            if (! is_array($cached)) {
+                continue;
+            }
+            $cam = (string) ($cached['camera_id'] ?? $id);
+            foreach ($cached['detections'] ?? [] as $det) {
+                if (! is_array($det)) {
+                    continue;
+                }
+                $det['_camera'] = $cam;
+                $out[] = $det;
+            }
+        }
+
+        return $out;
+    }
+
+    /**
+     * @param  array<string, mixed>  $event
+     * @param  array<string, mixed>  $det
+     */
+    private function eventMatchesLiveDetection(array $event, array $det): bool
+    {
+        $eventCam = strtoupper(trim((string) ($event['camera_id'] ?? '')));
+        $detCam = strtoupper(trim((string) ($det['camera_id'] ?? $det['_camera'] ?? '')));
+        if ($eventCam !== '' && $detCam !== '' && $eventCam !== $detCam) {
+            return false;
+        }
+
+        $eventSession = trim((string) ($event['parking_session_id'] ?? ''));
+        $detSession = trim((string) ($det['parking_session_id'] ?? ''));
+        if ($eventSession !== '' && $detSession !== '' && $eventSession === $detSession) {
+            return true;
+        }
+
+        $eventRec = trim((string) ($event['recognition_session_id'] ?? ''));
+        $detRec = trim((string) ($det['recognition_session_id'] ?? ''));
+        if ($eventRec !== '' && $detRec !== '' && $eventRec === $detRec) {
+            return true;
+        }
+
+        $eventVehicle = trim((string) ($event['vehicle_event_id'] ?? ''));
+        $detVehicle = trim((string) ($det['vehicle_event_id'] ?? ''));
+        if ($eventVehicle !== '' && $detVehicle !== '' && $eventVehicle === $detVehicle) {
+            return true;
+        }
+        if ($eventVehicle !== '' && $detSession !== '' && str_starts_with($eventVehicle, $detSession.':')) {
+            return true;
+        }
+
+        $eventTrack = $event['track_id'] ?? null;
+        $detTrack = $det['track_id'] ?? null;
+        if ($eventTrack === null || $detTrack === null || (string) $eventTrack !== (string) $detTrack) {
+            return false;
+        }
+        if ($eventCam === '' || $detCam === '' || $eventCam !== $detCam) {
+            return false;
+        }
+
+        return $eventSession === '' || $detSession === '' || $eventSession === $detSession;
+    }
+
+    /**
+     * @param  array<string, mixed>  $event
+     * @param  array<string, mixed>  $det
+     * @return array<string, mixed>
+     */
+    private function overlayLiveIdentity(array $event, array $det): array
+    {
+        $status = strtolower(trim((string) ($det['plate_status'] ?? '')));
+        $plate = trim((string) ($det['plate'] ?? ''));
+        if ($plate === '' || in_array($status, ['pending', 'detecting', 'not_read', 'unreadable'], true)) {
+            return $event;
+        }
+
+        $event['plate'] = $plate;
+        $event['plate_status'] = $status !== '' ? $status : 'ok';
+        $event['owner_name'] = $det['owner_name'] ?? null;
+        $event['owner_label'] = $det['owner_label'] ?? null;
+        $event['owner_role'] = $det['owner_role'] ?? ($det['role'] ?? null);
+        $event['role'] = $det['role'] ?? ($det['owner_role'] ?? null);
+        $event['owner_id_number'] = $det['owner_id_number'] ?? ($det['id_number'] ?? null);
+        $event['registration_status'] = $det['registration_status'] ?? null;
+        $event['registered'] = array_key_exists('registered', $det) ? $det['registered'] : null;
+        if (! empty($det['vehicle_details'])) {
+            $event['vehicle_details'] = $det['vehicle_details'];
+        }
+        if (! empty($det['vehicle_type']) || ! empty($det['class'])) {
+            $event['vehicle_type'] = $det['vehicle_type'] ?? $det['class'];
+        }
+        if (! empty($det['class'])) {
+            $event['class'] = $det['class'];
+        }
+        $event['display_synced'] = true;
+
+        return $event;
     }
 
     /**

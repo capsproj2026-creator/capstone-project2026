@@ -334,7 +334,8 @@ function Test-CapstoneMongo {
     $prevEap = $ErrorActionPreference
     $ErrorActionPreference = "Continue"
     try {
-        & php artisan config:clear *> $null
+        # Do not config:clear here. That boots Laravel and throws away the
+        # config cache, so the first website request rebuilds everything.
         & php scripts/mongo_ping.php *> $null
         return ($LASTEXITCODE -eq 0)
     } finally {
@@ -371,12 +372,6 @@ if (-not (Test-Path -LiteralPath $campusIdPython)) {
 }
 
 Write-Host "Starting Smart Campus VMS from $Root" -ForegroundColor Green
-
-$arduinoSync = Join-Path $PSScriptRoot "sync-arduino-sketches.ps1"
-if (Test-Path $arduinoSync) {
-    & powershell -NoProfile -ExecutionPolicy Bypass -File $arduinoSync -Quiet 2>$null
-    Write-Host "  Arduino Entry/Exit sketches synced to OneDrive" -ForegroundColor DarkGray
-}
 
 # Laravel stays on loopback :8001. LAN front on :8000 answers ESP32 heartbeats
 # instantly so a slow Mongo/page load cannot starve the gates (HTTP -11).
@@ -433,6 +428,15 @@ if ($WithGitSync) {
 
 # Open one Windows Terminal with all queued tabs (no-op for separate-window mode).
 Start-QueuedWindowsTerminalTabs
+
+$arduinoSync = Join-Path $PSScriptRoot "sync-arduino-sketches.ps1"
+if (Test-Path $arduinoSync) {
+    $psExe = Join-Path $env:SystemRoot "System32\WindowsPowerShell\v1.0\powershell.exe"
+    Start-Process -FilePath $psExe -WindowStyle Hidden -ArgumentList @(
+        "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", $arduinoSync, "-Quiet"
+    ) | Out-Null
+    Write-Host "  Arduino Entry/Exit sketches syncing in the background" -ForegroundColor DarkGray
+}
 
 $ngrokPublicUrl = $null
 if ($ngrokQueued) {

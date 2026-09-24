@@ -109,7 +109,9 @@ class AiParkingViolationService
             $cameraId,
             isset($event['area_id']) ? (int) $event['area_id'] : null
         );
-        $areaName = ParkingArea::query()->find($areaId)?->area_name;
+        $area = $areaId > 0 ? ParkingArea::query()->find($areaId) : null;
+        $areaName = $area?->area_name;
+        $openLot = $area?->isOpenToEveryone() ?? false;
         $vehicleDetails = $event['vehicle_details'] ?? null;
         $confidence = isset($event['confidence']) ? (float) $event['confidence'] : null;
         $detectionSource = strtoupper((string) ($event['detection_source'] ?? $event['plate_source'] ?? 'AI'));
@@ -200,7 +202,17 @@ class AiParkingViolationService
         $ownerRole = $event['owner_role'] ?? $event['role'] ?? ($identity['role'] ?? null);
 
         // Unknown plate → notify guards once/day, no user citation (no dummy user created).
+        // Open lots (all roles) do not treat unknown plates as Wrong Parking.
         if ($type === 'unauthorized' && ! $user) {
+            if ($openLot) {
+                return [
+                    'status' => 'skipped',
+                    'reason' => 'open_lot_unknown_ok',
+                    'type' => $type,
+                    'plate' => $plate,
+                    'zone_id' => $zoneId,
+                ];
+            }
             $guardNotified = $this->notifyGuardsOncePerDay(
                 plate: $plate,
                 violationType: 'Wrong Parking',
@@ -222,6 +234,15 @@ class AiParkingViolationService
 
         // Other violation types without a registered plate → UI only + guard alert once/day
         if (! $user) {
+            if ($openLot && in_array($type, ['unauthorized', 'wrong_role'], true)) {
+                return [
+                    'status' => 'skipped',
+                    'reason' => 'open_lot_unknown_ok',
+                    'type' => $type,
+                    'plate' => $plate,
+                    'zone_id' => $zoneId,
+                ];
+            }
             $guardNotified = false;
             if (in_array($violationType, self::ONCE_PER_DAY_TYPES, true)) {
                 $guardNotified = $this->notifyGuardsOncePerDay(
@@ -520,6 +541,9 @@ class AiParkingViolationService
     {
         $extra = [];
         $dayKey = now()->toDateString();
+        $areaId = app(AiCameraRegistry::class)->resolveAreaId($cameraId, null);
+        $area = $areaId > 0 ? ParkingArea::query()->find($areaId) : null;
+        $openLot = $area?->isOpenToEveryone() ?? false;
 
         foreach ($detections as $det) {
             if (! is_array($det)) {
@@ -541,6 +565,10 @@ class AiParkingViolationService
 
             $user = PlateLookup::findUser((string) ($det['plate'] ?? $plate));
             if (! $user) {
+                // Open lots (Student + Staff + Visitor) welcome unknown plates — not Wrong Parking.
+                if ($openLot) {
+                    continue;
+                }
                 Cache::put($cacheKey, 1, now()->endOfDay());
                 $extra[] = [
                     'type' => 'unauthorized',

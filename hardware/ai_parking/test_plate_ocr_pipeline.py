@@ -332,5 +332,41 @@ class AsyncSubmitGateTests(unittest.TestCase):
         self.assertEqual(mem.plate_status, "not_read")
 
 
+def _drive(mem: TrackMemory, boxes: list[tuple[int, int, int, int]], start: float) -> None:
+    now = start
+    for box in boxes:
+        mem.update_motion(box, now)
+        now += 0.25
+
+
+class OcrLockPerVehicleTests(unittest.TestCase):
+    def test_locked_plate_releases_only_for_the_vehicle_that_moves(self):
+        start = time.time()
+        moving = TrackMemory(first_seen=start)
+        still = TrackMemory(first_seen=start)
+        moving.lock_plate("N123VAL", 0.9, "consensus")
+        still.lock_plate("NNV1234", 0.9, "consensus")
+        parked = [(10, 10, 110, 90)] * 4
+        _drive(still, parked, start)
+        shifted = [(10 + i * 80, 10, 110 + i * 80, 90) for i in range(5)]
+        _drive(moving, shifted, start)
+        self.assertEqual(moving.motion_state, "moving")
+        self.assertFalse(moving.is_plate_locked())
+        self.assertEqual(moving.plate_status, "pending")
+        self.assertEqual(moving.ocr_attempts, 0)
+        self.assertTrue(still.is_plate_locked())
+        self.assertEqual(still.plate, "NNV1234")
+
+    def test_manual_plate_stays_locked_when_vehicle_moves(self):
+        start = time.time()
+        mem = TrackMemory(first_seen=start)
+        mem.lock_plate("ABC1234", 1.0, "manual_guard")
+        shifted = [(10 + i * 80, 10, 110 + i * 80, 90) for i in range(5)]
+        _drive(mem, shifted, start)
+        self.assertEqual(mem.motion_state, "moving")
+        self.assertTrue(mem.is_plate_locked())
+        self.assertEqual(mem.plate, "ABC1234")
+
+
 if __name__ == "__main__":
     unittest.main()

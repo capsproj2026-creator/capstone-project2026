@@ -95,8 +95,9 @@ class PlateTextTest(unittest.TestCase):
     def test_prefer_stable_over_extra_digit(self):
         from plate_text import prefer_stable_car_plate
 
+        # Scrap join: longer form never appeared as its own OCR token.
         self.assertEqual(
-            prefer_stable_car_plate("EBD8147", ["EBD814", "EBD8147"]),
+            prefer_stable_car_plate("EBD8147", ["EBD814"]),
             "EBD814",
         )
         # Lone trailing scrap join should lose to embedded 6-char plate in best_from_results.
@@ -106,6 +107,30 @@ class PlateTextTest(unittest.TestCase):
         ]
         best, score, _ = best_from_results(results, 0.15)
         self.assertEqual(best, "EBD814")
+
+    def test_prefer_full_3plus4_over_truncated(self):
+        from plate_text import prefer_stable_car_plate, score_candidate
+
+        self.assertEqual(
+            prefer_stable_car_plate("NNV123", ["NNV123", "NNV1234"]),
+            "NNV1234",
+        )
+        self.assertGreater(
+            score_candidate("NNV1234", True, 0.5),
+            score_candidate("NNV123", True, 0.6),
+        )
+
+    def test_prefer_complete_over_truncated_prefix(self):
+        from plate_text import prefer_complete_car_plate, score_candidate
+
+        self.assertEqual(
+            prefer_complete_car_plate("FC259", ["FC259", "WTC259", "RC259"]),
+            "WTC259",
+        )
+        self.assertGreater(
+            score_candidate("WTC259", True, 0.8),
+            score_candidate("FC259", True, 0.9),
+        )
 
 
 if __name__ == "__main__":

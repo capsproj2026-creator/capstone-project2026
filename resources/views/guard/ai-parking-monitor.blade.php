@@ -271,9 +271,20 @@
 
         <div class="grid grid-cols-1 gap-4 lg:grid-cols-2">
             <div class="rounded-xl border border-gray-200 bg-white shadow-sm">
-                <div class="border-b border-gray-100 px-4 py-3 flex items-center justify-between gap-2">
-                    <h3 class="font-semibold text-gray-900">Latest Detections</h3>
-                    <span id="ai-det-count" class="rounded-full bg-gray-100 px-2.5 py-0.5 text-xs font-semibold text-gray-600">{{ count($latestDetections) }}</span>
+                <div class="border-b border-gray-100 px-4 py-3 flex flex-wrap items-center justify-between gap-2">
+                    <div>
+                        <h3 class="font-semibold text-gray-900">Latest Detections</h3>
+                        <p class="mt-0.5 text-[11px] text-gray-400">Use <span class="font-semibold text-indigo-700">Add plate</span> on a vehicle row, or the button on the right.</p>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <button
+                            type="button"
+                            id="ai-add-plate-global"
+                            class="rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-1.5 text-xs font-semibold text-indigo-800 hover:bg-indigo-100"
+                            onclick="event.preventDefault(); const row=document.querySelector('#ai-detections button[data-correct-plate][data-track]'); if(row){window.__aiOpenPlateModal(row);}else{window.__aiOpenPlateModal({camera:'CAM-1',manual:true});} return false;"
+                        >Add plate</button>
+                        <span id="ai-det-count" class="rounded-full bg-gray-100 px-2.5 py-0.5 text-xs font-semibold text-gray-600">{{ count($latestDetections) }}</span>
+                    </div>
                 </div>
                 <ul id="ai-detections" class="max-h-[32rem] divide-y divide-gray-100 overflow-y-auto text-sm">
                     @forelse ($latestDetections as $det)
@@ -307,7 +318,7 @@
                                     src="{{ $thumbSrc }}"
                                     alt="{{ ($det['motion_state'] ?? '') === 'moving' ? 'Scanning vehicle' : 'Vehicle' }}"
                                     @class([
-                                        'h-20 w-28 shrink-0 rounded-lg border border-gray-200 bg-slate-900 object-cover',
+                                        'h-20 w-28 shrink-0 rounded-lg border border-gray-200 bg-gray-100 object-cover',
                                         'ai-det-thumb-scanning' => ($det['motion_state'] ?? '') === 'moving',
                                     ])
                                     data-det-thumb
@@ -408,13 +419,28 @@
                                         type="button"
                                         class="max-w-[9rem] truncate rounded-lg border px-2 py-1 text-[11px] font-semibold {{ $isKnownOwner ? 'border-emerald-200 bg-emerald-50 text-emerald-800 hover:bg-emerald-100' : ($needsManualPlate ? 'border-amber-200 bg-amber-50 text-amber-800 hover:bg-amber-100' : 'border-slate-200 bg-slate-50 text-slate-600 hover:bg-slate-100') }}"
                                         title="{{ $needsManualPlate ? 'Enter plate manually — same DB lookup as OCR' : ($isKnownOwner ? 'Registered owner — click to fix plate if wrong' : 'Not in database — click to enter plate') }}"
-                                        data-correct-plate
+                                        data-correct-plate="1"
                                         data-camera="{{ $detCam }}"
                                         data-track="{{ $det['track_id'] }}"
                                         data-session="{{ $det['recognition_session_id'] ?? '' }}"
                                         data-plate="{{ $plate ?? '' }}"
+                                        data-vehicle-type="{{ $det['vehicle_type'] ?? $det['class'] ?? '' }}"
                                         data-manual="{{ $needsManualPlate ? '1' : '0' }}"
+                                        onclick="event.preventDefault(); event.stopPropagation(); window.__aiOpenPlateModal && window.__aiOpenPlateModal(this); return false;"
                                     >{{ $ownerBadge }}</button>
+                                    <button
+                                        type="button"
+                                        class="rounded-lg border border-indigo-200 bg-indigo-50 px-2 py-1 text-[11px] font-semibold text-indigo-800 hover:bg-indigo-100"
+                                        title="{{ $plate ? 'Fix or replace the plate number' : 'Add plate number for this vehicle' }}"
+                                        data-correct-plate="1"
+                                        data-camera="{{ $detCam }}"
+                                        data-track="{{ $det['track_id'] }}"
+                                        data-session="{{ $det['recognition_session_id'] ?? '' }}"
+                                        data-plate="{{ $plate ?? '' }}"
+                                        data-vehicle-type="{{ $det['vehicle_type'] ?? $det['class'] ?? '' }}"
+                                        data-manual="{{ $plate ? '0' : '1' }}"
+                                        onclick="event.preventDefault(); event.stopPropagation(); window.__aiOpenPlateModal && window.__aiOpenPlateModal(this); return false;"
+                                    >{{ $plate ? 'Edit plate' : 'Add plate' }}</button>
                                 @else
                                     <span class="max-w-[9rem] truncate rounded-lg border px-2 py-1 text-[11px] font-semibold {{ $isKnownOwner ? 'border-emerald-200 bg-emerald-50 text-emerald-800' : 'border-slate-200 bg-slate-50 text-slate-600' }}">{{ $ownerBadge }}</span>
                                 @endif
@@ -483,46 +509,251 @@
             </div>
         </div>
     @endif
-
-    <div id="plate-correct-modal" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/50 p-4" role="dialog" aria-modal="true">
-        <form id="plate-correct-form" class="w-full max-w-md rounded-2xl border border-gray-200 bg-white p-6 shadow-xl dark:border-slate-700 dark:bg-slate-900">
-            <h3 class="text-lg font-bold text-gray-900 dark:text-white" id="plate-correct-title">Enter plate number</h3>
-            <p class="mt-1 text-sm text-gray-500 dark:text-slate-400" id="plate-correct-help">Lookup uses the same registered-vehicle database as automatic OCR.</p>
-            <div id="plate-correct-meta" class="mt-3 hidden rounded-xl border border-gray-100 bg-gray-50 p-3 text-xs text-gray-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
-                <div class="flex gap-3">
-                    <img id="plate-correct-thumb" alt="Vehicle" class="hidden h-16 w-24 shrink-0 rounded-lg border border-gray-200 object-cover dark:border-slate-600">
-                    <div class="min-w-0 space-y-0.5">
-                        <p id="plate-correct-meta-camera"></p>
-                        <p id="plate-correct-meta-type"></p>
-                        <p id="plate-correct-meta-track"></p>
-                    </div>
-                </div>
-            </div>
-            <input type="hidden" id="plate-correct-camera">
-            <input type="hidden" id="plate-correct-track">
-            <input type="hidden" id="plate-correct-session">
-            <label class="mt-4 block text-sm font-medium text-gray-700 dark:text-slate-300" for="plate-correct-value">Plate</label>
-            <div class="relative mt-1">
-                <input id="plate-correct-value" type="text" required minlength="4" maxlength="32" autocomplete="off" class="w-full rounded-xl border border-gray-200 bg-white px-3 py-2 font-mono text-sm uppercase text-gray-900 dark:border-slate-600 dark:bg-slate-800 dark:text-white" placeholder="ABC1234 or 0501-0401328">
-            </div>
-            <p id="plate-correct-error" class="mt-2 hidden text-sm text-red-600 dark:text-red-400"></p>
-            <div class="mt-5 flex justify-end gap-2">
-                <button type="button" id="plate-correct-cancel" class="rounded-xl border border-gray-200 px-4 py-2 text-sm font-semibold text-gray-700 dark:border-slate-600 dark:text-slate-200">Cancel</button>
-                <button type="submit" id="plate-correct-save" class="rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-60">Save plate</button>
-            </div>
-        </form>
-    </div>
 @endsection
 
 @push('scripts')
+{{-- Standalone Add/Edit plate UI (must work even if the main monitor script errors). --}}
+<div id="plate-correct-modal" class="fixed inset-0 items-center justify-center bg-black/60 p-4" role="dialog" aria-modal="true" style="display:none;z-index:99999;">
+    <form id="plate-correct-form" class="w-full max-w-md rounded-2xl border border-gray-200 bg-white p-6 shadow-xl dark:border-slate-700 dark:bg-slate-900" style="max-height:90vh;overflow:auto;">
+        <h3 class="text-lg font-bold text-gray-900 dark:text-white" id="plate-correct-title">Enter plate number</h3>
+        <p class="mt-1 text-sm text-gray-500 dark:text-slate-400" id="plate-correct-help">Type the plate for this tracked vehicle, then Save.</p>
+        <div id="plate-correct-meta" class="mt-3 rounded-xl border border-gray-100 bg-gray-50 p-3 text-xs text-gray-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300" style="display:none;">
+            <div class="flex gap-3">
+                <img id="plate-correct-thumb" alt="Vehicle" class="h-16 w-24 shrink-0 rounded-lg border border-gray-200 object-cover dark:border-slate-600" style="display:none;">
+                <div class="min-w-0 space-y-0.5">
+                    <p id="plate-correct-meta-camera"></p>
+                    <p id="plate-correct-meta-type"></p>
+                    <p id="plate-correct-meta-track"></p>
+                </div>
+            </div>
+        </div>
+        <input type="hidden" id="plate-correct-camera">
+        <input type="hidden" id="plate-correct-track">
+        <input type="hidden" id="plate-correct-session">
+        <div class="mt-4 grid grid-cols-2 gap-3">
+            <div>
+                <label class="block text-sm font-medium text-gray-700 dark:text-slate-300" for="plate-correct-camera-visible">Camera</label>
+                <input id="plate-correct-camera-visible" type="text" class="mt-1 w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900 dark:border-slate-600 dark:bg-slate-800 dark:text-white" placeholder="CAM-1" autocomplete="off">
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-gray-700 dark:text-slate-300" for="plate-correct-track-visible">Track #</label>
+                <input id="plate-correct-track-visible" type="number" min="0" class="mt-1 w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900 dark:border-slate-600 dark:bg-slate-800 dark:text-white" placeholder="e.g. 3" autocomplete="off">
+            </div>
+        </div>
+        <label class="mt-4 block text-sm font-medium text-gray-700 dark:text-slate-300" for="plate-correct-value">Plate</label>
+        <div class="relative mt-1">
+            <input id="plate-correct-value" type="text" required minlength="4" maxlength="32" autocomplete="off" class="w-full rounded-xl border border-gray-200 bg-white px-3 py-2 font-mono text-sm uppercase text-gray-900 dark:border-slate-600 dark:bg-slate-800 dark:text-white" placeholder="ABC1234">
+        </div>
+        <p id="plate-correct-error" class="mt-2 text-sm text-red-600 dark:text-red-400" style="display:none;"></p>
+        <div class="mt-5 flex justify-end gap-2">
+            <button type="button" id="plate-correct-cancel" class="rounded-xl border border-gray-200 px-4 py-2 text-sm font-semibold text-gray-700 dark:border-slate-600 dark:text-slate-200">Cancel</button>
+            <button type="submit" id="plate-correct-save" class="rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-60">Save plate</button>
+        </div>
+    </form>
+</div>
+<script>
+window.__aiOpenPlateModal = function (source) {
+    const modal = document.getElementById('plate-correct-modal');
+    if (!modal) return;
+    let camera = 'CAM-1', track = '', session = '', plate = '', vehicleType = '', manual = true;
+    if (source && source.getAttribute) {
+        camera = source.getAttribute('data-camera') || camera;
+        track = source.getAttribute('data-track') || '';
+        session = source.getAttribute('data-session') || '';
+        plate = source.getAttribute('data-plate') || '';
+        vehicleType = source.getAttribute('data-vehicle-type') || '';
+        manual = (source.getAttribute('data-manual') || '1') === '1';
+    } else if (source && typeof source === 'object') {
+        camera = source.camera || camera;
+        track = source.track != null ? String(source.track) : '';
+        session = source.session != null ? String(source.session) : '';
+        plate = source.plate || '';
+        vehicleType = source.vehicleType || '';
+        manual = source.manual !== false;
+    }
+    const set = (id, val) => { const el = document.getElementById(id); if (el) el.value = val || ''; };
+    set('plate-correct-camera', camera);
+    set('plate-correct-track', track);
+    set('plate-correct-session', session);
+    set('plate-correct-value', plate);
+    set('plate-correct-camera-visible', camera || 'CAM-1');
+    set('plate-correct-track-visible', track);
+    const title = document.getElementById('plate-correct-title');
+    const help = document.getElementById('plate-correct-help');
+    if (title) title.textContent = (!plate || manual) ? 'Add plate number' : 'Edit plate number';
+    if (help) help.textContent = 'Confirm camera + track # from Latest Detections, type the plate, then Save.';
+    const meta = document.getElementById('plate-correct-meta');
+    const metaCam = document.getElementById('plate-correct-meta-camera');
+    const metaType = document.getElementById('plate-correct-meta-type');
+    const metaTrack = document.getElementById('plate-correct-meta-track');
+    if (metaCam) metaCam.textContent = camera ? ('Camera: ' + camera) : '';
+    if (metaType) metaType.textContent = vehicleType ? ('Vehicle: ' + vehicleType) : '';
+    if (metaTrack) metaTrack.textContent = [track ? ('Track #' + track) : '', session ? ('Session ' + session) : ''].filter(Boolean).join(' · ');
+    if (meta) meta.style.display = (camera || track || vehicleType) ? 'block' : 'none';
+    const thumb = document.getElementById('plate-correct-thumb');
+    if (thumb) {
+        const origin = @json($aiCropOrigin ?? null);
+        let src = '';
+        if (origin && camera && track !== '') {
+            src = String(origin).replace(/\/$/, '') + '/' + encodeURIComponent(camera) + '/vehicle-crop/' + encodeURIComponent(String(track)) + '.jpg';
+        }
+        if (src) {
+            thumb.src = src;
+            thumb.style.display = 'block';
+            thumb.onerror = function () { this.style.display = 'none'; };
+        } else {
+            thumb.removeAttribute('src');
+            thumb.style.display = 'none';
+        }
+    }
+    const err = document.getElementById('plate-correct-error');
+    if (err) { err.style.display = 'none'; err.textContent = ''; }
+    if (modal.parentElement !== document.body) {
+        document.body.appendChild(modal);
+    }
+    modal.style.display = 'flex';
+    const valueEl = document.getElementById('plate-correct-value');
+    setTimeout(() => { valueEl?.focus(); valueEl?.select?.(); }, 50);
+};
+
+window.__aiClosePlateModal = function () {
+    const modal = document.getElementById('plate-correct-modal');
+    if (modal) modal.style.display = 'none';
+    const saveBtn = document.getElementById('plate-correct-save');
+    if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = 'Save plate'; }
+};
+
+(function bootAiPlateModal() {
+    const correctUrl = @json($correctPlateUrl ?? route('guard.ai-parking.correct-plate'));
+    const aiCropOrigin = @json($aiCropOrigin ?? null);
+    const csrf = document.querySelector('meta[name="csrf-token"]')?.content || '';
+    const xsrf = decodeURIComponent((document.cookie.match(/(?:^|; )XSRF-TOKEN=([^;]*)/) || [])[1] || '');
+
+    document.addEventListener('click', function (e) {
+        const t = e.target;
+        const el = t && t.nodeType === 1 ? t : (t && t.parentElement);
+        if (!el || typeof el.closest !== 'function') return;
+        const btn = el.closest('[data-correct-plate], #ai-add-plate-global');
+        if (!btn) return;
+        e.preventDefault();
+        e.stopPropagation();
+        if (btn.id === 'ai-add-plate-global') {
+            const row = document.querySelector('#ai-detections button[data-correct-plate][data-track]');
+            if (row) window.__aiOpenPlateModal(row);
+            else window.__aiOpenPlateModal({ camera: 'CAM-1', manual: true });
+            return;
+        }
+        window.__aiOpenPlateModal(btn);
+    }, true);
+
+    document.getElementById('plate-correct-cancel')?.addEventListener('click', function (e) {
+        e.preventDefault();
+        window.__aiClosePlateModal();
+    });
+    document.getElementById('plate-correct-modal')?.addEventListener('click', function (e) {
+        if (e.target === e.currentTarget) window.__aiClosePlateModal();
+    });
+    document.addEventListener('keydown', function (e) {
+        if (e.key === 'Escape') window.__aiClosePlateModal();
+    });
+
+    document.getElementById('plate-correct-form')?.addEventListener('submit', async function (e) {
+        e.preventDefault();
+        const err = document.getElementById('plate-correct-error');
+        const showErr = (msg) => {
+            if (!err) { alert(msg); return; }
+            err.textContent = msg;
+            err.style.display = 'block';
+        };
+        const camVis = (document.getElementById('plate-correct-camera-visible')?.value || '').trim();
+        const trackVis = (document.getElementById('plate-correct-track-visible')?.value || '').trim();
+        if (camVis) document.getElementById('plate-correct-camera').value = camVis;
+        if (trackVis !== '') document.getElementById('plate-correct-track').value = trackVis;
+
+        const cameraId = (document.getElementById('plate-correct-camera')?.value || camVis || '').trim();
+        const trackRaw = (document.getElementById('plate-correct-track')?.value || trackVis || '').trim();
+        const sessionRaw = (document.getElementById('plate-correct-session')?.value || '').trim();
+        const plate = (document.getElementById('plate-correct-value')?.value || '').trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
+        const trackId = trackRaw === '' ? null : Number(trackRaw);
+        const sessionId = sessionRaw === '' ? null : Number(sessionRaw);
+
+        if (!cameraId) return showErr('Enter the camera id (e.g. CAM-1).');
+        if ((trackId == null || Number.isNaN(trackId)) && (sessionId == null || Number.isNaN(sessionId))) {
+            return showErr('Enter the Track # from Latest Detections.');
+        }
+        if (plate.length < 4) return showErr('Enter at least 4 letters/digits for the plate.');
+
+        const saveBtn = document.getElementById('plate-correct-save');
+        if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = 'Saving…'; }
+        if (err) err.style.display = 'none';
+
+        const body = { camera_id: cameraId, plate };
+        if (trackId != null && !Number.isNaN(trackId)) body.track_id = trackId;
+        if (sessionId != null && !Number.isNaN(sessionId)) body.recognition_session_id = sessionId;
+
+        let aiLocked = false;
+        if (aiCropOrigin) {
+            try {
+                const aiRes = await fetch(String(aiCropOrigin).replace(/\/$/, '') + '/correct-plate', {
+                    method: 'POST',
+                    headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
+                    body: JSON.stringify(body),
+                });
+                const aiData = await aiRes.json().catch(() => ({}));
+                aiLocked = aiRes.ok && !!aiData.ok;
+            } catch (_) { aiLocked = false; }
+        }
+
+        try {
+            const headers = {
+                Accept: 'application/json',
+                'Content-Type': 'application/json',
+                'X-CSRF-TOKEN': csrf,
+                'X-Requested-With': 'XMLHttpRequest',
+            };
+            if (xsrf) headers['X-XSRF-TOKEN'] = xsrf;
+            const res = await fetch(correctUrl, {
+                method: 'POST',
+                headers,
+                credentials: 'same-origin',
+                body: JSON.stringify(body),
+            });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok && !aiLocked) {
+                const fieldMsg = data?.errors ? Object.values(data.errors).flat().find(Boolean) : null;
+                showErr(fieldMsg || data.message || 'Could not save plate.');
+                return;
+            }
+            window.__aiClosePlateModal();
+            if (typeof window.__aiParkingRefresh === 'function') window.__aiParkingRefresh();
+            else window.location.reload();
+        } catch (_) {
+            if (aiLocked) {
+                window.__aiClosePlateModal();
+                if (typeof window.__aiParkingRefresh === 'function') window.__aiParkingRefresh();
+            } else {
+                showErr('Network error while saving plate. Try again.');
+            }
+        } finally {
+            if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = 'Save plate'; }
+        }
+    });
+
+    // Move modal to <body> so portal overflow cannot clip it.
+    const modal = document.getElementById('plate-correct-modal');
+    if (modal && modal.parentElement !== document.body) {
+        document.body.appendChild(modal);
+    }
+})();
+</script>
 <script>
 (() => {
     const statusUrl = @json($statusUrl ?? null);
-    const correctUrl = @json($correctPlateUrl ?? null);
     const aiCropOrigin = @json($aiCropOrigin ?? null);
     const plateCropBase = @json(url('/guard/ai-parking/plate-crop'));
     const vehicleCropBase = @json(url('/guard/ai-parking/vehicle-crop'));
     const csrf = document.querySelector('meta[name="csrf-token"]')?.content || '';
+    let detectionsList = document.getElementById('ai-detections');
 
     const cropUrlFor = (cam, track, kind = 'vehicle') => {
         if (!cam || track == null || track === '') return '';
@@ -540,18 +771,25 @@
         if (!img || img.dataset.fallbackDone === '1') return;
         const plate = img.dataset.plateCrop || '';
         const vehicle = img.dataset.vehicleCrop || '';
+        const dataUri = img.dataset.dataUri || '';
         const cur = (img.getAttribute('src') || '').split('?')[0];
+        // Prefer embedded JPEG when live crop URLs 404 after track churn.
+        if (dataUri && !cur.startsWith('data:')) {
+            img.src = dataUri;
+            return;
+        }
         if (plate && cur.indexOf('plate-crop') === -1 && !cur.startsWith('data:')) {
             img.src = plate;
             return;
         }
-        if (vehicle && cur.indexOf('vehicle-crop') === -1) {
+        if (vehicle && cur.indexOf('vehicle-crop') === -1 && !cur.startsWith('data:')) {
             img.src = vehicle;
             return;
         }
         img.dataset.fallbackDone = '1';
         const ph = document.createElement('div');
         ph.className = 'flex h-20 w-28 shrink-0 items-center justify-center rounded-lg border border-dashed border-gray-200 bg-gray-50 text-[10px] text-gray-400';
+        ph.dataset.detThumbEmpty = '1';
         ph.textContent = 'No image';
         img.replaceWith(ph);
     };
@@ -619,7 +857,7 @@
         }
     };
 
-    const ensureDetThumb = (li, det, camId) => {
+    const ensureDetThumb = (li, det, camId, { force = false } = {}) => {
         const plateUrl = cropUrlFor(camId, det.track_id, 'plate');
         const vehicleUrl = cropUrlFor(camId, det.track_id, 'vehicle');
         const dataUri = det.thumb_jpeg_base64
@@ -645,14 +883,23 @@
             crop = document.createElement('img');
             crop.alt = 'Vehicle';
             crop.dataset.detThumb = '1';
-            crop.className = 'h-20 w-28 shrink-0 rounded-lg border border-gray-200 bg-slate-900 object-cover';
+            crop.className = 'h-20 w-28 shrink-0 rounded-lg border border-gray-200 bg-gray-100 object-cover';
             crop.addEventListener('error', () => {
-                if (crop.dataset.fallbackTried !== '1' && dataUri && crop.src !== dataUri) {
+                if (crop.dataset.fallbackTried !== '1' && dataUri && !String(crop.src || '').startsWith('data:')) {
                     crop.dataset.fallbackTried = '1';
                     crop.src = dataUri;
                     return;
                 }
                 window.aiDetThumbFallback(crop);
+            });
+            // Broken/empty JPEG can paint as a dark slate square without firing error
+            // reliably in every browser — swap to placeholder if decode fails.
+            crop.addEventListener('load', () => {
+                try {
+                    if (crop.naturalWidth < 4 || crop.naturalHeight < 4) {
+                        window.aiDetThumbFallback(crop);
+                    }
+                } catch (_) { /* ignore */ }
             });
             li.prepend(crop);
         }
@@ -660,21 +907,23 @@
         if (vehicleUrl) crop.dataset.vehicleCrop = vehicleUrl;
         if (dataUri) crop.dataset.dataUri = dataUri;
         const moving = isMovingDet(det);
+        const scanning = !det.plate && ['pending', 'detecting', ''].includes(String(det.plate_status || '').toLowerCase());
         crop.dataset.motion = det.motion_state || '';
-        crop.alt = moving ? 'Scanning vehicle' : 'Vehicle';
-        crop.classList.toggle('ai-det-thumb-scanning', moving);
-        // Only set src when the track/URL actually changes — prevents blink on every refresh.
-        // While moving, refresh crop occasionally so the photo tracks motion.
-        const bustKey = moving
-            ? `${stableSrc}|m|${Math.floor(Date.now() / 2000)}`
+        crop.alt = (moving || scanning) ? 'Scanning vehicle' : 'Vehicle';
+        crop.classList.toggle('ai-det-thumb-scanning', moving || scanning);
+        // Refresh crop when moving, scanning, or plate/slot just changed.
+        const bustKey = (moving || scanning || force)
+            ? `${stableSrc}|r|${Math.floor(Date.now() / 1000)}`
             : stableSrc;
-        if (crop.dataset.stableSrc !== bustKey) {
+        if (force || crop.dataset.stableSrc !== bustKey) {
             crop.dataset.stableSrc = bustKey;
             crop.dataset.fallbackDone = '0';
             crop.dataset.fallbackTried = '0';
-            if (moving && !dataUri && (vehicleUrl || plateUrl)) {
-                const base = vehicleUrl || plateUrl;
+            if ((moving || scanning || force) && !dataUri && (vehicleUrl || plateUrl)) {
+                const base = (det.plate && plateUrl) ? plateUrl : (vehicleUrl || plateUrl);
                 crop.src = `${base}${base.includes('?') ? '&' : '?'}t=${Date.now()}`;
+            } else if (dataUri && force) {
+                crop.src = dataUri;
             } else {
                 crop.src = stableSrc;
             }
@@ -694,7 +943,25 @@
     };
 
     const updateDetRow = (li, det, camId) => {
-        ensureDetThumb(li, det, camId);
+        const prevSig = li.dataset.detSig || '';
+        const nextSig = [
+            det.plate || '',
+            det.plate_status || '',
+            det.slot_id || '',
+            det.motion_state || '',
+            det.ocr_attempts || 0,
+            det.owner_name || '',
+            det.track_id ?? '',
+        ].join('|');
+        const changed = prevSig !== '' && prevSig !== nextSig;
+        const plateOrSlotChanged = prevSig !== '' && (() => {
+            const [pPlate, , pSlot] = prevSig.split('|');
+            return String(pPlate) !== String(det.plate || '')
+                || String(pSlot) !== String(det.slot_id || '');
+        })();
+        li.dataset.detSig = nextSig;
+
+        ensureDetThumb(li, det, camId, { force: plateOrSlotChanged });
 
         let left = li.querySelector('[data-det-left]');
         if (!left) {
@@ -718,6 +985,10 @@
             plateEl.innerHTML = '<span class="font-sans text-sm font-semibold text-slate-500">Plate Not Read</span>';
         } else if (det.plate) {
             plateEl.textContent = det.plate;
+            if (changed && plateOrSlotChanged) {
+                plateEl.classList.add('animate-pulse');
+                window.setTimeout(() => plateEl.classList.remove('animate-pulse'), 900);
+            }
         } else {
             const wait = unresolvedPlateLabel(det);
             const scanning = wait !== '—';
@@ -741,6 +1012,7 @@
         if (det.class) bits.push(String(det.class).charAt(0).toUpperCase() + String(det.class).slice(1));
         if (det.slot_id) bits.push(`Parking: ${det.slot_id} OCCUPIED`);
         if (camId) bits.push(camId);
+        if (det.track_id != null && det.track_id !== '') bits.push(`#${det.track_id}`);
         if (det.violation_flag || det.violation_status) {
             bits.push(`⚠ ${det.violation_status || 'Wrong Parking'}`);
             if (det.violation_reason && det.violation_reason !== det.violation_status) {
@@ -760,13 +1032,15 @@
             li.append(right);
         }
 
-        let corr = right.querySelector('[data-correct-plate], [data-det-owner]');
+        let corr = right.querySelector('[data-det-owner-btn]');
+        let addBtn = right.querySelector('[data-add-plate-btn]');
         if (det.track_id != null) {
             if (!corr || corr.tagName !== 'BUTTON') {
                 corr?.remove();
                 corr = document.createElement('button');
                 corr.type = 'button';
                 corr.dataset.correctPlate = '1';
+                corr.dataset.detOwnerBtn = '1';
                 right.prepend(corr);
             }
             corr.className = isKnownOwner
@@ -790,11 +1064,38 @@
                 delete corr.dataset.session;
             }
             corr.dataset.manual = needsManualPlate ? '1' : '0';
+            corr.setAttribute('data-correct-plate', '1');
+            corr.setAttribute('onclick', "event.preventDefault();event.stopPropagation();window.__aiOpenPlateModal&&window.__aiOpenPlateModal(this);return false;");
+
+            if (!addBtn) {
+                addBtn = document.createElement('button');
+                addBtn.type = 'button';
+                addBtn.dataset.correctPlate = '1';
+                addBtn.dataset.addPlateBtn = '1';
+                right.insertBefore(addBtn, corr.nextSibling);
+            }
+            addBtn.className = 'rounded-lg border border-indigo-200 bg-indigo-50 px-2 py-1 text-[11px] font-semibold text-indigo-800 hover:bg-indigo-100';
+            addBtn.textContent = det.plate ? 'Edit plate' : 'Add plate';
+            addBtn.title = det.plate ? 'Fix or replace the plate number' : 'Add plate number for this vehicle';
+            addBtn.dataset.camera = camId;
+            addBtn.dataset.track = String(det.track_id);
+            addBtn.dataset.plate = det.plate || '';
+            addBtn.dataset.vehicleType = det.vehicle_type || det.class || '';
+            addBtn.dataset.manual = det.plate ? '0' : '1';
+            if (det.recognition_session_id != null) {
+                addBtn.dataset.session = String(det.recognition_session_id);
+            } else {
+                delete addBtn.dataset.session;
+            }
+            addBtn.setAttribute('data-correct-plate', '1');
+            addBtn.setAttribute('onclick', "event.preventDefault();event.stopPropagation();window.__aiOpenPlateModal&&window.__aiOpenPlateModal(this);return false;");
         } else {
+            addBtn?.remove();
             if (!corr || corr.tagName === 'BUTTON') {
                 corr?.remove();
                 corr = document.createElement('span');
                 corr.dataset.detOwner = '1';
+                corr.dataset.detOwnerBtn = '1';
                 right.prepend(corr);
             }
             corr.className = isKnownOwner
@@ -1097,202 +1398,6 @@
         });
     });
 
-    // Plate correction must work even if status polling URL is missing.
-    const plateModal = document.getElementById('plate-correct-modal');
-    const plateForm = document.getElementById('plate-correct-form');
-    const plateErr = document.getElementById('plate-correct-error');
-    const plateSaveBtn = document.getElementById('plate-correct-save');
-    const plateMeta = document.getElementById('plate-correct-meta');
-    const plateThumb = document.getElementById('plate-correct-thumb');
-
-    const closePlateModal = () => {
-        plateModal?.classList.add('hidden');
-        plateModal?.classList.remove('flex');
-        plateErr?.classList.add('hidden');
-        if (plateSaveBtn) {
-            plateSaveBtn.disabled = false;
-            plateSaveBtn.textContent = 'Save plate';
-        }
-    };
-
-    const showPlateError = (msg) => {
-        if (!plateErr) return;
-        plateErr.textContent = msg || 'Could not save plate.';
-        plateErr.classList.remove('hidden');
-    };
-
-    document.addEventListener('click', (e) => {
-        const btn = e.target.closest('[data-correct-plate]');
-        if (!btn) return;
-        e.preventDefault();
-        e.stopPropagation();
-        document.getElementById('plate-correct-camera').value = btn.dataset.camera || '';
-        document.getElementById('plate-correct-track').value = btn.dataset.track || '';
-        document.getElementById('plate-correct-session').value = btn.dataset.session || '';
-        document.getElementById('plate-correct-value').value = btn.dataset.plate || '';
-        const manual = btn.dataset.manual === '1';
-        const title = document.getElementById('plate-correct-title');
-        const help = document.getElementById('plate-correct-help');
-        if (title) title.textContent = manual ? 'Enter plate number' : 'Fix plate number';
-        if (help) {
-            help.textContent = manual
-                ? 'OCR could not read this plate. Enter it manually — lookup uses the same registered-vehicle database.'
-                : 'Override a bad OCR read. Owner is looked up automatically from the database.';
-        }
-        const cam = btn.dataset.camera || '';
-        const track = btn.dataset.track || '';
-        const vType = btn.dataset.vehicleType || '';
-        const metaCam = document.getElementById('plate-correct-meta-camera');
-        const metaType = document.getElementById('plate-correct-meta-type');
-        const metaTrack = document.getElementById('plate-correct-meta-track');
-        if (metaCam) metaCam.textContent = cam ? `Camera: ${cam}` : '';
-        if (metaType) metaType.textContent = vType ? `Vehicle: ${vType}` : '';
-        if (metaTrack) {
-            const bits = [];
-            if (track) bits.push(`Track #${track}`);
-            if (btn.dataset.session) bits.push(`Session ${btn.dataset.session}`);
-            metaTrack.textContent = bits.join(' · ');
-        }
-        if (plateMeta) plateMeta.classList.remove('hidden');
-        if (plateThumb) {
-            const thumbSrc = cropUrlFor(cam, track, 'vehicle') || cropUrlFor(cam, track, 'plate');
-            if (thumbSrc) {
-                plateThumb.src = thumbSrc;
-                plateThumb.classList.remove('hidden');
-            } else {
-                plateThumb.classList.add('hidden');
-            }
-        }
-        plateErr?.classList.add('hidden');
-        plateModal?.classList.remove('hidden');
-        plateModal?.classList.add('flex');
-        document.getElementById('plate-correct-value')?.focus();
-    });
-
-    document.getElementById('plate-correct-cancel')?.addEventListener('click', closePlateModal);
-    plateModal?.addEventListener('click', (e) => { if (e.target === plateModal) closePlateModal(); });
-
-    plateForm?.addEventListener('submit', async (e) => {
-        e.preventDefault();
-        if (!correctUrl && !aiCropOrigin) {
-            showPlateError('Save URL is missing. Refresh the page and try again.');
-            return;
-        }
-        const cameraId = (document.getElementById('plate-correct-camera')?.value || '').trim();
-        const trackRaw = (document.getElementById('plate-correct-track')?.value || '').trim();
-        const sessionRaw = (document.getElementById('plate-correct-session')?.value || '').trim();
-        const plateRaw = (document.getElementById('plate-correct-value')?.value || '').trim();
-        const plate = plateRaw.toUpperCase().replace(/[^A-Z0-9]/g, '');
-        const trackId = trackRaw === '' ? null : Number(trackRaw);
-        const sessionId = sessionRaw === '' ? null : Number(sessionRaw);
-
-        if (!cameraId) {
-            showPlateError('Missing camera for this detection.');
-            return;
-        }
-        if ((trackId == null || Number.isNaN(trackId)) && (sessionId == null || Number.isNaN(sessionId))) {
-            showPlateError('Missing vehicle track. Wait for a fresh detection and try again.');
-            return;
-        }
-        if (plate.length < 4) {
-            showPlateError('Enter at least 4 letters/digits for the plate.');
-            return;
-        }
-
-        if (plateSaveBtn) {
-            plateSaveBtn.disabled = true;
-            plateSaveBtn.textContent = 'Saving…';
-        }
-        plateErr?.classList.add('hidden');
-
-        const body = { camera_id: cameraId, plate };
-        if (trackId != null && !Number.isNaN(trackId)) body.track_id = trackId;
-        if (sessionId != null && !Number.isNaN(sessionId)) body.recognition_session_id = sessionId;
-
-        let aiLocked = false;
-        if (aiCropOrigin) {
-            const aiController = new AbortController();
-            const aiTimer = window.setTimeout(() => aiController.abort(), 5000);
-            try {
-                const aiRes = await fetch(`${String(aiCropOrigin).replace(/\/$/, '')}/correct-plate`, {
-                    method: 'POST',
-                    headers: {
-                        Accept: 'application/json',
-                        'Content-Type': 'application/json',
-                    },
-                    signal: aiController.signal,
-                    body: JSON.stringify(body),
-                });
-                const aiData = await aiRes.json().catch(() => ({}));
-                aiLocked = aiRes.ok && !!aiData.ok;
-            } catch (_) {
-                aiLocked = false;
-            } finally {
-                window.clearTimeout(aiTimer);
-            }
-        }
-
-        const finishOk = () => {
-            closePlateModal();
-            if (typeof window.__aiParkingRefresh === 'function') window.__aiParkingRefresh();
-        };
-
-        if (!correctUrl) {
-            if (aiLocked) finishOk();
-            else showPlateError('Could not lock plate on the AI camera service.');
-            if (plateSaveBtn) {
-                plateSaveBtn.disabled = false;
-                plateSaveBtn.textContent = 'Save plate';
-            }
-            return;
-        }
-
-        const controller = new AbortController();
-        const timer = window.setTimeout(() => controller.abort(), 12000);
-        try {
-            const res = await fetch(correctUrl, {
-                method: 'POST',
-                headers: {
-                    Accept: 'application/json',
-                    'Content-Type': 'application/json',
-                    'X-CSRF-TOKEN': csrf,
-                    'X-Requested-With': 'XMLHttpRequest',
-                },
-                credentials: 'same-origin',
-                signal: controller.signal,
-                body: JSON.stringify(body),
-            });
-            const data = await res.json().catch(() => ({}));
-            if (!res.ok) {
-                if (aiLocked) {
-                    finishOk();
-                    return;
-                }
-                const fieldMsg = data?.errors
-                    ? Object.values(data.errors).flat().find(Boolean)
-                    : null;
-                showPlateError(fieldMsg || data.message || 'Could not save plate.');
-                return;
-            }
-            finishOk();
-        } catch (err) {
-            if (aiLocked) {
-                finishOk();
-                return;
-            }
-            const timedOut = err && (err.name === 'AbortError' || /aborted/i.test(String(err.message || '')));
-            showPlateError(timedOut
-                ? 'Save timed out — Laravel may be busy. Wait a few seconds and try again.'
-                : 'Network error. Check that the website is responding, then try again.');
-        } finally {
-            window.clearTimeout(timer);
-            if (plateSaveBtn) {
-                plateSaveBtn.disabled = false;
-                plateSaveBtn.textContent = 'Save plate';
-            }
-        }
-    });
-
     if (window.lucide) window.lucide.createIcons();
     if (!statusUrl) return;
 
@@ -1300,7 +1405,7 @@
     const occupied = document.getElementById('ai-occupied');
     const parkedCount = document.getElementById('ai-parked-count');
     const updatedAt = document.getElementById('ai-updated-at');
-    const detectionsList = document.getElementById('ai-detections');
+    detectionsList = document.getElementById('ai-detections') || detectionsList;
     const detCount = document.getElementById('ai-det-count');
     const eventsList = document.getElementById('ai-events');
 
@@ -1335,11 +1440,28 @@
         return span;
     };
 
+    let refreshTimer = null;
+    let refreshInFlight = false;
+    const scheduleNextRefresh = (ms) => {
+        if (refreshTimer) window.clearTimeout(refreshTimer);
+        refreshTimer = window.setTimeout(() => {
+            if (typeof window.__aiParkingRefresh === 'function') window.__aiParkingRefresh();
+        }, Math.max(400, ms || 2000));
+    };
+
     const refresh = async () => {
-        if (document.hidden) return;
+        if (document.hidden) {
+            scheduleNextRefresh(2000);
+            return;
+        }
+        if (refreshInFlight) return;
+        refreshInFlight = true;
         try {
             const response = await fetch(statusUrl, { headers: { Accept: 'application/json' }, cache: 'no-store', credentials: 'same-origin' });
-            if (!response.ok) return;
+            if (!response.ok) {
+                scheduleNextRefresh(2500);
+                return;
+            }
             const data = await response.json();
             const cams = data.ai_cameras || data.cameras || {};
             const healthMap = data.ai_cameras_health || {};
@@ -1470,6 +1592,10 @@
             }
 
             window.__aiSceneMoving = sceneMoving;
+            if (!ai && allDets.length === 0) {
+                scheduleNextRefresh(2000);
+                return;
+            }
 
             if (ai && updatedAt) {
                 updatedAt.textContent = ai.updated_at_label || data.updated_at;
@@ -1480,11 +1606,65 @@
                 renderDetections(allDets, ai);
             }
 
+            // Poll faster while any plate is still scanning or a vehicle is moving/relocating.
+            const busy = allDets.some((det) => {
+                const st = String(det.plate_status || '').toLowerCase();
+                if (!det.plate && (st === 'pending' || st === 'detecting' || st === '')) return true;
+                if (String(det.motion_state || '').toLowerCase() === 'moving') return true;
+                const attempts = Number(det.ocr_attempts || 0);
+                const max = Number(det.ocr_max_attempts || 10);
+                if (!det.plate && attempts > 0 && attempts < max) return true;
+                return false;
+            });
+            scheduleNextRefresh(sceneMoving ? 400 : (busy ? 700 : 2000));
+
+            const sameVehicle = (evt, det) => {
+                const eCam = String(evt.camera_id || '').toUpperCase();
+                const dCam = String(det.camera_id || det._camera || '').toUpperCase();
+                if (eCam && dCam && eCam !== dCam) return false;
+                const ePs = String(evt.parking_session_id || '');
+                const dPs = String(det.parking_session_id || '');
+                if (ePs && dPs && ePs === dPs) return true;
+                const eRec = String(evt.recognition_session_id || '');
+                const dRec = String(det.recognition_session_id || '');
+                if (eRec && dRec && eRec === dRec) return true;
+                const eVe = String(evt.vehicle_event_id || '');
+                const dVe = String(det.vehicle_event_id || '');
+                if (eVe && dVe && eVe === dVe) return true;
+                if (eVe && dPs && eVe.startsWith(`${dPs}:`)) return true;
+                if (evt.track_id == null || det.track_id == null || String(evt.track_id) !== String(det.track_id)) return false;
+                if (!eCam || !dCam || eCam !== dCam) return false;
+                return !ePs || !dPs || ePs === dPs;
+            };
+            const withLiveIdentity = (evt) => {
+                const det = allDets.find((row) => sameVehicle(evt, row));
+                if (!det) return evt;
+                const status = String(det.plate_status || '').toLowerCase();
+                const plate = String(det.plate || '').trim();
+                if (!plate || ['pending', 'detecting', 'not_read', 'unreadable'].includes(status)) return evt;
+                return {
+                    ...evt,
+                    plate,
+                    plate_status: status || 'ok',
+                    owner_name: det.owner_name || null,
+                    owner_label: det.owner_label || null,
+                    owner_role: det.owner_role || det.role || null,
+                    role: det.role || det.owner_role || null,
+                    owner_id_number: det.owner_id_number || det.id_number || null,
+                    registration_status: det.registration_status || null,
+                    registered: Object.prototype.hasOwnProperty.call(det, 'registered') ? det.registered : null,
+                    vehicle_details: det.vehicle_details || evt.vehicle_details,
+                    vehicle_type: det.vehicle_type || det.class || evt.vehicle_type,
+                    class: det.class || evt.class,
+                };
+            };
+
             if (eventsList) {
                 eventsList.replaceChildren();
-                const evts = Array.isArray(data.ai_day_events) && data.ai_day_events.length
+                const rawEvts = Array.isArray(data.ai_day_events) && data.ai_day_events.length
                     ? data.ai_day_events
                     : (ai?.events || []);
+                const evts = rawEvts.map(withLiveIdentity);
                 if (!evts.length) {
                     const li = document.createElement('li');
                     li.className = 'px-4 py-10 text-center text-gray-500';
@@ -1568,20 +1748,18 @@
                     });
                 }
             }
-            }
-        } catch (e) {}
+        } catch (e) {
+            scheduleNextRefresh(2500);
+        } finally {
+            refreshInFlight = false;
+        }
     };
 
     refresh();
     window.__aiParkingRefresh = refresh;
-    const scheduleRefresh = () => {
-        const wait = window.__aiSceneMoving ? 400 : 1500;
-        window.setTimeout(() => {
-            refresh().finally(scheduleRefresh);
-        }, wait);
-    };
-    scheduleRefresh();
-    document.addEventListener('visibilitychange', () => { if (!document.hidden) refresh(); });
+    document.addEventListener('visibilitychange', () => {
+        if (!document.hidden) refresh();
+    });
 
     const prependAiEvent = (evt) => {
         if (!eventsList || !evt) return;
@@ -1629,6 +1807,10 @@
             echo.private('ai.parking').listen('.AiParkingRealtime', (payload) => {
                 const eventName = payload?.event || '';
                 const data = payload?.data || {};
+                const refreshSoon = () => {
+                    if (typeof window.__aiParkingRefresh === 'function') window.__aiParkingRefresh();
+                    else scheduleNextRefresh(400);
+                };
                 if (eventName === 'violation_created' || eventName === 'violation_detected') {
                     prependAiEvent({
                         event: eventName,
@@ -1639,24 +1821,37 @@
                         violationReason: data.violationReason || data.reason || null,
                         detectionSource: data.detectionSource || 'AI',
                     });
-                } else if (eventName === 'plate_manual_entry') {
-                    prependAiEvent({
-                        event: eventName,
-                        plateNumber: data.plateNumber,
-                        userRole: data.userRole,
-                        vehicleType: data.vehicleType,
-                        violationType: 'Manual plate',
-                        detectionSource: 'MANUAL',
-                        source: 'MANUAL',
-                    });
-                    refresh();
-                } else if (eventName === 'plate_not_read') {
-                    prependAiEvent({
-                        event: eventName,
-                        plateNumber: 'UNKNOWN',
-                        violationType: 'Plate not read',
-                        detectionSource: 'AI',
-                    });
+                    refreshSoon();
+                } else if (
+                    eventName === 'plate_manual_entry'
+                    || eventName === 'plate_scan_result'
+                    || eventName === 'plate_scan_started'
+                    || eventName === 'plate_scan_failed'
+                    || eventName === 'plate_not_read'
+                    || eventName === 'vehicle_identified'
+                    || eventName === 'vehicle_moving'
+                    || eventName === 'vehicle_stationary'
+                    || eventName === 'vehicle_detected'
+                ) {
+                    if (eventName === 'plate_manual_entry') {
+                        prependAiEvent({
+                            event: eventName,
+                            plateNumber: data.plateNumber,
+                            userRole: data.userRole,
+                            vehicleType: data.vehicleType,
+                            violationType: 'Manual plate',
+                            detectionSource: 'MANUAL',
+                            source: 'MANUAL',
+                        });
+                    } else if (eventName === 'plate_not_read') {
+                        prependAiEvent({
+                            event: eventName,
+                            plateNumber: 'UNKNOWN',
+                            violationType: 'Plate not read',
+                            detectionSource: 'AI',
+                        });
+                    }
+                    refreshSoon();
                 }
             });
         } catch (e) {}

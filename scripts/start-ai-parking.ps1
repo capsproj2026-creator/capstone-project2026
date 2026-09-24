@@ -55,8 +55,9 @@ function Get-NetstatExe {
 
 function Test-HttpOk([string]$Url) {
     try {
-        # Local Laravel + Mongo can take several seconds when busy; 4s false-fails often.
-        $r = Invoke-WebRequest -Uri $Url -TimeoutSec 12 -UseBasicParsing
+        # Short timeout: this is polled in a loop. A 12s timeout made a
+        # "wait 45s" loop block for many minutes before YOLO could load.
+        $r = Invoke-WebRequest -Uri $Url -TimeoutSec 3 -UseBasicParsing
         return ($r.StatusCode -ge 200 -and $r.StatusCode -lt 500)
     } catch {
         return $false
@@ -158,24 +159,26 @@ Write-Host "========================================" -ForegroundColor Green
 Write-Host ""
 
 Set-Location $Root
-Write-Host "Checking MongoDB (capstone)..." -ForegroundColor Cyan
-# Native php stderr (e.g. missing git for sebastian/version) must not abort under Stop.
-$prevEap = $ErrorActionPreference
-$ErrorActionPreference = "Continue"
-& php artisan config:clear *> $null
-& php scripts/mongo_ping.php *> $null
-$mongoExit = $LASTEXITCODE
-$ErrorActionPreference = $prevEap
-if ($mongoExit -ne 0) {
-    Write-Host ""
-    Write-Host "MongoDB is not connected." -ForegroundColor Red
-    Write-Host "  Local .env:" -ForegroundColor Yellow
-    Write-Host "    MONGODB_MODE=local" -ForegroundColor Yellow
-    Write-Host "    MONGODB_URI=mongodb://127.0.0.1:27017" -ForegroundColor Yellow
-    Write-Host "  Atlas:  .\scripts\setup-atlas-mongo.ps1" -ForegroundColor Yellow
-    exit 1
+if (-not $SkipWebStack) {
+    Write-Host "Checking MongoDB (capstone)..." -ForegroundColor Cyan
+    # Native php stderr (e.g. missing git for sebastian/version) must not abort under Stop.
+    # Skip config:clear — it only makes the first page rebuild config.
+    $prevEap = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    & php scripts/mongo_ping.php *> $null
+    $mongoExit = $LASTEXITCODE
+    $ErrorActionPreference = $prevEap
+    if ($mongoExit -ne 0) {
+        Write-Host ""
+        Write-Host "MongoDB is not connected." -ForegroundColor Red
+        Write-Host "  Local .env:" -ForegroundColor Yellow
+        Write-Host "    MONGODB_MODE=local" -ForegroundColor Yellow
+        Write-Host "    MONGODB_URI=mongodb://127.0.0.1:27017" -ForegroundColor Yellow
+        Write-Host "  Atlas:  .\scripts\setup-atlas-mongo.ps1" -ForegroundColor Yellow
+        exit 1
+    }
+    Write-Host "  MongoDB: OK" -ForegroundColor Green
 }
-Write-Host "  MongoDB: OK" -ForegroundColor Green
 
 function Wait-LaravelReady([string]$Url, [int]$Seconds = 45) {
     for ($i = 0; $i -lt $Seconds; $i++) {
@@ -216,22 +219,9 @@ if (-not $SkipWebStack) {
     }
     Write-Host "  Laravel: OK ($laravelUrl)" -ForegroundColor Green
 } else {
-    # -SkipWebStack (from start-system WT tab): Laravel/LAN are sibling tabs.
-    # Wait for them — do NOT Start-Process separate PowerShell windows (that
-    # put Laravel/LAN "outside" the Windows Terminal).
-    if ((Test-PortListening 8000) -and -not (Test-HttpOk $laravelUrl)) {
-        Write-Host "Laravel port is open but not responding - waiting for recycle..." -ForegroundColor Yellow
-    }
-    if (-not (Test-HttpOk $laravelUrl)) {
-        Write-Host "Waiting for Laravel tab ($laravelUrl)..." -ForegroundColor DarkGray
-        if (-not (Wait-LaravelReady -Url $laravelUrl -Seconds 50)) {
-            Write-Host "Laravel did not respond at $laravelUrl" -ForegroundColor Red
-            Write-Host "  Check the Laravel / LAN Front tabs in this Windows Terminal window." -ForegroundColor DarkYellow
-            Write-Host "  Or re-run: .\scripts\start-system.ps1" -ForegroundColor DarkYellow
-            exit 1
-        }
-    }
-    Write-Host "  Laravel: OK ($laravelUrl)" -ForegroundColor Green
+    # -SkipWebStack (from start-system): sibling tabs are already starting Laravel.
+    # Load YOLO immediately. Occupancy posts retry until :8001 answers.
+    Write-Host "Loading YOLO now. Occupancy posts retry until $laravelUrl is up." -ForegroundColor DarkGray
 }
 
 Write-Host ""

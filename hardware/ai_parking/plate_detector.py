@@ -202,15 +202,16 @@ def expand_xyxy(
     min_pad_x: int = 12,
     min_pad_y: int = 8,
 ) -> tuple[int, int, int, int]:
-    """Widen a plate box so the last digit is not clipped (common YOLO miss)."""
+    """Widen a plate box so leading/trailing characters are not clipped."""
     x1, y1, x2, y2 = (int(v) for v in xyxy)
     bw = max(1, x2 - x1)
     bh = max(1, y2 - y1)
-    # Bias extra padding to the right — CAM-2 EBD814 lost the trailing '4'.
+    # Extra pad both sides — trailing digit (EBD814) and leading letter (WTC259).
     pad_x = max(min_pad_x, int(bw * pad_x_ratio))
     pad_y = max(min_pad_y, int(bh * pad_y_ratio))
+    pad_x_left = max(pad_x, int(bw * (pad_x_ratio + 0.10)))
     pad_x_right = max(pad_x, int(bw * (pad_x_ratio + 0.12)))
-    nx1 = max(0, x1 - pad_x)
+    nx1 = max(0, x1 - pad_x_left)
     ny1 = max(0, y1 - pad_y)
     nx2 = min(frame_w, x2 + pad_x_right)
     ny2 = min(frame_h, y2 + pad_y)
