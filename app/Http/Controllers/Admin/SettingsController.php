@@ -5,7 +5,6 @@ namespace App\Http\Controllers\Admin;
 use App\Http\Controllers\Controller;
 use App\Models\GeneralInformation;
 use App\Models\Notification;
-use App\Models\ParkingArea;
 use App\Models\ParkingRule;
 use App\Models\StalledVehicle;
 use App\Models\User;
@@ -65,7 +64,6 @@ class SettingsController extends Controller
                 ->orderBy('name')
                 ->get(),
             'rolePermissionService' => $permissions,
-            'zones' => ParkingArea::query()->orderBy('area_name')->get(),
         ]);
     }
 
@@ -457,31 +455,75 @@ class SettingsController extends Controller
 
     public function storeViolationType(Request $request): RedirectResponse
     {
+        $validated = $request->validate([
+            'violation_name' => ['required', 'string', 'max:255'],
+            'description' => ['required', 'string', 'max:500'],
+        ]);
+
+        $name = trim($validated['violation_name']);
+        if ($name === '') {
+            return redirect()
+                ->route('admin.settings', ['section' => 'violations'])
+                ->withErrors(['violation_name' => 'Enter a violation name.']);
+        }
+
+        $taken = ViolationType::query()
+            ->where('violation_name', $name)
+            ->exists();
+        if ($taken) {
+            return redirect()
+                ->route('admin.settings', ['section' => 'violations'])
+                ->withErrors(['violation_name' => 'That violation type already exists.']);
+        }
+
+        $nextId = ((int) ViolationType::query()->max('id')) + 1;
+        if ($nextId < 5) {
+            $nextId = 5;
+        }
+
+        ViolationType::query()->create([
+            'id' => $nextId,
+            'violation_name' => $name,
+            'description' => trim($validated['description']),
+            'status' => 'Active',
+        ]);
+
         return redirect()
             ->route('admin.settings', ['section' => 'violations'])
-            ->with('error', 'Violation types are fixed by campus policy (CSPC Ref. No. 2026-021). You can edit descriptions or toggle active status only.');
+            ->with('success', 'Violation type added.');
     }
 
     public function updateViolationType(Request $request, int $id): RedirectResponse
     {
         $type = ViolationType::query()->where('id', $id)->firstOrFail();
         $official = \App\Support\TrafficViolations::names();
-        if (! in_array((string) $type->violation_name, $official, true)) {
-            \App\Support\TrafficViolations::syncToDatabase();
-
-            return redirect()
-                ->route('admin.settings', ['section' => 'violations'])
-                ->with('error', 'Legacy violation type removed. Official list restored.');
-        }
+        $isOfficial = in_array((string) $type->violation_name, $official, true);
 
         $validated = $request->validate([
-            'violation_name' => ['required', 'string', 'max:255', Rule::in($official)],
+            'violation_name' => ['required', 'string', 'max:255'],
             'description' => ['required', 'string', 'max:500'],
         ]);
 
+        $name = trim($validated['violation_name']);
+        if ($isOfficial && ! in_array($name, $official, true)) {
+            return redirect()
+                ->route('admin.settings', ['section' => 'violations'])
+                ->withErrors(['violation_name' => 'Official violation names cannot be changed.']);
+        }
+
+        $taken = ViolationType::query()
+            ->where('violation_name', $name)
+            ->where('id', '!=', $type->id)
+            ->exists();
+        if ($taken) {
+            return redirect()
+                ->route('admin.settings', ['section' => 'violations'])
+                ->withErrors(['violation_name' => 'That violation type already exists.']);
+        }
+
         $type->update([
-            'violation_name' => $validated['violation_name'],
-            'description' => $validated['description'],
+            'violation_name' => $name,
+            'description' => trim($validated['description']),
         ]);
 
         return redirect()

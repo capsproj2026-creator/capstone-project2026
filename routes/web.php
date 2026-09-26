@@ -8,6 +8,7 @@ use App\Http\Controllers\Admin\RegisteredPlatesController;
 use App\Http\Controllers\Admin\ReportController;
 use App\Http\Controllers\Admin\RfidController;
 use App\Http\Controllers\Admin\SettingsController;
+use App\Http\Controllers\Admin\SystemHealthController;
 use App\Http\Controllers\Admin\UserManagementController;
 use App\Http\Controllers\Admin\ViolationController as AdminViolationController;
 use App\Http\Controllers\Auth\CampusIdScanController;
@@ -161,6 +162,8 @@ Route::prefix('admin')->middleware(['auth', 'verified', 'granted', 'no.cache', '
         ->middleware('permission:manage_parking')
         ->name('parking.slots.destroy');
     Route::get('/settings', [SettingsController::class, 'index'])->name('settings');
+    Route::get('/system-health', [SystemHealthController::class, 'index'])->name('system-health');
+    Route::get('/system-health/status', [SystemHealthController::class, 'status'])->name('system-health.status');
     Route::post('/settings/general', [SettingsController::class, 'updateGeneral'])
         ->middleware('permission:system_settings')
         ->name('settings.general');

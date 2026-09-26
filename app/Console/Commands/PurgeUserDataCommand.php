@@ -74,8 +74,8 @@ class PurgeUserDataCommand extends Command
         if (! $this->option('no-reseed')) {
             $this->info('Reseeding admin and test users...');
             $this->callSilent('db:seed', ['--class' => CapstoneSeeder::class, '--force' => true]);
-            $this->line('  · Admin: admin@my.cspc.edu.ph / admin123');
-            $this->line('  · Guard: guard@my.cspc.edu.ph / password123');
+            $this->line('  · Seeded Admin/Guard accounts restored — change passwords immediately.');
+            $this->line('  · Do not paste production passwords into logs or scripts.');
         }
 
         $this->info('User data purge complete. Schema and reference data preserved.');

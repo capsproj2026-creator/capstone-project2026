@@ -330,7 +330,7 @@ if ($preflight.Count -gt 0) {
 Set-Location $Root
 
 function Test-CapstoneMongo {
-    # Do not pipe native php — PowerShell can mis-report $LASTEXITCODE after Out-Null.
+    # Do not pipe native php - PowerShell can mis-report $LASTEXITCODE after Out-Null.
     $prevEap = $ErrorActionPreference
     $ErrorActionPreference = "Continue"
     try {
@@ -373,12 +373,31 @@ if (-not (Test-Path -LiteralPath $campusIdPython)) {
 
 Write-Host "Starting Smart Campus VMS from $Root" -ForegroundColor Green
 
+. (Join-Path $PSScriptRoot 'iscvms-common.ps1')
+
+# Parsing .env and every config file on OneDrive makes each page wait several seconds.
+Write-Host "Caching config..." -ForegroundColor DarkGray
+& php artisan config:cache | Out-Null
+
+# Skip relaunch when the port is already serving (avoids duplicate processes).
+$needLaravel = -not (Test-TcpPort -HostName '127.0.0.1' -Port 8001)
+$needLan = -not (Test-TcpPort -HostName '127.0.0.1' -Port 8000)
+$needReverb = -not (Test-TcpPort -HostName '127.0.0.1' -Port 8080)
+
 # Laravel stays on loopback :8001. LAN front on :8000 answers ESP32 heartbeats
 # instantly so a slow Mongo/page load cannot starve the gates (HTTP -11).
-Start-ProjectWindow "Laravel" @("php", "artisan", "serve", "--host=127.0.0.1", "--port=8001", "--no-reload")
-Wait-ServiceGap 600
-Start-ProjectWindow "LAN Front (ESP32)" @("php", "-S", "0.0.0.0:8000", "bootstrap/lan_front_router.php")
-Wait-ServiceGap 500
+if ($needLaravel) {
+    Start-ProjectWindow "Laravel" @("php", "artisan", "serve", "--host=127.0.0.1", "--port=8001", "--no-reload")
+    Wait-ServiceGap 600
+} else {
+    Write-Host "  Laravel :8001 already listening — skip" -ForegroundColor DarkGray
+}
+if ($needLan) {
+    Start-ProjectWindow "LAN Front (ESP32)" @("php", "-S", "0.0.0.0:8000", "bootstrap/lan_front_router.php")
+    Wait-ServiceGap 500
+} else {
+    Write-Host "  LAN front :8000 already listening — skip" -ForegroundColor DarkGray
+}
 
 $ngrokQueued = $false
 if (-not $SkipNgrok) {
@@ -392,15 +411,35 @@ if (-not $SkipNgrok) {
     }
 }
 
-Start-ProjectWindow "Reverb" @("php", "artisan", "reverb:start")
-Wait-ServiceGap 400
+if ($needReverb) {
+    Start-ProjectWindow "Reverb" @("php", "artisan", "reverb:start")
+    Wait-ServiceGap 400
+} else {
+    Write-Host "  Reverb :8080 already listening — skip" -ForegroundColor DarkGray
+}
 
 # Runs sync:run every 2 minutes (local <-> Atlas) when SYNC_ENABLED=true.
 Start-ProjectWindow "Scheduler" @("php", "artisan", "schedule:work")
 Wait-ServiceGap 400
 
+$viteHot = Join-Path $Root "public\hot"
 if (-not $SkipVite) {
     Start-ProjectWindow "Vite" @("npm", "run", "dev")
+} else {
+    # A leftover hot file (or a Vite tab from an earlier start) makes every page
+    # wait on the dev server before CSS/JS paint. Built assets are already in public/build.
+    if (Test-Path -LiteralPath $viteHot) {
+        Remove-Item -LiteralPath $viteHot -Force
+    }
+    $vitePids = @(Get-NetTCPConnection -LocalPort 5173 -State Listen -ErrorAction SilentlyContinue |
+        Select-Object -ExpandProperty OwningProcess -Unique)
+    foreach ($vitePid in $vitePids) {
+        $proc = Get-Process -Id $vitePid -ErrorAction SilentlyContinue
+        if ($proc -and $proc.ProcessName -match 'node|npm') {
+            Stop-Process -Id $vitePid -Force -ErrorAction SilentlyContinue
+        }
+    }
+    Write-Host "  Vite skipped - pages will use the built CSS/JS" -ForegroundColor DarkGray
 }
 
 if ($startAi) {
@@ -478,8 +517,8 @@ if (Test-Path $esp32Script) {
 Write-Host "  Database: MongoDB (capstone)" -ForegroundColor Yellow
 if ($startAi) { Write-Host "  AI feed:  http://127.0.0.1:8090/stream.mjpg" -ForegroundColor Yellow }
 Write-Host ""
-Write-Host "  Admin:  admin@my.cspc.edu.ph / admin123" -ForegroundColor Cyan
-Write-Host "  Guard:  guard@my.cspc.edu.ph / password123" -ForegroundColor Cyan
+Write-Host "  Login: use seeded Admin/Guard accounts from db:seed — change those passwords after first login." -ForegroundColor Cyan
+Write-Host "  Status: .\scripts\status-system.ps1   Stop: .\scripts\stop-system.ps1" -ForegroundColor DarkGray
 Write-Host ""
 if ($script:UseWindowsTerminal) {
     Write-Host "Keep the Windows Terminal tabs open while using the site." -ForegroundColor DarkGray

@@ -2,7 +2,6 @@
 
 namespace App\Support;
 
-use Illuminate\Support\Facades\Storage;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
 /**
@@ -33,23 +32,17 @@ class PrivateEvidence
             abort(404);
         }
 
-        $disk = null;
-        if (Storage::disk('private')->exists($path)) {
-            $disk = 'private';
-        } elseif (Storage::disk('public')->exists($path)) {
-            $disk = 'public';
-        }
-
-        if ($disk === null) {
+        $absolute = ViolationEvidence::absolutePath($path);
+        if ($absolute === null || ! is_file($absolute)) {
             abort(404);
         }
 
-        $mime = Storage::disk($disk)->mimeType($path) ?: 'application/octet-stream';
+        $mime = @mime_content_type($absolute) ?: 'application/octet-stream';
         if (! str_starts_with((string) $mime, 'image/')) {
             $mime = 'application/octet-stream';
         }
 
-        return Storage::disk($disk)->response($path, basename($path), [
+        return response()->file($absolute, [
             'Content-Type' => $mime,
             'Cache-Control' => 'private, max-age=300',
             'X-Content-Type-Options' => 'nosniff',

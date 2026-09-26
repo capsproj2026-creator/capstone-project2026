@@ -11,7 +11,7 @@
 #define API_HOST       "192.168.1.100"
 #define API_PORT       8000
 #define API_BASE       "http://192.168.1.100:8000"
-#define RFID_API_TOKEN "capstone-rfid-dev-token-change-me"
+#define RFID_API_TOKEN "CHANGE_ME_MATCH_DOTENV_RFID_API_TOKEN"
 
 #define USE_WIFI_MANAGER 0
 

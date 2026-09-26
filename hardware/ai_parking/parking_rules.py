@@ -935,6 +935,14 @@ class TrackMemory:
 
 
 class ParkingIntelligence:
+    """Per-camera vehicle sessions, plate votes, zone occupancy, and violation events.
+
+    Dependencies: zone polygons from JSON, TrackMemory, plate_text helpers.
+    Side effects: mutates tracks/sessions; prune_stale_sessions drops expired IDs.
+    Failure behavior: OCR skipped until parked/in-zone rules allow; locked plates
+    survive brief YOLO flicker via TRACK_LOST_GRACE_SEC.
+    """
+
     def __init__(self, camera_id: str = ""):
         # tracker_id -> recognition session (multiple IDs may alias the same object)
         self.tracks: dict[int, TrackMemory] = {}
@@ -1263,6 +1271,10 @@ class ParkingIntelligence:
         if track_id is not None:
             mem = self.tracks.get(int(track_id))
             if mem is not None:
+                # Wait until this vehicle's plate scan has finished.
+                # A pending read must not log Wrong Parking with an empty plate.
+                if not mem.is_plate_terminal():
+                    return None
                 session_key = mem.parking_session_id(self.camera_id)
                 # Per-session hard lock: one emit of this type for this parking session.
                 emit_tag = f"{event_type}:{zone_id}"

@@ -374,8 +374,11 @@ class AiParkingOccupancyTest extends TestCase
         $this->assertStringNotContainsString('No slot assigned', $html);
         $this->assertStringNotContainsString('Contact administration if you need a parking assignment', $html);
 
-        if ($user->roleName() === 'Staff') {
+        $this->assertStringNotContainsString('Parking area photos', $html);
+        if (str_contains($html, 'ACAD 1 Building (Front)')) {
             $this->assertStringContainsString('images/parking/snapshot_acad1.jpg', $html);
+        }
+        if (str_contains($html, 'Duran Hall (Front)') || str_contains($html, 'Duran Hall Front')) {
             $this->assertStringContainsString('images/parking/snapshot_duran.jpg', $html);
         }
     }

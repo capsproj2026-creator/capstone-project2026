@@ -176,7 +176,7 @@
                         <i data-lucide="clipboard-list" class="h-5 w-5"></i>
                     </div>
                     <div class="min-w-0">
-                        <h3 class="font-semibold text-gray-900">Stalled Vehicles</h3>
+                        <h3 class="font-semibold text-gray-900">Parking Rules</h3>
                         <p class="text-xs text-gray-500">Parking rules and stalled vehicle policy</p>
                     </div>
                 </div>

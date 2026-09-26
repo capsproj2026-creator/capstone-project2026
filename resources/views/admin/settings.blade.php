@@ -7,7 +7,7 @@
         $tabs = [
             'general' => ['label' => 'General', 'icon' => 'settings'],
             'admins' => ['label' => 'Admin Users', 'icon' => 'shield'],
-            'notifications' => ['label' => 'Notifications', 'icon' => 'info'],
+            'notifications' => ['label' => 'General Information', 'icon' => 'info'],
             'violations' => ['label' => 'Violations', 'icon' => 'triangle-alert'],
             'access' => ['label' => 'Access Rules', 'icon' => 'key-round'],
             'policy' => ['label' => 'Policy', 'icon' => 'book-open'],
@@ -173,10 +173,6 @@
         @else
             @include('partials.admin.settings-parking-rules')
             @include('partials.admin.settings-stalled-vehicles')
-
-            <div class="pb-4">
-                @include('partials.admin.zone-access-settings', ['zones' => $zones])
-            </div>
         @endif
     </div>
 @endsection
@@ -218,7 +214,10 @@
         violationForm.action = storeUrl;
         if (violationMethod) violationMethod.value = 'POST';
         if (violationTitle) violationTitle.textContent = 'Add Violation Type';
-        if (violationName) violationName.value = '';
+        if (violationName) {
+            violationName.value = '';
+            violationName.readOnly = false;
+        }
         if (violationDesc) violationDesc.value = '';
         openModal('violation-type-modal');
         violationName?.focus();
@@ -230,7 +229,10 @@
         violationForm.action = updateUrlTemplate.replace('__ID__', encodeURIComponent(id));
         if (violationMethod) violationMethod.value = 'PUT';
         if (violationTitle) violationTitle.textContent = 'Edit Violation Type';
-        if (violationName) violationName.value = btn.getAttribute('data-name') || '';
+        if (violationName) {
+            violationName.value = btn.getAttribute('data-name') || '';
+            violationName.readOnly = btn.getAttribute('data-official') === '1';
+        }
         if (violationDesc) violationDesc.value = btn.getAttribute('data-description') || '';
         openModal('violation-type-modal');
         violationName?.focus();

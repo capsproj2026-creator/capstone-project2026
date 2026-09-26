@@ -6,33 +6,38 @@ return [
     |--------------------------------------------------------------------------
     | Default Filesystem Disk
     |--------------------------------------------------------------------------
-    |
-    | Here you may specify the default filesystem disk that should be used
-    | by the framework. The "local" disk, as well as a variety of cloud
-    | based disks are available to your application for file storage.
-    |
     */
 
     'default' => env('FILESYSTEM_DISK', 'local'),
 
     /*
     |--------------------------------------------------------------------------
-    | Filesystem Disks
+    | External uploads root (optional)
     |--------------------------------------------------------------------------
     |
-    | Below you may configure as many filesystem disks as necessary, and you
-    | may even configure multiple disks for the same driver. Examples for
-    | most supported storage drivers are configured here for reference.
+    | When ISCVMS_UPLOADS_ROOT is set, private documents and public profile
+    | photos are stored under that folder (outside the Laravel tree). Leave
+    | empty to keep using storage/app (default).
     |
-    | Supported drivers: "local", "ftp", "sftp", "s3"
+    | Examples:
+    |   ISCVMS_UPLOADS_ROOT=C:\ISCVMS-Uploads
+    |   ISCVMS_UPLOADS_ROOT=../iscvms-uploads
     |
+    */
+
+    'uploads_root' => \App\Support\UploadsRoot::path(),
+
+    /*
+    |--------------------------------------------------------------------------
+    | Filesystem Disks
+    |--------------------------------------------------------------------------
     */
 
     'disks' => [
 
         'local' => [
             'driver' => 'local',
-            'root' => storage_path('app/private'),
+            'root' => \App\Support\UploadsRoot::privatePath(),
             'serve' => true,
             'throw' => false,
             'report' => false,
@@ -41,7 +46,7 @@ return [
         // Alias used by violation evidence uploads (non-public).
         'private' => [
             'driver' => 'local',
-            'root' => storage_path('app/private'),
+            'root' => \App\Support\UploadsRoot::privatePath(),
             'visibility' => 'private',
             'serve' => true,
             'throw' => false,
@@ -50,7 +55,7 @@ return [
 
         'public' => [
             'driver' => 'local',
-            'root' => storage_path('app/public'),
+            'root' => \App\Support\UploadsRoot::publicPath(),
             'url' => rtrim(env('APP_URL', 'http://localhost'), '/').'/storage',
             'visibility' => 'public',
             'throw' => false,
@@ -77,14 +82,13 @@ return [
     | Symbolic Links
     |--------------------------------------------------------------------------
     |
-    | Here you may configure the symbolic links that will be created when the
-    | `storage:link` Artisan command is executed. The array keys should be
-    | the locations of the links and the values should be their targets.
+    | public/storage → external (or storage/app) public uploads so profile
+    | photos remain reachable via /storage/...
     |
     */
 
     'links' => [
-        public_path('storage') => storage_path('app/public'),
+        public_path('storage') => \App\Support\UploadsRoot::publicPath(),
     ],
 
 ];

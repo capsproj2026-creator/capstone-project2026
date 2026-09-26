@@ -42,6 +42,10 @@ hardware/esp32_rfid_gate_exit/rfid_gate_config.h
 hardware/arduino/**/rfid_gate_config.h
 hardware/ai_parking/debug_plates/
 
+# Turnover backups (timestamped mongodump + file copies)
+/storage/backups/
+/storage/framework/turnover-pids/
+
 # Portable arduino-cli (download via scripts/verify-arduino-gate.ps1)
 tools/arduino-cli/
 

@@ -100,6 +100,15 @@ class ViolationEvidence
             return Storage::disk('public')->path($path);
         }
 
+        foreach ([
+            storage_path('app/private/'.$path),
+            storage_path('app/public/'.$path),
+        ] as $legacy) {
+            if (is_file($legacy)) {
+                return $legacy;
+            }
+        }
+
         return null;
     }
 

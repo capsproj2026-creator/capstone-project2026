@@ -49,37 +49,48 @@
         @php
             $lotSnapshots = collect(\App\Services\ParkingZoneSnapshot::fromApp()->all())->keyBy('area_id');
         @endphp
-        <div id="user-zone-maps" class="space-y-5">
+        <div id="user-zone-maps" class="space-y-3">
             @foreach ($zoneStats as $zone)
-                <div class="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm" data-zone-id="{{ $zone['area']->id }}">
-                    <div class="flex flex-wrap items-center justify-between gap-2 border-b border-gray-100 bg-gray-50/80 px-5 py-4">
-                        <div>
+                @php
+                    $lotSnapshot = $lotSnapshots->get((int) $zone['area']->id);
+                @endphp
+                <details class="group overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm open:border-blue-200" data-zone-id="{{ $zone['area']->id }}">
+                    <summary class="flex cursor-pointer list-none flex-wrap items-center justify-between gap-3 px-5 py-4 select-none hover:bg-gray-50 [&::-webkit-details-marker]:hidden">
+                        <div class="min-w-0">
                             <h3 class="font-semibold text-gray-900">
                                 {{ $zone['area']->area_name }}
                                 @if (! empty($zone['ai_monitored']))
                                     <span class="ml-2 rounded-full bg-blue-100 px-2 py-0.5 text-[10px] font-semibold uppercase text-blue-700">AI</span>
                                 @endif
                                 @if (! empty($zone['hidden']))
-                                    <span class="ml-2 rounded-full bg-slate-200 px-2 py-0.5 text-[10px] font-semibold uppercase text-slate-700">Maintenance</span>
+                                    <span class="ml-2 rounded-full border border-slate-300 bg-slate-700 px-2 py-0.5 text-[10px] font-semibold uppercase text-white">Maintenance</span>
                                 @endif
                             </h3>
                             <p class="text-xs text-gray-500">{{ $zone['area']->designation_notes ?: 'Campus parking zone' }}</p>
                         </div>
-                        <div class="flex gap-3 text-xs font-medium">
+                        <div class="ml-auto flex items-center gap-3 text-xs font-medium">
                             <span class="text-green-700"><span class="zone-available">{{ $zone['available'] }}</span> free</span>
                             <span class="text-red-700"><span class="zone-occupied">{{ $zone['occupied'] }}</span> used</span>
                             <span class="text-gray-500"><span class="zone-total">{{ $zone['total'] }}</span> total</span>
+                            <i data-lucide="chevron-down" class="h-4 w-4 text-gray-500 transition-transform duration-200 group-open:rotate-180"></i>
                         </div>
-                    </div>
-                    @php
-                        $lotSnapshot = $lotSnapshots->get((int) $zone['area']->id);
-                    @endphp
-                    @if ($lotSnapshot)
-                        <div class="border-b border-gray-100 p-4">
-                            @include('partials.parking-zone-snapshot', ['snapshot' => $lotSnapshot, 'compact' => true])
+                    </summary>
+                    @if ($lotSnapshot && empty($zone['hidden']))
+                        <div class="border-t border-gray-100 p-4">
+                            <figure class="parking-zone-snapshot parking-zone-snapshot--compact">
+                                <img
+                                    src="{{ asset($lotSnapshot['path']) }}"
+                                    alt="{{ $lotSnapshot['label'] }} parking area"
+                                    width="767"
+                                    height="1024"
+                                >
+                                <figcaption>
+                                    <span class="parking-zone-snapshot__title">{{ $lotSnapshot['label'] }}</span>
+                                </figcaption>
+                            </figure>
                         </div>
                     @endif
-                    <div class="zone-slot-grid grid grid-cols-3 gap-2 p-4 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8">
+                    <div class="zone-slot-grid grid grid-cols-3 gap-2 border-t border-gray-100 p-4 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8">
                         @foreach ($zone['slots'] as $slot)
                             @php
                                 $status = $slot->status ?? 'Available';
@@ -99,7 +110,7 @@
                             >{{ $slot->slot_number }}</div>
                         @endforeach
                     </div>
-                </div>
+                </details>
             @endforeach
         </div>
     @endif

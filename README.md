@@ -1,6 +1,24 @@
-# Smart Campus VMS (Laravel + MongoDB)
+# Smart Campus VMS / ISCVMS (Laravel + MongoDB)
 
-Vehicle Management System for CSPC — **Laravel 12** + **MongoDB**, with ESP32 RFID boom gates, live cameras, and optional YOLOv9 AI parking.
+**Integrated Smart Campus Vehicle Management System** for CSPC — **Laravel 12** + **MongoDB**, with ESP32 RFID boom gates, live cameras, and optional YOLOv9 AI parking.
+
+## Documentation
+
+| Doc | Audience |
+|-----|----------|
+| [docs/INSTALLATION.md](docs/INSTALLATION.md) | Setup |
+| [docs/CODEBASE_GUIDE.md](docs/CODEBASE_GUIDE.md) | Developers |
+| [docs/FILE_STRUCTURE.md](docs/FILE_STRUCTURE.md) | Layout |
+| [docs/MODULES.md](docs/MODULES.md) | Features |
+| [docs/DATABASE.md](docs/DATABASE.md) | MongoDB |
+| [docs/API.md](docs/API.md) | ESP32 / AI APIs |
+| [docs/ADMIN_MANUAL.md](docs/ADMIN_MANUAL.md) | Admins |
+| [docs/GUARD_QUICK_GUIDE.md](docs/GUARD_QUICK_GUIDE.md) | Guards |
+| [docs/MAINTENANCE.md](docs/MAINTENANCE.md) | Ops |
+| [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) | Incidents |
+| [docs/TURNOVER_CHECKLIST.md](docs/TURNOVER_CHECKLIST.md) | Handover |
+| [docs/TURNOVER_AUDIT.md](docs/TURNOVER_AUDIT.md) | Pre-turnover audit |
+| [docs/FINAL_REPORT.md](docs/FINAL_REPORT.md) | Turnover implementation report |
 
 ---
 
@@ -50,13 +68,14 @@ Or double-click `start.bat`.
 
 Open **http://127.0.0.1:8001** (fastest) or **http://127.0.0.1:8000** (LAN / ESP32).
 
-| Role | Email | Password |
-|------|-------|----------|
-| Admin | `admin@my.cspc.edu.ph` | `admin123` |
-| Guard | `guard@my.cspc.edu.ph` | `password123` |
+After `php artisan db:seed`, sign in with the seeded Admin and Guard accounts, then **change those passwords immediately**. Do not leave lab defaults on a production or turnover machine.
+
+Set unique `RFID_API_TOKEN` and `AI_PARKING_API_TOKEN` in `.env` (empty tokens disable those APIs). Flash the same RFID token into ESP32 via `rfid_gate_config.h` copied from `rfid_gate_config.example.h`.
 
 Services open in **Windows Terminal tabs** (one window). Keep that window open while using the system.  
 Legacy separate windows: `.\scripts\start-system.ps1 -SeparateWindows`
+
+**Ops:** `.\scripts\status-system.ps1` · `.\scripts\stop-system.ps1` · `.\scripts\restart-system.ps1`
 
 ---
 
@@ -109,20 +128,20 @@ Test users: `php scripts/ensure_test_users.php`
 
 | Service | Purpose | URL / port |
 |---------|---------|------------|
-| Laravel | Website + RFID/AI APIs | http://127.0.0.1:8000 (`--host=0.0.0.0`) |
-| Reverb | Live Gate Monitor realtime | from `.env` |
-| Vite | Frontend hot reload (if needed) | — |
-| YOLOv9 AI | Cameras + plate OCR | http://127.0.0.1:8090 |
-
-Manual (advanced):
+| Laravel loopback | Website + APIs | http://127.0.0.1:**8001** |
+| LAN front | ESP32 + LAN browsers | http://127.0.0.1:**8000** |
+| Reverb | Live Gate / AI realtime | **8080** |
+| Scheduler | visitors/sync/email jobs | (background) |
+| YOLOv9 AI | Cameras + plate OCR | http://127.0.0.1:**8090** |
 
 ```powershell
-php artisan serve --host=0.0.0.0 --port=8000
-php artisan reverb:start
-npm run dev
+.\scripts\status-system.ps1
+.\scripts\stop-system.ps1
+.\scripts\restart-system.ps1
+.\scripts\backup-system.ps1
 ```
 
-Use `--host=0.0.0.0` so ESP32 boards can reach Laravel on your LAN IP.
+Admin System Health: `/admin/system-health`
 
 ---
 
@@ -130,7 +149,7 @@ Use `--host=0.0.0.0` so ESP32 boards can reach Laravel on your LAN IP.
 
 | Role | URL prefix | Highlights |
 |------|------------|------------|
-| Admin | `/admin` | Registrations, RFID, users, parking, reports, live cameras |
+| Admin | `/admin` | Registrations, RFID, users, parking, reports, live cameras, **System Health** |
 | Guard | `/guard` | Live gate, visitors, AI parking, plate lookup, live cameras |
 | Student / Staff | `/user` | Notifications, parking, violations, entry/exit |
 

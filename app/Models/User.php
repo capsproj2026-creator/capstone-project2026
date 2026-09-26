@@ -469,6 +469,34 @@ class User extends Authenticatable implements MustVerifyEmail
         return null;
     }
 
+    public function resolveDocumentAbsolutePath(string $field, string $directory): ?string
+    {
+        $path = $this->uploadedDocumentPath($field, $directory);
+        if (! $path) {
+            return null;
+        }
+
+        if (Storage::disk('local')->exists($path)) {
+            return Storage::disk('local')->path($path);
+        }
+
+        if (Storage::disk('public')->exists($path)) {
+            return Storage::disk('public')->path($path);
+        }
+
+        // Legacy copies left under storage/app before ISCVMS_UPLOADS_ROOT was enabled.
+        foreach ([
+            storage_path('app/private/'.$path),
+            storage_path('app/public/'.$path),
+        ] as $legacy) {
+            if (is_file($legacy)) {
+                return $legacy;
+            }
+        }
+
+        return null;
+    }
+
     public function hasUploadedProfilePicture(): bool
     {
         $filename = $this->profile_pic;
@@ -477,7 +505,11 @@ class User extends Authenticatable implements MustVerifyEmail
             return false;
         }
 
-        return Storage::disk('public')->exists('uploads/profile/'.$filename);
+        if (Storage::disk('public')->exists('uploads/profile/'.$filename)) {
+            return true;
+        }
+
+        return is_file(storage_path('app/public/uploads/profile/'.$filename));
     }
 
     public function profilePictureUrl(): string
@@ -510,8 +542,10 @@ class User extends Authenticatable implements MustVerifyEmail
             return null;
         }
 
-        // Prefer private local disk; fall back to legacy public copies.
-        if (Storage::disk('local')->exists($path) || Storage::disk('public')->exists($path)) {
+        // Prefer private local disk; fall back to legacy public / storage/app copies.
+        $onDisk = Storage::disk('local')->exists($path) || Storage::disk('public')->exists($path);
+        $legacy = is_file(storage_path('app/private/'.$path)) || is_file(storage_path('app/public/'.$path));
+        if ($onDisk || $legacy) {
             $doc = match ($field) {
                 'or_cr_photo', 'lto_or_photo' => $field === 'lto_or_photo' ? 'or' : 'orcr',
                 'lto_cr_photo' => 'cr',
@@ -520,24 +554,6 @@ class User extends Authenticatable implements MustVerifyEmail
             };
 
             return route('admin.users.document', ['id' => $this->id, 'doc' => $doc]);
-        }
-
-        return null;
-    }
-
-    public function resolveDocumentAbsolutePath(string $field, string $directory): ?string
-    {
-        $path = $this->uploadedDocumentPath($field, $directory);
-        if (! $path) {
-            return null;
-        }
-
-        if (Storage::disk('local')->exists($path)) {
-            return Storage::disk('local')->path($path);
-        }
-
-        if (Storage::disk('public')->exists($path)) {
-            return Storage::disk('public')->path($path);
         }
 
         return null;

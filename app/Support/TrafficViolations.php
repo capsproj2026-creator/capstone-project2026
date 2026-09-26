@@ -49,31 +49,13 @@ class TrafficViolations
     }
 
     /**
-     * Sync MongoDB violation_types to the four official entries only.
+     * Upsert the official entries. Extra types added in System Settings are kept.
      */
     public static function syncToDatabase(): void
     {
-        $names = self::names();
-        $keptIds = [];
-
         foreach (self::definitions() as $index => $type) {
-            $id = $index + 1;
-            $keptIds[] = $id;
-            ViolationType::query()->updateOrCreate(['id' => $id], $type);
+            ViolationType::query()->updateOrCreate(['id' => $index + 1], $type);
         }
-
-        // Remove legacy / AI-only types that are no longer part of the official list.
-        ViolationType::query()
-            ->where(function ($q) use ($names, $keptIds): void {
-                $q->whereNotIn('id', $keptIds)
-                    ->orWhereNotIn('violation_name', $names);
-            })
-            ->whereNotIn('id', $keptIds)
-            ->delete();
-
-        ViolationType::query()
-            ->whereNotIn('violation_name', $names)
-            ->delete();
     }
 
     /**

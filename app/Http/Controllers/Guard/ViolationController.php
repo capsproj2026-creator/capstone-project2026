@@ -60,9 +60,9 @@ class ViolationController extends Controller
             'plate_number' => ['required', 'string', 'max:32'],
             'violation_types' => ['required', 'array', 'min:1', 'max:4'],
             'violation_types.*' => ['required', 'string', 'max:255', Rule::in($activeTypes)],
-            'description' => ['nullable', 'string', 'max:1000'],
+            'description' => ['required', 'string', 'max:1000'],
             'evidence_photo' => ['nullable', 'image', 'max:5120'],
-            'evidence_photos' => ['nullable', 'array', 'max:5'],
+            'evidence_photos' => ['required', 'array', 'min:1', 'max:5'],
             'evidence_photos.*' => ['image', 'max:5120'],
         ]);
 

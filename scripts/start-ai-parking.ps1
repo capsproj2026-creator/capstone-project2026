@@ -265,8 +265,8 @@ Write-Host ("  AI stream: http://127.0.0.1:" + $streamPort + "/stream.mjpg") -Fo
 Write-Host ("  Model:    " + $modelName) -ForegroundColor DarkGray
 Write-Host ("  Python:   " + $PythonExe) -ForegroundColor DarkGray
 Write-Host ""
-Write-Host "  Admin: admin@my.cspc.edu.ph / admin123" -ForegroundColor Cyan
-Write-Host "  Guard: guard@my.cspc.edu.ph / password123" -ForegroundColor Cyan
+Write-Host "  Login: change seeded Admin/Guard passwords after first login." -ForegroundColor Cyan
+Write-Host "  Status: .\scripts\status-system.ps1   Stop: .\scripts\stop-system.ps1" -ForegroundColor DarkGray
 Write-Host ""
 Write-Host "Keep ALL PowerShell windows open while using the site." -ForegroundColor DarkGray
 Write-Host ""

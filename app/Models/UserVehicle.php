@@ -7,7 +7,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 class UserVehicle extends MongoModel
 {
     /** Maximum vehicles a student/staff member may register. */
-    public const MAX_PER_USER = 5;
+    public const MAX_PER_USER = 2;
 
     protected $collection = 'user_vehicles';
 

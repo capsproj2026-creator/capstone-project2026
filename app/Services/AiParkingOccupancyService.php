@@ -16,6 +16,9 @@ class AiParkingOccupancyService
     /** COCO vehicle classes only — no persons or other objects. */
     private const VEHICLE_TYPES = ['car', 'motorcycle', 'bus', 'truck'];
 
+    /** @var array<string, list<array<string, mixed>>> */
+    private array $dayEventsMemo = [];
+
     /** Labels that YOLO/registry may send which still count as a COCO vehicle. */
     private const VEHICLE_TYPE_ALIASES = [
         'tricycle' => 'motorcycle',
@@ -373,7 +376,7 @@ class AiParkingOccupancyService
      *
      * @return array<string, mixed>|null
      */
-    public function latestSnapshot(?string $cameraId = null): ?array
+    public function latestSnapshot(?string $cameraId = null, bool $includeEvents = true): ?array
     {
         $snap = null;
         if ($cameraId !== null && trim($cameraId) !== '') {
@@ -394,10 +397,13 @@ class AiParkingOccupancyService
             return null;
         }
 
-        // Always surface today's full violation list (not just the last occupancy post).
-        $snap['events'] = $this->dayViolationEvents(
-            $cameraId !== null && trim($cameraId) !== '' ? $cameraId : ($snap['camera_id'] ?? null)
-        );
+        // The monitor reads ai_day_events. Skip this on the per-camera map so
+        // one status poll does not rebuild today's list once per camera.
+        if ($includeEvents) {
+            $snap['events'] = $this->dayViolationEvents(
+                $cameraId !== null && trim($cameraId) !== '' ? $cameraId : ($snap['camera_id'] ?? null)
+            );
+        }
 
         return $snap;
     }
@@ -416,7 +422,7 @@ class AiParkingOccupancyService
                 continue;
             }
 
-            $snap = $this->latestSnapshot($id);
+            $snap = $this->latestSnapshot($id, false);
             if (! is_array($snap)) {
                 continue;
             }
@@ -1079,8 +1085,21 @@ class AiParkingOccupancyService
     /**
      * @return array<string, mixed>
      */
-    public function statusPayload(?int $zoneFilter = null): array
+    public function statusPayload(?int $zoneFilter = null, bool $lite = false): array
     {
+        if ($lite) {
+            $isGuard = str_contains((string) request()->route()?->getName(), 'guard.');
+            $health = app(AiParkingHealthService::class);
+
+            return [
+                'ai' => $this->latestSnapshot(null, false),
+                'ai_cameras' => $this->allSnapshots(),
+                'ai_day_events' => $this->dayViolationEvents(),
+                'ai_cameras_health' => $health->statusAll($isGuard, false),
+                'updated_at' => now()->format('h:i:s A'),
+            ];
+        }
+
         $registry = app(AiCameraRegistry::class);
         $zones = ParkingArea::query()->orderBy('id')->get();
         $monitoredIds = $registry->monitoredAreaIds();
@@ -1222,6 +1241,8 @@ class AiParkingOccupancyService
             Cache::put($cacheKey, $merged, now()->endOfDay()->addHours(2));
         }
 
+        $this->forgetDayEventsReadyCache($cameraId);
+
         return $this->dayViolationEvents($cameraId);
     }
 
@@ -1231,6 +1252,38 @@ class AiParkingOccupancyService
      * @return list<array<string, mixed>>
      */
     public function dayViolationEvents(?string $cameraId = null): array
+    {
+        $memoKey = strtoupper(trim((string) $cameraId));
+        if (array_key_exists($memoKey, $this->dayEventsMemo)) {
+            return $this->dayEventsMemo[$memoKey];
+        }
+
+        $readyKey = 'ai_parking:day_events_ready:'.($memoKey !== '' ? $memoKey : 'ALL');
+        $merged = Cache::get($readyKey);
+        if (! is_array($merged)) {
+            $merged = $this->buildDayViolationEvents($cameraId);
+            Cache::put($readyKey, $merged, now()->addSeconds(1));
+        }
+
+        $aligned = $this->alignEventsWithLiveDetections($merged, $cameraId);
+
+        return $this->dayEventsMemo[$memoKey] = $aligned;
+    }
+
+    private function forgetDayEventsReadyCache(?string $cameraId): void
+    {
+        $this->dayEventsMemo = [];
+        Cache::forget('ai_parking:day_events_ready:ALL');
+        $id = strtoupper(trim((string) $cameraId));
+        if ($id !== '') {
+            Cache::forget('ai_parking:day_events_ready:'.$id);
+        }
+    }
+
+    /**
+     * @return list<array<string, mixed>>
+     */
+    private function buildDayViolationEvents(?string $cameraId): array
     {
         $cacheKey = $cameraId !== null && trim($cameraId) !== ''
             ? $this->dayEventsCacheKey($cameraId)
@@ -1268,7 +1321,7 @@ class AiParkingOccupancyService
             return ((float) ($b['ts'] ?? 0)) <=> ((float) ($a['ts'] ?? 0));
         });
 
-        return $this->alignEventsWithLiveDetections(array_slice($merged, 0, 200), $cameraId);
+        return array_slice($merged, 0, 200);
     }
 
     /**

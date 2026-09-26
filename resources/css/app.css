@@ -1012,7 +1012,12 @@
     }
 
     html.dark .text-blue-700,
-    html.dark .text-blue-600 {
+    html.dark .text-blue-600,
+    html.dark .text-blue-800,
+    html.dark .text-blue-900,
+    html.dark .text-blue-950,
+    html.dark .text-blue-900\/80,
+    html.dark .text-blue-900\/90 {
         color: var(--portal-info-text) !important;
     }
 
@@ -1189,6 +1194,11 @@
         color: var(--portal-info-text) !important;
     }
 
+    html.dark .bg-slate-200,
+    html.dark .bg-slate-300 {
+        background-color: rgba(100, 116, 139, 0.45) !important;
+    }
+
     html.dark .text-slate-800 {
         color: #e2e8f0 !important;
     }
@@ -1312,16 +1322,19 @@
 
     html.dark .bg-amber-50,
     html.dark .bg-amber-50\/40,
+    html.dark .bg-amber-50\/70,
     html.dark .bg-yellow-50 {
         background-color: var(--portal-warning-bg) !important;
     }
 
+    html.dark .border-amber-100,
     html.dark .border-amber-200,
     html.dark .border-amber-300,
     html.dark .border-yellow-200 {
         border-color: var(--portal-warning-border) !important;
     }
 
+    html.dark .text-amber-600,
     html.dark .text-amber-800,
     html.dark .text-amber-900,
     html.dark .text-amber-950,

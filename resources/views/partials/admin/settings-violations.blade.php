@@ -2,9 +2,17 @@
     <div class="mb-6 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div class="min-w-0">
             <h3 class="text-lg font-semibold text-gray-900">Violation Types</h3>
-            <p class="mt-1 text-sm text-gray-500">Official CSPC traffic violations (fixed list). Toggle active status, then click Save.</p>
+                    <p class="mt-1 text-sm text-gray-500">Add a campus violation type, then toggle it active. Active types appear when a guard logs a citation.</p>
         </div>
         <div class="flex flex-wrap items-center gap-2">
+            <button
+                type="button"
+                id="open-add-violation"
+                class="inline-flex shrink-0 items-center justify-center gap-2 rounded-lg border border-gray-200 bg-white px-4 py-2.5 text-sm font-semibold text-gray-800 hover:bg-gray-50"
+            >
+                <i data-lucide="plus" class="h-4 w-4"></i>
+                Add Violation
+            </button>
             <button
                 type="submit"
                 form="violation-types-save-form"
@@ -62,6 +70,7 @@
                         data-id="{{ $type->id }}"
                         data-name="{{ $type->violation_name }}"
                         data-description="{{ $description }}"
+                        data-official="{{ in_array((string) $type->violation_name, \App\Support\TrafficViolations::names(), true) ? '1' : '0' }}"
                     >
                         Edit
                     </button>
@@ -97,8 +106,7 @@
                     id="violation_name"
                     required
                     maxlength="255"
-                    readonly
-                    class="w-full rounded-lg border border-gray-200 bg-gray-100 px-3 py-2.5 text-sm text-gray-700"
+                    class="w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2.5 text-sm text-gray-900 focus:border-blue-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                 >
             </div>
 

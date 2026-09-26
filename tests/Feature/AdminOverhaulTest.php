@@ -88,7 +88,8 @@ class AdminOverhaulTest extends TestCase
         $this->actingAs($this->admin)
             ->get(route('admin.settings', ['section' => 'access']))
             ->assertOk()
-            ->assertSee('Zone Access Settings');
+            ->assertSee('Parking Access Rules')
+            ->assertDontSee('Zone Access Settings');
     }
 
     public function test_settings_tabs_and_system_info_save(): void

@@ -177,19 +177,22 @@
                     <p id="violation-types-error" class="mt-1 hidden text-xs text-red-600">Select at least one violation type.</p>
                 </div>
                 <div>
-                    <label class="mb-1 block text-sm font-medium text-gray-700">Description</label>
-                    <textarea name="description" rows="3" class="w-full rounded-lg border border-gray-300 px-3 py-2"></textarea>
+                    <label class="mb-1 block text-sm font-medium text-gray-700">Description <span class="text-red-600">*</span></label>
+                    <textarea name="description" rows="3" required minlength="3" class="w-full rounded-lg border border-gray-300 px-3 py-2"></textarea>
+                    <p id="violation-description-error" class="mt-1 hidden text-xs text-red-600">Enter a description before submitting.</p>
                 </div>
                 <div>
-                    <label class="mb-1 block text-sm font-medium text-gray-700">Photo Evidence</label>
+                    <label class="mb-1 block text-sm font-medium text-gray-700">Photo Evidence <span class="text-red-600">*</span></label>
                     <input
                         type="file"
                         name="evidence_photos[]"
                         accept="image/*"
                         multiple
+                        required
                         class="w-full cursor-pointer rounded-lg border border-gray-300 px-3 py-2 text-sm"
                     >
-                    <p class="mt-1 text-xs text-gray-500">Optional — upload up to 5 images.</p>
+                    <p class="mt-1 text-xs text-gray-500">Required — upload at least one image (up to 5).</p>
+                    <p id="violation-evidence-error" class="mt-1 hidden text-xs text-red-600">Add at least one photo before submitting.</p>
                 </div>
                 <div class="flex gap-3">
                     <button type="button" id="close-violation-modal" class="flex-1 cursor-pointer rounded-lg border border-gray-300 py-2 text-sm font-medium">Cancel</button>
@@ -237,11 +240,25 @@
     form?.addEventListener('submit', async (e) => {
         e.preventDefault();
         const checked = form.querySelectorAll('input[name="violation_types[]"]:checked');
+        const description = (form.querySelector('[name="description"]')?.value || '').trim();
+        const evidence = form.querySelector('[name="evidence_photos[]"]');
+        const descriptionError = document.getElementById('violation-description-error');
+        const evidenceError = document.getElementById('violation-evidence-error');
         if (!checked.length) {
             typesError?.classList.remove('hidden');
             return;
         }
         typesError?.classList.add('hidden');
+        if (description.length < 3) {
+            descriptionError?.classList.remove('hidden');
+            return;
+        }
+        descriptionError?.classList.add('hidden');
+        if (!evidence || !evidence.files || evidence.files.length < 1) {
+            evidenceError?.classList.remove('hidden');
+            return;
+        }
+        evidenceError?.classList.add('hidden');
 
         if (form.dataset.submitting === '1') {
             return;

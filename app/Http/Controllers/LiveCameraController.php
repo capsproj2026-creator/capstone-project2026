@@ -113,7 +113,7 @@ class LiveCameraController extends Controller
 
         return view('guard.ai-parking-monitor', [
             'streamUrl' => $health->streamBrowserUrl($primary, true),
-            'ai' => $ai->latestSnapshot($primary),
+            'ai' => $ai->latestSnapshot($primary, false),
             'aiDayEvents' => $ai->dayViolationEvents(),
             'aiHealth' => $aiHealth,
             'aiCameras' => $ai->allSnapshots(),
@@ -150,10 +150,16 @@ class LiveCameraController extends Controller
 
     public function status(AiParkingOccupancyService $ai): JsonResponse
     {
+        // Release the file session lock before the occupancy read. Otherwise this
+        // poll (several times a second) blocks every other page for the same user.
+        if (session()->isStarted()) {
+            session()->save();
+        }
+
         $zoneFilter = request()->query('zone_id');
         $zoneId = is_numeric($zoneFilter) ? (int) $zoneFilter : null;
 
-        return response()->json($ai->statusPayload($zoneId));
+        return response()->json($ai->statusPayload($zoneId, request()->boolean('lite')));
     }
 
     public function correctPlate(Request $request, AiParkingOccupancyService $ai, AiCameraRegistry $registry): JsonResponse

@@ -6,6 +6,15 @@ use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 
+/**
+ * Probes the Python AI parking MJPEG service and per-camera online state.
+ *
+ * Side effects: short-lived Cache entries for /health and stream reachability.
+ * Failure behavior: methods return false/null/degraded arrays — callers must not
+ * treat a configured URL as Online without a successful probe.
+ *
+ * Dependencies: config('services.ai_parking.*'), AiCameraRegistry, HTTP client.
+ */
 class AiParkingHealthService
 {
     /**

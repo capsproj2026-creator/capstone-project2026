@@ -23,6 +23,19 @@
 
     @include('partials.shell.flash')
 
+    <div
+        id="laravel-offline-banner"
+        class="mb-4 hidden items-start gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900"
+        role="status"
+        aria-live="polite"
+    >
+        <span class="mt-0.5 inline-block h-2.5 w-2.5 shrink-0 rounded-full bg-amber-500" aria-hidden="true"></span>
+        <div>
+            <p class="font-semibold">Server offline</p>
+            <p data-laravel-offline-detail class="mt-0.5 text-amber-800/90">Cannot reach Laravel right now. Gate status and recent scans will not update until the server is back.</p>
+        </div>
+    </div>
+
     @php
         $gateStatuses = $gateStatuses ?? [];
         $entryGateOnline = collect($gateStatuses)->contains(fn ($g) => ($g['gate_id'] ?? '') === 'GATE-IN-1' && ! empty($g['online']));
@@ -918,11 +931,38 @@
             }).join('');
         };
 
+        const setLaravelOnline = (online, detail = '') => {
+            const banner = document.getElementById('laravel-offline-banner');
+            if (!banner) return;
+            if (online) {
+                banner.classList.add('hidden');
+                banner.classList.remove('flex');
+                return;
+            }
+            banner.classList.remove('hidden');
+            banner.classList.add('flex');
+            const sub = banner.querySelector('[data-laravel-offline-detail]');
+            if (sub && detail) sub.textContent = detail;
+        };
+
         const refreshGateHardware = async () => {
             if (!statusUrl || document.hidden) return;
             try {
                 const res = await fetch(statusUrl, { headers: { Accept: 'application/json' }, credentials: 'same-origin', cache: 'no-store' });
-                if (!res.ok) return;
+                if (!res.ok) {
+                    let detail = 'Cannot reach Laravel right now. Gate status and recent scans will not update until the server is back.';
+                    if (res.status === 503) {
+                        try {
+                            const errBody = await res.clone().json();
+                            if (errBody?.code === 'database_unavailable') {
+                                detail = 'Database is temporarily unavailable. Gate status cannot update until MongoDB is back.';
+                            }
+                        } catch (_) { /* keep default */ }
+                    }
+                    setLaravelOnline(false, detail);
+                    return;
+                }
+                setLaravelOnline(true);
                 const data = await res.json();
                 paintGates(data.gates || []);
                 if (Array.isArray(data.recent_logs)) {
@@ -932,7 +972,12 @@
                 if (data.latest_scan?.id) {
                     handleScan(data.latest_scan);
                 }
-            } catch (e) {}
+            } catch (e) {
+                setLaravelOnline(
+                    false,
+                    'Cannot reach Laravel right now. Gate status and recent scans will not update until the server is back.'
+                );
+            }
         };
 
         const modal = document.getElementById('gate-open-modal');

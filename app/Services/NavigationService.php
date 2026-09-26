@@ -39,6 +39,7 @@ class NavigationService
             ['label' => 'Parking', 'route' => 'admin.parking', 'icon' => 'parking-square', 'access' => ['admin']],
             ['label' => 'Live Cameras', 'route' => 'admin.live-cameras', 'icon' => 'camera', 'access' => ['admin']],
             ['label' => 'Reports', 'route' => 'admin.reports', 'icon' => 'bar-chart-3', 'access' => ['admin']],
+            ['label' => 'System Health', 'route' => 'admin.system-health', 'icon' => 'heart-pulse', 'access' => ['admin']],
             ['label' => 'Settings', 'route' => 'admin.settings', 'icon' => 'settings', 'access' => ['admin']],
 
             ['label' => 'Live Gate Monitor', 'route' => 'guard.gate', 'icon' => 'activity', 'access' => ['guard']],

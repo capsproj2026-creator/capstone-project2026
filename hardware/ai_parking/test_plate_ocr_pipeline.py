@@ -332,6 +332,19 @@ class AsyncSubmitGateTests(unittest.TestCase):
         self.assertEqual(mem.plate_status, "not_read")
 
 
+class ViolationWaitsForPlateScanTests(unittest.TestCase):
+    def test_violation_emits_only_after_plate_scan_finishes(self):
+        intel = ParkingIntelligence(camera_id="CAM-1")
+        mem = intel.touch_track(1)
+        mem.plate_status = "pending"
+        self.assertIsNone(intel._emit("double_park", "PT-4", 1, None))
+        mem.lock_plate("N123VA", 0.9, "test")
+        evt = intel._emit("double_park", "PT-4", 1, None)
+        self.assertIsNotNone(evt)
+        self.assertEqual(evt["plate"], "N123VA")
+        self.assertEqual(evt["plate_status"], "ok")
+
+
 def _drive(mem: TrackMemory, boxes: list[tuple[int, int, int, int]], start: float) -> None:
     now = start
     for box in boxes:

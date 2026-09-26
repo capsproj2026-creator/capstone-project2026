@@ -46,6 +46,19 @@
         'subtitle' => 'Live YOLOv9 · cars & motorcycles · parked vehicles · plate scan',
     ])
 
+    <div
+        id="laravel-offline-banner"
+        class="mb-4 hidden items-start gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900"
+        role="status"
+        aria-live="polite"
+    >
+        <span class="mt-0.5 inline-block h-2.5 w-2.5 shrink-0 rounded-full bg-amber-500" aria-hidden="true"></span>
+        <div>
+            <p class="font-semibold">Server offline</p>
+            <p data-laravel-offline-detail class="mt-0.5 text-amber-800/90">Cannot reach Laravel right now. Occupancy and Latest Detections will not update until the server is back. Camera streams may still work if the AI service is running.</p>
+        </div>
+    </div>
+
     <div id="ai-scan-status" class="mb-4 flex flex-wrap items-center gap-3 text-sm text-gray-600" aria-live="polite">
         <span
             id="ai-scan-spinner"
@@ -1442,11 +1455,24 @@ window.__aiClosePlateModal = function () {
 
     let refreshTimer = null;
     let refreshInFlight = false;
+    const setLaravelOnline = (online, detail = '') => {
+        const banner = document.getElementById('laravel-offline-banner');
+        if (!banner) return;
+        if (online) {
+            banner.classList.add('hidden');
+            banner.classList.remove('flex');
+            return;
+        }
+        banner.classList.remove('hidden');
+        banner.classList.add('flex');
+        const sub = banner.querySelector('[data-laravel-offline-detail]');
+        if (sub && detail) sub.textContent = detail;
+    };
     const scheduleNextRefresh = (ms) => {
         if (refreshTimer) window.clearTimeout(refreshTimer);
         refreshTimer = window.setTimeout(() => {
             if (typeof window.__aiParkingRefresh === 'function') window.__aiParkingRefresh();
-        }, Math.max(400, ms || 2000));
+        }, Math.max(300, ms || 800));
     };
 
     const refresh = async () => {
@@ -1457,11 +1483,25 @@ window.__aiClosePlateModal = function () {
         if (refreshInFlight) return;
         refreshInFlight = true;
         try {
-            const response = await fetch(statusUrl, { headers: { Accept: 'application/json' }, cache: 'no-store', credentials: 'same-origin' });
+            const pollUrl = statusUrl + (String(statusUrl).includes('?') ? '&' : '?') + 'lite=1';
+            const response = await fetch(pollUrl, { headers: { Accept: 'application/json' }, cache: 'no-store', credentials: 'same-origin' });
             if (!response.ok) {
+                let detail = 'Cannot reach Laravel right now. Occupancy and Latest Detections will not update until the server is back. Camera streams may still work if the AI service is running.';
+                if (response.status === 503) {
+                    try {
+                        const errBody = await response.clone().json();
+                        if (errBody?.code === 'database_unavailable') {
+                            detail = 'Database is temporarily unavailable. Parking data cannot update until MongoDB is back.';
+                        }
+                    } catch (_) { /* keep default */ }
+                } else if (response.status >= 500) {
+                    detail = 'Laravel returned an error (' + response.status + '). Occupancy and Latest Detections will not update until the server recovers.';
+                }
+                setLaravelOnline(false, detail);
                 scheduleNextRefresh(2500);
                 return;
             }
+            setLaravelOnline(true);
             const data = await response.json();
             const cams = data.ai_cameras || data.cameras || {};
             const healthMap = data.ai_cameras_health || {};
@@ -1616,7 +1656,7 @@ window.__aiClosePlateModal = function () {
                 if (!det.plate && attempts > 0 && attempts < max) return true;
                 return false;
             });
-            scheduleNextRefresh(sceneMoving ? 400 : (busy ? 700 : 2000));
+            scheduleNextRefresh(sceneMoving || busy ? 350 : 700);
 
             const sameVehicle = (evt, det) => {
                 const eCam = String(evt.camera_id || '').toUpperCase();
@@ -1749,6 +1789,10 @@ window.__aiClosePlateModal = function () {
                 }
             }
         } catch (e) {
+            setLaravelOnline(
+                false,
+                'Cannot reach Laravel right now. Occupancy and Latest Detections will not update until the server is back. Camera streams may still work if the AI service is running.'
+            );
             scheduleNextRefresh(2500);
         } finally {
             refreshInFlight = false;

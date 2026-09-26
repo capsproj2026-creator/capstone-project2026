@@ -549,11 +549,12 @@ class AiParkingViolationService
             if (! is_array($det)) {
                 continue;
             }
-            $plate = PlateLookup::normalize((string) ($det['plate'] ?? ''));
-            if ($plate === '') {
+            $plateStatus = strtolower((string) ($det['plate_status'] ?? ''));
+            if (! in_array($plateStatus, ['ok', 'not_read'], true)) {
                 continue;
             }
-            if (strtolower((string) ($det['plate_status'] ?? '')) === 'unreadable') {
+            $plate = PlateLookup::normalize((string) ($det['plate'] ?? ''));
+            if ($plate === '') {
                 continue;
             }
 
@@ -672,6 +673,11 @@ class AiParkingViolationService
                 continue;
             }
             if ($motion !== '' && $motion !== 'parked') {
+                continue;
+            }
+
+            $plateStatus = strtolower((string) ($det['plate_status'] ?? ''));
+            if (! in_array($plateStatus, ['ok', 'not_read', 'unreadable'], true)) {
                 continue;
             }
 

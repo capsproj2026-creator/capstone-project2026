@@ -8,9 +8,10 @@ Run:
 Calibrate slots first (recommended):
   python calibrate_zones.py
 
-Requires Laravel:
-  php artisan serve --host=0.0.0.0 --port=8000
-  php artisan db:seed
+Requires Laravel (typical Windows stack):
+  - Loopback app on :8001 and/or LAN front on :8000
+  - AI_LARAVEL_API_BASE and AI_PARKING_API_TOKEN matching .env
+  Soft-fail: occupancy POSTs log errors and continue if Laravel is down.
 """
 
 from __future__ import annotations
@@ -49,7 +50,10 @@ BASE_DIR = Path(__file__).resolve().parent
 MODEL_PATH = resolve_model_path()
 
 API_BASE = os.getenv("AI_LARAVEL_API_BASE", "http://127.0.0.1:8000").rstrip("/")
-AI_API_TOKEN = os.getenv("AI_PARKING_API_TOKEN", "capstone-ai-parking-dev-token-change-me")
+AI_API_TOKEN = os.getenv("AI_PARKING_API_TOKEN", "").strip() or os.getenv(
+    "AI_API_TOKEN", ""
+).strip()
+# Must match Laravel AI_PARKING_API_TOKEN. Empty token → occupancy posts will be rejected.
 
 STREAM_HOST = os.getenv("AI_STREAM_HOST", "0.0.0.0")
 STREAM_PORT = int(os.getenv("AI_STREAM_PORT", "8090"))
@@ -73,7 +77,8 @@ USE_WEBCAM = os.getenv("AI_USE_WEBCAM", "0") == "1"
 TRACKER = os.getenv("AI_PARKING_TRACKER", "bytetrack.yaml")
 # Target YOLO cadence; actual rate is also limited by CPU + model lock.
 INFER_EVERY_SEC = float(os.getenv("AI_PARKING_INFER_EVERY_SEC", "0.22"))
-# Skip YOLO while the scene is still; resume on motion (or idle probe).
+# Skip YOLO while the scene is still. Resume only when frame motion returns.
+# No idle probe — a quiet lot must not keep calling predict() or posting.
 YOLO_MOTION_ONLY = os.getenv("AI_PARKING_YOLO_MOTION_ONLY", "1").strip().lower() in (
     "1",
     "true",
@@ -81,7 +86,8 @@ YOLO_MOTION_ONLY = os.getenv("AI_PARKING_YOLO_MOTION_ONLY", "1").strip().lower()
     "on",
 )
 SCENE_MOTION_THRESH = float(os.getenv("AI_PARKING_SCENE_MOTION_THRESH", "0.012"))
-YOLO_IDLE_PROBE_SEC = float(os.getenv("AI_PARKING_YOLO_IDLE_PROBE_SEC", "2.5"))
+# While the lot is still, re-run YOLO this often so a parked car is not missed.
+HELD_REDETECT_SEC = float(os.getenv("AI_PARKING_HELD_REDETECT_SEC", "0.8"))
 # Keep last boxes briefly when a frame misses, so overlays don't flicker.
 BOX_HOLD_SEC = float(os.getenv("AI_PARKING_BOX_HOLD_SEC", "0.9"))
 PREVIEW_MAX_WIDTH = int(os.getenv("AI_PARKING_PREVIEW_MAX_WIDTH", "1280"))
@@ -1317,7 +1323,12 @@ _POST_TIMEOUT_SEC = float(os.getenv("AI_PARKING_POST_TIMEOUT_SEC", "3.0"))
 
 
 def post_json(path: str, payload: dict) -> bool:
-    """POST to Laravel. Single-flight — php artisan serve is single-threaded."""
+    """POST JSON to Laravel AI API.
+
+    Returns True on HTTP success. On connection/timeout/HTTP errors, logs and
+    returns False so detection continues (soft-fail when Laravel is offline).
+    Single-flight lock skips overlapping posts while one is in flight.
+    """
     url = f"{API_BASE}{path}"
     body = json.dumps(payload).encode("utf-8")
     req = urlrequest.Request(
@@ -2389,12 +2400,9 @@ class CameraWorker:
     def _should_run_yolo(self, motion_score: float, now: float) -> bool:
         if not YOLO_MOTION_ONLY:
             return True
-        if motion_score >= SCENE_MOTION_THRESH:
-            return True
-        # Periodic probe so a quiet arrival is not missed if frame-diff is weak.
-        if (now - self._last_yolo_at) >= YOLO_IDLE_PROBE_SEC:
-            return True
-        return False
+        # Full stop while nothing in the frame is moving. A later frame-diff
+        # above the threshold is the only thing that starts predict() again.
+        return motion_score >= SCENE_MOTION_THRESH
 
     def _note_scene_motion(self, moving: bool) -> bool:
         """Return True only on the frame motion starts or stops."""
@@ -2407,13 +2415,30 @@ class CameraWorker:
             )
         return changed
 
+    def _plate_signature(self) -> tuple:
+        parts = []
+        for mem in self.intelligence._unique_sessions():
+            parts.append((
+                getattr(mem, "current_tracker_id", None),
+                getattr(mem, "plate", None),
+                getattr(mem, "plate_status", None),
+                getattr(mem, "owner_name", None),
+            ))
+        return tuple(parts)
+
     def _occupancy_due(self, occupied_slots, now: float, last_post: float, force: bool = False) -> bool:
-        """Post at once when the occupied bays change or motion starts/stops."""
+        """Post at once when bays, plates, or motion change. Otherwise on a short timer."""
         sig = tuple(sorted(str(slot) for slot in (occupied_slots or [])))
-        if force or sig != self._last_occ_sig:
+        plate_sig = self._plate_signature()
+        plate_changed = plate_sig != getattr(self, "_last_plate_sig", None)
+        if force or sig != self._last_occ_sig or plate_changed:
             self._last_occ_sig = sig
+            self._last_plate_sig = plate_sig
             return True
-        return (now - last_post) >= POST_EVERY_SEC
+        if (now - last_post) >= POST_EVERY_SEC:
+            self._last_plate_sig = plate_sig
+            return True
+        return False
 
     def _continue_ocr_on_held(self, frame, now: float) -> None:
         """When YOLO is paused, keep draining OCR attempts on known tracks."""
@@ -2567,16 +2592,18 @@ class CameraWorker:
             moving_now = motion_score >= SCENE_MOTION_THRESH
             motion_edge = self._note_scene_motion(moving_now)
             if YOLO_MOTION_ONLY and not self._should_run_yolo(motion_score, now):
-                if self._held_boxes:
-                    if (now - self._yolo_skip_log_at) > 5.0:
-                        self._yolo_skip_log_at = now
+                held_age = now - getattr(self, "_last_yolo_at", 0.0)
+                if self._held_boxes and held_age < HELD_REDETECT_SEC:
+                    if motion_edge:
                         print(
                             f"[{self.config.camera_id}] YOLO paused "
-                            f"(no scene motion score={motion_score:.4f}; holding last boxes)"
+                            f"(no vehicle movement score={motion_score:.4f})"
                         )
+                    # Keep OCR and plate updates flowing while the car sits still.
                     last_post = self._publish_held_scene(frame, now, last_post, force=motion_edge)
+                    time.sleep(0.05)
                     continue
-                # No held boxes yet — fall through to a probe YOLO run.
+                # No boxes yet, or the hold expired — detect again so a parked car is seen.
 
             self._last_yolo_at = now
 
