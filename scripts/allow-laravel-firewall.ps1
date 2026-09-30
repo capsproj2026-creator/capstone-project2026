@@ -6,7 +6,7 @@
 #>
 $ErrorActionPreference = "Stop"
 
-Write-Host "Smart Campus VMS — LAN access for ESP32" -ForegroundColor Cyan
+Write-Host "Smart Campus VMS - LAN access for ESP32" -ForegroundColor Cyan
 Write-Host ""
 
 # Wi-Fi as Private network (Public profile blocks more traffic by default).
@@ -57,7 +57,7 @@ if ($ip) {
     Write-Host "  http://${ip}:8000" -ForegroundColor White
     Write-Host "  If phone CANNOT open this page, the router blocks device-to-device (AP isolation)." -ForegroundColor DarkGray
 } else {
-    Write-Host "Could not detect 192.168.x.x IP — run ipconfig" -ForegroundColor Red
+    Write-Host "Could not detect 192.168.x.x IP - run ipconfig" -ForegroundColor Red
 }
 
 Write-Host ""

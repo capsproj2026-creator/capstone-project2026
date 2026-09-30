@@ -120,7 +120,7 @@ Write-Host " NEXT: Arduino IDE (2.3.10)" -ForegroundColor Green
 Write-Host "========================================" -ForegroundColor Green
 Write-Host @"
 1. WiFiManager library must be installed (this script already ran install-esp32-wifimanager.ps1).
-   If compile fails on WiFiManager.h: Library Manager → WiFiManager (tzapu), restart IDE.
+   If compile fails on WiFiManager.h: Library Manager -> WiFiManager (tzapu), restart IDE.
 
 2. Upload Entry.ino from:
    OneDrive\Documents\Arduino\Entry
@@ -130,7 +130,7 @@ Write-Host @"
    OneDrive\Documents\Arduino\Exit
    (RFID only - no servo)
 
-4. Serial Monitor 115200 — expect:
+4. Serial Monitor 115200 - expect:
    === Gate Wi-Fi / API portal (WiFiManager) ===
    then either WiFi OK IP: ... OR open phone AP Gate-Setup / capstone123
 

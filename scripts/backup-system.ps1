@@ -55,7 +55,7 @@ if ($mongodump) {
     }
     & mongodump @dumpArgs
     if ($LASTEXITCODE -ne 0) {
-        Write-Host 'mongodump reported an error — check MongoDB tools install and URI.' -ForegroundColor Yellow
+        Write-Host 'mongodump reported an error - check MongoDB tools install and URI.' -ForegroundColor Yellow
     }
 } else {
     Write-Host 'mongodump not found on PATH. Install MongoDB Database Tools, then re-run.' -ForegroundColor Yellow

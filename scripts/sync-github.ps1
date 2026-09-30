@@ -36,7 +36,7 @@ if ($PullOnly) {
 
 $status = git status --porcelain
 if ($status) {
-    Write-Step 'Working tree has local changes — commit them first (or leave them unstaged). Pushing commits only.'
+    Write-Step 'Working tree has local changes - commit them first (or leave them unstaged). Pushing commits only.'
 }
 
 Write-Step "Pushing $branch to origin..."

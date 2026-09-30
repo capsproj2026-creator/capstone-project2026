@@ -53,7 +53,7 @@ foreach ($p in $ports) {
 # MongoDB
 $mongoListening = Test-TcpPort -HostName '127.0.0.1' -Port 27017
 $mongoState = if ($mongoListening) { 'Listening' } else { 'Closed/Remote' }
-$mongoDetail = '127.0.0.1:27017 (Atlas uses cloud URI — Closed here is OK if MONGODB_URI is Atlas)'
+$mongoDetail = '127.0.0.1:27017 (Atlas uses cloud URI - Closed here is OK if MONGODB_URI is Atlas)'
 if (Test-Path (Join-Path $Root 'artisan')) {
     Push-Location $Root
     try {

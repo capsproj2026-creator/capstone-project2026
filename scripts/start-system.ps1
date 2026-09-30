@@ -390,13 +390,13 @@ if ($needLaravel) {
     Start-ProjectWindow "Laravel" @("php", "artisan", "serve", "--host=127.0.0.1", "--port=8001", "--no-reload")
     Wait-ServiceGap 600
 } else {
-    Write-Host "  Laravel :8001 already listening — skip" -ForegroundColor DarkGray
+    Write-Host "  Laravel :8001 already listening - skip" -ForegroundColor DarkGray
 }
 if ($needLan) {
     Start-ProjectWindow "LAN Front (ESP32)" @("php", "-S", "0.0.0.0:8000", "bootstrap/lan_front_router.php")
     Wait-ServiceGap 500
 } else {
-    Write-Host "  LAN front :8000 already listening — skip" -ForegroundColor DarkGray
+    Write-Host "  LAN front :8000 already listening - skip" -ForegroundColor DarkGray
 }
 
 $ngrokQueued = $false
@@ -415,7 +415,7 @@ if ($needReverb) {
     Start-ProjectWindow "Reverb" @("php", "artisan", "reverb:start")
     Wait-ServiceGap 400
 } else {
-    Write-Host "  Reverb :8080 already listening — skip" -ForegroundColor DarkGray
+    Write-Host "  Reverb :8080 already listening - skip" -ForegroundColor DarkGray
 }
 
 # Runs sync:run every 2 minutes (local <-> Atlas) when SYNC_ENABLED=true.
@@ -517,7 +517,7 @@ if (Test-Path $esp32Script) {
 Write-Host "  Database: MongoDB (capstone)" -ForegroundColor Yellow
 if ($startAi) { Write-Host "  AI feed:  http://127.0.0.1:8090/stream.mjpg" -ForegroundColor Yellow }
 Write-Host ""
-Write-Host "  Login: use seeded Admin/Guard accounts from db:seed — change those passwords after first login." -ForegroundColor Cyan
+Write-Host "  Login: use seeded Admin/Guard accounts from db:seed - change those passwords after first login." -ForegroundColor Cyan
 Write-Host "  Status: .\scripts\status-system.ps1   Stop: .\scripts\stop-system.ps1" -ForegroundColor DarkGray
 Write-Host ""
 if ($script:UseWindowsTerminal) {

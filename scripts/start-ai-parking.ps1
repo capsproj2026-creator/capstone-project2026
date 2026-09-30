@@ -142,7 +142,7 @@ if (-not $PythonExe) {
 }
 
 # Occupancy ingest must hit local Laravel. APP_URL / AI_LARAVEL_API_BASE are often
-# :8000 (LAN front) or a public ngrok host — use :8001 directly for speed/reliability.
+# :8000 (LAN front) or a public ngrok host - use :8001 directly for speed/reliability.
 if (
     -not $env:AI_LARAVEL_API_BASE -or
     $env:AI_LARAVEL_API_BASE -match 'ngrok' -or
@@ -162,7 +162,7 @@ Set-Location $Root
 if (-not $SkipWebStack) {
     Write-Host "Checking MongoDB (capstone)..." -ForegroundColor Cyan
     # Native php stderr (e.g. missing git for sebastian/version) must not abort under Stop.
-    # Skip config:clear — it only makes the first page rebuild config.
+    # Skip config:clear - it only makes the first page rebuild config.
     $prevEap = $ErrorActionPreference
     $ErrorActionPreference = "Continue"
     & php scripts/mongo_ping.php *> $null

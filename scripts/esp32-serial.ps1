@@ -1,7 +1,7 @@
 #Requires -Version 5.1
 <#
 .SYNOPSIS
-  Window A — live ESP32 Serial Monitor in this terminal (115200 baud).
+  Window A - live ESP32 Serial Monitor in this terminal (115200 baud).
 
 .EXAMPLE
   powershell -ExecutionPolicy Bypass -File .\scripts\esp32-serial.ps1

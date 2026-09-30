@@ -26,7 +26,7 @@ function Get-LanIPv4 {
         } |
         Sort-Object InterfaceMetric
 
-    # Hotspot (192.168.43.x) or home Wi-Fi (192.168.1.x) — skip Hyper-V virtual adapters.
+    # Hotspot (192.168.43.x) or home Wi-Fi (192.168.1.x) - skip Hyper-V virtual adapters.
     foreach ($a in $addrs) {
         if ($a.IPAddress -like "192.168.43.*" -or $a.IPAddress -like "192.168.1.*" -or $a.IPAddress -like "192.168.0.*") {
             return $a.IPAddress
