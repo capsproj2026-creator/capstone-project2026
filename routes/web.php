@@ -16,6 +16,7 @@ use App\Http\Controllers\Auth\EmailCheckController;
 use App\Http\Controllers\Auth\LicenseScanController;
 use App\Http\Controllers\Auth\OrCrScanController;
 use App\Http\Controllers\Auth\EmailVerificationController;
+use App\Http\Controllers\Auth\ForgotPasswordController;
 use App\Http\Controllers\Auth\GoogleAuthController;
 use App\Http\Controllers\Auth\LoginController;
 use App\Http\Controllers\Auth\RegisterController;
@@ -55,6 +56,14 @@ Route::middleware(['auth', 'verified', 'granted', 'no.cache', 'role:Admin,Guard'
 Route::middleware(['guest', 'no.cache'])->group(function () {
     Route::get('/login', [LoginController::class, 'show'])->name('login');
     Route::post('/login', [LoginController::class, 'login'])->middleware('throttle:login');
+    Route::get('/forgot-password', [ForgotPasswordController::class, 'create'])->name('password.request');
+    Route::post('/forgot-password', [ForgotPasswordController::class, 'store'])
+        ->middleware('throttle:password-reset')
+        ->name('password.email');
+    Route::get('/reset-password/{token}', [ForgotPasswordController::class, 'edit'])->name('password.reset');
+    Route::post('/reset-password', [ForgotPasswordController::class, 'update'])
+        ->middleware('throttle:password-reset')
+        ->name('password.update');
     Route::get('/auth/google', [GoogleAuthController::class, 'redirect'])
         ->middleware('throttle:20,1')
         ->name('auth.google');

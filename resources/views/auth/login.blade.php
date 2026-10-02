@@ -49,6 +49,9 @@
                 @csrf
                 <x-auth.input class="w-full" label="Email Address" name="email" type="email" required placeholder="name@my.cspc.edu.ph" />
                 <x-auth.password-input class="w-full" name="password" label="Password" autocomplete="current-password" placeholder="Your password" />
+                <div class="-mt-2 text-right">
+                    <a href="{{ route('password.request') }}" class="text-sm font-semibold text-blue-600 hover:underline">Forgot password?</a>
+                </div>
                 <button type="submit" class="flex w-full items-center justify-center gap-2 rounded-lg bg-[#5D9FD1] py-3 text-sm font-semibold text-white transition-colors hover:bg-[#4A8FC4]">
                     <i data-lucide="log-in" class="h-4 w-4"></i>
                     Sign In

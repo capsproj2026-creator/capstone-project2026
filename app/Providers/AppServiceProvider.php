@@ -82,6 +82,16 @@ class AppServiceProvider extends ServiceProvider
             });
         });
 
+        RateLimiter::for('password-reset', function (Request $request) {
+            $key = strtolower((string) $request->input('email')).'|'.$request->ip();
+
+            return Limit::perMinute(5)->by($key)->response(function () {
+                return back()
+                    ->withInput(request()->only('email'))
+                    ->with('error', 'Too many password reset attempts. Please try again in a minute.');
+            });
+        });
+
         RateLimiter::for('visitor-pre-register', function (Request $request) {
             return Limit::perMinute(10)->by($request->ip())->response(function () {
                 return back()
