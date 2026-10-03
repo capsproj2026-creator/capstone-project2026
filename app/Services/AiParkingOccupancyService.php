@@ -57,11 +57,8 @@ class AiParkingOccupancyService
         $area = ParkingArea::query()->findOrFail($areaId);
 
         $detections = $this->filterVehicleDetections($detections);
-        // Only zero the count when the AI explicitly sent detections and none were vehicles.
-        // Count-only posts (no detections key) must keep vehicle_count.
-        if ($detectionsProvided && $detections === []) {
-            $vehicleCount = 0;
-        }
+        // A positive vehicle count must survive even when the plate list is still empty.
+        // Zeroing it here made both prototype tiles show 0 vehicles and no Latest Detections.
 
         // Windows php artisan serve handles one request at a time — skip heavy Mongo writes when unchanged.
         $cacheKey = $this->cacheKeyForCamera($cameraId);

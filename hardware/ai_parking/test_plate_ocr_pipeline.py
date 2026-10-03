@@ -7,11 +7,12 @@ import unittest
 
 from parking_rules import (
     OCR_MAX_ATTEMPTS,
-    OCR_MAX_REOPENS,
+    OCR_MOVING_ONLY,
     OCR_PENDING_TIMEOUT_SEC,
     OCR_RETRY_COOLDOWN_SEC,
     ParkingIntelligence,
     TrackMemory,
+    unread_retry_cap,
 )
 from plate_ocr import PlateOCR
 from plate_text import is_known_ph_format
@@ -78,30 +79,21 @@ class PlateDeadlineTests(unittest.TestCase):
         self.assertFalse(mem.maybe_retry_not_read())
         self.assertEqual(mem.plate_status, "not_read")
 
-        # Cooldown elapsed. Default budget does not reopen; extra cycles only
-        # when AI_PARKING_OCR_MAX_REOPENS is set above zero.
+        # Cooldown elapsed: an unread plate is read again.
         mem.not_read_at = time.time() - (OCR_RETRY_COOLDOWN_SEC + 1.0)
-        mem.motion_state = "moving"
-        if OCR_MAX_REOPENS <= 0:
-            self.assertFalse(mem.maybe_retry_not_read())
-            self.assertEqual(mem.plate_status, "not_read")
-            return
+        mem.motion_state = "parked"
+        if OCR_MOVING_ONLY:
+            mem.motion_state = "moving"
         self.assertTrue(mem.maybe_retry_not_read())
         self.assertEqual(mem.plate_status, "pending")
         self.assertEqual(mem.ocr_attempts, 0)
         self.assertEqual(mem.reopen_count, 1)
 
-        # Stationary vehicles must not reopen OCR.
-        mem.plate_status = "not_read"
-        mem.not_read_at = time.time() - (OCR_RETRY_COOLDOWN_SEC + 1.0)
-        mem.motion_state = "parked"
-        self.assertFalse(mem.maybe_retry_not_read())
-
     def test_not_read_reopen_cap_is_bounded(self):
         """A genuinely unreadable plate must not retry forever."""
         mem = TrackMemory(first_seen=time.time())
         mem.plate_status = "not_read"
-        mem.reopen_count = OCR_MAX_REOPENS
+        mem.reopen_count = unread_retry_cap()
         mem.not_read_at = time.time() - (OCR_RETRY_COOLDOWN_SEC + 1.0)
         self.assertFalse(mem.maybe_retry_not_read())
         self.assertEqual(mem.plate_status, "not_read")
@@ -112,7 +104,7 @@ class PlateDeadlineTests(unittest.TestCase):
         point the guard's plate wins immediately and permanently."""
         mem = TrackMemory(first_seen=time.time())
         mem.plate_status = "not_read"
-        mem.reopen_count = OCR_MAX_REOPENS  # retry budget fully used up
+        mem.reopen_count = unread_retry_cap()  # retry budget fully used up
         mem.not_read_at = time.time() - (OCR_RETRY_COOLDOWN_SEC + 1.0)
 
         # No guard input yet -> must stay exactly as "Plate Not Read".
@@ -136,6 +128,24 @@ class PlateDeadlineTests(unittest.TestCase):
         self.assertFalse(mem.maybe_retry_not_read())
         self.assertEqual(mem.plate_status, "ok")
         self.assertEqual(mem.plate, "EBD814")
+
+    def test_read_plate_locks_and_unread_does_not(self):
+        mem = TrackMemory(first_seen=time.time())
+        mem.ocr_attempts = 1
+        mem.ocr_result_pending = False
+        mem.apply_ocr_vote("N123VAJ", "ok", 0.28)
+        self.assertEqual(mem.plate_status, "ok")
+        self.assertEqual(mem.plate, "N123VAJ")
+        self.assertFalse(mem.allows_ocr())
+        mem.apply_ocr_vote("ZZZ999", "ok", 0.99)
+        self.assertEqual(mem.plate, "N123VAJ")
+
+        missed = TrackMemory(first_seen=time.time())
+        missed.ocr_attempts = max(OCR_MAX_ATTEMPTS, 1)
+        missed.ocr_result_pending = False
+        missed.apply_ocr_vote(None, "empty", 0.0)
+        self.assertEqual(missed.plate_status, "not_read")
+        self.assertIsNone(missed.plate)
 
     def test_known_ph_locks_with_realistic_easyocr_confidence(self):
         """Regression: leader_conf must use hit counts, not vote weights (was blocking all locks)."""
@@ -258,7 +268,7 @@ class PlateDeadlineTests(unittest.TestCase):
         old.lock_plate("EBD814", 0.95, "test")
         sid = old.recognition_session_id
         # Expire session.
-        intel.prune_stale_sessions(seen_tracks=set(), now=now + TRACK_LOST_GRACE_SEC + 1.0)
+        intel.prune_stale_sessions(seen_tracks=set(), now=now + max(TRACK_LOST_GRACE_SEC, 45.0) + 1.0)
         self.assertNotIn(sid, intel.sessions)
         # Different physical vehicle (far box) gets a new session — not old plate.
         neu = intel.touch_track(

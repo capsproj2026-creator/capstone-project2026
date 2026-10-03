@@ -17,6 +17,18 @@ Get-NetConnectionProfile -ErrorAction SilentlyContinue | ForEach-Object {
     }
 }
 
+# Clicking "Cancel" on the Windows "allow access?" prompt for php.exe creates inbound
+# Block rules, and Block always wins over Allow - so the ESP32 stays Offline.
+$blocked = @(Get-NetFirewallApplicationFilter -ErrorAction SilentlyContinue |
+    Where-Object { $_.Program -match '\\php(-cgi|-win)?\.exe$' } |
+    Get-NetFirewallRule -ErrorAction SilentlyContinue |
+    Where-Object { $_.Direction -eq 'Inbound' -and $_.Action -eq 'Block' -and $_.Enabled -eq 'True' })
+foreach ($rule in $blocked) {
+    $program = ($rule | Get-NetFirewallApplicationFilter).Program
+    Disable-NetFirewallRule -Name $rule.Name
+    Write-Host ("Firewall: disabled inbound BLOCK rule '{0}' ({1}, {2})" -f $rule.DisplayName, $program, $rule.Profile) -ForegroundColor Yellow
+}
+
 $ruleName = "Laravel Dev Server 8000"
 netsh advfirewall firewall delete rule name="$ruleName" 2>$null | Out-Null
 netsh advfirewall firewall add rule name="$ruleName" dir=in action=allow protocol=TCP localport=8000 profile=any enable=yes

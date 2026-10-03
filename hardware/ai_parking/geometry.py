@@ -237,7 +237,11 @@ def _zone_bbox_area(zone: dict[str, Any]) -> float:
 
 
 def _bottom_sample_points(xyxy: tuple[int, int, int, int]) -> list[tuple[float, float]]:
-    """Points along the tire line + lower body, used when bottom-center misses the bay."""
+    """Points used when the bottom-center misses the bay.
+
+    The bumper often hangs past the stall toward the camera, so the bottom edge
+    of the box is below the painted bay. Sample the body of the box as well.
+    """
     x1, y1, x2, y2 = xyxy
     width = float(x2) - float(x1)
     height = float(y2) - float(y1)
@@ -248,6 +252,11 @@ def _bottom_sample_points(xyxy: tuple[int, int, int, int]) -> list[tuple[float, 
         points.append((float(x1) + width * frac, bottom - max(1.0, height * 0.08)))
         points.append((float(x1) + width * frac, bottom - max(1.0, height * 0.18)))
     points.append((float(x1) + width * 0.5, bottom - max(1.0, height * 0.12)))
+    # Stall band: where the painted bay sits when the camera faces the cars.
+    for y_frac in (0.15, 0.28, 0.40, 0.52):
+        py = float(y1) + height * y_frac
+        for x_frac in (0.30, 0.42, 0.50, 0.58, 0.70):
+            points.append((float(x1) + width * x_frac, py))
     return points
 
 

@@ -157,10 +157,10 @@ class PlateOCR:
         min_w = OCR_UPSCALE_MIN_WIDTH
         max_w = max(160, OCR_UPSCALE_MAX_WIDTH)
         if fast:
-            # Large LANCZOS upscales dominate CPU time before EasyOCR even runs.
+            # Large upscales dominate CPU time before EasyOCR even runs.
             factor = min(factor, 2.0)
-            min_w = min(min_w, 280)
-            max_w = min(max_w, 360)
+            min_w = min(min_w, 200)
+            max_w = min(max_w, 280)
         elif cw < 64:
             factor = max(factor, 10.0)
             min_w = max(min_w, 800)
@@ -230,11 +230,8 @@ class PlateOCR:
             pass
 
         if quick or fast:
-            # clahe first; color as backup when the first pass looks truncated.
-            return [
-                ("clahe", clahe_img),
-                ("color", crop),
-            ]
+            # One preprocess only. A second EasyOCR pass doubled the wait per vehicle.
+            return [("clahe", clahe_img)]
 
         gamma = PlateOCR._gamma_correct(clahe_img, 1.2)
         bright = PlateOCR._gamma_correct(clahe_img, 0.72)  # lift dark/shaded plates
@@ -293,9 +290,8 @@ class PlateOCR:
         # Typical clear-plate EasyOCR scores are 0.50–0.80 (not 0.90).
         early_lock = max(OCR_MIN_CONF, 0.48 if (fast or quick) else max(0.55, OCR_HIGH_CONF_LOCK - 0.25))
         variants = self._ocr_variants(crop, quick=quick, fast=fast)
-        # Fast path: try clahe first; only run color if the first result looks truncated.
         if fast or quick:
-            variants = variants[:2]
+            variants = variants[:1]
         for idx, (_label, img) in enumerate(variants):
             if deadline is not None and time.perf_counter() >= deadline:
                 print(f"[OCR] variant budget exhausted ({OCR_READ_TIMEOUT_SEC:.0f}s) — stopping")
@@ -343,18 +339,25 @@ class PlateOCR:
         return best, best_score, best_any_score
 
     def _readtext(self, img, *, fast: bool = False, deadline: float | None = None):
+        # Model load can take longer than one read. Do it before the timeout
+        # so the first vehicle is not marked unread while EasyOCR is starting.
+        self._ensure_reader()
+        if self._reader is None:
+            return []
         short = min(img.shape[:2])
         if fast:
-            mag = 1.2 if short < 80 else 1.0
+            mag = 1.0
         else:
             mag = 2.0 if short < 80 else 1.6
         timeout = float(OCR_READ_TIMEOUT_SEC) if OCR_READ_TIMEOUT_SEC > 0 else 10.0
+        if fast:
+            timeout = min(timeout, 4.0)
         if deadline is not None:
             timeout = max(0.4, min(timeout, deadline - time.perf_counter()))
         if timeout <= 0.05:
             return []
 
-        canvas = 720 if fast else 960
+        canvas = 480 if fast else 960
         kwargs = dict(
             allowlist=_OCR_ALLOWLIST,
             paragraph=False,
@@ -592,7 +595,12 @@ class PlateOCR:
         first_sub = None
 
         try:
-            subs = self._sub_crops(crop, cls_id=cls_id, fast=use_fast, plate_only=use_plate_only)
+            # Fast path is one read of the bumper crop. A plate-detector pass
+            # before EasyOCR was a second scan of the same vehicle.
+            if use_fast:
+                subs = [crop]
+            else:
+                subs = self._sub_crops(crop, cls_id=cls_id, fast=use_fast, plate_only=use_plate_only)
             if use_fast and subs:
                 subs = subs[:1]
             if not subs:
@@ -840,6 +848,7 @@ class AsyncPlateQueue:
             else:
                 key, crop, intelligence, track_id, cls_id = item[:5]
                 xyxy = None
+            mem = None
             try:
                 t0 = time.perf_counter()
                 self.ocr._debug_camera_id = str(camera_id or "CAM")
@@ -883,6 +892,7 @@ class AsyncPlateQueue:
                     mem.last_ocr_at = time.time()
                     before = mem.plate_status
                     mem.apply_ocr_vote(read.plate, read.status, read.confidence)
+                    mem.ocr_result_pending = False
                     mem.tick_plate_deadline()
                     ms = int((time.perf_counter() - t0) * 1000)
                     ch = crop.shape[0] if hasattr(crop, "shape") else 0
@@ -907,6 +917,8 @@ class AsyncPlateQueue:
             except Exception as e:
                 print(f"Async OCR error: {e}")
             finally:
+                if mem is not None:
+                    mem.ocr_result_pending = False
                 with self._lock:
                     self._inflight.discard(key)
                     self._inflight_since.pop(key, None)

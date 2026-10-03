@@ -38,6 +38,7 @@ class AiParkingController extends Controller
             'detections.*.has_plate_crop' => ['nullable', 'boolean'],
             'detections.*.thumb_jpeg_base64' => ['nullable', 'string', 'max:120000'],
             'detections.*.track_id' => ['nullable', 'integer'],
+            'detections.*.slot_id' => ['nullable', 'string', 'max:32'],
             'detections.*.motion_state' => ['nullable', 'string', 'max:16'],
             'detections.*.motion_label' => ['nullable', 'string', 'max:32'],
             'detections.*.xyxy' => ['nullable', 'array', 'size:4'],

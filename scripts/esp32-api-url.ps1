@@ -16,7 +16,45 @@ param(
 $Root = Split-Path -Parent $PSScriptRoot
 $ConfigPath = Join-Path $Root "hardware\esp32_rfid_gate\rfid_gate_config.h"
 
+function Get-ConfigDefine([string]$Name) {
+    if (-not (Test-Path $ConfigPath)) { return $null }
+    $raw = Get-Content $ConfigPath -Raw
+    if ($raw -match ('#define\s+' + [regex]::Escape($Name) + '\s+"([^"]*)"')) {
+        return $Matches[1]
+    }
+    return $null
+}
+
+function Get-InterfaceIPv4([int]$InterfaceIndex) {
+    $a = Get-NetIPAddress -AddressFamily IPv4 -InterfaceIndex $InterfaceIndex -ErrorAction SilentlyContinue |
+        Where-Object { $_.IPAddress -notlike "169.254.*" } |
+        Select-Object -First 1
+    if ($a) { return $a.IPAddress }
+    return $null
+}
+
 function Get-LanIPv4 {
+    # The ESP32 joins WIFI_SSID, so the PC adapter on that same network is the only reachable IP.
+    $profiles = @(Get-NetConnectionProfile -ErrorAction SilentlyContinue)
+    $ssid = Get-ConfigDefine "WIFI_SSID"
+    if ($ssid) {
+        foreach ($p in ($profiles | Where-Object { $_.Name -eq $ssid })) {
+            $ip = Get-InterfaceIPv4 $p.InterfaceIndex
+            if ($ip) { return $ip }
+        }
+    }
+
+    # Otherwise prefer a connected Wi-Fi adapter over wired/virtual links on unidentified networks.
+    $known = $profiles | Where-Object { $_.Name -ne "Unidentified network" }
+    foreach ($p in ($known | Where-Object { $_.InterfaceAlias -match 'Wi-?Fi|Wireless|WLAN' })) {
+        $ip = Get-InterfaceIPv4 $p.InterfaceIndex
+        if ($ip) { return $ip }
+    }
+    foreach ($p in $known) {
+        $ip = Get-InterfaceIPv4 $p.InterfaceIndex
+        if ($ip) { return $ip }
+    }
+
     $addrs = Get-NetIPAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue |
         Where-Object {
             $_.IPAddress -notlike "127.*" -and
@@ -57,9 +95,12 @@ Write-Host "Laravel must run with: php artisan serve --host=0.0.0.0 --port=8000"
 Write-Host "(start-system.ps1 / start.ps1 already does this)" -ForegroundColor DarkGray
 Write-Host ""
 
+$rfidToken = Get-ConfigDefine "RFID_API_TOKEN"
+if (-not $rfidToken) { $rfidToken = "capstone-rfid-dev-token-change-me" }
+
 try {
     $r = Invoke-WebRequest -Method POST -Uri "$apiBase/api/rfid/heartbeat" `
-        -Headers @{"X-RFID-TOKEN" = "capstone-rfid-dev-token-change-me"; "Content-Type" = "application/json"} `
+        -Headers @{"X-RFID-TOKEN" = $rfidToken; "Content-Type" = "application/json"} `
         -Body '{"gate_id":"GATE-IN-1"}' -TimeoutSec 4 -UseBasicParsing
     Write-Host "Laravel reachable at $apiBase (HTTP $($r.StatusCode))" -ForegroundColor Green
 } catch {

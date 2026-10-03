@@ -49,8 +49,9 @@ return [
 
         'file' => [
             'driver' => 'file',
-            'path' => storage_path('framework/cache/data'),
-            'lock_path' => storage_path('framework/cache/data'),
+            // Keep this off OneDrive. File locks in a synced folder stall occupancy posts.
+            'path' => env('CACHE_FILE_PATH', storage_path('framework/cache/data')),
+            'lock_path' => env('CACHE_FILE_LOCK_PATH', env('CACHE_FILE_PATH', storage_path('framework/cache/data'))),
         ],
 
         'memcached' => [

@@ -57,6 +57,11 @@ OCR_PENDING_TIMEOUT_SEC = float(os.getenv("AI_PARKING_OCR_PENDING_TIMEOUT_SEC", 
 # a genuinely unreadable/damaged plate does not retry endlessly.
 OCR_RETRY_COOLDOWN_SEC = float(os.getenv("AI_PARKING_OCR_RETRY_COOLDOWN_SEC", "15"))
 OCR_MAX_REOPENS = int(os.getenv("AI_PARKING_OCR_MAX_REOPENS", "0"))
+
+
+def unread_retry_cap() -> int:
+    """How many extra reads an unread plate gets. A locked plate never uses this."""
+    return max(int(OCR_MAX_REOPENS), 6)
 # Prefer plate-YOLO/OpenCV crop only; skip EasyOCR on huge bumper bands when no plate ROI.
 OCR_PLATE_ONLY = os.getenv("AI_PARKING_OCR_PLATE_ONLY", "1").strip().lower() in (
     "1",
@@ -277,6 +282,9 @@ class TrackMemory:
     plate_vote_scores: dict[str, float] = field(default_factory=dict)
     plate_vote_counts: dict[str, int] = field(default_factory=dict)
     unreadable_votes: int = 0
+    # True from the moment an OCR attempt starts until its result is applied.
+    # The attempt budget must not close the plate while that read is still running.
+    ocr_result_pending: bool = False
     ocr_attempts: int = 0
     ocr_started_at: float = 0.0
     not_read_at: float = 0.0
@@ -571,6 +579,7 @@ class TrackMemory:
         now = now if now is not None else time.time()
         if self.ocr_started_at <= 0:
             self.ocr_started_at = now
+        self.ocr_result_pending = True
         self.ocr_attempts += 1
         print(
             f"[OCR] attempt {self.ocr_attempts}/{OCR_MAX_ATTEMPTS} "
@@ -604,7 +613,14 @@ class TrackMemory:
             and last_activity > 0
             and (now - last_activity) >= stall_sec
         )
-        attempts_exhausted = OCR_MAX_ATTEMPTS > 0 and self.ocr_attempts >= OCR_MAX_ATTEMPTS
+        # An attempt is only finished after its OCR result is applied. Counting
+        # it at the start used to mark "not read" while EasyOCR was still working,
+        # which dropped a good plate and left Latest Detections empty.
+        attempts_exhausted = (
+            not self.ocr_result_pending
+            and OCR_MAX_ATTEMPTS > 0
+            and self.ocr_attempts >= OCR_MAX_ATTEMPTS
+        )
         if not stalled_without_attempt and not stalled_mid_scan and not attempts_exhausted:
             return False
         self.plate = None
@@ -623,14 +639,16 @@ class TrackMemory:
         return True
 
     def maybe_retry_not_read(self, now: float | None = None) -> bool:
-        """Optionally reopen PLATE NOT READ for another attempt cycle.
+        """Read again when this vehicle's plate was not read.
 
-        Default OCR_MAX_REOPENS=0: stop after one attempt budget.
-        When reopens are enabled, still require movement if OCR_MOVING_ONLY.
+        A locked plate is never reopened. An unread plate gets another read
+        after the cooldown, until unread_retry_cap().
         """
-        if self.plate_status != "not_read":
+        if self.is_plate_locked() or self.plate_status != "not_read":
             return False
-        if OCR_MAX_REOPENS <= 0 or self.reopen_count >= OCR_MAX_REOPENS:
+        if plate_source_label(self.plate_source) == "MANUAL":
+            return False
+        if self.reopen_count >= unread_retry_cap():
             return False
         if OCR_MOVING_ONLY and not ocr_allowed_for_motion(self.motion_state):
             return False
@@ -644,7 +662,7 @@ class TrackMemory:
         self.not_read_at = 0.0
         self.reopen_count += 1
         print(
-            f"[OCR] tracking_id={self.current_tracker_id} Retry #{self.reopen_count}/{OCR_MAX_REOPENS}: "
+            f"[OCR] tracking_id={self.current_tracker_id} Retry #{self.reopen_count}/{unread_retry_cap()}: "
             f"reopening PLATE NOT READ"
         )
         return True
@@ -745,7 +763,12 @@ class TrackMemory:
         if plate_source_label(self.plate_source) == "MANUAL":
             return
         if self.plate_status in ("unreadable", "not_read"):
-            return
+            # The deadline can mark "not read" while this attempt is still running.
+            # A finished plate from that same attempt still has to lock.
+            if not (self.ocr_result_pending and status == "ok" and plate):
+                return
+            self.plate_status = "pending"
+            self.plate_lock_reason = None
 
         conf = float(confidence or 0.0)
         self.ocr_confidence = max(self.ocr_confidence, conf)
@@ -914,6 +937,12 @@ class TrackMemory:
                 return
             if loose_single:
                 self.lock_plate(leader, conf, f"loose_plate_solid conf>={conf:.2f}")
+                return
+
+            # The scanner returned a plate. Lock it and do not read this vehicle again.
+            # A short 2-letter truncation stays unread so it can be read again.
+            if leader and (leader_known or leader_loose) and not risky_short:
+                self.lock_plate(leader, max(conf, leader_conf), "plate_read")
                 return
 
             self.tick_plate_deadline()
@@ -1500,9 +1529,6 @@ class ParkingIntelligence:
                         z for z in matched_slots
                         if float(z.get("_iou") or 0.0) >= STRADDLE_MIN_IOU
                     ]
-                    if len(straddle) < 2 and len(matched_slots) >= 2:
-                        # Fall back: primary + any other matched slot (center / low IoU edge).
-                        straddle = matched_slots[:2]
                     if len(straddle) >= 2:
                         zone_key = "+".join(sorted(str(z["id"]) for z in straddle[:3]))
                         evt = self._emit(

@@ -365,7 +365,9 @@ def main():
     zones = load_zones(zones_path)
     prefix = "AC"
     name = zones_path.name.lower()
-    if "prototype" in name or "proto" in name:
+    if "prototype2" in name or "proto2" in name:
+        prefix = "P2"
+    elif "prototype" in name or "proto" in name:
         prefix = "PT"
     elif "duran" in name:
         prefix = "DU"

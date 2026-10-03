@@ -623,19 +623,29 @@ def _vehicle_box_valid(x1: int, y1: int, x2: int, y2: int, cls_id: int, frame_sh
     return True
 
 
-def _dedupe_vehicle_rows(rows: list[dict], iou_thresh: float = 0.65) -> list[dict]:
-    """Keep highest-confidence box when two same-class vehicles heavily overlap."""
+def _same_physical_vehicle(a, b, iou_thresh: float = 0.45) -> bool:
+    """True when two boxes are the same vehicle, even if YOLO calls one a car and one a truck."""
+    if _box_iou(a, b) >= iou_thresh:
+        return True
+    ax1, ay1, ax2, ay2 = a
+    bx1, by1, bx2, by2 = b
+    ix1, iy1 = max(ax1, bx1), max(ay1, by1)
+    ix2, iy2 = min(ax2, bx2), min(ay2, by2)
+    inter = max(0, ix2 - ix1) * max(0, iy2 - iy1)
+    area_a = max(1.0, (ax2 - ax1) * (ay2 - ay1))
+    area_b = max(1.0, (bx2 - bx1) * (by2 - by1))
+    return inter / min(area_a, area_b) >= 0.72
+
+
+def _dedupe_vehicle_rows(rows: list[dict], iou_thresh: float = 0.45) -> list[dict]:
+    """Keep one box per physical vehicle so plate OCR does not run twice."""
     if len(rows) <= 1:
         return rows
     rows = sorted(rows, key=lambda r: float(r.get("confidence") or 0), reverse=True)
     kept: list[dict] = []
     for row in rows:
         xy = row["xyxy"]
-        cls = row.get("class")
-        if any(
-            k.get("class") == cls and _box_iou(xy, k["xyxy"]) >= iou_thresh
-            for k in kept
-        ):
+        if any(_same_physical_vehicle(xy, k["xyxy"], iou_thresh) for k in kept):
             continue
         kept.append(row)
     return kept
@@ -1319,7 +1329,31 @@ def encode_evidence_jpeg(frame, xyxy=None, max_side: int = 320, quality: int = 5
 
 
 _post_lock = threading.Lock()
-_POST_TIMEOUT_SEC = float(os.getenv("AI_PARKING_POST_TIMEOUT_SEC", "3.0"))
+_POST_TIMEOUT_SEC = float(os.getenv("AI_PARKING_POST_TIMEOUT_SEC", "18.0"))
+# php artisan serve handles one request at a time. Pause after each save so the
+# guard monitor can read Latest Detections instead of waiting behind the next post.
+_POST_GAP_SEC = float(os.getenv("AI_PARKING_POST_GAP_SEC", "2.0"))
+_pending_posts: dict[str, dict] = {}
+_pending_lock = threading.Lock()
+_pending_wakeup = threading.Event()
+_sender_thread: threading.Thread | None = None
+
+
+def _post_sender() -> None:
+    """Send the newest occupancy payload for each camera. Older posts are replaced, not dropped."""
+    while True:
+        _pending_wakeup.wait()
+        _pending_wakeup.clear()
+        with _pending_lock:
+            batch = list(_pending_posts.values())
+            _pending_posts.clear()
+        for payload in batch:
+            post_json("/api/ai-parking/occupancy", payload)
+        if _POST_GAP_SEC > 0:
+            time.sleep(_POST_GAP_SEC)
+        with _pending_lock:
+            if _pending_posts:
+                _pending_wakeup.set()
 
 
 def post_json(path: str, payload: dict) -> bool:
@@ -1341,7 +1375,7 @@ def post_json(path: str, payload: dict) -> bool:
         },
         method="POST",
     )
-    if not _post_lock.acquire(blocking=False):
+    if not _post_lock.acquire(timeout=_POST_TIMEOUT_SEC):
         print(f"Skip Laravel POST {path} (previous request still in flight)")
         return False
     try:
@@ -1422,8 +1456,12 @@ def filter_parking_detections(
             except (TypeError, ValueError):
                 mem = None
         slot = det.get("slot_id") or (getattr(mem, "slot_id", None) if mem else None)
-        if not slot:
+        plate = (det.get("plate") or "").strip()
+        status = str(det.get("plate_status") or "").lower()
+        if not slot and not plate and status not in ("ok", "not_read", "unreadable", "pending"):
             continue
+        if slot:
+            det["slot_id"] = slot
         out.append(det)
     return out
 
@@ -1440,13 +1478,13 @@ def post_occupancy_async(camera_id: str, area_id: int, vehicle_count, detections
     }
     if scene_moving is not None:
         payload["scene_moving"] = bool(scene_moving)
-    thread = threading.Thread(
-        target=post_json,
-        args=("/api/ai-parking/occupancy", payload),
-        daemon=True,
-        name=f"post-{camera_id}",
-    )
-    thread.start()
+    global _sender_thread
+    with _pending_lock:
+        _pending_posts[str(camera_id)] = payload
+        if _sender_thread is None or not _sender_thread.is_alive():
+            _sender_thread = threading.Thread(target=_post_sender, daemon=True, name="laravel-occupancy")
+            _sender_thread.start()
+    _pending_wakeup.set()
 
 
 def resize_for_infer(frame, max_width: int):
