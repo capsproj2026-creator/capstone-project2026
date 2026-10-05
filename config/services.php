@@ -122,8 +122,8 @@ return [
             ],
             [
                 'id' => env('AI_CAMERA_3_ID', 'CAM-AI-3'),
-                'name' => env('AI_CAMERA_3_NAME', 'Talipapa'),
-                'location' => env('AI_CAMERA_3_LOCATION', 'Talipapa'),
+                'name' => env('AI_CAMERA_3_NAME', 'Administration Building'),
+                'location' => env('AI_CAMERA_3_LOCATION', 'Administration Building'),
                 'area_id' => (int) env('AI_CAMERA_3_AREA_ID', 9),
                 'stream_path' => env('AI_CAMERA_3_STREAM_PATH'),
                 'stream_url' => env('AI_CAMERA_3_STREAM_URL'),
