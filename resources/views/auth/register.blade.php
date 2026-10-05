@@ -156,7 +156,6 @@
                             label="Profile Picture"
                             required
                             accept="image/*"
-                            capture="user"
                         />
                         <div>
                             <x-auth.file-input
@@ -365,7 +364,6 @@
                                 label="LTO Official Receipt (OR)"
                                 required
                                 accept="image/*,application/pdf"
-                                capture="environment"
                             />
                             <p id="or_scan_status" class="mt-2 hidden text-xs"></p>
                         </div>
@@ -376,7 +374,6 @@
                                 label="LTO Certificate of Registration (CR)"
                                 required
                                 accept="image/*,application/pdf"
-                                capture="environment"
                             />
                             <p id="cr_scan_status" class="mt-2 hidden text-xs"></p>
                         </div>

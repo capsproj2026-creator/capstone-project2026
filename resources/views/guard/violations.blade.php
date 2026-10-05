@@ -189,9 +189,8 @@
                         required
                         accept="image/*"
                         multiple
-                        :max-files="5"
                     />
-                    <p class="mt-1 text-xs text-gray-500">Required — upload at least one image (up to 5). On a phone, tap Take photo again to add more shots.</p>
+                    <p class="mt-1 text-xs text-gray-500">Required — upload at least one image (up to 5).</p>
                     <p id="violation-evidence-error" class="mt-1 hidden text-xs text-red-600">Add at least one photo before submitting.</p>
                 </div>
                 <div class="flex gap-3">
