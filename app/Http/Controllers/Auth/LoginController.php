@@ -83,8 +83,9 @@ class LoginController extends Controller
             Auth::login($user, $request->boolean('remember'));
             $request->session()->regenerate();
 
+            // intended(): finish an emailed verification link that sent them here to sign in.
             return redirect()
-                ->route('verification.notice')
+                ->intended(route('verification.notice'))
                 ->with('error', 'You must verify your email address before accessing the portal. Please check your inbox for the verification link.');
         }
 

@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Auth;
 
 use App\Http\Controllers\Controller;
 use App\Models\Notification;
+use App\Models\User;
 use App\Services\NavigationService;
 use Illuminate\Foundation\Auth\EmailVerificationRequest;
 use Illuminate\Http\RedirectResponse;
@@ -96,5 +97,51 @@ class EmailVerificationController extends Controller
         $request->user()->sendEmailVerificationNotification();
 
         return back()->with('success', 'A new verification email has been sent to '.$request->user()->email.'.');
+    }
+
+    /**
+     * Signed-out form: request a fresh verification link by email address.
+     */
+    public function resendForm(): View
+    {
+        return view('auth.resend-verification');
+    }
+
+    /**
+     * Send a new verification link without signing in.
+     * Always answers the same way so the form cannot be used to probe accounts.
+     */
+    public function resend(Request $request): RedirectResponse
+    {
+        $validated = $request->validate([
+            'email' => ['required', 'email', 'max:255'],
+        ]);
+
+        try {
+            $user = User::query()->where('email', $validated['email'])->first();
+        } catch (\Throwable $e) {
+            report($e);
+
+            return back()
+                ->with('error', 'Database connection is not available. Please try again.')
+                ->onlyInput('email');
+        }
+
+        if ($user && ! $user->hasVerifiedEmail() && ! $user->isTemporaryAccount()) {
+            try {
+                $user->sendEmailVerificationNotification();
+            } catch (\Throwable $e) {
+                report($e);
+
+                return back()
+                    ->with('error', 'We could not send the verification email. Please try again in a minute.')
+                    ->onlyInput('email');
+            }
+        }
+
+        return back()->with(
+            'success',
+            'If that email is registered and not yet verified, we sent a new verification link. Check your inbox and spam folder.'
+        );
     }
 }

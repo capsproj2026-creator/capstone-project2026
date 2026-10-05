@@ -39,8 +39,8 @@ return [
         'client_id' => env('GOOGLE_CLIENT_ID'),
         'client_secret' => env('GOOGLE_CLIENT_SECRET'),
         'redirect' => env('GOOGLE_REDIRECT_URI', env('APP_URL', 'http://127.0.0.1:8000').'/auth/google/callback'),
-        // Empty = allow any Google email. Default campus domain for CSPC.
-        'allowed_domain' => env('GOOGLE_ALLOWED_DOMAIN', 'my.cspc.edu.ph'),
+        // Comma-separated domains allowed for Google sign-in. Empty = allow any Google email.
+        'allowed_domain' => env('GOOGLE_ALLOWED_DOMAIN', 'my.cspc.edu.ph,cspc.edu.ph,gmail.com'),
     ],
 
     'visitor_pre_register' => [

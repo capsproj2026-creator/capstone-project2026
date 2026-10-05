@@ -80,7 +80,7 @@
                     </svg>
                     <b>CSPC Mail</b>
                 </a>
-                <p class="mt-2 text-center text-xs text-gray-500">Use your @my.cspc.edu.ph Google account. You must already be registered.</p>
+                <p class="mt-2 text-center text-xs text-gray-500">Use your @my.cspc.edu.ph, @cspc.edu.ph, or @gmail.com Google account. You must already be registered.</p>
             @endif
 
             <p class="mt-6 text-center text-sm text-gray-500">
@@ -89,8 +89,7 @@
             </p>
             <p class="mt-2 text-center text-sm text-gray-500">
                 Need to verify your email?
-                <a href="{{ route('login') }}" class="font-semibold text-blue-600 hover:underline">Sign in</a>
-                to resend the verification link.
+                <a href="{{ route('verification.resend') }}" class="font-semibold text-blue-600 hover:underline">Resend verification link</a>
             </p>
         </div>
     </div>

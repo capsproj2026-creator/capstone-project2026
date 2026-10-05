@@ -76,19 +76,30 @@
                         </div>
                     </summary>
                     @if ($lotSnapshot && empty($zone['hidden']))
-                        <div class="border-t border-gray-100 p-4">
-                            <figure class="parking-zone-snapshot parking-zone-snapshot--compact">
-                                <img
-                                    src="{{ asset($lotSnapshot['path']) }}"
-                                    alt="{{ $lotSnapshot['label'] }} parking area"
-                                    width="767"
-                                    height="1024"
-                                >
-                                <figcaption>
-                                    <span class="parking-zone-snapshot__title">{{ $lotSnapshot['label'] }}</span>
-                                </figcaption>
-                            </figure>
-                        </div>
+                        <details class="group/photo border-t border-gray-100" data-zone-photo>
+                            <summary class="flex cursor-pointer list-none items-center justify-between gap-3 px-5 py-3 text-sm font-medium text-gray-700 select-none hover:bg-gray-50 [&::-webkit-details-marker]:hidden">
+                                <span class="inline-flex items-center gap-2">
+                                    <i data-lucide="image" class="h-4 w-4 text-gray-500"></i>
+                                    Parking area photo
+                                </span>
+                                <i data-lucide="chevron-down" class="h-4 w-4 text-gray-500 transition-transform duration-200 group-open/photo:rotate-180"></i>
+                            </summary>
+                            <div class="px-4 pb-4">
+                                <figure class="parking-zone-snapshot parking-zone-snapshot--compact">
+                                    <img
+                                        src="{{ asset($lotSnapshot['path']) }}"
+                                        alt="{{ $lotSnapshot['label'] }} parking area"
+                                        width="767"
+                                        height="1024"
+                                        loading="lazy"
+                                        decoding="async"
+                                    >
+                                    <figcaption>
+                                        <span class="parking-zone-snapshot__title">{{ $lotSnapshot['label'] }}</span>
+                                    </figcaption>
+                                </figure>
+                            </div>
+                        </details>
                     @endif
                     <div class="zone-slot-grid grid grid-cols-3 gap-2 border-t border-gray-100 p-4 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8">
                         @foreach ($zone['slots'] as $slot)

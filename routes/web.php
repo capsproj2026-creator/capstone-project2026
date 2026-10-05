@@ -64,6 +64,10 @@ Route::middleware(['guest', 'no.cache'])->group(function () {
     Route::post('/reset-password', [ForgotPasswordController::class, 'update'])
         ->middleware('throttle:password-reset')
         ->name('password.update');
+    Route::get('/email/resend', [EmailVerificationController::class, 'resendForm'])->name('verification.resend');
+    Route::post('/email/resend', [EmailVerificationController::class, 'resend'])
+        ->middleware('throttle:password-reset')
+        ->name('verification.resend.send');
     Route::get('/auth/google', [GoogleAuthController::class, 'redirect'])
         ->middleware('throttle:20,1')
         ->name('auth.google');

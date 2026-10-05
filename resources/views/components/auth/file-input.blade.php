@@ -9,6 +9,16 @@
 
 @php
     $inputId = $id ?? preg_replace('/[^A-Za-z0-9_-]/', '_', $name);
+
+    // Android Chrome/Brave open the camera-less Photo Picker when every accepted type is an
+    // image. One non-image type brings back the Camera / Media picker chooser. Desktop
+    // browsers ignore the unknown type, and the server still validates the upload.
+    $acceptTypes = array_filter(array_map('trim', explode(',', $accept)));
+    $imageOnly = $acceptTypes !== [] && collect($acceptTypes)->every(
+        fn (string $t) => str_starts_with(strtolower($t), 'image/')
+            || in_array(strtolower($t), ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.heic', '.heif'], true)
+    );
+    $acceptAttr = $imageOnly ? $accept.',android/force-camera-workaround' : $accept;
 @endphp
 
 <div {{ $attributes->merge(['class' => '']) }}>
@@ -40,9 +50,10 @@
             type="file"
             name="{{ $name }}"
             id="{{ $inputId }}"
-            accept="{{ $accept }}"
+            accept="{{ $acceptAttr }}"
             @if($required) required @endif
             @if($multiple) multiple @endif
+            @if($imageOnly) data-image-only @endif
             class="sr-only"
             data-file-input
         >
@@ -63,6 +74,24 @@
                     ? 'No file chosen'
                     : files.length === 1 ? files[0].name : files.length + ' files selected';
             };
+
+            const isImage = (file) => file.type
+                ? file.type.startsWith('image/')
+                : /\.(jpe?g|png|gif|webp|heic|heif)$/i.test(file.name);
+
+            // Capture phase: runs before page listeners (e.g. license OCR) so a non-photo
+            // picked through the wider Android chooser never reaches them.
+            document.addEventListener('change', (event) => {
+                const el = event.target;
+                if (!(el instanceof HTMLInputElement) || !el.hasAttribute('data-image-only')) return;
+                const files = el.files ? Array.from(el.files) : [];
+                if (files.length === 0 || files.every(isImage)) return;
+
+                el.value = '';
+                event.stopImmediatePropagation();
+                const label = document.getElementById(el.id + '_label');
+                if (label) label.textContent = 'Please choose a photo (JPG or PNG).';
+            }, true);
 
             document.addEventListener('change', (event) => {
                 const el = event.target;

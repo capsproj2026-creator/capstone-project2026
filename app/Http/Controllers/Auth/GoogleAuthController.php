@@ -23,6 +23,34 @@ class GoogleAuthController extends Controller
         return $clientId !== '' && $clientSecret !== '';
     }
 
+    /**
+     * Google sign-in domains from GOOGLE_ALLOWED_DOMAIN (comma-separated). Empty = any domain.
+     *
+     * @return list<string>
+     */
+    public static function allowedDomains(): array
+    {
+        $raw = (string) config('services.google.allowed_domain', '');
+
+        return array_values(array_unique(array_filter(array_map(
+            fn (string $d) => ltrim(strtolower(trim($d)), '@'),
+            explode(',', $raw)
+        ))));
+    }
+
+    public static function emailDomainAllowed(string $email): bool
+    {
+        $domains = self::allowedDomains();
+        if ($domains === []) {
+            return true;
+        }
+
+        // Exact domain after "@": cspc.edu.ph must not also admit evil-cspc.edu.ph.
+        $domain = strtolower((string) substr(strrchr($email, '@') ?: '', 1));
+
+        return in_array($domain, $domains, true);
+    }
+
     public function redirect(): RedirectResponse|SymfonyRedirectResponse
     {
         if (! self::isConfigured()) {
@@ -62,14 +90,13 @@ class GoogleAuthController extends Controller
                 ->with('error', 'Google did not return an email address for that account.');
         }
 
-        $allowedDomain = strtolower(trim((string) config('services.google.allowed_domain', 'my.cspc.edu.ph')));
-        if ($allowedDomain !== '') {
-            $suffix = '@'.$allowedDomain;
-            if (! str_ends_with($email, $suffix)) {
-                return redirect()
-                    ->route('login')
-                    ->with('error', "Only {$allowedDomain} Google accounts can sign in. Use your campus email.");
-            }
+        $allowedDomains = self::allowedDomains();
+        if ($allowedDomains !== [] && ! self::emailDomainAllowed($email)) {
+            $list = implode(', ', array_map(fn (string $d) => '@'.$d, $allowedDomains));
+
+            return redirect()
+                ->route('login')
+                ->with('error', "Only {$list} Google accounts can sign in.");
         }
 
         try {
