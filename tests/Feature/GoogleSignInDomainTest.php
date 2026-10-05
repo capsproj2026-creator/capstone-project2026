@@ -104,6 +104,16 @@ class GoogleSignInDomainTest extends TestCase
         $this->assertAuthenticatedAs($user);
     }
 
+    public function test_google_is_asked_to_require_a_fresh_password_sign_in(): void
+    {
+        $location = $this->get(route('auth.google'))->assertRedirect()->headers->get('Location');
+        parse_str((string) parse_url($location, PHP_URL_QUERY), $query);
+
+        $this->assertStringStartsWith('https://accounts.google.com/', $location);
+        $this->assertSame('0', $query['max_age'] ?? null);
+        $this->assertSame('select_account', $query['prompt'] ?? null);
+    }
+
     public function test_other_domains_are_rejected(): void
     {
         $this->fakeGoogle('someone.'.uniqid().'@yahoo.com');

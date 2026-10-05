@@ -59,9 +59,10 @@ class GoogleAuthController extends Controller
                 ->with('error', 'Google sign-in is not configured yet. Ask an admin to set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET.');
         }
 
+        // max_age=0 makes Google ask for the account password again instead of reusing the browser's Google session.
         return Socialite::driver('google')
             ->scopes(['openid', 'profile', 'email'])
-            ->with(['prompt' => 'select_account'])
+            ->with(['prompt' => 'select_account', 'max_age' => '0'])
             ->redirect();
     }
 

@@ -154,7 +154,7 @@ class ViolationController extends Controller
             ->all();
     }
 
-    public function evidence(string $id, int $index = 0): \Symfony\Component\HttpFoundation\StreamedResponse|\Illuminate\Http\Response
+    public function evidence(string $id, int $index = 0): \Symfony\Component\HttpFoundation\Response
     {
         $log = \App\Support\ViolationEvidence::findAuthorized($id);
 

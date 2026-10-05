@@ -2,7 +2,7 @@
 
 namespace App\Support;
 
-use Symfony\Component\HttpFoundation\StreamedResponse;
+use Symfony\Component\HttpFoundation\Response;
 
 /**
  * Serve violation evidence from the private disk (legacy public copies still readable).
@@ -24,7 +24,7 @@ class PrivateEvidence
         return str_starts_with($path, 'violation-evidence/');
     }
 
-    public static function response(?string $path): StreamedResponse|\Illuminate\Http\Response
+    public static function response(?string $path): Response
     {
         $path = ViolationEvidence::normalizePath((string) $path);
 
