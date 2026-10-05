@@ -61,7 +61,7 @@
                         <textarea name="address" id="address" rows="2" maxlength="255"
                             class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm uppercase text-gray-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20">{{ old('address', $user->address) }}</textarea>
                     </div>
-                    <x-auth.file-input name="profile_pic" id="profile_pic" label="Profile Photo" accept="image/*" />
+                    <x-auth.file-input name="profile_pic" id="profile_pic" label="Profile Photo" accept="image/*" capture="user" />
                     <button type="submit" class="w-full rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-blue-700 sm:w-auto">
                         Save Profile
                     </button>

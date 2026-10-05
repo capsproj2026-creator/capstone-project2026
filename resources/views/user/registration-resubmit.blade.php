@@ -36,25 +36,13 @@
     <form method="POST" action="{{ route('user.registration.resubmit') }}" enctype="multipart/form-data" class="max-w-2xl space-y-5 rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
         @csrf
 
-        <div>
-            <label class="mb-1.5 block text-sm font-medium text-gray-700">Driver's License <span class="text-red-500">*</span></label>
-            <input type="file" name="driver_license" accept="image/*" required class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm">
-        </div>
+        <x-auth.file-input name="driver_license" id="driver_license" label="Driver's License" required accept="image/*" />
 
-        <div>
-            <label class="mb-1.5 block text-sm font-medium text-gray-700">LTO Official Receipt (OR) <span class="text-red-500">*</span></label>
-            <input type="file" name="lto_or_photo" accept="image/*,application/pdf" required class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm">
-        </div>
+        <x-auth.file-input name="lto_or_photo" id="lto_or_photo" label="LTO Official Receipt (OR)" required accept="image/*,application/pdf" />
 
-        <div>
-            <label class="mb-1.5 block text-sm font-medium text-gray-700">LTO Certificate of Registration (CR) <span class="text-red-500">*</span></label>
-            <input type="file" name="lto_cr_photo" accept="image/*,application/pdf" required class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm">
-        </div>
+        <x-auth.file-input name="lto_cr_photo" id="lto_cr_photo" label="LTO Certificate of Registration (CR)" required accept="image/*,application/pdf" />
 
-        <div>
-            <label class="mb-1.5 block text-sm font-medium text-gray-700">Valid ID / School ID <span class="text-red-500">*</span></label>
-            <input type="file" name="id_document" accept="image/*,application/pdf" required class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm">
-        </div>
+        <x-auth.file-input name="id_document" id="id_document" label="Valid ID / School ID" required accept="image/*,application/pdf" />
 
         <div class="flex flex-wrap gap-3 pt-2">
             <button type="submit" class="rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-blue-700">

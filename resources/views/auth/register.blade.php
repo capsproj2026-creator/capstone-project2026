@@ -156,6 +156,7 @@
                             label="Profile Picture"
                             required
                             accept="image/*"
+                            capture="user"
                         />
                         <div>
                             <x-auth.file-input

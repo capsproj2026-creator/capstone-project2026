@@ -51,7 +51,9 @@
 #endif
 
 #if ACTUATOR_MODE == ACTUATOR_SERVO
-#include <ESP32Servo.h>
+// GPIO 14 is driven with the ESP32 core LEDC driver (50 Hz servo pulses).
+// ESP32Servo 3.x on Arduino-ESP32 3.3 marks the servo attached on LEDC channel 0
+// while the pin stays silent, so the boom never moves.
 #endif
 
 #ifndef GATE_OPEN_MS
@@ -132,7 +134,28 @@ MFRC522 mfrc522(SS_PIN, RST_PIN);
 Preferences gatePrefs;
 
 #if ACTUATOR_MODE == ACTUATOR_SERVO
-Servo gateServo;
+static const uint8_t SERVO_LEDC_BITS = 14;
+static const uint32_t SERVO_FRAME_US = 20000UL;
+bool gateServoReady = false;
+
+static int servoPulseUs(int angle) {
+  if (angle < 0) {
+    angle = 0;
+  } else if (angle > 180) {
+    angle = 180;
+  }
+  return map(angle, 0, 180, 500, 2400);
+}
+
+static void writeGateServoAngle(int angle) {
+  if (!gateServoReady) {
+    return;
+  }
+  uint32_t us = (uint32_t) servoPulseUs(angle);
+  uint32_t dutyMax = (1UL << SERVO_LEDC_BITS) - 1UL;
+  uint32_t duty = (us * dutyMax) / SERVO_FRAME_US;
+  ledcWrite(PIN_GATE, duty);
+}
 #endif
 
 // Runtime network target (NVS / portal). Prefer these over compile-time macros in HTTP calls.
@@ -566,40 +589,27 @@ bool ensureWifiConnected() {
 
 void initGateActuator() {
 #if ACTUATOR_MODE == ACTUATOR_SERVO
-  // Reserve LEDC timers before attach (attach=0 means no timer/channel — common on ESP32 core 3.x).
-  ESP32PWM::allocateTimer(0);
-  ESP32PWM::allocateTimer(1);
-  ESP32PWM::allocateTimer(2);
-  ESP32PWM::allocateTimer(3);
-
-  gateServo.setPeriodHertz(50);
-  // attach() may return 0 on success (LEDC channel 0). Use attached() — 0 is not a failure.
-  int channel = gateServo.attach(PIN_GATE, 500, 2400);
-  if (!gateServo.attached()) {
-    Serial.println("Servo attach failed on GPIO 14 — retrying simple attach...");
-    channel = gateServo.attach(PIN_GATE);
+  pinMode(PIN_GATE, OUTPUT);
+  gateServoReady = ledcAttach(PIN_GATE, 50, SERVO_LEDC_BITS);
+  Serial.printf("Actuator: SERVO on GPIO %d (ledc=%d) — shared boom for Entry+Exit\n", PIN_GATE, gateServoReady ? 1 : 0);
+  if (!gateServoReady) {
+    Serial.println("WARNING: Servo PWM failed on GPIO 14. Check signal wire + external 5V + common GND.");
+  } else {
+    writeGateServoAngle(SERVO_CLOSE_ANGLE);
+    Serial.printf("Servo -> close angle %d (%d us)\n", SERVO_CLOSE_ANGLE, servoPulseUs(SERVO_CLOSE_ANGLE));
   }
-  bool ok = gateServo.attached();
-  Serial.printf("Actuator: SERVO on GPIO %d (channel=%d attached=%d) — shared boom for Entry+Exit\n", PIN_GATE, channel, ok ? 1 : 0);
-  if (!ok) {
-    Serial.println("WARNING: Servo not attached. Update ESP32Servo library (3.x for Arduino ESP32 3.x).");
-    Serial.println("         Check signal on GPIO 14 + external 5V + common GND.");
-  }
-  delay(200);
-  if (ok) {
-    gateServo.write(SERVO_CLOSE_ANGLE);
-    Serial.printf("Servo -> close angle %d\n", SERVO_CLOSE_ANGLE);
-  }
-  delay(500);
+  delay(300);
 
 #if SERVO_TEST_ON_BOOT
-  Serial.println("Servo boot test: open...");
-  gateServo.write(SERVO_OPEN_ANGLE);
-  delay(1200);
-  Serial.println("Servo boot test: close...");
-  gateServo.write(SERVO_CLOSE_ANGLE);
-  delay(800);
-  Serial.println("Servo boot test done. If arm did not move, check 5V supply + common GND + signal on GPIO 14.");
+  if (gateServoReady) {
+    Serial.println("Servo boot test: open...");
+    writeGateServoAngle(SERVO_OPEN_ANGLE);
+    delay(1200);
+    Serial.println("Servo boot test: close...");
+    writeGateServoAngle(SERVO_CLOSE_ANGLE);
+    delay(800);
+    Serial.println("Servo boot test done. If arm did not move, power the servo from 5V (not 3.3V) and share GND with the ESP32. Signal stays on GPIO 14.");
+  }
 #endif
 #elif ACTUATOR_MODE == ACTUATOR_RELAY
   pinMode(PIN_GATE, OUTPUT);
@@ -979,12 +989,12 @@ void denyAccess(const ScanResult &result) {
 
 void openGateActuator() {
 #if ACTUATOR_MODE == ACTUATOR_SERVO
-  if (!gateServo.attached()) {
-    Serial.println("Servo OPEN skipped — not attached (see boot log channel=0)");
+  if (!gateServoReady) {
+    Serial.println("Servo OPEN skipped — PWM not started (see boot log ledc=0)");
     return;
   }
-  Serial.printf("Servo OPEN -> %d deg\n", SERVO_OPEN_ANGLE);
-  gateServo.write(SERVO_OPEN_ANGLE);
+  Serial.printf("Servo OPEN -> %d deg (%d us)\n", SERVO_OPEN_ANGLE, servoPulseUs(SERVO_OPEN_ANGLE));
+  writeGateServoAngle(SERVO_OPEN_ANGLE);
 #elif ACTUATOR_MODE == ACTUATOR_RELAY
   digitalWrite(PIN_GATE, HIGH);
 #else
@@ -994,9 +1004,9 @@ void openGateActuator() {
 
 void closeGateActuator() {
 #if ACTUATOR_MODE == ACTUATOR_SERVO
-  if (gateServo.attached()) {
-    Serial.printf("Servo CLOSE -> %d deg\n", SERVO_CLOSE_ANGLE);
-    gateServo.write(SERVO_CLOSE_ANGLE);
+  if (gateServoReady) {
+    Serial.printf("Servo CLOSE -> %d deg (%d us)\n", SERVO_CLOSE_ANGLE, servoPulseUs(SERVO_CLOSE_ANGLE));
+    writeGateServoAngle(SERVO_CLOSE_ANGLE);
   }
 #elif ACTUATOR_MODE == ACTUATOR_RELAY
   digitalWrite(PIN_GATE, LOW);

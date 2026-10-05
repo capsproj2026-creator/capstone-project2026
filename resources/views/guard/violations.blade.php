@@ -182,16 +182,16 @@
                     <p id="violation-description-error" class="mt-1 hidden text-xs text-red-600">Enter a description before submitting.</p>
                 </div>
                 <div>
-                    <label class="mb-1 block text-sm font-medium text-gray-700">Photo Evidence <span class="text-red-600">*</span></label>
-                    <input
-                        type="file"
+                    <x-auth.file-input
                         name="evidence_photos[]"
+                        id="evidence_photos"
+                        label="Photo Evidence"
+                        required
                         accept="image/*"
                         multiple
-                        required
-                        class="w-full cursor-pointer rounded-lg border border-gray-300 px-3 py-2 text-sm"
-                    >
-                    <p class="mt-1 text-xs text-gray-500">Required — upload at least one image (up to 5).</p>
+                        :max-files="5"
+                    />
+                    <p class="mt-1 text-xs text-gray-500">Required — upload at least one image (up to 5). On a phone, tap Take photo again to add more shots.</p>
                     <p id="violation-evidence-error" class="mt-1 hidden text-xs text-red-600">Add at least one photo before submitting.</p>
                 </div>
                 <div class="flex gap-3">
