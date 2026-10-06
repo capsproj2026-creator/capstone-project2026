@@ -23,6 +23,30 @@ class OrCrDocumentParserTest extends TestCase
         $this->assertSame([], $result['warnings']);
     }
 
+    public function test_accepts_keywords_when_ocr_drops_the_spaces(): void
+    {
+        $parser = new OrCrDocumentParser;
+
+        $or = $parser->parse([
+            ['text' => 'REPUBLIC OF THEPHILIPPINES'],
+            ['text' => 'LANDTRANSPORTATION OFFICE'],
+            ['text' => 'OFFICIALRECEIPT'],
+            ['text' => 'PlateNo.ABC 1234'],
+        ], 'or', 'ABC-1234');
+
+        $this->assertTrue($or['has_lto']);
+        $this->assertTrue($or['has_document_keyword']);
+        $this->assertSame([], $or['warnings']);
+
+        $cr = $parser->parse([
+            ['text' => 'LANDTRANSPORTATION OFFICE'],
+            ['text' => 'CERTIFICATEOFREGISTRATION'],
+        ], 'cr');
+
+        $this->assertTrue($cr['has_lto']);
+        $this->assertTrue($cr['has_document_keyword']);
+    }
+
     public function test_flags_missing_cr_keywords_and_plate_mismatch(): void
     {
         $parser = new OrCrDocumentParser;

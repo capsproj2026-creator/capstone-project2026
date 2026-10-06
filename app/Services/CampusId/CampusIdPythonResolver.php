@@ -2,10 +2,13 @@
 
 namespace App\Services\CampusId;
 
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Process;
 
 class CampusIdPythonResolver
 {
+    private const CACHE_KEY = 'campus_id_ocr_python_binary';
+
     private static ?string $resolvedBinary = null;
 
     public static function binary(): string
@@ -19,8 +22,16 @@ class CampusIdPythonResolver
             return self::$resolvedBinary = $configured;
         }
 
+        // Probing imports cv2 + RapidOCR (~2-3 s); static state resets every request, so remember the winner.
+        $cached = self::cachedBinary();
+        if ($cached !== null) {
+            return self::$resolvedBinary = $cached;
+        }
+
         foreach (self::candidates() as $candidate) {
             if (self::hasOcrDependencies($candidate)) {
+                self::rememberBinary($candidate);
+
                 return self::$resolvedBinary = $candidate;
             }
         }
@@ -30,6 +41,31 @@ class CampusIdPythonResolver
         }
 
         return self::$resolvedBinary = PHP_OS_FAMILY === 'Windows' ? 'py' : 'python3';
+    }
+
+    private static function cachedBinary(): ?string
+    {
+        try {
+            $cached = Cache::get(self::CACHE_KEY);
+        } catch (\Throwable) {
+            return null;
+        }
+
+        if (! is_string($cached) || $cached === '') {
+            return null;
+        }
+
+        $isPath = str_contains($cached, '\\') || str_contains($cached, '/');
+
+        return ! $isPath || is_file($cached) ? $cached : null;
+    }
+
+    private static function rememberBinary(string $binary): void
+    {
+        try {
+            Cache::put(self::CACHE_KEY, $binary, now()->addDay());
+        } catch (\Throwable) {
+        }
     }
 
     /**

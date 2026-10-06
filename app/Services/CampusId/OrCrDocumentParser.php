@@ -31,14 +31,15 @@ class OrCrDocumentParser
         $raw = implode("\n", $normalized);
         $kind = strtolower(trim($kind)) === 'cr' ? 'cr' : 'or';
 
+        // OCR often drops spaces between words ("LANDTRANSPORTATION OFFICE", "OFFICIALRECEIPT").
         $hasLto = (bool) preg_match('/\blto\b/i', $raw)
-            || (bool) preg_match('/land transportation/i', $raw);
+            || (bool) preg_match('/land\s*transportation/i', $raw);
 
         $hasDocumentKeyword = $kind === 'or'
-            ? ((bool) preg_match('/official\s+receipt/i', $raw) || (bool) preg_match('/\bO\.?\s*R\.?\b/', $raw))
-            : ((bool) preg_match('/certificate of registration/i', $raw)
+            ? ((bool) preg_match('/official\s*receipt/i', $raw) || (bool) preg_match('/\bO\.?\s*R\.?\b/', $raw))
+            : ((bool) preg_match('/certificate\s*of\s*registration/i', $raw)
                 || (bool) preg_match('/\bC\.?\s*R\.?\b/', $raw)
-                || (bool) preg_match('/cert(?:ificate)?\s+of\s+reg/i', $raw));
+                || (bool) preg_match('/cert(?:ificate)?\s*of\s*reg/i', $raw));
 
         $plate = $this->extractPlateNumber($raw);
         $warnings = [];

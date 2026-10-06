@@ -525,6 +525,11 @@
                         return;
                     }
 
+                    if (response.status === 419) {
+                        setStatus(statusEl, 'Your session expired. Refresh the page, then choose the photo again.', 'warning');
+                        return;
+                    }
+
                     if (data.address || data.full_name || data.driver_license_number || data.plate_number || (Array.isArray(data.warnings) && data.warnings.length)) {
                         onSuccess(data);
                         return;
@@ -604,6 +609,15 @@
                         data = await response.json();
                     } catch (parseError) {
                         data = {};
+                    }
+                    if (!response.ok) {
+                        const failure = response.status === 419
+                            ? 'Your session expired. Refresh the page, then choose the file again.'
+                            : response.status === 429
+                                ? 'Too many scan attempts. Please wait about a minute, then try again.'
+                                : (data.message || 'Could not auto-check this file. Review it manually before submitting.');
+                        setStatus(statusEl, failure, 'warning');
+                        return;
                     }
                     const warnings = Array.isArray(data.warnings) ? data.warnings.filter(Boolean) : [];
                     if (warnings.length) {

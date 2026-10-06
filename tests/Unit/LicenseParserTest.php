@@ -222,4 +222,34 @@ class LicenseParserTest extends TestCase
 
         $this->assertSame('N03-12-123456', $result['driver_license_number']);
     }
+
+    public function test_duplicate_ocr_passes_do_not_crowd_out_the_city_line(): void
+    {
+        // Full-card pass + zoomed band passes return each printed line several times.
+        $result = $this->parser->parse([
+            ['text' => 'REPUBLIC OF THE PHILIPPINES', 'center_y' => 0.0787],
+            ['text' => 'LANDTRANSPORTATION OFFICE', 'center_y' => 0.1948],
+            ['text' => "DRIVER'S LICENSE", 'center_y' => 0.3069],
+            ['text' => "DRIVER'SLICENSE", 'center_y' => 0.308],
+            ['text' => 'DELA CRUZ, JUAN SANTOS', 'center_y' => 0.442],
+            ['text' => 'DELACRUZ,JUANSANTOS', 'center_y' => 0.442],
+            ['text' => 'AddreSS: 123 Z0NE 4, BRGY CRIST0 REY', 'center_y' => 0.5692],
+            ['text' => 'AddreSS:123Z0NE4,BRGYCRIST0REY', 'center_y' => 0.5703],
+            ['text' => 'FBRGYCRISTO REY', 'center_y' => 0.5734],
+            ['text' => '23Z0NE4,BRGYCRIS10IREY', 'center_y' => 0.574],
+            ['text' => 'SUR', 'center_y' => 0.6757],
+            ['text' => 'NABUA,CAMARINESSUR', 'center_y' => 0.6763],
+            ['text' => 'AMARINESSUR', 'center_y' => 0.6772],
+            ['text' => '2-345678', 'center_y' => 0.7801],
+            ['text' => '0.N01-12-345678', 'center_y' => 0.7804],
+            ['text' => 'License No.N01-12-345678', 'center_y' => 0.7807],
+            ['text' => '09171234567', 'center_y' => 0.8968],
+        ]);
+
+        $this->assertSame('Juan Santos Dela Cruz', $result['full_name']);
+        $this->assertSame('123 ZONE 4, BRGY CRISTO REY, NABUA, CAMARINES SUR', $result['address']);
+        $this->assertSame('N01-12-345678', $result['driver_license_number']);
+        $this->assertSame('09171234567', $result['phone_number']);
+        $this->assertSame([], $result['warnings']);
+    }
 }

@@ -9,9 +9,9 @@ class LicenseParser
 {
     /** @var list<string> */
     private const SKIP_LINE_PATTERNS = [
-        '/republic of the philippines/i',
-        '/department of transportation/i',
-        '/land transportation/i',
+        '/republic\s*of\s*the\s*philippines/i',
+        '/department\s*of\s*transportation/i',
+        '/land\s*transportation/i',
         '/\blto\b/i',
         '/driver\'?s?\s*license/i',
         '/\bnon[- ]professional\b/i',
@@ -58,14 +58,7 @@ class LicenseParser
      */
     public function parse(array $lines): array
     {
-        $normalized = [];
-        foreach ($lines as $line) {
-            $text = trim(preg_replace('/\s+/u', ' ', (string) ($line['text'] ?? '')) ?? '');
-            if ($text === '') {
-                continue;
-            }
-            $normalized[] = $text;
-        }
+        $normalized = $this->collapseOcrVariants($lines);
 
         $rawText = implode("\n", $normalized);
 
@@ -94,6 +87,96 @@ class LicenseParser
             'plate_number' => $plateNumber,
             'warnings' => $warnings,
         ];
+    }
+
+    /**
+     * The scanner OCRs the full card plus zoomed bands, so one printed line comes back as
+     * several variants ("DELA CRUZ, JUAN" / "DELACRUZ,JUAN" / partial crops). Keep one per line
+     * so the variants do not crowd out the next real line (e.g. the city/province under the address).
+     *
+     * @param  list<array{text: string, confidence?: float|null, height?: float|null, center_y?: float|null}>  $lines
+     * @return list<string>
+     */
+    private function collapseOcrVariants(array $lines): array
+    {
+        $kept = [];
+
+        foreach ($lines as $line) {
+            $text = trim(preg_replace('/\s+/u', ' ', (string) ($line['text'] ?? '')) ?? '');
+            if ($text === '') {
+                continue;
+            }
+
+            $row = [
+                'text' => $text,
+                'key' => strtr(strtoupper(preg_replace('/[^A-Za-z0-9]/u', '', $text) ?? ''), ['0' => 'O']),
+                'y' => isset($line['center_y']) && is_numeric($line['center_y']) ? (float) $line['center_y'] : null,
+            ];
+
+            $match = null;
+            foreach ($kept as $index => $existing) {
+                if ($this->isSameOcrLine($row, $existing)) {
+                    $match = $index;
+                    break;
+                }
+            }
+
+            if ($match === null) {
+                $kept[] = $row;
+            } elseif ($this->isBetterOcrVariant($row, $kept[$match])) {
+                $kept[$match] = $row;
+            }
+        }
+
+        return array_map(fn (array $row) => $row['text'], $kept);
+    }
+
+    /**
+     * @param  array{text: string, key: string, y: ?float}  $a
+     * @param  array{text: string, key: string, y: ?float}  $b
+     */
+    private function isSameOcrLine(array $a, array $b): bool
+    {
+        if ($a['key'] === '' || $b['key'] === '') {
+            return false;
+        }
+
+        if ($a['key'] === $b['key']) {
+            return true;
+        }
+
+        if ($a['y'] === null || $b['y'] === null || abs($a['y'] - $b['y']) > 0.012) {
+            return false;
+        }
+
+        $short = strlen($a['key']) <= strlen($b['key']) ? $a['key'] : $b['key'];
+        $long = $short === $a['key'] ? $b['key'] : $a['key'];
+        if (strlen($short) >= 3 && str_contains($long, $short)) {
+            return true;
+        }
+
+        similar_text($a['key'], $b['key'], $percent);
+
+        return $percent >= 60;
+    }
+
+    /**
+     * @param  array{text: string, key: string, y: ?float}  $candidate
+     * @param  array{text: string, key: string, y: ?float}  $current
+     */
+    private function isBetterOcrVariant(array $candidate, array $current): bool
+    {
+        $candidateLength = strlen($candidate['key']);
+        $currentLength = strlen($current['key']);
+
+        if ($candidateLength > $currentLength * 1.15) {
+            return true;
+        }
+        if ($currentLength > $candidateLength * 1.15) {
+            return false;
+        }
+
+        return substr_count($candidate['text'], ' ') > substr_count($current['text'], ' ');
     }
 
     private function extractLicenseNumber(string $rawText): ?string
@@ -553,6 +636,8 @@ class LicenseParser
     private function normalizeOcrAddressFragment(string $line): string
     {
         $text = preg_replace('/(?<=[A-Za-z0-9])\.(?=[A-Za-z0-9])/u', ' ', $line) ?? $line;
+        // OCR reads the letter O as zero inside words ("Z0NE", "CRIST0"); house numbers stay digits.
+        $text = preg_replace('/(?<=[A-Za-z])0(?=[A-Za-z])|(?<=[A-Za-z]{2})0\b/u', 'O', $text) ?? $text;
         $text = str_ireplace(
             ['LOURDESYOUNG', 'CAMARINESSUR', 'CAMARINESNORTE', 'NAGACITY'],
             ['LOURDES YOUNG', 'CAMARINES SUR', 'CAMARINES NORTE', 'NAGA CITY'],

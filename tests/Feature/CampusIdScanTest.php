@@ -40,8 +40,9 @@ class CampusIdScanTest extends TestCase
 
         $file = UploadedFile::fake()->create('campus-id.jpg', 20, 'image/jpeg');
 
-        $this->postJson(route('register.scan-id'), [
+        $this->withSession(['_token' => 'test-token'])->postJson(route('register.scan-id'), [
             'id_document' => $file,
+            '_token' => 'test-token',
         ])
             ->assertOk()
             ->assertJson([
@@ -56,8 +57,9 @@ class CampusIdScanTest extends TestCase
     {
         $file = UploadedFile::fake()->create('campus-id.pdf', 100, 'application/pdf');
 
-        $this->postJson(route('register.scan-id'), [
+        $this->withSession(['_token' => 'test-token'])->postJson(route('register.scan-id'), [
             'id_document' => $file,
+            '_token' => 'test-token',
         ])
             ->assertStatus(422)
             ->assertJsonValidationErrors(['id_document']);

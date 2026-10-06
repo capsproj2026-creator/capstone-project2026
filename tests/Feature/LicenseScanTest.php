@@ -61,8 +61,9 @@ class LicenseScanTest extends TestCase
 
         $file = UploadedFile::fake()->create('license.jpg', 20, 'image/jpeg');
 
-        $this->postJson(route('register.scan-license'), [
+        $this->withSession(['_token' => 'test-token'])->postJson(route('register.scan-license'), [
             'driver_license' => $file,
+            '_token' => 'test-token',
         ])
             ->assertOk()
             ->assertJson([
@@ -77,8 +78,9 @@ class LicenseScanTest extends TestCase
     {
         $file = UploadedFile::fake()->create('license.pdf', 100, 'application/pdf');
 
-        $this->postJson(route('register.scan-license'), [
+        $this->withSession(['_token' => 'test-token'])->postJson(route('register.scan-license'), [
             'driver_license' => $file,
+            '_token' => 'test-token',
         ])
             ->assertStatus(422)
             ->assertJsonValidationErrors(['driver_license']);
@@ -101,10 +103,11 @@ class LicenseScanTest extends TestCase
 
         $file = UploadedFile::fake()->create('or.jpg', 20, 'image/jpeg');
 
-        $this->postJson(route('register.scan-orcr'), [
+        $this->withSession(['_token' => 'test-token'])->postJson(route('register.scan-orcr'), [
             'document' => $file,
             'kind' => 'or',
             'plate_number' => 'XYZ-9999',
+            '_token' => 'test-token',
         ])
             ->assertOk()
             ->assertJsonPath('ok', true)
