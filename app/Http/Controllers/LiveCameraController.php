@@ -15,6 +15,7 @@ use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 use Illuminate\Support\Facades\Http;
 use Illuminate\View\View;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class LiveCameraController extends Controller
 {
@@ -131,29 +132,48 @@ class LiveCameraController extends Controller
             'aiAreaName' => $area?->area_name ?? 'Parking area',
             'statusUrl' => route('guard.parking.status'),
             'correctPlateUrl' => route('guard.ai-parking.correct-plate'),
-            'aiCropOrigin' => $health->pythonServiceBaseUrl(),
+            'aiCropOrigin' => $health->viewerIsRemote() ? null : $health->pythonServiceBaseUrl(),
             'plateCropUrlTemplate' => url('/guard/ai-parking/plate-crop/__CAMERA__/__TRACK__'),
             'parkingUrl' => route('guard.parking', ['zone_id' => $areaId]),
         ]);
     }
 
-    public function stream(AiParkingHealthService $health, ?string $camera = null): RedirectResponse|Response
+    public function stream(AiParkingHealthService $health, ?string $camera = null): RedirectResponse|StreamedResponse|Response
     {
         $withAi = request()->boolean('ai', true);
-        $upstream = $health->upstreamStreamUrl($camera, $withAi);
-        if ($upstream === null) {
-            abort(503, 'AI parking stream is not configured.');
+        $upstream = $this->localAiUrl($health->upstreamStreamUrl($camera, $withAi), 'AI parking stream');
+
+        // On this PC, send the browser straight to port 8090 so php artisan serve
+        // is not stuck on one endless video. On iscvms.com the browser cannot
+        // open that address, so this site relays the frames.
+        if (! $health->viewerIsRemote()) {
+            return redirect()->away($upstream);
         }
 
-        // SSRF guard: only allow redirect to the local AI parking MJPEG service.
-        $host = parse_url($upstream, PHP_URL_HOST);
-        if (! in_array(strtolower((string) $host), ['127.0.0.1', 'localhost', '::1'], true)) {
-            abort(503, 'AI parking stream host is not allowed.');
-        }
-
-        // Never proxy endless MJPEG through `php artisan serve` — it is single-threaded
-        // and blocks occupancy POSTs / the whole site while a stream is open.
-        return redirect()->away($upstream);
+        return response()->stream(function () use ($upstream) {
+            $handle = @fopen($upstream, 'rb', false, stream_context_create([
+                'http' => ['timeout' => 8],
+            ]));
+            if ($handle === false) {
+                return;
+            }
+            while (! feof($handle) && ! connection_aborted()) {
+                $chunk = fread($handle, 65536);
+                if ($chunk === false || $chunk === '') {
+                    break;
+                }
+                echo $chunk;
+                if (ob_get_level() > 0) {
+                    ob_flush();
+                }
+                flush();
+            }
+            fclose($handle);
+        }, 200, [
+            'Content-Type' => 'multipart/x-mixed-replace; boundary=frame',
+            'Cache-Control' => 'no-cache, no-store, must-revalidate',
+            'X-Accel-Buffering' => 'no',
+        ]);
     }
 
     public function status(AiParkingOccupancyService $ai): JsonResponse
@@ -325,12 +345,12 @@ class LiveCameraController extends Controller
         ]);
     }
 
-    public function plateCrop(string $camera, int $track, AiCameraRegistry $registry, AiParkingHealthService $health): RedirectResponse
+    public function plateCrop(string $camera, int $track, AiCameraRegistry $registry, AiParkingHealthService $health): RedirectResponse|Response
     {
         return $this->redirectTrackCrop($camera, $track, 'plate-crop', $registry, $health);
     }
 
-    public function vehicleCrop(string $camera, int $track, AiCameraRegistry $registry, AiParkingHealthService $health): RedirectResponse
+    public function vehicleCrop(string $camera, int $track, AiCameraRegistry $registry, AiParkingHealthService $health): RedirectResponse|Response
     {
         return $this->redirectTrackCrop($camera, $track, 'vehicle-crop', $registry, $health);
     }
@@ -345,7 +365,7 @@ class LiveCameraController extends Controller
         string $kind,
         AiCameraRegistry $registry,
         AiParkingHealthService $health
-    ): RedirectResponse {
+    ): RedirectResponse|Response {
         $cameraId = strtoupper(trim($camera));
         $known = collect($registry->cameras())->pluck('id')->map(fn ($id) => strtoupper((string) $id));
         if ($known->isNotEmpty() && ! $known->contains($cameraId)) {
@@ -358,13 +378,39 @@ class LiveCameraController extends Controller
         }
 
         $kind = $kind === 'vehicle-crop' ? 'vehicle-crop' : 'plate-crop';
-        $upstream = $base.'/'.rawurlencode($cameraId).'/'.$kind.'/'.$track.'.jpg';
+        $upstream = $this->localAiUrl($base.'/'.rawurlencode($cameraId).'/'.$kind.'/'.$track.'.jpg', 'AI parking crop');
 
-        $host = parse_url($upstream, PHP_URL_HOST);
-        if (! in_array(strtolower((string) $host), ['127.0.0.1', 'localhost', '::1'], true)) {
-            abort(503, 'AI parking crop host is not allowed.');
+        if (! $health->viewerIsRemote()) {
+            return redirect()->away($upstream);
         }
 
-        return redirect()->away($upstream);
+        try {
+            $response = Http::connectTimeout(2)->timeout(4)->get($upstream);
+        } catch (\Throwable) {
+            abort(503, 'AI parking service is unreachable.');
+        }
+
+        if (! $response->successful()) {
+            abort($response->status() === 404 ? 404 : 503);
+        }
+
+        return response($response->body(), 200, [
+            'Content-Type' => 'image/jpeg',
+            'Cache-Control' => 'no-store',
+        ]);
+    }
+
+    private function localAiUrl(?string $upstream, string $label): string
+    {
+        if ($upstream === null || trim($upstream) === '') {
+            abort(503, $label.' is not configured.');
+        }
+
+        $host = strtolower((string) parse_url($upstream, PHP_URL_HOST));
+        if (! in_array($host, ['127.0.0.1', 'localhost', '::1'], true)) {
+            abort(503, $label.' host is not allowed.');
+        }
+
+        return $upstream;
     }
 }

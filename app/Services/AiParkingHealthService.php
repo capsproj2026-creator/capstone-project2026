@@ -46,7 +46,41 @@ class AiParkingHealthService
 
         $upstream ??= $this->upstreamStreamUrl($cameraId, $withAiOverlay);
 
+        if ($this->viewerIsRemote()) {
+            return $this->sameOriginStreamUrl($cameraId, $withAiOverlay);
+        }
+
         return $this->publicBrowserUrl($upstream);
+    }
+
+    /**
+     * True when the person viewing the page is not on this machine.
+     * Their browser cannot open 127.0.0.1:8090, so the page must use this site.
+     */
+    public function viewerIsRemote(): bool
+    {
+        if (app()->runningInConsole() || ! app()->bound('request')) {
+            return false;
+        }
+
+        $host = strtolower((string) request()->getHost());
+
+        return $host !== '' && ! in_array($host, ['127.0.0.1', 'localhost', '::1'], true);
+    }
+
+    public function sameOriginStreamUrl(?string $cameraId = null, bool $withAiOverlay = true): ?string
+    {
+        if ($this->upstreamStreamUrl($cameraId, $withAiOverlay) === null) {
+            return null;
+        }
+
+        $isGuard = request()->is('guard') || request()->is('guard/*');
+        $params = ['ai' => $withAiOverlay ? 1 : 0];
+        if ($cameraId) {
+            $params['camera'] = $cameraId;
+        }
+
+        return route($isGuard ? 'guard.ai-parking.stream' : 'admin.ai-parking.stream', $params);
     }
 
     /**
