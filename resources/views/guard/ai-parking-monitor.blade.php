@@ -222,8 +222,9 @@
                                 $snapshotUrl = preg_replace('#/stream\.mjpg(\?.*)?$#i', '/snapshot.jpg$1', (string) $browserUrl) ?: (string) $browserUrl;
                             @endphp
                             {{-- Finite JPEG snapshot first (tab can finish load); JS upgrades to continuous MJPEG after window load. --}}
+                            {{-- A finished image so the browser tab can stop loading. The live MJPEG is attached after that. --}}
                             <img
-                                src="{{ $snapshotUrl }}"
+                                src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7"
                                 data-stream-src="{{ $browserUrl }}"
                                 data-snapshot-src="{{ $snapshotUrl }}"
                                 alt="{{ $cam['name'] ?? $camId }}"
@@ -1258,21 +1259,28 @@ window.__aiClosePlateModal = function () {
         if (reason) console.warn('[AI-Monitor] camera', tile.getAttribute('data-camera-tile'), online ? 'online' : 'offline', reason);
     };
 
+    const quietFrame = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
+
     const upgradeToLiveMjpeg = (img) => {
+        const tile = img.closest('[data-camera-tile]');
+        if (tile && tile.dataset.online !== '1') return;
         const live = streamUrlOf(img);
         if (!live) return;
         if (img.dataset.liveAttached === '1' && (img.getAttribute('src') || '').includes('stream.mjpg')) return;
         img.dataset.liveAttached = '1';
         img.src = live;
-        console.debug('[AI-Monitor] MJPEG attached', img.getAttribute('data-camera-stream'), live);
+    };
+
+    const stopLiveMjpeg = (img) => {
+        img.dataset.liveAttached = '0';
+        if ((img.getAttribute('src') || '').startsWith('data:')) return;
+        img.src = quietFrame;
     };
 
     const attachLiveStreamsAfterLoad = () => {
         document.querySelectorAll('[data-stream-img][data-stream-src]').forEach((img) => {
             const tile = img.closest('[data-camera-tile]');
-            const live = streamUrlOf(img);
-            const sameSite = live.startsWith('/') || live.startsWith(window.location.origin);
-            if (tile && tile.dataset.online === '0' && ! sameSite) return;
+            if (!tile || tile.dataset.online !== '1') return;
             upgradeToLiveMjpeg(img);
         });
     };
@@ -1288,29 +1296,20 @@ window.__aiClosePlateModal = function () {
         let retryTimer = null;
         const camId = tile?.getAttribute('data-camera-tile') || img.getAttribute('data-camera-stream') || '?';
 
-        img.addEventListener('load', () => {
-            const src = img.getAttribute('src') || '';
-            if (src.startsWith('data:') || src === '') return;
-            setTileOnline(tile, true);
-        });
         img.addEventListener('error', () => {
             const src = img.getAttribute('src') || '';
-            console.warn('[AI-Monitor] stream error', camId, src);
-            if (src.includes('snapshot.jpg') && streamUrlOf(img)) {
-                upgradeToLiveMjpeg(img);
+            if (src.startsWith('data:')) return;
+            img.dataset.liveAttached = '0';
+            if (tile?.dataset.online !== '1') {
+                stopLiveMjpeg(img);
                 return;
             }
-            setTileOnline(tile, false, 'Stream unavailable');
+            console.warn('[AI-Monitor] stream error', camId, src);
             if (retryTimer) return;
             retryTimer = window.setTimeout(() => {
                 retryTimer = null;
-                const snap = snapshotUrlOf(img);
-                const live = streamUrlOf(img);
-                img.dataset.liveAttached = '0';
-                if (snap) img.src = snap + (snap.includes('?') ? '&' : '?') + 't=' + Date.now();
-                else if (live) img.src = live;
-                setTileOnline(tile, true, 'retry');
-            }, 5000);
+                if (tile?.dataset.online === '1') upgradeToLiveMjpeg(img);
+            }, 3000);
         });
 
         window.__aiParkingSetCameraOnline = window.__aiParkingSetCameraOnline || {};
@@ -1318,6 +1317,7 @@ window.__aiClosePlateModal = function () {
             window.__aiParkingSetCameraOnline[camId] = (online) => {
                 setTileOnline(tile, online);
                 if (online) upgradeToLiveMjpeg(img);
+                else stopLiveMjpeg(img);
             };
         }
     });
