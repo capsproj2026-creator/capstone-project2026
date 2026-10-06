@@ -188,7 +188,7 @@
             </div>
         </div>
 
-        <div class="portal-card flex h-[380px] flex-col p-6">
+        <div id="violation-types-card" class="portal-card flex h-[380px] flex-col p-6">
             <h3 class="portal-heading mb-4 shrink-0 text-base font-semibold">Violation Types Distribution</h3>
             <div class="grid min-h-0 flex-1 grid-cols-1 gap-4 sm:grid-cols-[1fr_auto]">
                 <div class="relative min-h-[220px]">
@@ -313,6 +313,19 @@
         </div>
     </div>
 @endsection
+
+@push('styles')
+<style>
+    @media (max-width: 1023px) {
+        #violation-types-card {
+            height: auto;
+        }
+        #violation-types-card .portal-chart-legend-item {
+            align-items: flex-start;
+        }
+    }
+</style>
+@endpush
 
 @push('scripts')
 <script src="{{ asset('vendor/chart.umd.min.js') }}"></script>

@@ -235,11 +235,12 @@ class LatestFrameReader:
         ret, frame = self.cap.read()
         if not ret or frame is None:
             return False, None
-        if self.flush_frames <= 1:
-            return True, frame
-        deadline = time.perf_counter() + 0.008
+        # Always drop frames OpenCV already buffered. flush_frames=1 used to
+        # return the oldest frame and the public view fell several seconds behind.
+        deadline = time.perf_counter() + 0.012
         drained = 1
-        while drained < self.flush_frames and time.perf_counter() < deadline:
+        limit = max(8, self.flush_frames)
+        while drained < limit and time.perf_counter() < deadline:
             if not self.cap.grab():
                 break
             ok, newer = self.cap.retrieve()
@@ -1332,10 +1333,10 @@ def encode_evidence_jpeg(frame, xyxy=None, max_side: int = 320, quality: int = 5
 
 
 _post_lock = threading.Lock()
-_POST_TIMEOUT_SEC = float(os.getenv("AI_PARKING_POST_TIMEOUT_SEC", "18.0"))
+_POST_TIMEOUT_SEC = float(os.getenv("AI_PARKING_POST_TIMEOUT_SEC", "5.0"))
 # php artisan serve handles one request at a time. Pause after each save so the
 # guard monitor can read Latest Detections instead of waiting behind the next post.
-_POST_GAP_SEC = float(os.getenv("AI_PARKING_POST_GAP_SEC", "2.0"))
+_POST_GAP_SEC = float(os.getenv("AI_PARKING_POST_GAP_SEC", "0.35"))
 _pending_posts: dict[str, dict] = {}
 _pending_lock = threading.Lock()
 _pending_wakeup = threading.Event()
@@ -1778,20 +1779,28 @@ class MjpegHandler(BaseHTTPRequestHandler):
         self._tune_low_latency_socket()
 
         last_sent = None
+        # Steady ~8 fps of the newest frame. Faster than this fills the campus
+        # tunnel and the picture freezes, then jumps more than a few seconds.
+        min_gap = 0.12
+        next_send = 0.0
+        try:
+            self.connection.settimeout(0.8)
+        except OSError:
+            pass
         try:
             while True:
                 jpeg = state.get_jpeg(ai=ai_overlay)
-                if jpeg is None or jpeg is last_sent:
-                    time.sleep(0.002)
+                now = time.perf_counter()
+                if jpeg is None or jpeg is last_sent or now < next_send:
+                    time.sleep(0.01)
                     continue
-                # If the browser has not drained the last frame, drop this one
-                # and send the newest JPEG next. Playing a backlog is what
-                # makes the live view several seconds behind.
-                writable, _, _ = select.select([], [self.connection], [], 0)
-                if not writable:
-                    time.sleep(0.002)
-                    continue
+                if os.name != "nt":
+                    writable, _, _ = select.select([], [self.connection], [], 0)
+                    if not writable:
+                        time.sleep(0.01)
+                        continue
                 last_sent = jpeg
+                next_send = now + min_gap
                 self.wfile.write(b"--frame\r\n")
                 self.wfile.write(b"Content-Type: image/jpeg\r\n")
                 self.wfile.write(f"Content-Length: {len(jpeg)}\r\n\r\n".encode("ascii"))
@@ -1799,6 +1808,9 @@ class MjpegHandler(BaseHTTPRequestHandler):
                 self.wfile.write(b"\r\n")
                 try:
                     self.wfile.flush()
+                except (TimeoutError, socket.timeout):
+                    # This frame did not leave in time. The next loop sends a newer one.
+                    continue
                 except Exception:
                     return
         except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError, TimeoutError, OSError):
@@ -1812,7 +1824,8 @@ class MjpegHandler(BaseHTTPRequestHandler):
             pass
         try:
             # One JPEG at a time. A large send buffer lets the browser play old frames.
-            conn.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, 48 * 1024)
+            # A few frames in flight stays smooth. A tiny buffer stalls every frame.
+            conn.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, 256 * 1024)
         except OSError:
             pass
 
@@ -2060,7 +2073,8 @@ class CameraWorker:
             self.infer_reader.stop()
 
     def _preview_loop(self):
-        interval = 1.0 / max(30.0, self.stream_fps)
+        # 10 fps is enough for a smooth guard view and leaves CPU for detection.
+        interval = 1.0 / min(10.0, max(8.0, float(self.stream_fps or 10)))
         encode_params = [int(cv2.IMWRITE_JPEG_QUALITY), self.jpeg_quality]
         last_seq = -1
         while self.running.is_set():
@@ -2149,7 +2163,7 @@ class CameraWorker:
         the preview frame, so the picture is not stuck behind the main-stream
         buffer. Detection interval, model size, and OCR are unchanged.
         """
-        interval = 1.0 / max(30.0, self.stream_fps)
+        interval = 1.0 / min(10.0, max(8.0, float(self.stream_fps or 10)))
         last_seq = -1
         while self.running.is_set():
             started = time.perf_counter()

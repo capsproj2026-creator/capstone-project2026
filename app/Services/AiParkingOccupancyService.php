@@ -75,18 +75,40 @@ class AiParkingOccupancyService
             && $events === []
             && ($previous['reported_vehicle_count'] ?? null) === $vehicleCount
             && ($previous['area_id'] ?? null) === $areaId;
+        $plateSignature = $this->detectionPlateSignature($detections);
         if ($slotsUnchanged || $countUnchanged) {
-            // Keep the site responsive: unchanged bay map must not re-run plate/Mongo work.
+            // Keep the site responsive: unchanged bay map must not re-run slot writes.
+            // A new plate still has to create violation events and reach the public site.
+            $liveDetections = $detections;
+            $plateChanged = ($previous['plate_signature'] ?? null) !== $plateSignature;
+            if ($plateChanged) {
+                $liveDetections = $this->applyPlateCorrections($cameraId, $liveDetections);
+                $liveDetections = $this->enrichWithOwners($liveDetections);
+                $liveDetections = $this->dedupeDetectionsByTrack($liveDetections);
+                $ruleEvents = array_merge(
+                    app(AiParkingViolationService::class)->unauthorizedFromDetections($liveDetections, $cameraId),
+                    app(AiParkingViolationService::class)->wrongParkingFromDetections($liveDetections, $cameraId, $areaId)
+                );
+                if ($ruleEvents !== []) {
+                    app(AiParkingViolationService::class)->processEvents($ruleEvents, $cameraId);
+                    $this->rememberDayEvents($cameraId, $ruleEvents);
+                }
+                $liveDetections = $this->attachViolationStatus($liveDetections, $ruleEvents);
+            }
             $snapshot = array_merge($previous, [
-                'detections' => $this->stripHeavyBinaryFields($detections, keepThumbs: true),
+                'detections' => $this->stripHeavyBinaryFields($liveDetections, keepThumbs: true),
                 'reported_vehicle_count' => $vehicleCount,
+                'plate_signature' => $plateSignature,
                 'updated_at' => now()->toIso8601String(),
                 'updated_at_label' => now()->format('h:i:s A'),
             ]);
             if ($slotSignature !== null) {
                 $snapshot['slot_signature'] = $slotSignature;
             }
-            $snapshot = array_merge($snapshot, $this->summarizeMotion($detections));
+            if ($plateChanged) {
+                $snapshot['events'] = $this->dayViolationEvents($cameraId);
+            }
+            $snapshot = array_merge($snapshot, $this->summarizeMotion($liveDetections));
             $snapshot['scene_moving'] = $sceneMoving || ((int) ($snapshot['moving_count'] ?? 0) > 0);
 
             $ttl = now()->addMinutes(30);
@@ -95,6 +117,7 @@ class AiParkingOccupancyService
             if (strcasecmp($cameraId, $primaryId) === 0) {
                 Cache::put(self::CACHE_KEY, $snapshot, $ttl);
             }
+            $this->persistSharedSnapshot($cameraId, $snapshot);
 
             return $snapshot;
         }
@@ -163,6 +186,7 @@ class AiParkingOccupancyService
             'maintenance' => $stats['maintenance'],
             'slots' => $stats['slot_details'],
             'slot_signature' => $slotSignature,
+            'plate_signature' => $plateSignature,
             'detections' => $detections,
             'events' => $dayEvents,
             'violation_results' => $violationResults,
@@ -180,8 +204,114 @@ class AiParkingOccupancyService
         if (strcasecmp($cameraId, $primaryId) === 0) {
             Cache::put(self::CACHE_KEY, $snapshot, $ttl);
         }
+        $this->persistSharedSnapshot($cameraId, $snapshot);
 
         return $snapshot;
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $detections
+     */
+    private function detectionPlateSignature(array $detections): string
+    {
+        $parts = [];
+        foreach ($detections as $det) {
+            if (! is_array($det)) {
+                continue;
+            }
+            $parts[] = implode('|', [
+                (string) ($det['track_id'] ?? ''),
+                strtoupper(trim((string) ($det['plate'] ?? ''))),
+                strtolower((string) ($det['plate_status'] ?? '')),
+                strtoupper(trim((string) ($det['slot_id'] ?? ''))),
+            ]);
+        }
+        sort($parts);
+
+        return implode(';', $parts);
+    }
+
+    /**
+     * Copy the monitor snapshot into Mongo so iscvms.com can read what this PC posted.
+     *
+     * @param  array<string, mixed>  $snapshot
+     */
+    private function persistSharedSnapshot(string $cameraId, array $snapshot): void
+    {
+        $cameraId = strtoupper(trim($cameraId));
+        if ($cameraId === '') {
+            return;
+        }
+
+        $signature = md5((string) json_encode([
+            $snapshot['slot_signature'] ?? null,
+            $snapshot['plate_signature'] ?? null,
+            $snapshot['available'] ?? null,
+            $snapshot['occupied'] ?? null,
+            $snapshot['reported_vehicle_count'] ?? null,
+            count($snapshot['detections'] ?? []),
+            count($snapshot['events'] ?? []),
+        ]));
+        $sigKey = 'ai_parking:shared_sig:'.$cameraId;
+        $atKey = 'ai_parking:shared_at:'.$cameraId;
+        $lastSig = Cache::get($sigKey);
+        $lastAt = Cache::get($atKey);
+        if ($lastSig === $signature && is_numeric($lastAt) && (time() - (int) $lastAt) < 1) {
+            return;
+        }
+
+        try {
+            $stored = $snapshot;
+            unset($stored['violation_results']);
+            \App\Models\AiParkingSnapshot::query()->updateOrCreate(
+                ['camera_id' => $cameraId],
+                ['payload' => $stored]
+            );
+            Cache::put($sigKey, $signature, now()->addMinutes(10));
+            Cache::put($atKey, time(), now()->addMinutes(10));
+        } catch (\Throwable $e) {
+            report($e);
+        }
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    private function sharedSnapshot(string $cameraId): ?array
+    {
+        $cameraId = strtoupper(trim($cameraId));
+        if ($cameraId === '') {
+            return null;
+        }
+
+        try {
+            $row = \App\Models\AiParkingSnapshot::query()->where('camera_id', $cameraId)->first();
+        } catch (\Throwable $e) {
+            return null;
+        }
+
+        $payload = $row?->payload ?? null;
+
+        return is_array($payload) ? $payload : null;
+    }
+
+    /**
+     * @param  array<string, mixed>|null  $left
+     * @param  array<string, mixed>|null  $right
+     * @return array<string, mixed>|null
+     */
+    private function preferNewerSnapshot(?array $left, ?array $right): ?array
+    {
+        if (! is_array($left)) {
+            return is_array($right) ? $right : null;
+        }
+        if (! is_array($right)) {
+            return $left;
+        }
+
+        return strcmp((string) ($left['updated_at'] ?? ''), (string) ($right['updated_at'] ?? '')) >= 0
+            ? $left
+            : $right;
     }
 
     /**
@@ -375,20 +505,19 @@ class AiParkingOccupancyService
      */
     public function latestSnapshot(?string $cameraId = null, bool $includeEvents = true): ?array
     {
-        $snap = null;
-        if ($cameraId !== null && trim($cameraId) !== '') {
-            $cached = Cache::get($this->cacheKeyForCamera($cameraId));
-            $snap = is_array($cached) ? $this->sanitizeSnapshotForClients($cached) : null;
-        } else {
+        $lookupId = ($cameraId !== null && trim($cameraId) !== '')
+            ? $cameraId
+            : app(AiCameraRegistry::class)->primaryCameraId();
+        $cached = Cache::get($this->cacheKeyForCamera($lookupId));
+        if (! is_array($cached) && ($cameraId === null || trim($cameraId) === '')) {
             $legacy = Cache::get(self::CACHE_KEY);
-            if (is_array($legacy)) {
-                $snap = $this->sanitizeSnapshotForClients($legacy);
-            } else {
-                $primary = app(AiCameraRegistry::class)->primaryCameraId();
-                $cached = Cache::get($this->cacheKeyForCamera($primary));
-                $snap = is_array($cached) ? $this->sanitizeSnapshotForClients($cached) : null;
-            }
+            $cached = is_array($legacy) ? $legacy : null;
         }
+        $snap = $this->preferNewerSnapshot(
+            is_array($cached) ? $cached : null,
+            $this->sharedSnapshot($lookupId)
+        );
+        $snap = is_array($snap) ? $this->sanitizeSnapshotForClients($snap) : null;
 
         if ($snap === null) {
             return null;

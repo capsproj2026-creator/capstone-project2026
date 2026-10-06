@@ -865,7 +865,7 @@ class TrackMemory:
             # A) Exceptional single strong known-PH read (never for risky short truncations)
             high_conf_lock = (
                 leader_known
-                and conf >= max(PLATE_LOCK_CONFIDENCE, 0.82)
+                and conf >= max(PLATE_LOCK_CONFIDENCE, 0.90)
                 and plate == leader
                 and known
                 and leader_letters >= 3
@@ -891,9 +891,9 @@ class TrackMemory:
                 leader_known
                 and known
                 and plate == leader
-                and hit_count >= 1
+                and hit_count >= 2
                 and leader_letters >= 3
-                and conf >= max(0.58, min(0.78, PLATE_LOCK_CONFIDENCE - 0.15))
+                and leader_conf >= max(0.58, min(0.78, PLATE_LOCK_CONFIDENCE - 0.15))
             )
             # E) Prototype / handwritten plates (Z94M, S31N999) — not official LTO format
             leader_loose = looks_like_plate_text(leader)
@@ -911,8 +911,8 @@ class TrackMemory:
                 and loose
                 and plate == leader
                 and leader_loose
-                and hit_count >= 1
-                and conf >= max(0.52, PLATE_LOCK_CONFIDENCE - 0.25)
+                and hit_count >= 2
+                and leader_conf >= max(0.62, PLATE_LOCK_CONFIDENCE - 0.15)
                 and len(leader) >= 4
             )
 
@@ -939,12 +939,7 @@ class TrackMemory:
                 self.lock_plate(leader, conf, f"loose_plate_solid conf>={conf:.2f}")
                 return
 
-            # The scanner returned a plate. Lock it and do not read this vehicle again.
-            # A short 2-letter truncation stays unread so it can be read again.
-            if leader and (leader_known or leader_loose) and not risky_short:
-                self.lock_plate(leader, max(conf, leader_conf), "plate_read")
-                return
-
+            # A single weak read stays pending so the next frame can confirm or correct it.
             self.tick_plate_deadline()
             return
 

@@ -1,127 +1,126 @@
 {
   "version": 1,
   "calibrated": true,
-  "image_width": 1920,
-  "image_height": 1080,
-  "notes": "CAM-2 Prototype 2. Draw P2-1 through P2-5 on the live CAM-2 view, then save. Same five-bay occupancy pipeline as Prototype (CAM-1).",
-  "camera_id": "CAM-2",
+  "image_width": 2560,
+  "image_height": 1440,
+  "notes": "Prototype \u2014 5 bays (PT-1\u2026PT-5) on CAM-1 live MAIN RTSP. Calibrate with scripts/calibrate-cam1.ps1. ACAD 1 polygons stay in zones_acad1.json.",
   "zones": [
     {
-      "id": "P2-1",
+      "id": "PT-1",
       "type": "slot",
-      "label": "P2-1",
+      "label": "PT-1",
       "points": [
         [
-          417,
-          470
+          604,
+          942
         ],
         [
-          108,
-          570
+          242,
+          1078
         ],
         [
-          224,
-          602
+          454,
+          1110
         ],
         [
-          528,
-          494
+          762,
+          966
         ]
       ]
     },
     {
-      "id": "P2-2",
+      "id": "PT-2",
       "type": "slot",
-      "label": "P2-2",
+      "label": "PT-2",
       "points": [
         [
-          570,
-          495
+          802,
+          980
         ],
         [
-          264,
-          608
+          504,
+          1120
         ],
         [
-          396,
-          650
+          700,
+          1166
         ],
         [
-          688,
-          520
+          976,
+          990
         ]
       ]
     },
     {
-      "id": "P2-3",
+      "id": "PT-3",
       "type": "slot",
-      "label": "P2-3",
+      "label": "PT-3",
       "points": [
         [
-          732,
-          520
+          1020,
+          994
         ],
         [
-          444,
-          652
+          756,
+          1166
         ],
         [
-          616,
-          688
+          1004,
+          1200
         ],
         [
-          890,
-          544
+          1200,
+          1024
         ]
       ]
     },
     {
-      "id": "P2-4",
+      "id": "PT-4",
       "type": "slot",
-      "label": "P2-4",
+      "label": "PT-4",
       "points": [
         [
-          924,
-          544
+          1258,
+          1018
         ],
         [
-          666,
-          686
+          1050,
+          1216
         ],
         [
-          885,
-          726
+          1320,
+          1224
         ],
         [
-          1096,
-          570
+          1458,
+          1026
         ]
       ]
     },
     {
-      "id": "P2-5",
+      "id": "PT-5",
       "type": "slot",
-      "label": "P2-5",
+      "label": "PT-5",
       "points": [
         [
-          1132,
-          570
+          1502,
+          1028
         ],
         [
-          918,
-          726
+          1368,
+          1228
         ],
         [
-          1158,
-          759
+          1636,
+          1238
         ],
         [
-          1290,
-          616
+          1692,
+          1058
         ],
         [
-          1290,
-          582
+          1668,
+          1032
         ]
       ]
     },
@@ -138,5 +137,6 @@
       "points": []
     }
   ],
-  "calibration_source": "live_main_rtsp"
+  "calibration_source": "live_main_rtsp",
+  "camera_id": "CAM-1"
 }

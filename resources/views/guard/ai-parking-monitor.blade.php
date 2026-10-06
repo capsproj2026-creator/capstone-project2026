@@ -37,6 +37,45 @@
     #ai-scan-spinner.ai-scan-active {
         animation: ai-scan-spin 0.8s linear infinite;
     }
+    /* Phone: keep the plate and details beside the photo, buttons on their own row. */
+    #ai-detections > .ai-det-row {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: flex-start;
+        gap: 0.75rem;
+        padding: 0.75rem 1rem;
+    }
+    #ai-detections .ai-det-main {
+        min-width: 0;
+        flex: 1 1 9rem;
+    }
+    #ai-detections [data-det-plate],
+    #ai-detections [data-det-role] {
+        overflow-wrap: anywhere;
+    }
+    #ai-detections .ai-det-actions {
+        display: flex;
+        flex-direction: row;
+        flex-wrap: wrap;
+        align-items: center;
+        justify-content: flex-end;
+        gap: 0.5rem;
+        width: 100%;
+        margin-left: auto;
+    }
+    @media (min-width: 640px) {
+        #ai-detections > .ai-det-row {
+            flex-wrap: nowrap;
+        }
+        #ai-detections .ai-det-main {
+            flex: 1 1 auto;
+        }
+        #ai-detections .ai-det-actions {
+            width: auto;
+            flex-direction: column;
+            align-items: flex-end;
+        }
+    }
 </style>
 @endpush
 
@@ -271,7 +310,8 @@
                             class="js-cam-stats mt-2 text-xs text-gray-500 {{ $showStats ? '' : 'hidden' }}"
                             data-camera="{{ $camId }}"
                         >
-                            Free:
+                            <span class="js-cam-area font-medium text-gray-700" data-camera="{{ $camId }}">{{ is_array($snap) ? ($snap['area_name'] ?? 'Parking area') : 'Parking area' }}</span>
+                            · Available
                             <span class="js-cam-available font-semibold text-green-700" data-camera="{{ $camId }}">{{ $free ?? '—' }}</span><span class="js-cam-capacity text-gray-400" data-camera="{{ $camId }}">@if ($capacity !== null)/{{ $capacity }}@endif</span>
                             · Used:
                             <span class="js-cam-occupied font-semibold text-red-700" data-camera="{{ $camId }}">{{ $used ?? '—' }}</span>
@@ -308,7 +348,7 @@
                             $ownerName = $det['owner_name'] ?? null;
                             $ownerRole = $det['role'] ?? $det['owner_role'] ?? null;
                                     @endphp
-                        <li class="flex items-start gap-3 px-4 py-3">
+                        <li class="ai-det-row">
                             @php
                                 $thumbB64 = $det['thumb_jpeg_base64'] ?? null;
                                 $aiOrigin = rtrim((string) ($aiCropOrigin ?? ''), '/');
@@ -344,7 +384,7 @@
                             @else
                                 <div class="flex h-20 w-28 shrink-0 items-center justify-center rounded-lg border border-dashed border-gray-200 bg-gray-50 text-[10px] text-gray-400">No image</div>
                             @endif
-                            <div class="min-w-0 flex-1">
+                            <div class="ai-det-main">
                                 <p class="font-mono text-base font-bold tracking-wide text-indigo-800">
                                     @if (($det['plate_status'] ?? '') === 'unreadable')
                                         <span class="font-sans text-sm font-semibold text-slate-500">Plate Unreadable</span>
@@ -415,7 +455,7 @@
                                     @endif
                                 </p>
                             </div>
-                            <div class="flex shrink-0 flex-col items-end gap-2">
+                            <div class="ai-det-actions">
                                 @php
                                     $ownerBadge = $ownerName
                                         ?: (($det['owner_label'] ?? null) ?: null)
@@ -981,7 +1021,7 @@ window.__aiClosePlateModal = function () {
         if (!left) {
             left = document.createElement('div');
             left.dataset.detLeft = '1';
-            left.className = 'min-w-0 flex-1';
+            left.className = 'ai-det-main';
             const plateEl = document.createElement('p');
             plateEl.dataset.detPlate = '1';
             plateEl.className = 'font-mono text-base font-bold tracking-wide text-indigo-800';
@@ -1042,7 +1082,7 @@ window.__aiClosePlateModal = function () {
         if (!right) {
             right = document.createElement('div');
             right.dataset.detRight = '1';
-            right.className = 'flex shrink-0 flex-col items-end gap-2';
+            right.className = 'ai-det-actions';
             li.append(right);
         }
 
@@ -1132,11 +1172,13 @@ window.__aiClosePlateModal = function () {
         if (!detectionsList) return;
         setPageScanStatus(allDets);
         if (!allDets.length) {
-            detectionsList.replaceChildren();
-            const li = document.createElement('li');
-            li.className = 'px-4 py-10 text-center text-gray-500';
-            li.textContent = 'No plate numbers scanned yet.';
-            detectionsList.append(li);
+            if (detectionsList.querySelector('[data-det-key]') || detectionsList.childElementCount !== 1) {
+                detectionsList.replaceChildren();
+                const li = document.createElement('li');
+                li.className = 'px-4 py-10 text-center text-gray-500';
+                li.textContent = 'No plate numbers scanned yet.';
+                detectionsList.append(li);
+            }
             return;
         }
 
@@ -1159,7 +1201,7 @@ window.__aiClosePlateModal = function () {
             if (!li) {
                 li = document.createElement('li');
                 li.dataset.detKey = key;
-                li.className = 'flex items-start gap-3 px-4 py-3';
+                li.className = 'ai-det-row';
             }
             updateDetRow(li, det, camId);
             detectionsList.append(li);
@@ -1285,10 +1327,10 @@ window.__aiClosePlateModal = function () {
         });
     };
 
-    if (document.readyState === 'complete') {
-        attachLiveStreamsAfterLoad();
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', attachLiveStreamsAfterLoad, { once: true });
     } else {
-        window.addEventListener('load', attachLiveStreamsAfterLoad, { once: true });
+        attachLiveStreamsAfterLoad();
     }
 
     document.querySelectorAll('[data-stream-img]').forEach((img) => {
@@ -1524,6 +1566,7 @@ window.__aiClosePlateModal = function () {
                 const statsEl = document.querySelector(`.js-cam-stats[data-camera="${id}"]`);
                 const plateLine = document.querySelector(`.js-cam-plate[data-camera="${id}"]`);
                 const v = document.querySelector(`.js-cam-vehicles[data-camera="${id}"]`);
+                const area = document.querySelector(`.js-cam-area[data-camera="${id}"]`);
                 const a = document.querySelector(`.js-cam-available[data-camera="${id}"]`);
                 const o = document.querySelector(`.js-cam-occupied[data-camera="${id}"]`);
                 const cap = document.querySelector(`.js-cam-capacity[data-camera="${id}"]`);
@@ -1542,6 +1585,7 @@ window.__aiClosePlateModal = function () {
                 }
 
                 statsEl?.classList.remove('hidden');
+                if (area) area.textContent = ownSnap.area_name || 'Parking area';
                 if (v) v.textContent = String(ownSnap.reported_vehicle_count ?? ownSnap.vehicle_count ?? 0);
                 if (a) a.textContent = ownSnap.available ?? '—';
                 if (o) o.textContent = ownSnap.occupied ?? '—';
@@ -1707,16 +1751,18 @@ window.__aiClosePlateModal = function () {
             };
 
             if (eventsList) {
-                eventsList.replaceChildren();
                 const rawEvts = Array.isArray(data.ai_day_events) && data.ai_day_events.length
                     ? data.ai_day_events
                     : (ai?.events || []);
                 const evts = rawEvts.map(withLiveIdentity);
                 if (!evts.length) {
-                    const li = document.createElement('li');
-                    li.className = 'px-4 py-10 text-center text-gray-500';
-                    li.textContent = 'No violation events yet today.';
-                    eventsList.append(li);
+                    if (eventsList.querySelector('[data-evt-key]') || eventsList.childElementCount !== 1) {
+                        eventsList.replaceChildren();
+                        const li = document.createElement('li');
+                        li.className = 'px-4 py-10 text-center text-gray-500';
+                        li.textContent = 'No violation events yet today.';
+                        eventsList.append(li);
+                    }
                 } else {
                     const existingEvt = new Map();
                     eventsList.querySelectorAll('li[data-evt-key]').forEach((li) => {
