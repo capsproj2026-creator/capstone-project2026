@@ -7,6 +7,7 @@ use App\Models\ParkingArea;
 use App\Services\AiCameraRegistry;
 use App\Services\AiParkingHealthService;
 use App\Services\AiParkingOccupancyService;
+use App\Services\WebRtcStream;
 use App\Support\PlateLookup;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
@@ -32,17 +33,22 @@ class LiveCameraController extends Controller
             ? collect()
             : ParkingArea::query()->whereIn('id', $areaIds)->get()->keyBy('id');
 
+        $webrtc = WebRtcStream::fromConfig();
+
         foreach ($registry->cameras() as $cam) {
             // Do not probe MJPEG here — that blocked Live Cameras for 60s+.
             // Clean MJPEG for Live Cameras (no YOLO overlay).
-            $streamUrl = $health->streamBrowserUrl($cam['id'], false) ?? ($cam['stream_url'] ?? null);
+            $whepUrl = $webrtc->whepUrl($cam['id']);
+            $streamUrl = $whepUrl
+                ? null
+                : ($health->streamBrowserUrl($cam['id'], false) ?? ($cam['stream_url'] ?? null));
             $snap = $ai->latestSnapshot($cam['id']);
             $area = $areasById->get($cam['area_id']);
             $parkingUrl = $isGuard
                 ? route('guard.parking', ['zone_id' => $cam['area_id']])
                 : route('admin.parking', ['zone_id' => $cam['area_id']]);
 
-            $hasStream = filled($streamUrl);
+            $hasStream = filled($whepUrl) || filled($streamUrl);
             // Live only when the AI service reports RTSP online for this camera.
             // Blank placeholder MJPEG frames must not count as online.
             $online = $health->isCameraOnline($cam['id']);
@@ -54,6 +60,8 @@ class LiveCameraController extends Controller
                 'name' => filled($cam['name'] ?? null) ? $cam['name'] : ($area?->area_name ?? 'Camera'),
                 'location' => $cam['location'],
                 'stream_url' => $streamUrl,
+                'whep_url' => $whepUrl,
+                'playback' => $whepUrl ? 'webrtc' : 'mjpeg',
                 'has_stream' => $hasStream,
                 'online' => $online,
                 'ai_monitored' => false,

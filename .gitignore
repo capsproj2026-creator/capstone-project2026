@@ -17,6 +17,9 @@
 /public/hot
 /public/storage
 /storage/*.key
+/storage/app/mediamtx/mediamtx.yml
+/storage/app/mediamtx/mediamtx.exe
+/storage/app/mediamtx/*.zip
 /storage/pail
 /storage/*.php
 !/storage/app/
