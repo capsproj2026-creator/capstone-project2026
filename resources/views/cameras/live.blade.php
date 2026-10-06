@@ -313,6 +313,11 @@
                 img.removeAttribute('data-stream-pending');
                 img.src = url.toString();
             };
+            img.addEventListener('load', () => {
+                const src = img.getAttribute('src') || '';
+                if (src.startsWith('data:')) return;
+                setCameraOnline(tile, true);
+            });
             img.addEventListener('error', () => {
                 if (img.hasAttribute('data-stream-pending')) return;
                 const src = img.getAttribute('src') || '';

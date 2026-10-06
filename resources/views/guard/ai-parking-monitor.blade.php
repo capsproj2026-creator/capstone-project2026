@@ -1270,7 +1270,9 @@ window.__aiClosePlateModal = function () {
     const attachLiveStreamsAfterLoad = () => {
         document.querySelectorAll('[data-stream-img][data-stream-src]').forEach((img) => {
             const tile = img.closest('[data-camera-tile]');
-            if (tile && tile.dataset.online === '0') return;
+            const live = streamUrlOf(img);
+            const sameSite = live.startsWith('/') || live.startsWith(window.location.origin);
+            if (tile && tile.dataset.online === '0' && ! sameSite) return;
             upgradeToLiveMjpeg(img);
         });
     };
@@ -1286,6 +1288,11 @@ window.__aiClosePlateModal = function () {
         let retryTimer = null;
         const camId = tile?.getAttribute('data-camera-tile') || img.getAttribute('data-camera-stream') || '?';
 
+        img.addEventListener('load', () => {
+            const src = img.getAttribute('src') || '';
+            if (src.startsWith('data:') || src === '') return;
+            setTileOnline(tile, true);
+        });
         img.addEventListener('error', () => {
             const src = img.getAttribute('src') || '';
             console.warn('[AI-Monitor] stream error', camId, src);

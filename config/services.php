@@ -77,6 +77,8 @@ return [
         'stream_url' => env('AI_PARKING_STREAM_URL', 'http://127.0.0.1:8090/stream.mjpg'),
         'stream_browser_url' => env('AI_PARKING_STREAM_BROWSER_URL'),
         'stream_base' => env('AI_PARKING_STREAM_BASE', 'http://127.0.0.1:8090'),
+        // Same-origin path on the public site, for example /cctv. Empty keeps direct 127.0.0.1 URLs.
+        'public_stream_base' => rtrim((string) env('AI_PARKING_PUBLIC_STREAM_BASE', ''), '/'),
         // ACAD 1 (CapstoneSeeder id 4). Do not fall back to removed AI test lots 19–21.
         'area_id' => (int) env('AI_PARKING_AREA_ID', env('AI_CAMERA_1_AREA_ID', 4)),
         'camera_ip' => env('AI_CAMERA_IP', env('AI_CAMERA_1_IP')),

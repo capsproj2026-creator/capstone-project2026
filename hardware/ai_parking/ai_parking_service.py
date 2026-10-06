@@ -18,6 +18,8 @@ from __future__ import annotations
 
 import json
 import os
+import select
+import socket
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -93,7 +95,7 @@ BOX_HOLD_SEC = float(os.getenv("AI_PARKING_BOX_HOLD_SEC", "0.9"))
 PREVIEW_MAX_WIDTH = int(os.getenv("AI_PARKING_PREVIEW_MAX_WIDTH", "1280"))
 # Max width for AI overlay MJPEG (browser). Raise for distant plate viewing (e.g. 2560).
 AI_STREAM_MAX_WIDTH = int(os.getenv("AI_PARKING_AI_STREAM_MAX_WIDTH", "1280"))
-STREAM_TARGET_FPS = float(os.getenv("AI_PARKING_STREAM_FPS", "18"))
+STREAM_TARGET_FPS = float(os.getenv("AI_PARKING_STREAM_FPS", "30"))
 STREAM_JPEG_QUALITY = int(os.getenv("AI_PARKING_STREAM_JPEG_QUALITY", "72"))
 # AI overlay stream (monitor). Higher than live preview so ~20 m plates stay readable.
 AI_STREAM_JPEG_QUALITY = int(os.getenv("AI_PARKING_AI_STREAM_JPEG_QUALITY", "78"))
@@ -413,13 +415,14 @@ def open_rtsp(
         with OPEN_LOCK:
             if transport == "udp":
                 os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = (
-                    "rtsp_transport;udp|fflags;nobuffer|flags;low_delay|max_delay;0"
+                    "rtsp_transport;udp|fflags;nobuffer|flags;low_delay|max_delay;0|reorder_queue_size;0"
                 )
             else:
                 # Tapo / Wi-Fi: max_delay;0 drops the first GOP and never recovers.
-                # nobuffer + low_delay still cuts the TCP queue without that stall.
+                # nobuffer + low_delay + no reorder queue cuts the TCP backlog
+                # without that stall.
                 os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = (
-                    "rtsp_transport;tcp|stimeout;5000000|fflags;nobuffer|flags;low_delay"
+                    "rtsp_transport;tcp|stimeout;5000000|fflags;nobuffer|flags;low_delay|reorder_queue_size;0"
                 )
             cap = cv2.VideoCapture(url, cv2.CAP_FFMPEG)
             cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
@@ -1767,20 +1770,25 @@ class MjpegHandler(BaseHTTPRequestHandler):
         state = STREAM_STATES[camera_id]
         self.send_response(200)
         self.send_header("Age", "0")
-        self.send_header("Cache-Control", "no-cache, private")
+        self.send_header("Cache-Control", "no-cache, no-store, private")
         self.send_header("Pragma", "no-cache")
         self.send_header("Access-Control-Allow-Origin", "*")
         self.send_header("Content-Type", "multipart/x-mixed-replace; boundary=frame")
         self.end_headers()
+        self._tune_low_latency_socket()
 
         last_sent = None
         try:
             while True:
                 jpeg = state.get_jpeg(ai=ai_overlay)
-                if jpeg is None:
-                    time.sleep(0.005)
+                if jpeg is None or jpeg is last_sent:
+                    time.sleep(0.002)
                     continue
-                if jpeg is last_sent:
+                # If the browser has not drained the last frame, drop this one
+                # and send the newest JPEG next. Playing a backlog is what
+                # makes the live view several seconds behind.
+                writable, _, _ = select.select([], [self.connection], [], 0)
+                if not writable:
                     time.sleep(0.002)
                     continue
                 last_sent = jpeg
@@ -1789,8 +1797,24 @@ class MjpegHandler(BaseHTTPRequestHandler):
                 self.wfile.write(f"Content-Length: {len(jpeg)}\r\n\r\n".encode("ascii"))
                 self.wfile.write(jpeg)
                 self.wfile.write(b"\r\n")
-        except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError):
+                try:
+                    self.wfile.flush()
+                except Exception:
+                    return
+        except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError, TimeoutError, OSError):
             return
+
+    def _tune_low_latency_socket(self) -> None:
+        conn = self.connection
+        try:
+            conn.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+        except OSError:
+            pass
+        try:
+            # One JPEG at a time. A large send buffer lets the browser play old frames.
+            conn.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, 48 * 1024)
+        except OSError:
+            pass
 
     def _resolve_worker(self, camera_id: str):
         worker = CAMERA_WORKERS.get(camera_id)
@@ -2036,7 +2060,7 @@ class CameraWorker:
             self.infer_reader.stop()
 
     def _preview_loop(self):
-        interval = 1.0 / max(1.0, self.stream_fps)
+        interval = 1.0 / max(30.0, self.stream_fps)
         encode_params = [int(cv2.IMWRITE_JPEG_QUALITY), self.jpeg_quality]
         last_seq = -1
         while self.running.is_set():
@@ -2119,16 +2143,19 @@ class CameraWorker:
             time.sleep(max(0.0, interval - elapsed))
 
     def _ai_display_loop(self):
-        """Paint the monitor MJPEG from the latest infer frame and the last boxes.
+        """Paint the monitor MJPEG from the low-delay preview stream.
 
-        Runs beside YOLO so the picture keeps moving between detections.
-        Detection interval, model size, and OCR are unchanged.
+        The main RTSP stream stays on the YOLO thread. Boxes are scaled onto
+        the preview frame, so the picture is not stuck behind the main-stream
+        buffer. Detection interval, model size, and OCR are unchanged.
         """
-        interval = 1.0 / max(1.0, self.stream_fps)
+        interval = 1.0 / max(30.0, self.stream_fps)
         last_seq = -1
         while self.running.is_set():
             started = time.perf_counter()
-            reader = self.infer_reader or self.preview_reader
+            # Substream (preview) is the live picture. Fall back to the infer
+            # reader only when this camera has a single RTSP path.
+            reader = self.preview_reader or self.infer_reader
             if reader is None:
                 time.sleep(interval)
                 continue

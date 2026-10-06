@@ -24,26 +24,59 @@ class AiParkingHealthService
      */
     public function streamBrowserUrl(?string $cameraId = null, bool $withAiOverlay = true): ?string
     {
+        $upstream = null;
+
         if ($cameraId) {
             $camera = app(AiCameraRegistry::class)->find($cameraId);
             if ($camera) {
                 if ($withAiOverlay && ! empty($camera['ai_stream_url'])) {
-                    return (string) $camera['ai_stream_url'];
-                }
-                if (! empty($camera['stream_url'])) {
-                    return (string) $camera['stream_url'];
+                    $upstream = (string) $camera['ai_stream_url'];
+                } elseif (! empty($camera['stream_url'])) {
+                    $upstream = (string) $camera['stream_url'];
                 }
             }
         }
 
-        if ($withAiOverlay) {
+        if ($upstream === null && $withAiOverlay) {
             $browser = trim((string) config('services.ai_parking.stream_browser_url', ''));
             if ($browser !== '') {
-                return $browser;
+                $upstream = $browser;
             }
         }
 
-        return $this->upstreamStreamUrl($cameraId, $withAiOverlay);
+        $upstream ??= $this->upstreamStreamUrl($cameraId, $withAiOverlay);
+
+        return $this->publicBrowserUrl($upstream);
+    }
+
+    /**
+     * Rewrite a campus-PC stream address onto the public site path (/cctv/...).
+     * Leave local 127.0.0.1 URLs unchanged when no public base is configured.
+     */
+    public function publicBrowserUrl(?string $upstream): ?string
+    {
+        if ($upstream === null || trim($upstream) === '') {
+            return null;
+        }
+
+        $upstream = trim($upstream);
+        $publicBase = (string) config('services.ai_parking.public_stream_base', '');
+        if ($publicBase === '') {
+            return $upstream;
+        }
+
+        $path = parse_url($upstream, PHP_URL_PATH);
+        if (! is_string($path) || $path === '') {
+            return $upstream;
+        }
+
+        $query = parse_url($upstream, PHP_URL_QUERY);
+        $suffix = is_string($query) && $query !== '' ? '?'.$query : '';
+        if ($path === $publicBase || str_starts_with($path, $publicBase.'/')) {
+            return $path.$suffix;
+        }
+
+        return $publicBase.$path.$suffix;
     }
 
     public function upstreamStreamUrl(?string $cameraId = null, bool $withAiOverlay = false): ?string
