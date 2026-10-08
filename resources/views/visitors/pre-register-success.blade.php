@@ -34,7 +34,7 @@
                 </div>
                 <p class="text-xs font-semibold uppercase tracking-[0.2em] text-emerald-100">Already pre-registered</p>
                 <h1 class="mt-2 text-2xl font-bold sm:text-3xl">Thank you, {{ $visitorName }}</h1>
-                <p class="mt-2 text-sm text-emerald-100">Show this screen to the guard at the booth</p>
+                <p class="mt-2 text-sm text-emerald-100">Show this screen to the guard at the booth@if ($visitor->email). A confirmation was also sent to {{ $visitor->email }}@endif</p>
             </div>
         </div>
 

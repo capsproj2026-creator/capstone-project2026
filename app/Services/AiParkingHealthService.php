@@ -45,12 +45,19 @@ class AiParkingHealthService
         }
 
         $upstream ??= $this->upstreamStreamUrl($cameraId, $withAiOverlay);
+        $public = $this->publicBrowserUrl($upstream);
+
+        // iscvms.com must use /cctv/ so nginx carries the MJPEG.
+        // The Laravel stream route leaves the guard tile black.
+        if ($this->viewerIsRemote() && is_string($public) && str_starts_with($public, '/')) {
+            return $public;
+        }
 
         if ($this->viewerIsRemote()) {
             return $this->sameOriginStreamUrl($cameraId, $withAiOverlay);
         }
 
-        return $this->publicBrowserUrl($upstream);
+        return $public;
     }
 
     /**
@@ -241,27 +248,39 @@ class AiParkingHealthService
         }
 
         $cacheKey = 'ai_parking:service_health_json:'.md5($healthUrl);
+        $cached = Cache::get($cacheKey);
+        if (is_array($cached)) {
+            return $cached;
+        }
 
-        $cached = Cache::remember($cacheKey, now()->addSeconds(5), function () use ($healthUrl) {
-            try {
-                $response = Http::connectTimeout(1)
-                    ->timeout(1.5)
-                    ->acceptJson()
-                    ->get($healthUrl);
+        // A failed probe is remembered only briefly. Caching it as long as a
+        // success made the guard page stick on Offline after the live video started.
+        $missKey = $cacheKey.':miss';
+        if (Cache::get($missKey) === 1) {
+            return null;
+        }
 
-                if (! $response->successful()) {
-                    return false;
-                }
+        try {
+            // /health shares the SSH tunnel with the MJPEG stream. While the
+            // picture is playing, this often takes about 3 seconds.
+            $response = Http::connectTimeout(3)
+                ->timeout(8)
+                ->acceptJson()
+                ->get($healthUrl);
 
+            if ($response->successful()) {
                 $json = $response->json();
+                if (is_array($json)) {
+                    Cache::put($cacheKey, $json, now()->addSeconds(8));
 
-                return is_array($json) ? $json : false;
-            } catch (\Throwable) {
-                return false;
+                    return $json;
+                }
             }
-        });
+        } catch (\Throwable) {
+            Cache::put($missKey, 1, now()->addSeconds(2));
+        }
 
-        return is_array($cached) ? $cached : null;
+        return null;
     }
 
     /**

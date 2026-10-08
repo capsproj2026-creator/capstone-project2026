@@ -743,55 +743,395 @@ def fig_context():
 
 
 def fig_dfd_level0():
-    img, d = new_canvas(1500, 1000, "Figure 15. Data Flow Diagram (Level 0) — Smart Campus VMS")
-    # Central process
-    rounded(d, (580, 380, 920, 520), (255, 247, 237), ORANGE, r=16)
-    d.text((620, 430), "P0", fill=ORANGE, font=font(14, True))
-    d.text((660, 430), "Smart Campus VMS", fill=NAVY, font=font(18, True))
-    d.text((620, 470), "Process gate access, visitors,", fill=GRAY, font=font(13))
-    d.text((620, 492), "violations, parking, reports", fill=GRAY, font=font(13))
+    """Gane-Sarson Level 0: one process, external entities, and data stores.
 
-    def store(x, y, label):
-        d.line([(x, y), (x + 160, y)], fill=NAVY, width=2)
-        d.line([(x, y + 50), (x + 160, y + 50)], fill=NAVY, width=2)
-        d.line([(x, y), (x, y + 50)], fill=NAVY, width=2)
-        d.line([(x + 160, y), (x + 160, y + 50)], fill=NAVY, width=2)
-        fnt = font(12, True)
-        tw = d.textlength(label, font=fnt)
-        d.text((x + 80 - tw / 2, y + 16), label, fill=NAVY, font=fnt)
+    Notation follows a standard textbook DFD (rectangles, one circle, open stores,
+    labeled arrows). Level 0 keeps the whole system as process 0.
+    """
+    scale = 2
+    width, height = 2700, 1680
+    img = Image.new("RGB", (width * scale, height * scale), WHITE)
+    d = ImageDraw.Draw(img)
 
-    def entity_box(x, y, label, fill=NAVY_SOFT):
-        rounded(d, (x, y, x + 140, y + 50), fill, NAVY, r=8)
-        fnt = font(12, True)
-        tw = d.textlength(label, font=fnt)
-        d.text((x + 70 - tw / 2, y + 16), label, fill=NAVY, font=fnt)
+    def px(x, y):
+        return (x * scale, y * scale)
 
-    # External entities
-    entity_box(40, 200, "Admin", NAVY_SOFT)
-    entity_box(40, 420, "Guard", (204, 251, 241))
-    entity_box(40, 640, "Student/Staff", (237, 233, 254))
-    entity_box(1320, 200, "Visitor", (254, 243, 199))
-    entity_box(1320, 420, "ESP32 Gate", (254, 226, 226))
-    entity_box(1320, 640, "AI Camera", PURPLE)
+    def fnt(size, bold=False):
+        return font(size * scale, bold)
 
-    # Data stores
-    store(200, 820, "D1 Users")
-    store(420, 820, "D2 Gate Logs")
-    store(640, 820, "D3 Visitors")
-    store(860, 820, "D4 Violations")
-    store(1080, 820, "D5 Parking")
+    f_ent = fnt(26, True)
+    f_flow = fnt(22)
+    f_num = fnt(42, True)
+    f_proc = fnt(26, True)
+    f_id = fnt(22, True)
+    f_store = fnt(22, True)
+    f_sflow = fnt(20)
+    f_cap = fnt(28, True)
 
-    # Flows
-    arrow(d, 180, 225, 580, 440, NAVY, "approvals")
-    arrow(d, 180, 445, 580, 460, TEAL, "visitor/violation")
-    arrow(d, 180, 665, 580, 480, PURPLE, "registration")
-    arrow(d, 1320, 225, 920, 440, ORANGE, "pre-register")
-    arrow(d, 1320, 445, 920, 460, RED, "RFID scan")
-    arrow(d, 1320, 665, 920, 480, PURPLE, "occupancy")
-    arrow(d, 750, 520, 750, 820, NAVY, "read/write")
+    def text_at(x, y, text, face, anchor="lm"):
+        d.text(px(x, y), text, fill=(0, 0, 0), font=face, anchor=anchor,
+               stroke_width=4 * scale, stroke_fill=WHITE)
 
-    d.text((40, 940), "Level 0 DFD: one central process exchanges data with external entities and MongoDB collections (D1–D5).", fill=GRAY, font=font(14))
-    return save(img, "fig15_dfd_level0.png")
+    def text_width(text, face):
+        box = d.textbbox((0, 0), text, font=face)
+        return (box[2] - box[0]) / scale
+
+    def draw_arrow(start, end, width_px=3, head=22):
+        x1, y1 = start
+        x2, y2 = end
+        dx, dy = x2 - x1, y2 - y1
+        dist = math.hypot(dx, dy)
+        if dist < 1:
+            return
+        ux, uy = dx / dist, dy / dist
+        bx, by = x2 - ux * head, y2 - uy * head
+        d.line([px(x1, y1), px(bx, by)], fill=(0, 0, 0), width=width_px * scale)
+        pxu, pyu = -uy, ux
+        hw = head * 0.55
+        d.polygon(
+            [px(x2, y2), px(bx + pxu * hw, by + pyu * hw), px(bx - pxu * hw, by - pyu * hw)],
+            fill=(0, 0, 0),
+        )
+
+    def draw_poly(points, width_px=3):
+        d.line([px(x, y) for x, y in points], fill=(0, 0, 0), width=width_px * scale, joint="curve")
+
+    def arrow_poly(points, width_px=3, head=20):
+        x1, y1 = points[0]
+        x2, y2 = points[1]
+        dx, dy = x1 - x2, y1 - y2
+        dist = math.hypot(dx, dy) or 1
+        ux, uy = dx / dist, dy / dist
+        start = (x1 - ux * head, y1 - uy * head)
+        pts = [start, *points[1:]]
+        xe, ye = pts[-1]
+        xb, yb = pts[-2]
+        dx, dy = xe - xb, ye - yb
+        dist = math.hypot(dx, dy) or 1
+        ux, uy = dx / dist, dy / dist
+        base = (xe - ux * head, ye - uy * head)
+        draw_poly([*pts[:-1], base], width_px)
+        pxu, pyu = -uy, ux
+        hw = head * 0.55
+        d.polygon(
+            [px(xe, ye), px(base[0] + pxu * hw, base[1] + pyu * hw), px(base[0] - pxu * hw, base[1] - pyu * hw)],
+            fill=(0, 0, 0),
+        )
+        dx, dy = x1 - x2, y1 - y2
+        dist = math.hypot(dx, dy) or 1
+        ux, uy = dx / dist, dy / dist
+        tip = (x1, y1)
+        base = (x1 - ux * head, y1 - uy * head)
+        pxu, pyu = -uy, ux
+        d.polygon(
+            [px(*tip), px(base[0] + pxu * hw, base[1] + pyu * hw), px(base[0] - pxu * hw, base[1] - pyu * hw)],
+            fill=(0, 0, 0),
+        )
+
+    def circle_x(ccx, ccy, radius, y, side):
+        disc = max(radius * radius - (y - ccy) ** 2, 0)
+        dx = math.sqrt(disc)
+        return ccx - dx if side == "left" else ccx + dx
+
+    ccx, ccy, radius = 1350, 520, 300
+    ent_w, ent_h = 320, 84
+    left_x = 48
+    right_x = width - 48 - ent_w
+    lanes = [ccy - 200, ccy, ccy + 200]
+    gap = 34
+    left_names = ["Student/Staff", "Visitor", "ESP32 Gate"]
+    right_names = ["Admin", "Guard", "AI Camera"]
+    # Upper arrow of each pair points into process 0. Lower arrow points back out.
+    left_flows = [
+        ("Vehicle registration", "Status and history"),
+        ("Registration details", "Access status"),
+        ("RFID scan, heartbeat", "Gate decision"),
+    ]
+    right_flows = [
+        ("Approvals and settings", "Reports and logs"),
+        ("Commands and reports", "Live status, alerts"),
+        ("Occupancy, detections", "Slot and plate status"),
+    ]
+
+    def horizontal_arrows():
+        jobs = []
+        for mid, _pair in zip(lanes, left_flows):
+            y_in, y_out = mid - gap, mid + gap
+            x_ent = left_x + ent_w
+            jobs.append(((x_ent, y_in), (circle_x(ccx, ccy, radius, y_in, "left"), y_in)))
+            jobs.append(((circle_x(ccx, ccy, radius, y_out, "left"), y_out), (x_ent, y_out)))
+        for mid, _pair in zip(lanes, right_flows):
+            y_in, y_out = mid - gap, mid + gap
+            jobs.append(((right_x, y_in), (circle_x(ccx, ccy, radius, y_in, "right"), y_in)))
+            jobs.append(((circle_x(ccx, ccy, radius, y_out, "right"), y_out), (right_x, y_out)))
+        return jobs
+
+    store_w, store_h = 280, 64
+    store_gap = 28
+    stores = [
+        ("D1", "Users"),
+        ("D2", "Vehicles"),
+        ("D3", "Gate Logs"),
+        ("D4", "Visitors"),
+        ("D5", "Violations"),
+        ("D6", "Notifications"),
+        ("D7", "Parking"),
+        ("D8", "Reports"),
+    ]
+    total_w = len(stores) * store_w + (len(stores) - 1) * store_gap
+    store_left0 = (width - total_w) / 2
+    store_top = ccy + radius + 230
+    store_centers = [store_left0 + i * (store_w + store_gap) + store_w / 2 for i in range(len(stores))]
+    dep_pts = []
+    for dx in (-126, -90, -54, -18, 18, 54, 90, 126):
+        dy = math.sqrt(radius * radius - dx * dx)
+        dep_pts.append((ccx + dx, ccy + dy))
+    channels = [store_top - 36 - (len(stores) - 1 - i) * 22 for i in range(len(stores))]
+
+    def store_routes():
+        routes = []
+        for dep, scx, channel in zip(dep_pts, store_centers, channels):
+            end = (scx, store_top)
+            if channel is None:
+                routes.append([dep, end])
+            else:
+                routes.append([dep, (dep[0], channel), (scx, channel), end])
+        return routes
+
+    routes = store_routes()
+    h_arrows = horizontal_arrows()
+    for start, end in h_arrows:
+        draw_arrow(start, end)
+    for route in routes:
+        arrow_poly(route)
+
+    def draw_entity(x, mid, name):
+        y1, y2 = mid - ent_h / 2, mid + ent_h / 2
+        d.rectangle([px(x, y1), px(x + ent_w, y2)], fill=WHITE, outline=(0, 0, 0), width=3 * scale)
+        text_at(x + ent_w / 2, mid, name, f_ent, "mm")
+
+    def draw_store(x, y, did, name):
+        id_w = 78
+        d.rectangle([px(x, y), px(x + store_w, y + store_h)], fill=WHITE)
+        d.line([px(x, y), px(x + store_w, y)], fill=(0, 0, 0), width=3 * scale)
+        d.line([px(x, y + store_h), px(x + store_w, y + store_h)], fill=(0, 0, 0), width=3 * scale)
+        d.line([px(x, y), px(x, y + store_h)], fill=(0, 0, 0), width=3 * scale)
+        d.line([px(x + id_w, y), px(x + id_w, y + store_h)], fill=(0, 0, 0), width=3 * scale)
+        text_at(x + id_w / 2, y + store_h / 2, did, f_id, "mm")
+        text_at(x + id_w + (store_w - id_w) / 2, y + store_h / 2, name, f_store, "mm")
+
+    for name, mid in zip(left_names, lanes):
+        draw_entity(left_x, mid, name)
+    for name, mid in zip(right_names, lanes):
+        draw_entity(right_x, mid, name)
+    d.ellipse([px(ccx - radius, ccy - radius), px(ccx + radius, ccy + radius)], fill=WHITE, outline=(0, 0, 0), width=4 * scale)
+    text_at(ccx, ccy - 28, "0", f_num, "mm")
+    text_at(ccx, ccy + 28, "Smart Campus VMS", f_proc, "mm")
+    for i, (did, name) in enumerate(stores):
+        draw_store(store_left0 + i * (store_w + store_gap), store_top, did, name)
+
+    for start, end in h_arrows:
+        draw_arrow(start, end)
+    for route in routes:
+        arrow_poly(route)
+
+    for mid, (inbound, outbound) in zip(lanes, left_flows):
+        text_at(left_x + ent_w + 18, mid - gap - 22, inbound, f_flow, "lm")
+        text_at(left_x + ent_w + 18, mid + gap + 22, outbound, f_flow, "lm")
+    for mid, (inbound, outbound) in zip(lanes, right_flows):
+        text_at(right_x - 18, mid - gap - 22, inbound, f_flow, "rm")
+        text_at(right_x - 18, mid + gap + 22, outbound, f_flow, "rm")
+
+    caption = "Figure 4.6: Data Flow Diagram (Level 0) of the Smart Campus Vehicle Management System"
+    cap_y = store_top + store_h + 90
+    text_at(width / 2, cap_y, caption, f_cap, "mm")
+    tw = text_width(caption, f_cap)
+    d.line([px(width / 2 - tw / 2, cap_y + 22), px(width / 2 + tw / 2, cap_y + 22)], fill=(0, 0, 0), width=2 * scale)
+
+    final = img.resize((width, height), Image.Resampling.LANCZOS)
+    gray = final.convert("L")
+    bbox = gray.point(lambda p: 255 if p < 250 else 0).getbbox()
+    pad = 36
+    final = final.crop((
+        max(bbox[0] - pad, 0),
+        max(bbox[1] - pad, 0),
+        min(bbox[2] + pad, width),
+        min(bbox[3] + pad, height),
+    ))
+    DIAG_DIR.mkdir(parents=True, exist_ok=True)
+    path = DIAG_DIR / "fig15_dfd_level0.png"
+    final.save(path, "PNG", dpi=(200, 200))
+    return path
+
+
+def fig_hardware_architecture():
+    """Physical hardware: gate lane, parking cameras, and the campus server."""
+    scale = 2
+    width, height = 2500, 1320
+    img = Image.new("RGB", (width * scale, height * scale), WHITE)
+    d = ImageDraw.Draw(img)
+    black = (0, 0, 0)
+
+    def px(x, y):
+        return (x * scale, y * scale)
+
+    def face(size, bold=False):
+        return font(size * scale, bold)
+
+    f_title = face(22, True)
+    f_box = face(20, True)
+    f_sub = face(16)
+    f_flow = face(16)
+    f_cap = face(26, True)
+
+    def text_at(x, y, text, fnt, anchor="mm"):
+        d.text(px(x, y), text, fill=black, font=fnt, anchor=anchor, stroke_width=3 * scale, stroke_fill=WHITE)
+
+    def rect(x, y, w, h):
+        d.rectangle([px(x, y), px(x + w, y + h)], fill=WHITE, outline=black, width=3 * scale)
+
+    def arrow(x1, y1, x2, y2, head=16):
+        dx, dy = x2 - x1, y2 - y1
+        dist = math.hypot(dx, dy) or 1
+        ux, uy = dx / dist, dy / dist
+        bx, by = x2 - ux * head, y2 - uy * head
+        d.line([px(x1, y1), px(bx, by)], fill=black, width=3 * scale)
+        pxu, pyu = -uy, ux
+        hw = head * 0.5
+        d.polygon(
+            [px(x2, y2), px(bx + pxu * hw, by + pyu * hw), px(bx - pxu * hw, by - pyu * hw)],
+            fill=black,
+        )
+
+    def labeled_box(x, y, w, h, title, subtitle=None):
+        rect(x, y, w, h)
+        if subtitle:
+            text_at(x + w / 2, y + h / 2 - 14, title, f_box)
+            text_at(x + w / 2, y + h / 2 + 14, subtitle, f_sub)
+        else:
+            text_at(x + w / 2, y + h / 2, title, f_box)
+
+    def v_arrow(box_a, box_b):
+        x = box_a[0] + box_a[2] / 2
+        arrow(x, box_a[1] + box_a[3], x, box_b[1])
+
+    # Column anchors
+    entry_x, exit_x = 70, 1860
+    col_w = 520
+    box_w, box_x_in = 400, 60
+    server_x, server_w = 760, 980
+
+    text_at(entry_x + col_w / 2, 48, "Entry gate", f_title)
+    text_at(server_x + server_w / 2, 48, "Campus server", f_title)
+    text_at(exit_x + col_w / 2, 48, "Exit gate", f_title)
+
+    # Clients sit on the server column
+    clients = [("Admin browser", 780), ("Guard browser", 1130), ("Student / Staff browser", 1480)]
+    client_boxes = []
+    for label, x in clients:
+        labeled_box(x, 90, 320, 64, label)
+        client_boxes.append((x, 90, 320, 64))
+
+    server = (server_x, 250, server_w, 300)
+    rect(*server)
+    text_at(server_x + server_w / 2, 278, "Campus Server PC", f_title)
+    inner = [
+        (server_x + 40, 320, 430, 80, "Laravel 12 API", "Port 8000"),
+        (server_x + 510, 320, 430, 80, "MongoDB", "capstone database"),
+        (server_x + 40, 430, 430, 80, "Laravel Reverb", "WebSocket port 8080"),
+        (server_x + 510, 430, 430, 80, "YOLOv9 + EasyOCR", "Port 8090"),
+    ]
+    for x, y, w, h, title, sub in inner:
+        labeled_box(x, y, w, h, title, sub)
+
+    for x, y, w, h in client_boxes:
+        arrow(x + w / 2, y + h, x + w / 2, server[1])
+    text_at(server_x + server_w / 2, 214, "LAN", f_flow)
+
+    def gate_column(origin_x, role):
+        x = origin_x + box_x_in
+        card = (x, 110, box_w, 70)
+        reader = (x, 240, box_w, 80)
+        board = (x, 390, box_w, 120)
+        labeled_box(*card, "RFID card", "Owner or visitor")
+        labeled_box(*reader, "RC522 reader", "SPI · 3.3 V")
+        if role == "entry":
+            labeled_box(*board, "Entry ESP32", "LED 25 · LED 26 · Buzzer 27")
+            servo = (x, 580, box_w, 80)
+            boom = (x, 730, box_w, 70)
+            labeled_box(*servo, "Servo on GPIO 14", "External 5 V supply")
+            labeled_box(*boom, "Boom barrier")
+            v_arrow(card, reader)
+            text_at(x + box_w / 2 + 70, (card[1] + card[3] + reader[1]) / 2, "tap", f_flow, "lm")
+            v_arrow(reader, board)
+            text_at(x + box_w / 2 + 70, (reader[1] + reader[3] + board[1]) / 2, "SPI", f_flow, "lm")
+            v_arrow(board, servo)
+            text_at(x + box_w / 2 + 78, (board[1] + board[3] + servo[1]) / 2, "GPIO 14", f_flow, "lm")
+            v_arrow(servo, boom)
+            text_at(x + box_w / 2 + 70, (servo[1] + servo[3] + boom[1]) / 2, "arm", f_flow, "lm")
+        else:
+            labeled_box(*board, "Exit ESP32", "No local servo")
+            lights = (x, 580, box_w, 80)
+            labeled_box(*lights, "Green LED · Red LED · Buzzer", "GPIO 25 · 26 · 27")
+            v_arrow(card, reader)
+            text_at(x + box_w / 2 + 70, (card[1] + card[3] + reader[1]) / 2, "tap", f_flow, "lm")
+            v_arrow(reader, board)
+            text_at(x + box_w / 2 + 70, (reader[1] + reader[3] + board[1]) / 2, "SPI", f_flow, "lm")
+            v_arrow(board, lights)
+            text_at(x + box_w / 2 + 78, (board[1] + board[3] + lights[1]) / 2, "GPIO", f_flow, "lm")
+        # Entry also has the same lamps; show them as a side note under the board title area
+        return board
+
+    entry_board = gate_column(entry_x, "entry")
+    exit_board = gate_column(exit_x, "exit")
+
+    # Wi-Fi between gates and Laravel (upper inner box)
+    laravel_left = server_x + 40
+    laravel_right = server_x + 40 + 430
+    laravel_mid_y = 360
+    entry_right = entry_board[0] + entry_board[2]
+    exit_left = exit_board[0]
+    arrow(entry_right, entry_board[1] + 36, laravel_left, laravel_mid_y - 16)
+    arrow(laravel_left, laravel_mid_y + 16, entry_right, entry_board[1] + 84)
+    text_at((entry_right + laravel_left) / 2, entry_board[1] + 8, "Wi-Fi scan", f_flow)
+    text_at((entry_right + laravel_left) / 2, entry_board[1] + 108, "Heartbeat opens boom", f_flow)
+
+    arrow(exit_left, exit_board[1] + 36, server_x + server_w, laravel_mid_y - 16)
+    arrow(server_x + server_w, laravel_mid_y + 16, exit_left, exit_board[1] + 84)
+    text_at((exit_left + server_x + server_w) / 2, exit_board[1] + 8, "Wi-Fi scan", f_flow)
+    text_at((exit_left + server_x + server_w) / 2, exit_board[1] + 108, "Heartbeat", f_flow)
+
+    # Cameras feed the AI service over RTSP
+    cams = [
+        (server_x + 20, 700, 300, 78, "Dahua CAM-AI-1", "Wired camera"),
+        (server_x + 340, 700, 300, 78, "Tapo CAM-AI-2", "Wi-Fi camera"),
+        (server_x + 660, 700, 300, 78, "Tapo CAM-AI-3", "Wi-Fi camera"),
+    ]
+    for x, y, w, h, title, sub in cams:
+        labeled_box(x, y, w, h, title, sub)
+        arrow(x + w / 2, y, x + w / 2, server[1] + server[3])
+    text_at(server_x + 150, 620, "RTSP", f_flow, "rm")
+    text_at(server_x + server_w / 2, 810, "Parking cameras", f_title)
+
+    caption = "Hardware Architecture of the Smart Campus Vehicle Management System"
+    cap_y = 900
+    text_at(width / 2, cap_y, caption, f_cap)
+    tw = d.textlength(caption, font=f_cap) / scale
+    d.line([px(width / 2 - tw / 2, cap_y + 22), px(width / 2 + tw / 2, cap_y + 22)], fill=black, width=2 * scale)
+
+    final = img.resize((width, height), Image.Resampling.LANCZOS)
+    bbox = final.convert("L").point(lambda p: 255 if p < 250 else 0).getbbox()
+    pad = 36
+    final = final.crop((
+        max(bbox[0] - pad, 0),
+        max(bbox[1] - pad, 0),
+        min(bbox[2] + pad, width),
+        min(bbox[3] + pad, height),
+    ))
+    DIAG_DIR.mkdir(parents=True, exist_ok=True)
+    path = DIAG_DIR / "hardware_architecture.png"
+    final.save(path, "PNG", dpi=(200, 200))
+    return path
 
 
 def set_run_font(run, size=11, bold=False, color=None, name="Calibri"):
@@ -1020,6 +1360,7 @@ def main() -> None:
         "use_case": fig_use_case(),
         "context": fig_context(),
         "dfd": fig_dfd_level0(),
+        "hardware": fig_hardware_architecture(),
     }
     path = build_docx(images)
     print(f"Wrote {path}")

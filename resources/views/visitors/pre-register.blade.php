@@ -54,8 +54,8 @@
                             <input type="text" name="contact_number" value="{{ old('contact_number') }}" required class="w-full rounded-lg border border-gray-200 px-3 py-2.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20">
                         </div>
                         <div class="sm:col-span-2">
-                            <label class="mb-1.5 block text-sm font-medium text-gray-700">Email</label>
-                            <input type="email" name="email" value="{{ old('email') }}" class="w-full rounded-lg border border-gray-200 px-3 py-2.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20">
+                            <label class="mb-1.5 block text-sm font-medium text-gray-700">Email <span class="text-red-500">*</span></label>
+                            <input type="email" name="email" value="{{ old('email') }}" required class="w-full rounded-lg border border-gray-200 px-3 py-2.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20">
                         </div>
                     </div>
                 </div>

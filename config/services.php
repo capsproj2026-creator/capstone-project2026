@@ -63,6 +63,9 @@ return [
         'temp_access_enabled' => filter_var(env('RFID_TEMP_ACCESS_ENABLED', false), FILTER_VALIDATE_BOOLEAN),
         'temp_access_hours' => max(1, (int) env('RFID_TEMP_ACCESS_HOURS', 5)),
         'temp_access_max' => max(1, (int) env('RFID_TEMP_ACCESS_MAX', 3)),
+        // Comma-separated spare card UIDs. These only lift the boom. They do not record entry or exit.
+        'emergency_uids' => strtoupper(trim((string) env('RFID_EMERGENCY_UIDS', ''))),
+        'emergency_hold_ms' => max(1000, min(60000, (int) env('RFID_EMERGENCY_HOLD_MS', 20000))),
     ],
 
     'registration' => [

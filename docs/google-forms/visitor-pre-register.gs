@@ -12,13 +12,13 @@
  * Setup:
  * 1. Form → Extensions → Apps Script → paste this file → Save
  * 2. Project Settings → Script properties:
- *      WEBHOOK_URL   = https://YOUR-NGROK-OR-PUBLIC-HOST/api/visitor/pre-register/google
- *      WEBHOOK_TOKEN = same as VISITOR_PRE_REGISTER_WEBHOOK_TOKEN in Laravel .env
+ *      WEBHOOK_URL   = https://www.iscvms.com/api/visitor/pre-register/google
+ *      WEBHOOK_TOKEN = same as VISITOR_PRE_REGISTER_WEBHOOK_TOKEN on the iscvms.com server
  * 3. Set TEST_EMAIL → run testSendConfirmationEmail (optional)
  * 4. Run installFormSubmitTrigger → Allow permissions (Mail + UrlFetch)
  * 5. Run diagnoseFormTitles — fix question titles if mapping fails
  * 6. Laravel: VISITOR_PRE_REGISTER_GOOGLE_FORM_URL = your form viewform URL
- * 7. Keep ngrok/public URL running while testing; Google cannot reach 127.0.0.1
+ * 7. Do not use ngrok or 127.0.0.1. Google must call https://www.iscvms.com
  *
  * Prefer question titles:
  *   First Name, Middle Name, Last Name (or Full Name)
@@ -86,10 +86,10 @@ function installFormSubmitTrigger() {
 
 function testWebhookConnection() {
   var props = PropertiesService.getScriptProperties();
-  var webhookUrl = props.getProperty('WEBHOOK_URL');
+  var webhookUrl = resolveWebhookUrl_(props.getProperty('WEBHOOK_URL'));
   var webhookToken = props.getProperty('WEBHOOK_TOKEN');
-  if (!webhookUrl || !webhookToken) {
-    throw new Error('Set Script properties WEBHOOK_URL and WEBHOOK_TOKEN first.');
+  if (!webhookToken) {
+    throw new Error('Set Script property WEBHOOK_TOKEN first. WEBHOOK_URL is forced to https://www.iscvms.com.');
   }
 
   var sample = {
@@ -242,13 +242,38 @@ function onFormSubmit(e) {
   }
 }
 
+function resolveWebhookUrl_(configured) {
+  var live = 'https://www.iscvms.com/api/visitor/pre-register/google';
+  var url = String(configured || '').trim();
+  // Any ngrok, localhost, or :8000/:8001 address still hits this PC. Google cannot use those.
+  if (url.indexOf(live) === 0) {
+    return url;
+  }
+  return live;
+}
+
+function parseWebhookBody_(bodyText) {
+  var text = String(bodyText || '').trim();
+  try {
+    return JSON.parse(text);
+  } catch (err) {
+    var start = text.indexOf('{');
+    var end = text.lastIndexOf('}');
+    if (start !== -1 && end > start) {
+      return JSON.parse(text.substring(start, end + 1));
+    }
+    var cleaned = text.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+    throw new Error(cleaned.slice(0, 240) || String(err));
+  }
+}
+
 function postToLaravel_(payload) {
   var props = PropertiesService.getScriptProperties();
-  var webhookUrl = props.getProperty('WEBHOOK_URL');
+  var webhookUrl = resolveWebhookUrl_(props.getProperty('WEBHOOK_URL'));
   var webhookToken = props.getProperty('WEBHOOK_TOKEN');
 
-  if (!webhookUrl || !webhookToken) {
-    return { ok: false, error: 'Missing WEBHOOK_URL or WEBHOOK_TOKEN script properties' };
+  if (!webhookToken) {
+    return { ok: false, error: 'Missing WEBHOOK_TOKEN script property' };
   }
 
   try {
@@ -278,7 +303,7 @@ function postToLaravel_(payload) {
     if (status >= 400) {
       return { ok: false, error: 'HTTP ' + status + ': ' + bodyText };
     }
-    var body = JSON.parse(bodyText);
+    var body = parseWebhookBody_(bodyText);
     if (!body.ok) {
       return { ok: false, error: bodyText };
     }

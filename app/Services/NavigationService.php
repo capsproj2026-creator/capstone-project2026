@@ -45,7 +45,7 @@ class NavigationService
             ['label' => 'Live Gate Monitor', 'route' => 'guard.gate', 'icon' => 'activity', 'access' => ['guard']],
             ['label' => 'User Monitor', 'route' => 'guard.monitor', 'icon' => 'users', 'access' => ['guard']],
             ['label' => 'Register Visitor', 'route' => 'guard.visitors.register', 'icon' => 'clipboard-plus', 'access' => ['guard']],
-            ['label' => 'Active Visitors', 'route' => 'guard.visitors.active', 'icon' => 'user-round-check', 'access' => ['guard']],
+            ['label' => 'Visitors', 'route' => 'guard.visitors.active', 'icon' => 'user-round-check', 'access' => ['guard']],
             ['label' => 'Visitor History', 'route' => 'guard.visitors.history', 'icon' => 'history', 'access' => ['guard']],
             ['label' => 'Violations', 'route' => 'guard.violations', 'icon' => 'triangle-alert', 'access' => ['guard'], 'permission' => 'log_violations'],
             ['label' => 'Access Logs', 'route' => 'guard.access-logs', 'icon' => 'file-text', 'access' => ['guard']],

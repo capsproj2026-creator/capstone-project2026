@@ -1,15 +1,36 @@
 @extends('layouts.portal')
 
-@section('title', $pageTitle ?? 'Active Visitors')
+@section('title', $pageTitle ?? 'Visitors')
 
 @section('content')
     @include('partials.shell.page-header', [
-        'title' => $pageTitle ?? 'Active Visitors',
-        'subtitle' => $pageSubtitle ?? 'Visitors currently registered, on campus, or overdue',
+        'title' => $pageTitle ?? 'Visitors',
+        'subtitle' => $pageSubtitle ?? 'QR signups waiting at the gate, visitors on campus, and overdue visits',
     ])
+
+    @php
+        $viewFilter = $viewFilter ?? 'all';
+        $viewLinks = [
+            'all' => 'All',
+            'qr' => 'QR code',
+            'campus' => 'On campus',
+            'overdue' => 'Overdue',
+        ];
+    @endphp
+    <div class="mb-4 flex flex-wrap gap-2">
+        @foreach ($viewLinks as $key => $label)
+            <a href="{{ route($routePrefix.'.visitors.active', array_filter(['view' => $key, 'search' => $search, 'status' => $statusFilter !== 'All' ? $statusFilter : null])) }}"
+                @class([
+                    'rounded-full px-3 py-1.5 text-sm font-semibold',
+                    'bg-gray-900 text-white' => $viewFilter === $key,
+                    'bg-white text-gray-700 ring-1 ring-gray-200 hover:bg-gray-50' => $viewFilter !== $key,
+                ])>{{ $label }}</a>
+        @endforeach
+    </div>
 
     <div class="mb-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <form method="GET" class="flex flex-1 flex-col gap-3 sm:flex-row">
+            <input type="hidden" name="view" value="{{ $viewFilter }}">
             <div class="relative flex-1">
                 <i data-lucide="search" class="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400"></i>
                 <input type="search" name="search" value="{{ $search }}" placeholder="Search name, plate, ref code, RFID, purpose..."
@@ -56,7 +77,9 @@
                                 <p class="truncate font-semibold text-gray-900" title="{{ $v->displayName() }}">{{ $v->displayName() }}</p>
                                 <p class="truncate text-xs text-gray-500">{{ $v->contact_number }}</p>
                                 @if ($v->isSelfPreRegistered())
-                                    <span class="mt-1 inline-flex rounded-full bg-indigo-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-indigo-700">Pre-registered online</span>
+                                    <span class="mt-1 inline-flex rounded-full bg-indigo-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-indigo-700">QR code</span>
+                                @else
+                                    <span class="mt-1 inline-flex rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-600">Gate</span>
                                 @endif
                             </td>
                             <td class="px-3 py-3">
@@ -120,11 +143,64 @@
                         </tr>
                     @empty
                         <tr>
-                            <td colspan="{{ ($canManage ?? false) ? 10 : 9 }}" class="px-6 py-16 text-center text-sm text-gray-500">No active visitors found.</td>
+                            <td colspan="{{ ($canManage ?? false) ? 10 : 9 }}" class="px-6 py-16 text-center text-sm text-gray-500">No visitors in this list.</td>
                         </tr>
                     @endforelse
                 </tbody>
             </table>
         </div>
     </div>
+
+    <script>
+        (() => {
+            const liveUrl = @json(route($routePrefix.'.visitors.live', request()->query()));
+            let signature = null;
+            let waitingToRefresh = false;
+
+            const isTyping = () => {
+                const field = document.activeElement;
+                if (!field) {
+                    return false;
+                }
+                return ['INPUT', 'TEXTAREA', 'SELECT'].includes(field.tagName);
+            };
+
+            const refresh = () => window.location.reload();
+
+            const tick = async () => {
+                try {
+                    const response = await fetch(liveUrl, {
+                        headers: { Accept: 'application/json' },
+                        credentials: 'same-origin',
+                        cache: 'no-store',
+                    });
+                    if (!response.ok) {
+                        return;
+                    }
+                    const data = await response.json();
+                    if (signature === null) {
+                        signature = data.signature;
+                        return;
+                    }
+                    if (data.signature === signature) {
+                        return;
+                    }
+                    if (isTyping()) {
+                        waitingToRefresh = true;
+                        return;
+                    }
+                    refresh();
+                } catch (error) {
+                    // Keep the current list on screen if a poll fails.
+                }
+            };
+
+            window.setInterval(tick, 3000);
+            document.addEventListener('focusout', () => {
+                if (waitingToRefresh) {
+                    refresh();
+                }
+            });
+        })();
+    </script>
 @endsection

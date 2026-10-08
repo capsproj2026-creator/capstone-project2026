@@ -113,10 +113,16 @@ if (-not (Test-Path $ConfigPath)) {
 }
 
 $config = Get-Content $ConfigPath -Raw
+$currentPort = 8000
+if ($config -match '#define\s+API_PORT\s+(\d+)') {
+    $currentPort = [int]$Matches[1]
+}
 if ($config -match '#define\s+API_HOST\s+"(.+)"') {
     $currentHost = $Matches[1]
     Write-Host "Current API_HOST: $currentHost" -ForegroundColor Cyan
-    if ($currentHost -ne $ip) {
+    if ($currentHost -eq "www.iscvms.com" -or $currentPort -eq 443) {
+        Write-Host "  Public site over HTTPS. Re-flash Entry and Exit so the boards use this host." -ForegroundColor Green
+    } elseif ($currentHost -ne $ip) {
         Write-Host "  MISMATCH - ESP32 cannot reach PC (wrong network IP). Run with -UpdateConfig" -ForegroundColor Red
     } else {
         Write-Host "  Matches detected IP." -ForegroundColor Green

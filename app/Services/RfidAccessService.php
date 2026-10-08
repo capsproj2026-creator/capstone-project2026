@@ -45,6 +45,10 @@ class RfidAccessService
         $gateId = trim($gateId);
         $direction = $this->normalizeDirection($direction);
 
+        if ($this->isEmergencyUid($uid)) {
+            return $this->processEmergencyCard($uid, $gateId, $direction);
+        }
+
         $user = User::query()
             ->with(['role', 'vehicleType'])
             ->where('rfid_uid', $uid)
@@ -71,6 +75,89 @@ class RfidAccessService
         }
 
         return $this->processUnknownCard($uid, $gateId, $direction);
+    }
+
+    /**
+     * Guard typed a plate we already matched to this user. Applies the same
+     * entry and exit rules as a card tap without looking the card up again.
+     *
+     * @return array<string, mixed>
+     */
+    public function grantResolvedUser(User $user, string $gateId, string $direction): array
+    {
+        $uid = $this->normalizeUid((string) ($user->rfid_uid ?? ''));
+        if ($uid === '') {
+            $uid = 'MANUALPLATE';
+        }
+
+        $gateId = trim($gateId);
+        $direction = $this->normalizeDirection($direction);
+
+        if ($user->isRemedialDeclined() && app(RemedialRfidService::class)->canUseGate($user)) {
+            return $this->processRemedialUser($user, $uid, $gateId, $direction);
+        }
+
+        if ($user->isTemporaryAccount()) {
+            return $this->processTemporaryUser($user, $uid, $gateId, $direction);
+        }
+
+        return $this->processUser($user, $uid, $gateId, $direction);
+    }
+
+    private function isEmergencyUid(string $uid): bool
+    {
+        $raw = (string) config('services.rfid.emergency_uids', '');
+        if ($raw === '' || $uid === '') {
+            return false;
+        }
+
+        $listed = preg_split('/[\s,]+/', $raw) ?: [];
+
+        return in_array($uid, array_map(fn ($item) => $this->normalizeUid((string) $item), $listed), true);
+    }
+
+    /**
+     * Spare card: open the boom without changing who is inside or outside.
+     * Entry tap opens the local servo. Exit tap asks the Entry board to open it.
+     */
+    private function processEmergencyCard(string $uid, string $gateId, string $direction): array
+    {
+        $hardware = app(GateHardwareService::class);
+        $shared = $hardware->normalizeGateId((string) config('services.rfid.shared_boom_gate_id', 'GATE-IN-1')) ?? 'GATE-IN-1';
+        $from = $hardware->normalizeGateId($gateId) ?? strtoupper(trim($gateId));
+        $holdMs = (int) config('services.rfid.emergency_hold_ms', 20000);
+        $reason = 'Emergency card — boom open, no entry or exit recorded';
+        $queued = false;
+
+        if ($from !== $shared) {
+            $queued = $hardware->queueOpenCommand($shared, $reason, $holdMs);
+        }
+
+        $log = GateLog::query()->create([
+            'user_id' => null,
+            'visitor_id' => null,
+            'action' => GateHardwareService::ACTION_OVERRIDE,
+            'gate_id' => $from !== '' ? $from : $gateId,
+            'rfid_uid' => $uid,
+            'result' => self::STATUS_GRANTED,
+            'reason' => $reason,
+            'timestamp' => now(),
+        ]);
+
+        $this->broadcastGrantedScan($log, $uid);
+
+        return $this->response(
+            self::STATUS_GRANTED,
+            'emergency_open',
+            true,
+            GateHardwareService::ACTION_OVERRIDE,
+            $from !== '' ? $from : $gateId,
+            $reason,
+            null,
+            $log->id,
+            $queued,
+            $holdMs
+        );
     }
 
     private function processUnknownCard(string $uid, string $gateId, string $direction): array
@@ -397,7 +484,7 @@ class RfidAccessService
             $this->syncVisitorParkingOccupancy($visitor, 'Entry');
         } else {
             $this->syncVisitorParkingOccupancy($visitor, 'Exit');
-            $visitorService->completeOnExit($visitor);
+            $visitorService->recordCampusExit($visitor);
         }
 
         $this->broadcastGrantedScan($log->fresh(['visitor', 'user']) ?? $log, $uid);
@@ -613,7 +700,8 @@ class RfidAccessService
         string $message,
         ?array $user,
         mixed $logId = null,
-        bool $openSharedBoom = false
+        bool $openSharedBoom = false,
+        ?int $holdMs = null
     ): array {
         $shared = strtoupper(trim((string) config('services.rfid.shared_boom_gate_id', 'GATE-IN-1')));
 
@@ -628,6 +716,7 @@ class RfidAccessService
             'log_id' => $logId,
             'open_shared_boom' => $openSharedBoom,
             'shared_boom_gate_id' => $shared !== '' ? $shared : 'GATE-IN-1',
+            'hold_ms' => $holdMs,
         ];
     }
 

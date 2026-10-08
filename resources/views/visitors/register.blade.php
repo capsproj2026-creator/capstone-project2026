@@ -42,7 +42,7 @@
                     @if ($preRegisterUsesGoogleForm ?? false)
                         Visitors scan the QR to open the Google Form. On submit, the system creates a <span class="font-medium text-slate-800">Waiting</span> visitor and emails them a confirmation with a reference code. Open Visitors → Active/Waiting to verify — no spreadsheet needed.
                     @else
-                        Visitors scan the QR to submit their details, then see a confirmation page with their info and reference code. They also appear under Visitors as Waiting.
+                        Visitors scan the QR to open the registration form on this website. Submitting it saves them as Waiting and emails the reference code.
                     @endif
                 </p>
                 <ol class="space-y-1.5 text-sm text-slate-600">

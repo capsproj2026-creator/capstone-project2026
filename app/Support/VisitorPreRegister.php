@@ -6,7 +6,6 @@ use App\Models\Vehicle;
 use App\Models\Visitor;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\URL;
-use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 
 class VisitorPreRegister
@@ -53,7 +52,16 @@ class VisitorPreRegister
             'office_to_visit' => ['required', 'string', 'max:255'],
             'expected_exit_at' => ['required', 'date', 'after:now'],
             'plate_number' => ['required', 'string', 'max:20'],
-            'vehicle_id' => ['nullable', 'integer', Rule::exists(Vehicle::class, 'id')],
+            'vehicle_id' => ['nullable', 'integer', function (string $attribute, mixed $value, \Closure $fail): void {
+                if ($value === null || $value === '') {
+                    return;
+                }
+
+                $exists = Vehicle::query()->where('id', (int) $value)->exists();
+                if (! $exists) {
+                    $fail('The selected vehicle type is invalid.');
+                }
+            }],
             'vehicle_name' => ['nullable', 'string', 'max:80'],
             'vehicle_color' => ['required', 'string', 'max:40'],
         ];

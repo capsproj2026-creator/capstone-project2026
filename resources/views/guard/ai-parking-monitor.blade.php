@@ -6,22 +6,27 @@
 <style>
     [data-camera-tile]:fullscreen,
     [data-camera-tile]:-webkit-full-screen {
+        position: relative;
         width: 100vw;
         height: 100vh;
+        max-height: none;
+        aspect-ratio: auto;
         background: #0b0f14;
-        display: flex;
-        align-items: center;
-        justify-content: center;
     }
     [data-camera-tile]:fullscreen [data-stream-img],
-    [data-camera-tile]:-webkit-full-screen [data-stream-img] {
-        position: static;
+    [data-camera-tile]:-webkit-full-screen [data-stream-img],
+    [data-camera-tile]:fullscreen [data-stream-canvas],
+    [data-camera-tile]:-webkit-full-screen [data-stream-canvas] {
+        position: absolute;
+        inset: 0;
         width: 100%;
         height: 100%;
         object-fit: contain;
     }
     [data-fullscreen-camera] i,
     [data-fullscreen-camera] svg { pointer-events: none; }
+    [data-stream-canvas] { pointer-events: none; }
+    [data-camera-tile] { cursor: zoom-in; }
     @keyframes ai-det-scan-pulse {
         0%, 100% { box-shadow: 0 0 0 0 rgba(99, 102, 241, 0.55); opacity: 1; }
         50% { box-shadow: 0 0 0 4px rgba(99, 102, 241, 0.15); opacity: 0.85; }
@@ -122,14 +127,9 @@
                 if (! is_array($det)) {
                     continue;
                 }
-                // Latest Detections: parked / tracked vehicles (include plate failures).
-                $status = strtolower((string) ($det['plate_status'] ?? ''));
-                $plate = trim((string) ($det['plate'] ?? ''));
-                $hasTrack = isset($det['track_id']) && $det['track_id'] !== null && $det['track_id'] !== '';
-                if ($plate === '' && ! in_array($status, ['unreadable', 'not_read', 'ok', 'pending'], true) && ! $hasTrack) {
-                    continue;
-                }
-                if ($plate === '' && ! $hasTrack && ! in_array($status, ['unreadable', 'not_read'], true)) {
+                // Latest Detections lists a plate number only, not an object still being scanned.
+                $plate = strtoupper((string) preg_replace('/[^A-Z0-9]/i', '', (string) ($det['plate'] ?? '')));
+                if (strlen($plate) < 4) {
                     continue;
                 }
                 $det['_camera'] = $det['_camera'] ?? $snapCamId;
@@ -141,10 +141,8 @@
                 if (! is_array($det)) {
                     continue;
                 }
-                $status = strtolower((string) ($det['plate_status'] ?? ''));
-                $plate = trim((string) ($det['plate'] ?? ''));
-                $hasTrack = isset($det['track_id']) && $det['track_id'] !== null && $det['track_id'] !== '';
-                if ($plate === '' && ! $hasTrack && ! in_array($status, ['unreadable', 'not_read'], true)) {
+                $plate = strtoupper((string) preg_replace('/[^A-Z0-9]/i', '', (string) ($det['plate'] ?? '')));
+                if (strlen($plate) < 4) {
                     continue;
                 }
                 $det['_camera'] = $det['_camera'] ?? ($primaryAi['camera_id'] ?? '');
@@ -288,7 +286,7 @@
 
                         <button
                             type="button"
-                            class="absolute bottom-3 right-3 z-30 rounded-md bg-black/50 p-1.5 text-white hover:bg-black/70"
+                            class="absolute bottom-3 right-3 z-40 rounded-md bg-black/50 p-1.5 text-white hover:bg-black/70"
                             title="Full screen"
                             data-fullscreen-camera="{{ $camId }}"
                             data-camera-id="{{ $camId }}"
@@ -1240,9 +1238,18 @@ window.__aiClosePlateModal = function () {
     };
 
     const applyZoom = () => {
-        if (!zoomState.img) return;
-        zoomState.img.style.transform = `translate(${zoomState.panX}px, ${zoomState.panY}px) scale(${zoomState.scale})`;
+        const el = zoomState.img;
         if (zoomLabel) zoomLabel.textContent = `${zoomState.scale.toFixed(1)}×`;
+        document.querySelectorAll('[data-zoom-readout]').forEach((node) => {
+            node.textContent = `${zoomState.scale.toFixed(1)}×`;
+        });
+        if (!el) return;
+        el.style.transformOrigin = 'center center';
+        if (zoomState.scale === 1 && zoomState.panX === 0 && zoomState.panY === 0) {
+            el.style.transform = '';
+            return;
+        }
+        el.style.transform = `translate(${zoomState.panX}px, ${zoomState.panY}px) scale(${zoomState.scale})`;
     };
 
     const setZoom = (next, cx = 0, cy = 0) => {
@@ -1262,7 +1269,13 @@ window.__aiClosePlateModal = function () {
     };
 
     const closeModal = () => {
+        document.querySelectorAll('[data-stream-canvas]').forEach((canvas) => {
+            const mirror = canvas._mirror;
+            if (mirror?._prev) URL.revokeObjectURL(mirror._prev);
+            canvas._mirror = null;
+        });
         modal?.classList.add('hidden');
+        if (modal) modal.style.display = 'none';
         modal?.classList.remove('flex');
         if (modalBody) modalBody.replaceChildren();
         zoomState.img = null;
@@ -1288,7 +1301,8 @@ window.__aiClosePlateModal = function () {
         const img = tile.querySelector('[data-stream-img]');
         const fb = tile.querySelector('[data-stream-fallback]');
         if (online) {
-            img?.classList.remove('hidden');
+            const canvas = tile.querySelector('[data-stream-canvas]');
+            if (!canvas || canvas.classList.contains('hidden')) img?.classList.remove('hidden');
             fb?.classList.add('hidden');
         } else {
             img?.classList.add('hidden');
@@ -1307,14 +1321,129 @@ window.__aiClosePlateModal = function () {
         const tile = img.closest('[data-camera-tile]');
         if (tile && tile.dataset.online !== '1') return;
         const live = streamUrlOf(img);
-        if (!live) return;
-        if (img.dataset.liveAttached === '1' && (img.getAttribute('src') || '').includes('stream.mjpg')) return;
+        if (!live || img.dataset.liveAttached === '1') return;
         img.dataset.liveAttached = '1';
-        img.src = live;
+
+        let canvas = tile.querySelector('[data-stream-canvas]');
+        if (!canvas) {
+            canvas = document.createElement('canvas');
+            canvas.setAttribute('data-stream-canvas', '1');
+            canvas.className = 'absolute inset-0 z-[1] h-full w-full object-cover';
+            canvas.style.pointerEvents = 'none';
+            img.insertAdjacentElement('afterend', canvas);
+        }
+        canvas.classList.remove('hidden');
+        img.classList.add('hidden');
+
+        const ctx = canvas.getContext('2d', { alpha: false });
+        const ctrl = new AbortController();
+        img._smoothAbort = ctrl;
+
+        const pump = async () => {
+            try {
+                const res = await fetch(live, { credentials: 'same-origin', cache: 'no-store', signal: ctrl.signal });
+                if (!res.ok || !res.body) throw new Error('stream');
+                const reader = res.body.getReader();
+                let buf = new Uint8Array(0);
+                let pending = null;
+                let painting = false;
+                const paint = async () => {
+                    if (painting) return;
+                    painting = true;
+                    while (pending) {
+                        const bytes = pending;
+                        pending = null;
+                        try {
+                            const bmp = await createImageBitmap(new Blob([bytes], { type: 'image/jpeg' }));
+                            if (canvas.width !== bmp.width || canvas.height !== bmp.height) {
+                                canvas.width = bmp.width;
+                                canvas.height = bmp.height;
+                            }
+                            ctx.drawImage(bmp, 0, 0);
+                            canvas._lastBytes = bytes;
+                            const mirror = canvas._mirror;
+                            if (mirror && mirror.tagName === 'IMG' && !mirror._busy) {
+                                mirror._busy = true;
+                                const url = URL.createObjectURL(new Blob([bytes], { type: 'image/jpeg' }));
+                                const preload = new Image();
+                                preload.onload = () => {
+                                    mirror.src = url;
+                                    if (mirror._prev && mirror._prev !== url) URL.revokeObjectURL(mirror._prev);
+                                    mirror._prev = url;
+                                    mirror._busy = false;
+                                };
+                                preload.onerror = () => {
+                                    URL.revokeObjectURL(url);
+                                    mirror._busy = false;
+                                };
+                                preload.src = url;
+                            }
+                            if (canvas._lastBitmap && canvas._lastBitmap !== bmp) {
+                                try { canvas._lastBitmap.close(); } catch (_) {}
+                            }
+                            canvas._lastBitmap = bmp;
+                        } catch (_) { /* keep the previous picture */ }
+                    }
+                    painting = false;
+                    if (pending) paint();
+                };
+                const takeFrames = () => {
+                    let guard = 0;
+                    while (guard++ < 6 && buf.length > 32) {
+                        const header = new TextDecoder('latin1').decode(buf.subarray(0, Math.min(buf.length, 500)));
+                        const headerEnd = header.indexOf('\r\n\r\n');
+                        if (headerEnd < 0) return;
+                        const match = header.slice(0, headerEnd).match(/Content-Length:\s*(\d+)/i);
+                        if (!match) {
+                            const boundary = header.indexOf('--frame');
+                            if (boundary < 0) return;
+                            buf = buf.slice(boundary);
+                            continue;
+                        }
+                        const start = headerEnd + 4;
+                        const len = Number(match[1]);
+                        if (buf.length < start + len) return;
+                        pending = buf.slice(start, start + len);
+                        let rest = start + len;
+                        if (buf[rest] === 13) rest += 1;
+                        if (buf[rest] === 10) rest += 1;
+                        buf = buf.slice(rest);
+                        paint();
+                    }
+                };
+                while (true) {
+                    const { value, done } = await reader.read();
+                    if (done) break;
+                    const next = new Uint8Array(buf.length + value.length);
+                    next.set(buf);
+                    next.set(value, buf.length);
+                    buf = next;
+                    if (buf.length > 1500000) {
+                        const header = new TextDecoder('latin1').decode(buf.subarray(buf.length - 800));
+                        const boundary = header.lastIndexOf('--frame');
+                        buf = boundary >= 0 ? buf.slice(buf.length - 800 + boundary) : new Uint8Array(0);
+                    }
+                    takeFrames();
+                }
+                throw new Error('ended');
+            } catch (err) {
+                if (ctrl.signal.aborted) return;
+                img.dataset.liveAttached = '0';
+                window.setTimeout(() => {
+                    if (tile?.dataset.online === '1') upgradeToLiveMjpeg(img);
+                }, 1500);
+            }
+        };
+        pump();
     };
 
     const stopLiveMjpeg = (img) => {
+        if (img._smoothAbort) {
+            try { img._smoothAbort.abort(); } catch (_) {}
+            img._smoothAbort = null;
+        }
         img.dataset.liveAttached = '0';
+        img.closest('[data-camera-tile]')?.querySelector('[data-stream-canvas]')?.classList.add('hidden');
         if ((img.getAttribute('src') || '').startsWith('data:')) return;
         img.src = quietFrame;
     };
@@ -1384,24 +1513,34 @@ window.__aiClosePlateModal = function () {
             return;
         }
         const srcImg = tile.querySelector('[data-stream-img]');
+        const srcCanvas = tile.querySelector('[data-stream-canvas]');
         const live = streamUrlOf(srcImg) || snapshotUrlOf(srcImg);
-        if (!live) {
+        if (!live && !srcCanvas) {
             console.error('[AI-Monitor] No stream for fullscreen', camId);
             return;
         }
+        if (modal.parentElement !== document.body) document.body.appendChild(modal);
+        modal.style.display = 'flex';
+        modal.style.zIndex = '99999';
         modalBody.replaceChildren();
-        const img = document.createElement('img');
-        img.src = live;
-        img.alt = camId || 'Camera';
-        img.className = 'h-full w-full cursor-grab object-contain';
-        img.draggable = false;
-        zoomState.img = img;
+        const view = document.createElement('img');
+        view.alt = camId || 'Live camera';
+        view.draggable = false;
+        view.className = 'h-full w-full object-contain';
+        modalBody.append(view);
+        if (srcCanvas?._lastBytes) {
+            const url = URL.createObjectURL(new Blob([srcCanvas._lastBytes], { type: 'image/jpeg' }));
+            view.src = url;
+            view._prev = url;
+        }
+        if (srcCanvas) srcCanvas._mirror = view;
+        else if (live) view.src = live;
+        zoomState.img = view;
         zoomState.cameraId = camId || '';
-        zoomState.scale = 1;
+        zoomState.scale = 2;
         zoomState.panX = 0;
         zoomState.panY = 0;
         applyZoom();
-        modalBody.append(img);
         if (modalTitle) modalTitle.textContent = camId || 'Camera';
         modal.classList.remove('hidden');
         modal.classList.add('flex');
@@ -1409,39 +1548,19 @@ window.__aiClosePlateModal = function () {
 
     // Native Fullscreen API from the user gesture — never defer into setTimeout/AJAX.
     document.addEventListener('click', (e) => {
-        const btn = e.target.closest?.('[data-fullscreen-camera]');
-        if (!btn) return;
-        e.preventDefault();
-        e.stopPropagation();
-        const tile = btn.closest('[data-camera-tile], [data-camera-id]');
-        if (!tile) {
-            console.error('[AI-Monitor] Camera container not found');
+        if (modal && modal.style.display === 'flex' && modal.contains(e.target)) {
+            if (e.target.closest('button, a, input')) return;
+            setZoom(Math.min(8, zoomState.scale + 0.5));
             return;
         }
-        const camId = btn.getAttribute('data-fullscreen-camera')
-            || tile.getAttribute('data-camera-tile')
+        const tile = e.target.closest?.('[data-camera-tile]');
+        if (!tile) return;
+        if (e.target.closest('button, a, input') && !e.target.closest('[data-fullscreen-camera]')) return;
+        e.preventDefault();
+        const camId = tile.getAttribute('data-camera-tile')
             || tile.getAttribute('data-camera-id')
             || '';
-        const fsEl = currentFsEl();
-        if (fsEl === tile) {
-            exitFs().catch((err) => console.warn('[AI-Monitor] exitFullscreen', err));
-            return;
-        }
-        if (fsEl && fsEl !== tile) {
-            // Switch cameras: exit then enter in the same gesture chain when possible.
-            Promise.resolve(exitFs()).finally(() => {
-                // After exit, gesture may be gone — use expand modal fallback.
-                openExpandFallback(tile, camId);
-            });
-            return;
-        }
-        requestFs(tile).then(() => {
-            const img = tile.querySelector('[data-stream-img]');
-            if (img) upgradeToLiveMjpeg(img);
-        }).catch((err) => {
-            console.warn('[AI-Monitor] requestFullscreen failed — using expand modal', err);
-            openExpandFallback(tile, camId);
-        });
+        openExpandFallback(tile, camId);
     });
 
     closeBtn?.addEventListener('click', closeModal);
@@ -1452,8 +1571,90 @@ window.__aiClosePlateModal = function () {
     document.addEventListener('keydown', (e) => {
         if (e.key === 'Escape' && modal && !modal.classList.contains('hidden')) closeModal();
     });
+    const bindZoomTarget = (el) => {
+        zoomState.img = el || null;
+        zoomState.scale = 1;
+        zoomState.panX = 0;
+        zoomState.panY = 0;
+        applyZoom();
+    };
+
+    const mountFullscreenZoom = (tile) => {
+        if (!tile || tile.querySelector('[data-zoom-bar]')) return;
+        const bar = document.createElement('div');
+        bar.setAttribute('data-zoom-bar', '1');
+        bar.className = 'absolute bottom-4 left-1/2 z-30 flex -translate-x-1/2 items-center gap-2 rounded-full bg-black/70 px-3 py-2';
+        bar.innerHTML = '<button type="button" data-zoom-out class="rounded-md bg-white/10 px-2 py-1 text-sm font-bold text-white" aria-label="Zoom out">−</button>'
+            + '<span data-zoom-readout class="min-w-[3rem] text-center text-xs font-semibold tabular-nums text-white">1.0×</span>'
+            + '<button type="button" data-zoom-in class="rounded-md bg-white/10 px-2 py-1 text-sm font-bold text-white" aria-label="Zoom in">+</button>'
+            + '<button type="button" data-zoom-reset class="rounded-md bg-white/10 px-2 py-1 text-xs font-semibold text-white">Reset</button>';
+        tile.append(bar);
+    };
+
+    document.addEventListener('click', (e) => {
+        const zoomBtn = e.target.closest?.('[data-zoom-in],[data-zoom-out],[data-zoom-reset]');
+        if (!zoomBtn) return;
+        e.preventDefault();
+        e.stopPropagation();
+        if (zoomBtn.hasAttribute('data-zoom-in')) setZoom(zoomState.scale + 0.25);
+        else if (zoomBtn.hasAttribute('data-zoom-out')) setZoom(zoomState.scale - 0.25);
+        else setZoom(1);
+    });
+
+    document.addEventListener('wheel', (e) => {
+        const fs = currentFsEl();
+        const inModal = modal && !modal.classList.contains('hidden') && modal.contains(e.target);
+        const inFs = fs && fs.contains(e.target);
+        if (!inModal && !inFs) return;
+        if (!zoomState.img) return;
+        e.preventDefault();
+        setZoom(zoomState.scale + (e.deltaY < 0 ? 0.25 : -0.25));
+    }, { passive: false });
+
+    document.addEventListener('pointerdown', (e) => {
+        if (zoomState.scale <= 1 || !zoomState.img) return;
+        if (e.target.closest?.('button, a, input')) return;
+        const host = zoomState.img.closest('[data-camera-tile], #camera-expand-body');
+        if (!host || !host.contains(e.target)) return;
+        zoomState.dragging = true;
+        zoomState.lastX = e.clientX;
+        zoomState.lastY = e.clientY;
+    });
+    document.addEventListener('pointermove', (e) => {
+        if (!zoomState.dragging) return;
+        zoomState.panX += e.clientX - zoomState.lastX;
+        zoomState.panY += e.clientY - zoomState.lastY;
+        zoomState.lastX = e.clientX;
+        zoomState.lastY = e.clientY;
+        applyZoom();
+    });
+    document.addEventListener('pointerup', () => { zoomState.dragging = false; });
+    document.addEventListener('pointercancel', () => { zoomState.dragging = false; });
+
     document.addEventListener('fullscreenchange', () => {
         const active = currentFsEl();
+        document.querySelectorAll('[data-zoom-bar]').forEach((bar) => {
+            if (!active || !active.contains(bar)) bar.remove();
+        });
+        if (active && active.matches?.('[data-camera-tile]')) {
+            bindZoomTarget(active.querySelector('[data-stream-canvas]') || active.querySelector('[data-stream-img]'));
+            mountFullscreenZoom(active);
+        } else if (!modal || modal.classList.contains('hidden')) {
+            document.querySelectorAll('[data-stream-canvas], [data-stream-img]').forEach((el) => {
+                el.style.transform = '';
+            });
+            zoomState.img = null;
+            zoomState.scale = 1;
+            zoomState.panX = 0;
+            zoomState.panY = 0;
+            if (zoomLabel) zoomLabel.textContent = '1.0×';
+        }
+        document.querySelectorAll('[data-stream-canvas]').forEach((canvas) => {
+            const bmp = canvas._lastBitmap;
+            const ctx = canvas.getContext('2d', { alpha: false });
+            if (!bmp || !ctx) return;
+            try { ctx.drawImage(bmp, 0, 0); } catch (_) {}
+        });
         document.querySelectorAll('[data-fullscreen-camera]').forEach((b) => {
             const t = b.closest('[data-camera-tile]');
             b.setAttribute('aria-pressed', active && t === active ? 'true' : 'false');
@@ -1616,7 +1817,8 @@ window.__aiClosePlateModal = function () {
                     const img = tile.querySelector('[data-stream-img]');
                     const fb = tile.querySelector('[data-stream-fallback]');
                     if (online) {
-                        img?.classList.remove('hidden');
+                        const canvas = tile.querySelector('[data-stream-canvas]');
+                        if (!canvas || canvas.classList.contains('hidden')) img?.classList.remove('hidden');
                         fb?.classList.add('hidden');
                     } else {
                         img?.classList.add('hidden');
@@ -1653,12 +1855,8 @@ window.__aiClosePlateModal = function () {
             if (parkedCount) parkedCount.textContent = String(totals.parked);
 
             const isVisibleDet = (det) => {
-                if (!det) return false;
-                if (det.track_id != null && det.track_id !== '') return true;
-                const plate = String(det.plate || '').trim();
-                const status = String(det.plate_status || '').toLowerCase();
-                if (plate) return true;
-                return ['unreadable', 'not_read', 'pending', 'ok'].includes(status);
+                const plate = String(det?.plate || '').replace(/[^A-Za-z0-9]/g, '');
+                return plate.length >= 4;
             };
 
             const allDets = [];

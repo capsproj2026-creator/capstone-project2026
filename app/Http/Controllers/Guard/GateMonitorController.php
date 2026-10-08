@@ -116,8 +116,8 @@ class GateMonitorController extends Controller
     public function scan(Request $request, GateLogService $gateLogs): RedirectResponse
     {
         $validated = $request->validate([
-            'plate_number' => ['required', 'string', 'max:32'],
-            'action' => ['nullable', 'in:Entry,Exit'],
+            'plate_number' => ['required', 'string', 'min:2', 'max:32'],
+            'action' => ['required', 'in:Entry,Exit'],
             'return_action' => ['nullable', 'in:Entry,Exit'],
         ]);
 
@@ -128,24 +128,24 @@ class GateMonitorController extends Controller
         try {
             $result = $gateLogs->recordByPlate(
                 $validated['plate_number'],
-                $validated['action'] ?? null
+                $validated['action']
             );
         } catch (InvalidArgumentException $e) {
-            report($e);
-
             return redirect()
                 ->route('guard.gate', $returnQuery)
-                ->with('error', 'Unable to record gate scan. Please verify the plate number and try again.')
+                ->with('error', $e->getMessage())
                 ->withInput();
         }
 
-        $user = $result['user'];
+        $boom = $result['boom_online']
+            ? 'The boom should open within a few seconds.'
+            : 'Entry gate is offline, so the boom will not move until it reconnects.';
 
         return redirect()
             ->route('guard.gate', $returnQuery)
             ->with(
                 'success',
-                "{$result['action']} recorded for {$user->displayName()} ({$user->plate_number})."
+                "{$result['action']} recorded for {$result['name']} ({$result['plate']}) and saved to Access Logs. {$boom}"
             );
     }
 

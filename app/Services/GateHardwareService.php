@@ -58,7 +58,7 @@ class GateHardwareService
     /**
      * Queue a boom-open command with no Override log (Exit RFID → Entry servo).
      */
-    public function queueOpenCommand(string $gateId, string $reason = 'Shared boom open'): bool
+    public function queueOpenCommand(string $gateId, string $reason = 'Shared boom open', int $holdMs = 15000): bool
     {
         $id = $this->normalizeGateId($gateId);
         if ($id === null) {
@@ -68,6 +68,7 @@ class GateHardwareService
         return gate_hw_store_open($id, [
             'reason' => $reason,
             'queued_at' => now()->toIso8601String(),
+            'hold_ms' => max(1000, min(60000, $holdMs)),
         ]);
     }
 
@@ -115,6 +116,7 @@ class GateHardwareService
             'operator_id' => $operator->id,
             'queued_at' => now()->toIso8601String(),
             'requested_gate_id' => $actuatorId,
+            'hold_ms' => 10000,
         ]);
 
         $log = GateLog::query()->create([

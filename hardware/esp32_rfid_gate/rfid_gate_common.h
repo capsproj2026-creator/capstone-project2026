@@ -10,6 +10,7 @@
 #pragma once
 
 #include <WiFi.h>
+#include <WiFiClientSecure.h>
 #include <HTTPClient.h>
 #include <ArduinoJson.h>
 #include <SPI.h>
@@ -56,8 +57,14 @@
 // while the pin stays silent, so the boom never moves.
 #endif
 
+#ifndef GATE_ENTRY_OPEN_MS
+#define GATE_ENTRY_OPEN_MS 10000UL
+#endif
+#ifndef GATE_EXIT_OPEN_MS
+#define GATE_EXIT_OPEN_MS 15000UL
+#endif
 #ifndef GATE_OPEN_MS
-#define GATE_OPEN_MS   5000UL
+#define GATE_OPEN_MS GATE_ENTRY_OPEN_MS
 #endif
 #ifndef GATE_COOLDOWN_MS
 // Short gap so a *different* card can be tapped quickly after the previous one.
@@ -168,6 +175,7 @@ struct ScanResult {
   bool openSharedBoom;
   String status;
   String code;
+  unsigned long holdMs;
 };
 
 unsigned long lastScanMs = 0;
@@ -178,6 +186,7 @@ unsigned long wifiRetryDelayMs = 1000UL;
 unsigned long heartbeatIntervalMs = HEARTBEAT_MS;
 unsigned long gateCycleEndsMs = 0;
 unsigned long gateCloseAtMs = 0;
+String lastHandledOpenId = "";
 unsigned long lastRfidRecoverMs = 0;
 unsigned long forceConfigHoldStartMs = 0;
 bool gateIsOpen = false;
@@ -192,7 +201,7 @@ ScanResult postScan(const String &uid);
 bool pollHeartbeat();
 void logLanDiagnostic();
 void handleResult(const ScanResult &result, bool forceOpen = false);
-void grantAccess();
+void grantAccess(unsigned long holdOverride = 0);
 void denyAccess(const ScanResult &result);
 void openGateActuator();
 void closeGateActuator();
@@ -211,8 +220,69 @@ bool forceConfigRequested();
 void startWifiConfigPortal(bool force = false);
 void pollForceConfigButton();
 
+bool apiUsesTls() {
+  return runtimeApiPort == 443;
+}
+
+unsigned long steadyHeartbeatMs() {
+  // A full HTTPS handshake is slower than a LAN post. Stay inside the 12s online window.
+  if (apiUsesTls() && HEARTBEAT_MS < 5000UL) {
+    return 5000UL;
+  }
+  return (unsigned long) HEARTBEAT_MS;
+}
+
 String runtimeApiBase() {
-  return String("http://") + runtimeApiHost + ":" + String(runtimeApiPort);
+  const char *scheme = apiUsesTls() ? "https://" : "http://";
+  return String(scheme) + runtimeApiHost + ":" + String(runtimeApiPort);
+}
+
+int apiPost(const char *path, const String &payload, String &response, uint16_t connectMs, uint16_t readMs) {
+  HTTPClient http;
+  http.setReuse(false);
+  bool started = false;
+
+  if (apiUsesTls()) {
+    WiFiClientSecure client;
+    // Identity check needs a correct clock. Campus Wi-Fi often blocks NTP, so
+    // encrypt the token without failing the gate when the clock is still 1970.
+    client.setInsecure();
+    client.setHandshakeTimeout(12);
+    started = http.begin(client, runtimeApiHost.c_str(), runtimeApiPort, path, true);
+    if (!started) {
+      Serial.printf("HTTPS begin failed %s\n", path);
+      return -1;
+    }
+    http.addHeader("Content-Type", "application/json");
+    http.addHeader("Connection", "close");
+    http.addHeader("X-RFID-TOKEN", runtimeApiToken.c_str());
+    http.setConnectTimeout(connectMs);
+    http.setTimeout(readMs);
+    int code = http.POST(payload);
+    if (code > 0) {
+      response = http.getString();
+    }
+    http.end();
+    return code;
+  }
+
+  WiFiClient client;
+  started = http.begin(client, runtimeApiHost.c_str(), runtimeApiPort, path, false);
+  if (!started) {
+    Serial.printf("HTTP begin failed %s\n", path);
+    return -1;
+  }
+  http.addHeader("Content-Type", "application/json");
+  http.addHeader("Connection", "close");
+  http.addHeader("X-RFID-TOKEN", runtimeApiToken.c_str());
+  http.setConnectTimeout(connectMs);
+  http.setTimeout(readMs);
+  int code = http.POST(payload);
+  if (code > 0) {
+    response = http.getString();
+  }
+  http.end();
+  return code;
 }
 
 bool wifiManagerEnabled() {
@@ -237,6 +307,7 @@ void loadNetworkPrefs() {
       gatePrefs.clear();
       gatePrefs.end();
     }
+    heartbeatIntervalMs = steadyHeartbeatMs();
     Serial.printf("API from config: %s\n", runtimeApiBase().c_str());
     return;
   }
@@ -258,6 +329,7 @@ void loadNetworkPrefs() {
   if (token.length() > 0) {
     runtimeApiToken = token;
   }
+  heartbeatIntervalMs = steadyHeartbeatMs();
 }
 
 void saveNetworkPrefs() {
@@ -424,7 +496,14 @@ void logLanDiagnostic() {
   Serial.printf("TCP probe %s:%u = %s\n", runtimeApiHost.c_str(), runtimeApiPort, tcpOk ? "OK" : "FAIL");
   if (tcpOk) {
     probe.stop();
-    Serial.println("TCP to PC is OK. Heartbeat HTTP will retry (keep Laravel/start.ps1 open).");
+    if (apiUsesTls()) {
+      Serial.println("TCP to www.iscvms.com is OK. HTTPS heartbeat will retry.");
+    } else {
+      Serial.println("TCP to PC is OK. Heartbeat HTTP will retry (keep Laravel/start.ps1 open).");
+    }
+  } else if (apiUsesTls()) {
+    Serial.println("Cannot reach www.iscvms.com:443. ESP32 needs internet, not only the campus LAN.");
+    Serial.println("Wrong network? Edit WIFI_SSID / API_HOST in rfid_gate_config.h and re-flash.");
   } else {
     Serial.println("PC unreachable from ESP32. On the PC run allow-laravel-firewall.bat (Admin).");
     Serial.printf("On phone (same Wi-Fi) open: http://%s:%u\n", runtimeApiHost.c_str(), runtimeApiPort);
@@ -700,7 +779,7 @@ void loopGateClient() {
   if (wifiOk && millis() - lastHeartbeatMs >= heartbeatIntervalMs) {
     lastHeartbeatMs = millis();
     if (pollHeartbeat()) {
-      heartbeatIntervalMs = HEARTBEAT_MS;
+      heartbeatIntervalMs = steadyHeartbeatMs();
       if (!apiOnline) {
         apiOnline = true;
         Serial.println("API online — heartbeats OK");
@@ -787,24 +866,7 @@ ScanResult postScan(const String &uid) {
     return fail;
   }
 
-  WiFiClient client;
-  // Do not call client.setTimeout() here — on ESP32 core 3.x it is milliseconds,
-  // and a small value (e.g. 5) causes HTTPC_ERROR_READ_TIMEOUT (-11).
-
-  HTTPClient http;
-  http.setReuse(false);
-  Serial.printf("POST http://%s:%u/api/rfid/scan\n", runtimeApiHost.c_str(), runtimeApiPort);
-
-  if (!http.begin(client, runtimeApiHost.c_str(), runtimeApiPort, "/api/rfid/scan")) {
-    Serial.println("HTTP error: unable to initialize connection");
-    return fail;
-  }
-
-  http.addHeader("Content-Type", "application/json");
-  http.addHeader("Connection", "close");
-  http.addHeader("X-RFID-TOKEN", runtimeApiToken.c_str());
-  http.setConnectTimeout(HTTP_CONNECT_MS);
-  http.setTimeout(HTTP_READ_MS);
+  Serial.printf("POST %s/api/rfid/scan\n", runtimeApiBase().c_str());
 
   StaticJsonDocument<256> body;
   body["uid"] = uid;
@@ -814,16 +876,15 @@ ScanResult postScan(const String &uid) {
   String payload;
   serializeJson(body, payload);
 
-  int code = http.POST(payload);
+  String response;
+  uint16_t connectMs = apiUsesTls() ? 12000 : HTTP_CONNECT_MS;
+  int code = apiPost("/api/rfid/scan", payload, response, connectMs, HTTP_READ_MS);
 
   if (code <= 0) {
     Serial.printf("HTTP failed (%d): %s\n", code, HTTPClient::errorToString(code).c_str());
-    http.end();
     return fail;
   }
 
-  String response = http.getString();
-  http.end();
   Serial.printf("HTTP %d: %s\n", code, response.c_str());
 
   StaticJsonDocument<768> doc;
@@ -837,32 +898,19 @@ ScanResult postScan(const String &uid) {
   result.openSharedBoom = doc["open_shared_boom"] | false;
   result.status = String((const char*)(doc["status"] | "Access Denied"));
   result.code = String((const char*)(doc["code"] | "access_denied"));
+  result.holdMs = doc["hold_ms"] | 0;
   return result;
 }
 
 bool pollHeartbeat() {
-  WiFiClient client;
-  // Avoid client.setTimeout(5) — that is 5ms on many ESP32 cores → error -11.
-
-  HTTPClient http;
-  http.setReuse(false);
-  if (!http.begin(client, runtimeApiHost.c_str(), runtimeApiPort, "/api/rfid/heartbeat")) {
-    Serial.println("Heartbeat: begin failed");
-    return false;
-  }
-
-  http.addHeader("Content-Type", "application/json");
-  http.addHeader("Connection", "close");
-  http.addHeader("X-RFID-TOKEN", runtimeApiToken.c_str());
-  http.setConnectTimeout(HTTP_HB_CONNECT_MS);
-  http.setTimeout(HTTP_HB_READ_MS);
-
   StaticJsonDocument<128> body;
   body["gate_id"] = GATE_ID;
   String payload;
   serializeJson(body, payload);
 
-  int code = http.POST(payload);
+  String response;
+  uint16_t connectMs = apiUsesTls() ? 12000 : HTTP_HB_CONNECT_MS;
+  int code = apiPost("/api/rfid/heartbeat", payload, response, connectMs, HTTP_HB_READ_MS);
   if (code <= 0) {
     apiFailStreak++;
     Serial.printf("Heartbeat: HTTP error %d (%s) — server %s:%d\n",
@@ -870,13 +918,10 @@ bool pollHeartbeat() {
     if (apiFailStreak >= 2) {
       logLanDiagnostic();
     }
-    http.end();
     return false;
   }
 
   apiFailStreak = 0;
-  String response = http.getString();
-  http.end();
 
   if (code != 200) {
     Serial.printf("Heartbeat: status %d body=%s\n", code, response.c_str());
@@ -906,30 +951,58 @@ bool pollHeartbeat() {
     return true;
   }
 
+  unsigned long hold = (unsigned long) GATE_EXIT_OPEN_MS;
+  if (!err) {
+    unsigned long fromServer = doc["hold_ms"] | 0;
+    if (fromServer >= 1000UL && fromServer <= 60000UL) {
+      hold = fromServer;
+    }
+  }
+
+  const char *openId = "";
+  if (!err) {
+    openId = doc["open_id"] | "";
+  }
+  // The site repeats the same exit command on later heartbeats. After the
+  // 15s hold the boom is down, and a repeat would lift it a second time.
+  if (openId[0] != '\0' && lastHandledOpenId == openId) {
+    Serial.println("Repeat exit open ignored");
+    return true;
+  }
+
   Serial.printf("Heartbeat: OPEN command — %s\n", response.c_str());
-  // Drive servo directly (do not depend on ScanResult / RFID debounce).
+  if (gateIsOpen && gateCloseAtMs > millis()) {
+    Serial.println("Servo already UP — keeping the current countdown");
+    if (openId[0] != '\0') {
+      lastHandledOpenId = openId;
+    }
+    return true;
+  }
+  if (openId[0] != '\0') {
+    lastHandledOpenId = openId;
+  }
   digitalWrite(PIN_RED, LOW);
   digitalWrite(PIN_GREEN, HIGH);
   openGateActuator();
   gateIsOpen = true;
-  gateCloseAtMs = millis() + GATE_OPEN_MS;
+  gateCloseAtMs = millis() + hold;
   gateCycleEndsMs = millis() + SCAN_BLOCK_MS;
-  Serial.printf("Servo UP — Entry/Exit/emergency open; auto DOWN in %lu ms\n",
-                (unsigned long) GATE_OPEN_MS);
+  Serial.printf("Servo UP — remote open; auto DOWN in %lu ms\n", hold);
   return true;
 }
 
 void handleResult(const ScanResult &result, bool forceOpen) {
   if (result.granted) {
     // RFID debounce only — emergency/shared-boom heartbeat must always move the servo.
-    if (!forceOpen && (gateIsOpen || millis() < gateCycleEndsMs)) {
+    bool emergency = result.code == "emergency_open";
+    if (!forceOpen && !emergency && (gateIsOpen || millis() < gateCycleEndsMs)) {
       Serial.println("Gate cycle active — ignoring duplicate RFID open");
       digitalWrite(PIN_GREEN, HIGH);
       delay(80);
       digitalWrite(PIN_GREEN, LOW);
       return;
     }
-    grantAccess();
+    grantAccess(result.holdMs);
     if (result.openSharedBoom) {
       Serial.println("Laravel queued OPEN on Entry ESP32 (GATE-IN-1). Servo moves there in ~1-2s.");
     }
@@ -938,18 +1011,22 @@ void handleResult(const ScanResult &result, bool forceOpen) {
   denyAccess(result);
 }
 
-void grantAccess() {
+void grantAccess(unsigned long holdOverride) {
   digitalWrite(PIN_RED, LOW);
   digitalWrite(PIN_GREEN, HIGH);
   openGateActuator();
   gateIsOpen = true;
-  gateCloseAtMs = millis() + GATE_OPEN_MS;
+  unsigned long hold = (unsigned long) GATE_ENTRY_OPEN_MS;
+  if (holdOverride >= 1000UL && holdOverride <= 60000UL) {
+    hold = holdOverride;
+  }
+  gateCloseAtMs = millis() + hold;
   gateCycleEndsMs = millis() + SCAN_BLOCK_MS;
 #if ACTUATOR_MODE == ACTUATOR_NONE
-  Serial.printf("Access Granted (Exit) — Entry boom opens via Laravel; stays UP %lu ms\n",
-                (unsigned long) GATE_OPEN_MS);
+  Serial.printf("Access Granted (Exit) — Entry boom opens via Laravel for %lu ms\n",
+                (unsigned long) GATE_EXIT_OPEN_MS);
 #else
-  Serial.printf("Access Granted (Entry) — servo UP now, auto DOWN in %lu ms\n", (unsigned long) GATE_OPEN_MS);
+  Serial.printf("Access Granted (Entry) — servo UP now, auto DOWN in %lu ms\n", hold);
 #endif
 }
 

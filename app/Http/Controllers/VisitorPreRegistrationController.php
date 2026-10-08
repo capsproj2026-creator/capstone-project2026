@@ -33,7 +33,9 @@ class VisitorPreRegistrationController extends Controller
             abort(422, 'Invalid submission.');
         }
 
-        $validated = $request->validate(VisitorPreRegister::validationRules());
+        $rules = VisitorPreRegister::validationRules();
+        $rules['email'] = ['required', 'email', 'max:120'];
+        $validated = $request->validate($rules);
         $payload = VisitorPreRegister::payloadForService($validated);
 
         $visitor = $visitors->preRegister($payload);

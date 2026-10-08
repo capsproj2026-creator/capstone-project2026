@@ -162,7 +162,12 @@ class RegisterController extends Controller
             'plate_number' => ['required', 'string', 'max:20', 'min:2'],
             'vehicle_model' => ['required', 'string', 'max:80'],
             'vehicle_color' => ['required', 'string', 'max:40'],
-            'department_code' => ['required', 'string', Rule::in(self::REGISTRATION_DEPARTMENT_CODES)],
+            'department_code' => [
+                Rule::requiredIf(fn () => $request->input('user_type') === 'Student'),
+                'nullable',
+                'string',
+                Rule::in(self::REGISTRATION_DEPARTMENT_CODES),
+            ],
             'vehicle_id' => ['required', Rule::in($vehicleIds)],
             'driver_license_number' => ['required', 'string', 'max:30'],
             'driver_license' => ['required', 'image', 'max:5120'],
@@ -204,7 +209,7 @@ class RegisterController extends Controller
 
         $userRoleId = $request->input('user_type') === 'Student' ? 3 : 4;
         $plateNumber = strtoupper(trim($request->input('plate_number')));
-        $departmentCode = $request->input('department_code');
+        $departmentCode = $request->filled('department_code') ? $request->input('department_code') : null;
         $vehicleId = (int) $request->input('vehicle_id');
 
         $fullname = preg_replace('/\s+/u', ' ', trim($validated['full_name'])) ?: trim($validated['full_name']);

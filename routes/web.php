@@ -146,7 +146,13 @@ Route::prefix('admin')->middleware(['auth', 'verified', 'granted', 'no.cache', '
     Route::post('/rfid', [RfidController::class, 'update'])
         ->middleware('permission:manage_users')
         ->name('rfid.update');
-    Route::get('/visitors/active', [VisitorController::class, 'active'])->name('visitors.active');
+    Route::get('/visitors', [VisitorController::class, 'active'])->name('visitors.active');
+    Route::get('/visitors/live', [VisitorController::class, 'live'])->name('visitors.live');
+    Route::get('/visitors/active', function () {
+        $name = request()->is('admin/*') ? 'admin.visitors.active' : 'guard.visitors.active';
+
+        return redirect()->route($name, request()->query());
+    });
     Route::get('/visitors/history', [VisitorController::class, 'history'])->name('visitors.history');
     Route::get('/parking', [ParkingController::class, 'index'])->name('parking');
     Route::get('/parking/status', [LiveCameraController::class, 'status'])->name('parking.status');
@@ -307,7 +313,13 @@ Route::prefix('guard')->middleware(['auth', 'verified', 'granted', 'no.cache', '
     Route::get('/monitor', [UserMonitorController::class, 'index'])->name('monitor');
     Route::get('/visitors/register', [VisitorController::class, 'register'])->name('visitors.register');
     Route::post('/visitors', [VisitorController::class, 'store'])->name('visitors.store');
-    Route::get('/visitors/active', [VisitorController::class, 'active'])->name('visitors.active');
+    Route::get('/visitors', [VisitorController::class, 'active'])->name('visitors.active');
+    Route::get('/visitors/live', [VisitorController::class, 'live'])->name('visitors.live');
+    Route::get('/visitors/active', function () {
+        $name = request()->is('admin/*') ? 'admin.visitors.active' : 'guard.visitors.active';
+
+        return redirect()->route($name, request()->query());
+    });
     Route::get('/visitors/history', [VisitorController::class, 'history'])->name('visitors.history');
     Route::patch('/visitors/{id}', [VisitorController::class, 'update'])->name('visitors.update');
     Route::post('/visitors/{id}/assign-rfid', [VisitorController::class, 'assignRfid'])->name('visitors.assign-rfid');

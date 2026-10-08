@@ -103,7 +103,7 @@ function gate_hw_write(string $gateId, array $state): void
 }
 
 /**
- * @return array{ok: bool, gate_id: string, open: bool, command: string|null, message?: string}
+ * @return array{ok: bool, gate_id: string, open: bool, command: string|null, hold_ms: int|null, open_id: string|null, message?: string}
  */
 function gate_hw_heartbeat(string $gateId): array
 {
@@ -114,6 +114,8 @@ function gate_hw_heartbeat(string $gateId): array
             'gate_id' => strtoupper(trim($gateId)),
             'open' => false,
             'command' => null,
+            'hold_ms' => null,
+            'open_id' => null,
             'message' => 'Unknown gate_id.',
         ];
     }
@@ -122,7 +124,11 @@ function gate_hw_heartbeat(string $gateId): array
     $state['seen_at'] = time();
 
     $open = false;
+    $holdMs = null;
+    $openId = null;
     if (is_array($state['open'])) {
+        $holdMs = (int) ($state['open']['hold_ms'] ?? 15000);
+        $openId = isset($state['open']['open_id']) ? (string) $state['open']['open_id'] : null;
         $remain = (int) ($state['open']['remain'] ?? 1) - 1;
         $open = true;
         if ($remain <= 0) {
@@ -140,6 +146,8 @@ function gate_hw_heartbeat(string $gateId): array
         'gate_id' => $id,
         'open' => $open,
         'command' => $open ? 'open' : null,
+        'hold_ms' => $open ? $holdMs : null,
+        'open_id' => $open ? $openId : null,
     ];
 }
 
@@ -154,6 +162,9 @@ function gate_hw_store_open(string $gateId, array $payload): bool
     }
 
     $state = gate_hw_read($id);
+    if (! isset($payload['open_id']) || $payload['open_id'] === '') {
+        $payload['open_id'] = bin2hex(random_bytes(8));
+    }
     $state['open'] = array_merge($payload, [
         'remain' => GATE_HW_OPEN_DELIVERIES,
         'expires_at' => time() + GATE_HW_COMMAND_TTL_SEC,

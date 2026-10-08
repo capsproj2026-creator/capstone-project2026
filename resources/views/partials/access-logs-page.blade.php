@@ -147,6 +147,9 @@
                             <div class="min-w-0">
                                 <p class="truncate font-semibold text-gray-900">{{ $displayName }}</p>
                                 <p class="text-xs text-gray-400">{{ $displayId }}</p>
+                                @if (str_starts_with($log->displayReason(), 'Manual plate'))
+                                    <p class="text-xs font-medium text-amber-700">Manual plate · RFID unavailable</p>
+                                @endif
                             </div>
                         </td>
                         <td class="px-5 py-4 sm:px-6">
@@ -297,6 +300,10 @@
             window.location.assign(query ? `${clearRoute}?${query}` : clearRoute);
         };
 
+        const manualNote = (reason) => String(reason || '').startsWith('Manual plate')
+            ? '<p class="text-xs font-medium text-amber-700">Manual plate · RFID unavailable</p>'
+            : '';
+
         const renderLogs = (logs) => {
             const tbody = document.querySelector('#access-records-body');
             if (!tbody) return;
@@ -313,6 +320,7 @@
                         <div class="min-w-0">
                             <p class="truncate font-semibold text-gray-900">${esc(log.name)}</p>
                             <p class="text-xs text-gray-400">${esc(log.id_number ?? '—')}</p>
+                            ${manualNote(log.reason)}
                         </div>
                     </td>
                     <td class="px-5 py-4 sm:px-6">${roleBadge(log.role)}</td>
@@ -494,6 +502,7 @@
                                 <div class="min-w-0">
                                     <p class="truncate font-semibold text-gray-900">${esc(scan.name)}</p>
                                     <p class="text-xs text-gray-400">${esc(scan.id_number ?? '—')}</p>
+                                    ${manualNote(scan.reason)}
                                 </div>
                             </td>
                             <td class="px-5 py-4 sm:px-6">${roleBadge(scan.role)}</td>

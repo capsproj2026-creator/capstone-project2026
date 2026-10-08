@@ -58,6 +58,7 @@ class RfidGateApiTest extends TestCase
         }
         GateLog::query()->where('rfid_uid', 'DEADBEEF99')->delete();
         GateLog::query()->where('rfid_uid', 'MANUAL-OVERRIDE')->where('reason', 'Ambulance at gate')->delete();
+        GateLog::query()->where('rfid_uid', 'A1B2C3D4E5')->delete();
 
         parent::tearDown();
     }
@@ -359,11 +360,65 @@ class RfidGateApiTest extends TestCase
             ->assertJsonPath('open_shared_boom', true)
             ->assertJsonPath('shared_boom_gate_id', 'GATE-IN-1');
 
+        $heartbeat = $this->withTokenHeader()
+            ->postJson('/api/rfid/heartbeat', ['gate_id' => 'GATE-IN-1'])
+            ->assertOk()
+            ->assertJsonPath('open', true)
+            ->assertJsonPath('command', 'open')
+            ->assertJsonPath('hold_ms', 15000);
+        $this->assertNotSame('', (string) $heartbeat->json('open_id'));
+    }
+
+    public function test_emergency_card_opens_boom_without_recording_entry(): void
+    {
+        Event::fake();
+        Config::set('broadcasting.default', 'null');
+        Config::set('services.rfid.shared_boom_gate_id', 'GATE-IN-1');
+        Config::set('services.rfid.emergency_uids', 'A1B2C3D4E5');
+        Config::set('services.rfid.emergency_hold_ms', 20000);
+
+        $this->withTokenHeader()
+            ->postJson('/api/rfid/scan', [
+                'uid' => 'a1b2c3d4e5',
+                'gate_id' => 'GATE-IN-1',
+                'direction' => 'Entry',
+            ])
+            ->assertOk()
+            ->assertJsonPath('granted', true)
+            ->assertJsonPath('code', 'emergency_open')
+            ->assertJsonPath('hold_ms', 20000)
+            ->assertJsonPath('open_shared_boom', false);
+
+        $this->withTokenHeader()
+            ->postJson('/api/rfid/scan', [
+                'uid' => 'A1B2C3D4E5',
+                'gate_id' => 'GATE-IN-1',
+                'direction' => 'Entry',
+            ])
+            ->assertOk()
+            ->assertJsonPath('granted', true)
+            ->assertJsonPath('code', 'emergency_open');
+
+        $this->withTokenHeader()
+            ->postJson('/api/rfid/heartbeat', ['gate_id' => 'GATE-IN-1'])
+            ->assertOk()
+            ->assertJsonPath('open', false);
+
+        $this->withTokenHeader()
+            ->postJson('/api/rfid/scan', [
+                'uid' => 'A1B2C3D4E5',
+                'gate_id' => 'GATE-OUT-1',
+                'direction' => 'Exit',
+            ])
+            ->assertOk()
+            ->assertJsonPath('open_shared_boom', true)
+            ->assertJsonPath('hold_ms', 20000);
+
         $this->withTokenHeader()
             ->postJson('/api/rfid/heartbeat', ['gate_id' => 'GATE-IN-1'])
             ->assertOk()
             ->assertJsonPath('open', true)
-            ->assertJsonPath('command', 'open');
+            ->assertJsonPath('hold_ms', 20000);
     }
 
     public function test_emergency_open_is_entry_servo_only(): void

@@ -7,8 +7,10 @@ use App\Models\Visitor;
 use App\Services\VisitorService;
 use App\Support\VisitorPreRegister;
 use App\Support\VisitorPreRegisterQr;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Collection;
 use Illuminate\View\View;
 
 class VisitorController extends Controller
@@ -57,22 +59,85 @@ class VisitorController extends Controller
 
     public function active(Request $request, VisitorService $visitors): View
     {
+        $visitors->expireOverdue();
         $status = $request->query('status');
         $search = $request->query('search');
+        $view = (string) $request->query('view', 'all');
+        if (! in_array($view, ['all', 'qr', 'campus', 'overdue'], true)) {
+            $view = 'all';
+        }
         $routePrefix = $this->routePrefix($request);
         $canManage = $routePrefix === 'guard';
 
+        $list = $this->visibleVisitors($visitors, $search, is_string($status) ? $status : null, $view);
+
         return view('visitors.active', [
-            'visitors' => $visitors->activeVisitors($search, is_string($status) ? $status : null),
+            'visitors' => $list,
             'statusFilter' => is_string($status) ? $status : 'All',
             'search' => is_string($search) ? $search : '',
+            'viewFilter' => $view,
             'routePrefix' => $routePrefix,
             'canManage' => $canManage,
-            'pageTitle' => $canManage ? 'Active Visitors' : 'Registered Visitors',
-            'pageSubtitle' => $canManage
-                ? 'Visitors currently registered, on campus, or overdue'
-                : 'View registered visitors currently on campus or awaiting exit',
+            'pageTitle' => 'Visitors',
+            'pageSubtitle' => 'QR signups waiting at the gate, visitors on campus, and overdue visits',
         ]);
+    }
+
+    public function live(Request $request, VisitorService $visitors): JsonResponse
+    {
+        $visitors->expireOverdue();
+        $status = $request->query('status');
+        $search = $request->query('search');
+        $view = (string) $request->query('view', 'all');
+        if (! in_array($view, ['all', 'qr', 'campus', 'overdue'], true)) {
+            $view = 'all';
+        }
+
+        $list = $this->visibleVisitors($visitors, $search, is_string($status) ? $status : null, $view);
+        $signature = $list->map(function (Visitor $visitor): string {
+            return implode('|', [
+                $visitor->id,
+                $visitor->status,
+                $visitor->rfid_uid,
+                $visitor->confirmation_code,
+                $visitor->displayName(),
+                $visitor->updated_at?->getTimestamp(),
+            ]);
+        })->implode(';');
+
+        return response()->json([
+            'signature' => sha1($signature),
+            'count' => $list->count(),
+        ]);
+    }
+
+    /**
+     * @return Collection<int, Visitor>
+     */
+    private function visibleVisitors(VisitorService $visitors, mixed $search, ?string $status, string $view): Collection
+    {
+        return $visitors->activeVisitors(is_string($search) ? $search : null, $status)
+            ->filter(function (Visitor $visitor) use ($view): bool {
+                return match ($view) {
+                    'qr' => $visitor->isSelfPreRegistered(),
+                    'campus' => in_array((string) $visitor->status, [Visitor::STATUS_INSIDE, Visitor::STATUS_OUTSIDE], true),
+                    'overdue' => (string) $visitor->status === Visitor::STATUS_EXPIRED,
+                    default => true,
+                };
+            })
+            ->sortBy(function (Visitor $visitor): string {
+                $statusRank = match ((string) $visitor->status) {
+                    Visitor::STATUS_WAITING => 0,
+                    Visitor::STATUS_INSIDE => 1,
+                    Visitor::STATUS_OUTSIDE => 2,
+                    Visitor::STATUS_EXPIRED => 3,
+                    default => 4,
+                };
+                $sourceRank = $visitor->isSelfPreRegistered() ? 0 : 1;
+
+                return sprintf('%d-%d-%010d', $statusRank, $sourceRank, 9999999999 - (int) $visitor->id);
+            })
+            ->values();
     }
 
     public function history(Request $request): View

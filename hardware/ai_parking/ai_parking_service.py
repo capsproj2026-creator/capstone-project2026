@@ -111,10 +111,11 @@ OPEN_LOCK = threading.Lock()
 USE_HALF = os.getenv("AI_PARKING_HALF", "1") == "1"
 
 MOTORCYCLE_CLS_ID = 3
-# Per-class detect toggles (all on by default — cars + motorcycles + buses + trucks)
+# Cars only. Trucks stay in the detector because the prototype cars are often
+# classified as trucks; they are labeled as cars below. No people, bikes, or buses.
 _detect_cars = os.getenv("AI_PARKING_DETECT_CARS", "1") == "1"
-_detect_motorcycles = os.getenv("AI_PARKING_DETECT_MOTORCYCLES", "1") == "1"
-_detect_buses = os.getenv("AI_PARKING_DETECT_BUSES", "1") == "1"
+_detect_motorcycles = os.getenv("AI_PARKING_DETECT_MOTORCYCLES", "0") == "1"
+_detect_buses = os.getenv("AI_PARKING_DETECT_BUSES", "0") == "1"
 _detect_trucks = os.getenv("AI_PARKING_DETECT_TRUCKS", "1") == "1"
 DETECT_CLASS_IDS = []
 if _detect_cars:
@@ -205,10 +206,11 @@ def _overlay_type_key(yolo_name: str, vehicle_details: str | None = None) -> str
 class LatestFrameReader:
     """Background RTSP reader with automatic reconnect (failure isolated per camera)."""
 
-    def __init__(self, open_fn, label: str = "camera", flush_frames: int = 1):
+    def __init__(self, open_fn, label: str = "camera", flush_frames: int = 1, max_width: int = 0):
         self.open_fn = open_fn
         self.label = label
         self.flush_frames = max(1, int(flush_frames))
+        self.max_width = max(0, int(max_width or 0))
         self.cap = None
         self.frame = None
         self.seq = 0
@@ -287,6 +289,8 @@ class LatestFrameReader:
 
             fail_since = None
             self.online = True
+            if self.max_width and frame.shape[1] > self.max_width:
+                frame, _ = resize_for_infer(frame, self.max_width)
             with self.lock:
                 self.frame = frame
                 self.seq += 1
@@ -369,6 +373,19 @@ CAMERA_WORKERS: dict[str, "CameraWorker"] = {}
 STREAM_PATH_INDEX: dict[str, tuple[str, bool]] = {}
 
 
+def _tcp_open(ip: str, port: int, timeout: float = 2.0) -> bool:
+    """True when the camera accepts TCP. Avoids a 30s FFmpeg open on a dead camera."""
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    sock.settimeout(timeout)
+    try:
+        sock.connect((str(ip), int(port)))
+        return True
+    except OSError:
+        return False
+    finally:
+        sock.close()
+
+
 def open_rtsp(
     ip,
     user,
@@ -386,6 +403,11 @@ def open_rtsp(
             f"[{label}] ERROR: RTSP username/password missing in .env. "
             "Tapo requires Camera Account (Tapo app → Settings → Advanced → Camera Account)."
         )
+        return None
+
+    # A dead camera's 30s FFmpeg open shares this process and drops the live one.
+    if not _tcp_open(ip, port):
+        print(f"[{label}] {ip}:{port} not answering — skip RTSP open")
         return None
 
     u = quote(user, safe="")
@@ -1029,26 +1051,16 @@ def parse_tracks(
         if registered is not None:
             det["registered"] = registered
         _attach_motion(det, motion_state)
+        det["class"] = "car"
+        det["vehicle_details"] = "Car"
 
-        detections.append(det)
-        # Overlay-only: avoid "Reading plate…" until OCR has actually started.
-        overlay_status = plate_status
-        if track_id is not None and plate_status == "pending":
-            mem_ov = intelligence.tracks.get(int(track_id))
-            if mem_ov is not None and getattr(mem_ov, "ocr_attempts", 0) <= 0:
-                skip = mem_ov.ocr_skip_reason() if hasattr(mem_ov, "ocr_skip_reason") else None
-                if skip == "OUTSIDE_CALIBRATED_ZONE":
-                    overlay_status = "outside_bay"
-                elif skip == "NOT_PARKED_YET":
-                    overlay_status = "detecting"
-                else:
-                    overlay_status = "detecting"
-        overlay_attempts = 0
-        if track_id is not None:
-            mem_attempts = intelligence.tracks.get(int(track_id))
-            if mem_attempts is not None:
-                overlay_attempts = int(getattr(mem_attempts, "ocr_attempts", 0) or 0)
-        annotated_boxes.append((x1, y1, x2, y2, name, conf, track_id, plate, overlay_status, owner_label, motion_state, vehicle_details, overlay_attempts))
+        plate_text = re.sub(r"[^A-Z0-9]", "", str(plate or "").upper())
+        if len(plate_text) >= 4 and plate_status == "ok":
+            det["plate"] = plate_text
+            detections.append(det)
+            annotated_boxes.append((x1, y1, x2, y2, "car", conf, track_id, plate_text, "ok", None, motion_state, "Car", 0))
+        else:
+            annotated_boxes.append((x1, y1, x2, y2, "car", conf, track_id, None, "seen", None, motion_state, "Car", 0))
         vehicles.append({
             "xyxy": (x1, y1, x2, y2),
             "track_id": track_id,
@@ -1142,18 +1154,15 @@ def _draw_box_labels(annotated, x1, y1, x2, y2, name, conf, track_id, plate, pla
     elif plate_status == "not_read":
         lines.append("PLATE NOT READ")
     elif plate:
-        # Detection box shows the plate number only. Owner/role is intentionally
-        # NOT drawn here — it belongs in the Latest Detections panel only.
         lines.append(str(plate))
     elif plate_status == "outside_bay":
         lines.append("Outside bay")
-    elif plate_status == "detecting":
-        lines.append("Detecting…")
-    elif int(ocr_attempts or 0) > 0:
-        cap = max(int(OCR_MAX_ATTEMPTS or 0), int(ocr_attempts))
-        lines.append(f"Scanning... {int(ocr_attempts)}/{cap}")
-    elif track_id is not None:
-        lines.append("Scanning...")
+    elif plate_status not in ("seen", "not_read", "detecting"):
+        if int(ocr_attempts or 0) > 0:
+            cap = max(int(OCR_MAX_ATTEMPTS or 0), int(ocr_attempts))
+            lines.append(f"Scanning... {int(ocr_attempts)}/{cap}")
+        elif track_id is not None:
+            lines.append("Scanning...")
     _draw_label_block(annotated, x1, y1, lines[:4], color, lite=lite)
 
 
@@ -1779,12 +1788,12 @@ class MjpegHandler(BaseHTTPRequestHandler):
         self._tune_low_latency_socket()
 
         last_sent = None
-        # Steady ~8 fps of the newest frame. Faster than this fills the campus
-        # tunnel and the picture freezes, then jumps more than a few seconds.
-        min_gap = 0.12
+        # A steady 12 fps. Each frame is flushed on its own so the browser
+        # paints motion instead of flashing one picture at a time.
+        min_gap = 0.08
         next_send = 0.0
         try:
-            self.connection.settimeout(0.8)
+            self.connection.settimeout(3.0)
         except OSError:
             pass
         try:
@@ -1792,12 +1801,12 @@ class MjpegHandler(BaseHTTPRequestHandler):
                 jpeg = state.get_jpeg(ai=ai_overlay)
                 now = time.perf_counter()
                 if jpeg is None or jpeg is last_sent or now < next_send:
-                    time.sleep(0.01)
+                    time.sleep(0.005)
                     continue
                 if os.name != "nt":
                     writable, _, _ = select.select([], [self.connection], [], 0)
                     if not writable:
-                        time.sleep(0.01)
+                        time.sleep(0.005)
                         continue
                 last_sent = jpeg
                 next_send = now + min_gap
@@ -1806,13 +1815,7 @@ class MjpegHandler(BaseHTTPRequestHandler):
                 self.wfile.write(f"Content-Length: {len(jpeg)}\r\n\r\n".encode("ascii"))
                 self.wfile.write(jpeg)
                 self.wfile.write(b"\r\n")
-                try:
-                    self.wfile.flush()
-                except (TimeoutError, socket.timeout):
-                    # This frame did not leave in time. The next loop sends a newer one.
-                    continue
-                except Exception:
-                    return
+                self.wfile.flush()
         except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError, TimeoutError, OSError):
             return
 
@@ -1825,7 +1828,7 @@ class MjpegHandler(BaseHTTPRequestHandler):
         try:
             # One JPEG at a time. A large send buffer lets the browser play old frames.
             # A few frames in flight stays smooth. A tiny buffer stalls every frame.
-            conn.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, 256 * 1024)
+            conn.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, 128 * 1024)
         except OSError:
             pass
 
@@ -1960,7 +1963,9 @@ class CameraWorker:
         self.ai_stream_max_width = cam_ai_cap if cam_ai_cap > 0 else AI_STREAM_MAX_WIDTH
         self.stream_fps = float(config.stream_fps or STREAM_TARGET_FPS)
         self.jpeg_quality = int(config.jpeg_quality or STREAM_JPEG_QUALITY)
-        self.ai_jpeg_quality = max(int(AI_STREAM_JPEG_QUALITY or 0), self.jpeg_quality)
+        # Keep the website frames small enough to cross the SSH tunnel at video speed.
+        # Upscaling and quality 78 made each picture so large the page looked frozen.
+        self.ai_jpeg_quality = min(18, int(config.jpeg_quality or AI_STREAM_JPEG_QUALITY))
         self.lite_preview = bool(config.lite_preview)
 
     def start(self):
@@ -2032,6 +2037,7 @@ class CameraWorker:
                 lambda: open_path(infer_path, "infer"),
                 label=f"{self.config.camera_id}-infer",
                 flush_frames=max(1, flush // 2),
+                max_width=self.infer_max_width,
             )
             self._shared_reader = False
         else:
@@ -2157,22 +2163,30 @@ class CameraWorker:
             time.sleep(max(0.0, interval - elapsed))
 
     def _ai_display_loop(self):
-        """Paint the monitor MJPEG from the low-delay preview stream.
+        """Paint the website video from the full main stream when it is live.
 
-        The main RTSP stream stays on the YOLO thread. Boxes are scaled onto
-        the preview frame, so the picture is not stuck behind the main-stream
-        buffer. Detection interval, model size, and OCR are unchanged.
+        That picture is much sharper than the small substream. YOLO still owns
+        the main-stream reader and is not waited on here.
         """
-        interval = 1.0 / min(10.0, max(8.0, float(self.stream_fps or 10)))
+        # Twelve frames a second is video. Slower than this looks like photos.
+        interval = 1.0 / 12.0
         last_seq = -1
+        last_reader = None
         while self.running.is_set():
             started = time.perf_counter()
-            # Substream (preview) is the live picture. Fall back to the infer
-            # reader only when this camera has a single RTSP path.
             reader = self.preview_reader or self.infer_reader
+            if (
+                self.infer_reader is not None
+                and self.infer_reader is not self.preview_reader
+                and getattr(self.infer_reader, "online", False)
+            ):
+                reader = self.infer_reader
             if reader is None:
                 time.sleep(interval)
                 continue
+            if reader is not last_reader:
+                last_reader = reader
+                last_seq = -1
             ret, frame, last_seq = reader.read_if_newer(last_seq)
             if not ret or frame is None:
                 time.sleep(0.01)
@@ -2183,9 +2197,8 @@ class CameraWorker:
 
     def _encode_ai_overlay(self, frame, state: dict, zones_data, ai_encode_params) -> bytes | None:
         """Draw YOLO boxes onto the same frame they were detected on."""
-        ai_cap = max(640, int(self.ai_stream_max_width or AI_STREAM_MAX_WIDTH))
-        infer_w = int(self.infer_max_width) if int(self.infer_max_width or 0) > 0 else self.preview_max_width
-        ai_width = min(max(self.preview_max_width, min(infer_w, ai_cap)), ai_cap)
+        # Wide enough to read a plate, small enough that every frame arrives.
+        ai_width = min(int(frame.shape[1]), 720)
         display_ai, _ = resize_for_infer(frame, ai_width)
         if display_ai is frame:
             display_ai = frame.copy()

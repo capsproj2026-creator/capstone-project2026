@@ -281,7 +281,10 @@
                             @enderror
                         </div>
                         <div>
-                            <label for="department_code" class="mb-1.5 block text-sm font-medium text-gray-700">Department <span class="text-red-500">*</span></label>
+                            <label for="department_code" id="department_label" class="mb-1.5 block text-sm font-medium text-gray-700">
+                                <span id="department_label_text">Department</span>
+                                <span id="department_required_mark" class="text-red-500">*</span>
+                            </label>
                             <select
                                 name="department_code"
                                 id="department_code"
@@ -404,6 +407,22 @@
 @push('scripts')
     <script>
         document.addEventListener('DOMContentLoaded', function () {
+            const userType = document.getElementById('user_type');
+            const department = document.getElementById('department_code');
+            const departmentLabel = document.getElementById('department_label_text');
+            const departmentMark = document.getElementById('department_required_mark');
+            const syncDepartmentRequirement = () => {
+                if (!userType || !department) return;
+                const staff = userType.value === 'Staff';
+                department.required = !staff;
+                if (departmentLabel) {
+                    departmentLabel.textContent = staff ? 'Department (If Applicable)' : 'Department';
+                }
+                if (departmentMark) departmentMark.classList.toggle('hidden', staff);
+            };
+            userType?.addEventListener('change', syncDepartmentRequirement);
+            syncDepartmentRequirement();
+
             const privacyModal = document.getElementById('privacy-notice-modal');
             const privacyAccept = document.getElementById('privacy-notice-accept');
             const privacyKey = 'scvms_register_privacy_accepted';

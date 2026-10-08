@@ -48,8 +48,17 @@ class GateScanPresenter
             })
             : ($log->result ?: 'Access Denied');
 
+        $isEmergencyCard = false;
         if (strcasecmp($action, 'Override') === 0) {
-            $name = $user?->displayName() ?? 'Guard override';
+            $isEmergencyCard = strcasecmp($uid, 'MANUAL-OVERRIDE') !== 0 && ! $user;
+            $name = $user?->displayName() ?? ($isEmergencyCard ? 'Emergency card' : 'Guard override');
+            $initials = strtoupper(
+                collect(explode(' ', $name))
+                    ->filter()
+                    ->map(fn ($w) => mb_substr($w, 0, 1))
+                    ->take(2)
+                    ->join('') ?: 'E'
+            );
             $isUnauthorized = false;
         }
 
@@ -71,7 +80,9 @@ class GateScanPresenter
             'profile_picture_url' => $user ? $user->profilePictureUrl() : '',
             'role' => $isUnauthorized
                 ? 'Unknown Tag'
-                : ($isVisitor ? 'Visitor' : ($user?->gateRoleLabel() ?? 'Unknown')),
+                : ($isEmergencyCard
+                    ? 'Emergency'
+                    : ($isVisitor ? 'Visitor' : ($user?->gateRoleLabel() ?? 'Unknown'))),
             'is_visitor' => $isVisitor,
             'is_temporary' => $isTemporary,
             'is_remedial' => $isRemedial,

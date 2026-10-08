@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Mail\VisitorPreRegisterMail;
 use App\Models\GateLog;
 use App\Models\Notification;
 use App\Models\ParkingSlot;
@@ -10,6 +11,8 @@ use App\Models\Visitor;
 use App\Models\VisitorRfidCard;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Mail;
 use Illuminate\Validation\ValidationException;
 
 class VisitorService
@@ -83,20 +86,42 @@ class VisitorService
                 'confirmation_code' => $existing->confirmation_code ?: $this->generateConfirmationCode(),
             ]);
 
-            return $existing->fresh(['vehicleType', 'rfidCard']) ?? $existing;
+            $visitor = $existing->fresh(['vehicleType', 'rfidCard']) ?? $existing;
+        } else {
+            $visitor = Visitor::query()->create(array_merge(
+                $fields,
+                [
+                    'status' => Visitor::STATUS_WAITING,
+                    'registered_by' => null,
+                    'registration_source' => Visitor::SOURCE_SELF,
+                    'confirmation_code' => $this->generateConfirmationCode(),
+                    'form_completed_at' => now(),
+                    'notes' => null,
+                ]
+            ));
         }
 
-        return Visitor::query()->create(array_merge(
-            $fields,
-            [
-                'status' => Visitor::STATUS_WAITING,
-                'registered_by' => null,
-                'registration_source' => Visitor::SOURCE_SELF,
-                'confirmation_code' => $this->generateConfirmationCode(),
-                'form_completed_at' => now(),
-                'notes' => null,
-            ]
-        ));
+        $this->sendPreRegisterConfirmation($visitor);
+
+        return $visitor;
+    }
+
+    private function sendPreRegisterConfirmation(Visitor $visitor): void
+    {
+        $email = trim((string) $visitor->email);
+        if ($email === '' || filter_var($email, FILTER_VALIDATE_EMAIL) === false) {
+            return;
+        }
+
+        try {
+            $visitor->loadMissing('vehicleType');
+            Mail::to($email)->send(new VisitorPreRegisterMail($visitor));
+        } catch (\Throwable $e) {
+            Log::warning('Visitor pre-register confirmation email failed.', [
+                'visitor_id' => $visitor->id,
+                'error' => $e->getMessage(),
+            ]);
+        }
     }
 
     public function postEntryHours(): int
@@ -321,6 +346,7 @@ class VisitorService
         $visitor->update([
             'status' => Visitor::STATUS_INSIDE,
             'time_in' => $visitor->time_in ?? now(),
+            'time_out' => null,
         ]);
 
         if ($visitor->rfidCard) {
@@ -330,6 +356,37 @@ class VisitorService
         $this->notifyStaff(
             'Visitor checked in',
             "{$visitor->displayName()} ({$visitor->plate_number}) entered campus. Purpose: {$visitor->purpose}.",
+            $visitor
+        );
+    }
+
+    /**
+     * Gate exit while the expected exit time is still ahead.
+     * The visit stays on the active list as Outside until a guard marks it exited,
+     * or until the expected time passes.
+     */
+    public function recordCampusExit(Visitor $visitor): void
+    {
+        if ($visitor->status === Visitor::STATUS_COMPLETED) {
+            return;
+        }
+
+        $this->releaseVisitorParking($visitor);
+
+        if ($visitor->isExpiredByTime()) {
+            $this->expireVisitor($visitor, notify: true);
+
+            return;
+        }
+
+        $visitor->update([
+            'status' => Visitor::STATUS_OUTSIDE,
+            'time_out' => now(),
+        ]);
+
+        $this->notifyStaff(
+            'Visitor left campus',
+            "{$visitor->displayName()} ({$visitor->plate_number}) is outside campus and still on the active list until expected exit or a guard marks the visit exited.",
             $visitor
         );
     }
