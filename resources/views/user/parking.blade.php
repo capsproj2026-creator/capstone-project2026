@@ -68,9 +68,11 @@
                             </h3>
                             <p class="text-xs text-gray-500">{{ $zone['area']->designation_notes ?: 'Campus parking zone' }}</p>
                         </div>
-                        <div class="ml-auto flex items-center gap-3 text-xs font-medium">
+                        <div class="ml-auto flex flex-wrap items-center justify-end gap-x-3 gap-y-1 text-xs font-medium">
                             <span class="text-green-700"><span class="zone-available">{{ $zone['available'] }}</span> free</span>
                             <span class="text-red-700"><span class="zone-occupied">{{ $zone['occupied'] }}</span> used</span>
+                            <span class="text-blue-700"><span class="zone-reserved">{{ $zone['reserved'] }}</span> reserved</span>
+                            <span class="text-slate-600"><span class="zone-maintenance">{{ $zone['maintenance'] }}</span> maintenance</span>
                             <span class="text-gray-500"><span class="zone-total">{{ $zone['total'] }}</span> total</span>
                             <i data-lucide="chevron-down" class="h-4 w-4 text-gray-500 transition-transform duration-200 group-open:rotate-180"></i>
                         </div>
@@ -152,6 +154,8 @@
                 card.querySelector('.zone-total')?.replaceChildren(document.createTextNode(zone.total ?? 0));
                 card.querySelector('.zone-available')?.replaceChildren(document.createTextNode(zone.available ?? 0));
                 card.querySelector('.zone-occupied')?.replaceChildren(document.createTextNode(zone.occupied ?? 0));
+                card.querySelector('.zone-reserved')?.replaceChildren(document.createTextNode(zone.reserved ?? 0));
+                card.querySelector('.zone-maintenance')?.replaceChildren(document.createTextNode(zone.maintenance ?? 0));
                 (zone.slots || []).forEach((slot) => {
                     const tile = card.querySelector(`[data-slot-id="${slot.id}"]`);
                     if (!tile) return;
