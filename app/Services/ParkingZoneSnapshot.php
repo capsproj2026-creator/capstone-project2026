@@ -111,7 +111,58 @@ class ParkingZoneSnapshot
             'filename' => $file,
             'label' => (string) ($lot['name'] ?? 'Parking zone'),
             'calibrated' => $this->isCalibrated($lot),
+            'markers' => self::photoMarkers($areaId),
         ];
+    }
+
+    /**
+     * Slot numbers painted on the public snapshot. Percentages are of the
+     * 767×1024 photo. 1 is the stall nearest the camera.
+     *
+     * @return list<array{label: string, title: string, x: float, y: float}>
+     */
+    public static function photoMarkers(int $areaId): array
+    {
+        $spots = match ($areaId) {
+            3 => [ // Duran Hall Front — DU-1 nearest the camera, crosswalk between 6 and 7.
+                ['DU-1', 52.0, 90.0],
+                ['DU-2', 48.0, 83.0],
+                ['DU-3', 44.0, 76.0],
+                ['DU-4', 41.0, 70.0],
+                ['DU-5', 38.0, 64.0],
+                ['DU-6', 40.0, 58.0],
+                ['DU-7', 42.0, 48.0],
+                ['DU-8', 50.0, 46.0],
+                ['DU-9', 53.0, 43.0],
+                ['DU-10', 55.0, 40.0],
+            ],
+            4 => [ // ACAD 1 Building (Front) — AC-1 nearest the entrance sign.
+                ['AC-1', 38.0, 86.0],
+                ['AC-2', 42.0, 80.0],
+                ['AC-3', 45.0, 74.0],
+                ['AC-4', 48.0, 68.0],
+                ['AC-5', 50.0, 62.0],
+                ['AC-6', 53.0, 57.0],
+                ['AC-7', 58.0, 52.0],
+                ['AC-8', 62.0, 48.0],
+                ['AC-9', 64.0, 45.0],
+                ['AC-10', 67.0, 42.0],
+            ],
+            default => [],
+        };
+
+        $markers = [];
+        foreach ($spots as [$title, $x, $y]) {
+            $number = preg_replace('/^.*-/', '', $title) ?: $title;
+            $markers[] = [
+                'label' => $number,
+                'title' => $title,
+                'x' => $x,
+                'y' => $y,
+            ];
+        }
+
+        return $markers;
     }
 
     /**

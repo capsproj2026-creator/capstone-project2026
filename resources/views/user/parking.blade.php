@@ -88,14 +88,22 @@
                             </summary>
                             <div class="px-4 pb-4">
                                 <figure class="parking-zone-snapshot parking-zone-snapshot--compact">
-                                    <img
-                                        src="{{ asset($lotSnapshot['path']) }}"
-                                        alt="{{ $lotSnapshot['label'] }} parking area"
-                                        width="767"
-                                        height="1024"
-                                        loading="lazy"
-                                        decoding="async"
-                                    >
+                                    <div style="position:relative;width:max-content;max-width:100%;margin-inline:auto;">
+                                        <img
+                                            src="{{ asset($lotSnapshot['path']) }}"
+                                            alt="{{ $lotSnapshot['label'] }} parking area"
+                                            width="767"
+                                            height="1024"
+                                            loading="lazy"
+                                            decoding="async"
+                                        >
+                                        @foreach ($lotSnapshot['markers'] ?? [] as $marker)
+                                            <span
+                                                title="{{ $marker['title'] }}"
+                                                style="position:absolute;left:{{ $marker['x'] }}%;top:{{ $marker['y'] }}%;transform:translate(-50%,-50%);display:flex;align-items:center;justify-content:center;min-width:1.35rem;height:1.35rem;padding:0 0.2rem;border-radius:999px;border:2px solid #fff;background:#0f172a;color:#fff;font-size:0.7rem;font-weight:700;line-height:1;box-shadow:0 1px 3px rgba(0,0,0,.45);pointer-events:none;"
+                                            >{{ $marker['label'] }}</span>
+                                        @endforeach
+                                    </div>
                                     <figcaption>
                                         <span class="parking-zone-snapshot__title">{{ $lotSnapshot['label'] }}</span>
                                     </figcaption>

@@ -47,6 +47,20 @@ class ParkingZoneSnapshotTest extends TestCase
         $this->assertSame(4, $this->lotProfile('acad1')['area_id']);
     }
 
+    public function test_snapshot_photos_are_numbered_from_the_nearest_stall(): void
+    {
+        $duran = ParkingZoneSnapshot::photoMarkers(3);
+        $acad = ParkingZoneSnapshot::photoMarkers(4);
+
+        $this->assertCount(10, $duran);
+        $this->assertCount(10, $acad);
+        $this->assertSame('DU-1', $duran[0]['title']);
+        $this->assertSame('1', $duran[0]['label']);
+        $this->assertSame('AC-1', $acad[0]['title']);
+        $this->assertSame('10', $acad[9]['label']);
+        $this->assertSame([], ParkingZoneSnapshot::photoMarkers(99));
+    }
+
     public function test_unknown_area_has_no_snapshot(): void
     {
         $this->assertNull($this->service()->forAreaId(99));
