@@ -1,10 +1,41 @@
 <!DOCTYPE html>
 <html lang="{{ str_replace('_', '-', app()->getLocale()) }}">
 <head>
+    <script>
+        (function () {
+            try {
+                var theme = localStorage.getItem('portal-theme');
+                if (theme === 'dark' || (!theme && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+                    document.documentElement.classList.add('dark');
+                }
+            } catch (e) { /* ignore */ }
+        })();
+    </script>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="csrf-token" content="{{ csrf_token() }}">
     <title>@yield('title', 'Smart Campus VMS')</title>
+    <style>
+        html.dark .guest-card {
+            background-color: #171d28 !important;
+            border-color: rgba(255, 255, 255, 0.08) !important;
+            color: #e7edf5;
+        }
+        html.dark .guest-card .bg-white\/95,
+        html.dark .guest-card .bg-white,
+        html.dark .guest-card .bg-gray-50,
+        html.dark .guest-card .bg-amber-50 {
+            background-color: #121820 !important;
+        }
+        .delivery-checkin {
+            background-color: #1A365D;
+            color: #ffffff;
+        }
+        .delivery-checkin:hover {
+            background-color: #122844;
+            color: #ffffff;
+        }
+    </style>
     @include('partials.favicon')
     <script src="{{ asset('vendor/lucide.min.js') }}"></script>
     @vite(['resources/css/app.css', 'resources/js/app.js'])
@@ -26,6 +57,18 @@
     @else
         <div class="pointer-events-none fixed inset-0 opacity-40" style="background-image: radial-gradient(circle at 12% 18%, rgba(37,99,235,.18), transparent 28%), radial-gradient(circle at 88% 10%, rgba(29,78,216,.12), transparent 24%), radial-gradient(circle at 70% 85%, rgba(59,130,246,.10), transparent 30%);"></div>
     @endif
+
+    <button
+        type="button"
+        id="portal-theme-toggle"
+        class="portal-theme-toggle fixed right-4 top-4 inline-flex h-10 w-10 items-center justify-center rounded-xl shadow-sm"
+        style="z-index: 200;"
+        aria-label="Toggle dark mode"
+        title="Toggle light / dark theme"
+    >
+        <i data-lucide="moon" id="portal-theme-icon-dark" class="h-[18px] w-[18px]"></i>
+        <i data-lucide="sun" id="portal-theme-icon-light" class="hidden h-[18px] w-[18px]"></i>
+    </button>
 
     <div class="relative flex min-h-screen flex-col items-center justify-center px-4 py-10">
         <a href="{{ route('home') }}" @class([

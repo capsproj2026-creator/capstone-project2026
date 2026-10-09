@@ -16,7 +16,7 @@
         aria-modal="true"
         aria-labelledby="privacy-notice-title"
         aria-describedby="privacy-notice-body">
-        <div class="max-h-[90vh] w-full max-w-lg overflow-hidden rounded-2xl bg-white shadow-2xl ring-1 ring-slate-200">
+        <div class="guest-card max-h-[90vh] w-full max-w-lg overflow-hidden rounded-2xl bg-white shadow-2xl ring-1 ring-slate-200">
             <div class="border-b border-slate-100 bg-gradient-to-br from-[#1A365D] via-[#122844] to-slate-900 px-5 py-4 text-white sm:px-6">
                 <p class="text-[11px] font-semibold tracking-[0.14em] text-blue-200 uppercase">Camarines Sur Polytechnic Colleges</p>
                 <h2 id="privacy-notice-title" class="mt-1 text-lg font-bold tracking-tight sm:text-xl">Privacy Notice</h2>
@@ -49,7 +49,7 @@
         </div>
     </div>
 
-    <div class="overflow-hidden rounded-2xl border border-white/30 bg-white/95 shadow-2xl backdrop-blur-sm">
+    <div class="guest-card overflow-hidden rounded-2xl border border-white/30 bg-white/95 shadow-2xl backdrop-blur-sm">
         <div class="relative overflow-hidden bg-gradient-to-br from-[#1A365D] via-[#122844] to-slate-900 px-6 py-7 text-center text-white sm:px-8">
             <div class="pointer-events-none absolute inset-0 opacity-25" style="background-image: radial-gradient(circle at 20% 20%, #fff 0, transparent 40%), radial-gradient(circle at 80% 0%, #93c5fd 0, transparent 35%), radial-gradient(circle at 50% 100%, #1A365D 0, transparent 45%);"></div>
             <div class="relative">

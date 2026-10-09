@@ -327,7 +327,7 @@
                         <div id="assign-rfid-state-waiting" class="flex flex-col items-center gap-1.5">
                             <i data-lucide="radar" class="h-6 w-6 animate-pulse text-blue-500"></i>
                             <p class="text-sm font-semibold text-blue-800">Waiting for ID tap…</p>
-                            <p class="text-xs text-blue-600">Tap the RFID card/ID on the gate RC522 reader now. The UID fills in automatically when the tap is read.</p>
+                            <p class="text-xs text-blue-600">Tap the card on the desk UID reader. This scan stays off the live gate monitor, and the UID fills in automatically.</p>
                         </div>
                         {{-- Detected --}}
                         <div id="assign-rfid-state-detected" class="hidden flex-col items-center gap-1.5">
@@ -340,7 +340,7 @@
                         <div id="assign-rfid-state-failed" class="hidden flex-col items-center gap-1.5">
                             <i data-lucide="alert-triangle" class="h-6 w-6 text-amber-600"></i>
                             <p class="text-sm font-semibold text-amber-800">No ID tap detected</p>
-                            <p class="text-xs text-amber-700">Keep the Assign modal open, make sure Entry ESP32 is online, then tap an unregistered card on the RC522 again.</p>
+                            <p class="text-xs text-amber-700">Keep the Assign window open, make sure the desk UID reader is online, then tap the card again.</p>
                             <button type="button" id="assign-rfid-retry" class="mt-1 inline-flex items-center gap-1.5 rounded-lg border border-amber-300 bg-white px-3 py-1.5 text-xs font-semibold text-amber-800 hover:bg-amber-50">
                                 <i data-lucide="rotate-cw" class="h-3.5 w-3.5"></i>
                                 Try again
@@ -537,8 +537,8 @@
             const uidEl = document.getElementById('assign-rfid-detected-uid');
             if (uidEl) uidEl.textContent = uid;
             if (scanHint) {
-                scanHint.textContent = source === 'gate'
-                    ? 'UID captured from gate ID tap — review, then Assign & Notify.'
+                scanHint.textContent = source === 'reader'
+                    ? 'UID captured from the desk reader. This tap is not shown on the live gate monitor.'
                     : 'UID captured from USB reader tap — review, then Assign & Notify.';
             }
             setScanState('detected');
@@ -568,13 +568,13 @@
                     const scannedMs = Date.parse(data.scanned_at);
                     if (!Number.isNaN(scannedMs) && scannedMs < (modalOpenedAtMs - 2500)) return;
                 }
-                if (setUidValue(data.uid, 'gate')) {
+                if (setUidValue(data.uid, 'reader')) {
                     lastGateLogId = logId || lastGateLogId;
                 }
             } catch (e) { /* ignore */ }
         };
 
-        // Poll while waiting for a fresh ID tap on the gate reader.
+        // Poll while waiting for a tap on the desk UID reader.
         const GATE_POLL_MS = 500;
         const startGatePoll = () => {
             stopGatePoll();
@@ -621,7 +621,7 @@
             if (input) input.value = '';
             lastGateLogId = '';
             scanBuffer = '';
-            if (scanHint) scanHint.textContent = 'Listening for a new ID tap on the gate reader…';
+            if (scanHint) scanHint.textContent = 'Listening for a tap on the desk UID reader…';
             setScanState('waiting');
             startWaitTimeout();
             modalOpenedAtMs = Date.now();
@@ -722,25 +722,6 @@
                 scanTimer = null;
             }, USB_SCAN_GAP_MS);
         }, true);
-
-        // Live gate scans via Reverb (same channel as Live Gate Monitor).
-        window.whenEchoReady?.((echo) => {
-            if (!echo) return;
-            echo.private('gate.scans').listen('.GateScanProcessed', (scan) => {
-                if (!isModalOpen() || scanState !== 'waiting') return;
-                // Only capture unregistered / unauthorized taps for assignment.
-                if (!scan?.is_unauthorized) return;
-                const full = (scan?.rfid_uid_full && scan.rfid_uid_full !== '—')
-                    ? scan.rfid_uid_full
-                    : '';
-                if (!full || !isFullUid(full)) return;
-                const logId = String(scan.id || '');
-                if (logId && baselineLogId && logId === baselineLogId) return;
-                if (setUidValue(full, 'gate')) {
-                    lastGateLogId = logId || lastGateLogId;
-                }
-            });
-        });
 
         document.querySelectorAll('.js-assign-rfid').forEach((btn) => {
             btn.addEventListener('click', () => openModal(btn));

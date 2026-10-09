@@ -26,6 +26,8 @@ class Visitor extends MongoModel
 
     public const SOURCE_SELF = 'self';
 
+    public const SOURCE_DELIVERY = 'delivery';
+
     /** @var list<string> */
     public const ACTIVE_STATUSES = [
         self::STATUS_WAITING,
@@ -114,6 +116,11 @@ class Visitor extends MongoModel
     public function isSelfPreRegistered(): bool
     {
         return (string) ($this->registration_source ?? '') === self::SOURCE_SELF;
+    }
+
+    public function isDelivery(): bool
+    {
+        return (string) ($this->registration_source ?? '') === self::SOURCE_DELIVERY;
     }
 
     public function durationLabel(): string

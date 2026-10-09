@@ -6,6 +6,7 @@ use App\Events\GateScanProcessed;
 use App\Models\GateLog;
 use App\Models\User;
 use App\Services\RfidAccessService;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\Event;
 use Tests\TestCase;
@@ -432,6 +433,32 @@ class RfidGateApiTest extends TestCase
 
         $this->expectException(\InvalidArgumentException::class);
         $hardware->queueOpen('GATE-OUT-1', $operator, 'Should reject exit emergency open');
+    }
+
+    public function test_enrollment_reader_saves_uid_without_a_gate_event(): void
+    {
+        Event::fake([GateScanProcessed::class]);
+        $uid = 'C0FFEE1234';
+        GateLog::query()->where('rfid_uid', $uid)->delete();
+
+        $this->withTokenHeader()
+            ->postJson('/api/rfid/enroll', ['uid' => $uid])
+            ->assertOk()
+            ->assertJsonPath('ok', true)
+            ->assertJsonPath('granted', false)
+            ->assertJsonPath('code', 'uid_captured')
+            ->assertJsonPath('uid', $uid);
+
+        $this->assertSame(0, GateLog::query()->where('rfid_uid', $uid)->count());
+        Event::assertNotDispatched(GateScanProcessed::class);
+
+        $request = Request::create('/admin/rfid/latest-unregistered', 'GET', [
+            'since' => now()->subMinute()->toIso8601String(),
+        ]);
+        $tap = app(RfidAccessService::class)->latestEnrollmentTap($request);
+
+        $this->assertSame($uid, $tap['uid']);
+        $this->assertNotEmpty($tap['log_id']);
     }
 
     private function withTokenHeader()

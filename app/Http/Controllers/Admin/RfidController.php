@@ -3,7 +3,6 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
-use App\Models\GateLog;
 use App\Models\User;
 use App\Services\NavigationService;
 use App\Services\RfidAccessService;
@@ -129,56 +128,13 @@ class RfidController extends Controller
     }
 
     /**
-     * Latest gate tap for an unknown RFID — used to auto-fill Assign RFID modal.
-     * Pass ?since=ISO8601 so only taps AFTER the modal opened are returned
-     * (avoids filling an old unauthorized scan the admin never just tapped).
+     * Latest desk-reader tap — used to auto-fill Assign RFID modal.
+     * This reader does not create a live gate monitor event.
+     * Pass ?since=ISO8601 so only taps AFTER the modal opened are returned.
      */
     public function latestUnregistered(Request $request, RfidAccessService $rfid): JsonResponse
     {
-        $query = GateLog::query()
-            ->whereNull('user_id')
-            ->whereNull('visitor_id')
-            ->whereNotNull('rfid_uid')
-            ->where('rfid_uid', '!=', '')
-            ->where(function ($q) {
-                $q->where('result', RfidAccessService::STATUS_CARD_NOT_REGISTERED)
-                    ->orWhere('result', RfidAccessService::STATUS_DENIED);
-            });
-
-        $sinceRaw = trim((string) $request->query('since', ''));
-        $appliedSince = false;
-        if ($sinceRaw !== '') {
-            try {
-                $since = \Illuminate\Support\Carbon::parse($sinceRaw)->subSeconds(2);
-                $query->where('timestamp', '>=', $since);
-                $appliedSince = true;
-            } catch (\Throwable) {
-                $appliedSince = false;
-            }
-        }
-        if (! $appliedSince) {
-            $query->where('timestamp', '>=', now()->subMinutes(2));
-        }
-
-        $log = $query->orderByDesc('timestamp')->first();
-
-        if (! $log) {
-            return response()->json(['ok' => true, 'uid' => null]);
-        }
-
-        $uid = $rfid->normalizeUid((string) $log->rfid_uid);
-        if (strlen($uid) < 6) {
-            return response()->json(['ok' => true, 'uid' => null]);
-        }
-
-        return response()->json([
-            'ok' => true,
-            'uid' => $uid,
-            'gate_id' => $log->gate_id,
-            'action' => $log->action,
-            'scanned_at' => $log->timestamp?->toIso8601String(),
-            'log_id' => (string) $log->getKey(),
-        ]);
+        return response()->json($rfid->latestEnrollmentTap($request));
     }
 
     public function approve(Request $request, int $id, RfidAccessService $rfid): RedirectResponse

@@ -35,6 +35,7 @@ use App\Http\Controllers\User\NotificationController;
 use App\Http\Controllers\User\ParkingController as UserParkingController;
 use App\Http\Controllers\User\PolicyController as UserPolicyController;
 use App\Http\Controllers\User\ViolationController as UserViolationController;
+use App\Http\Controllers\DeliveryRegistrationController;
 use App\Http\Controllers\VisitorPreRegistrationController;
 use App\Http\Controllers\VisitorController;
 use Illuminate\Support\Facades\Route;
@@ -47,6 +48,14 @@ Route::middleware(['no.cache'])->group(function () {
         ->middleware('throttle:visitor-pre-register')
         ->name('visitor.pre-register.store');
     Route::get('/visitor/pre-register/success', [VisitorPreRegistrationController::class, 'success'])->name('visitor.pre-register.success');
+    Route::get('/delivery', [DeliveryRegistrationController::class, 'show'])->name('delivery.show');
+    Route::post('/delivery', [DeliveryRegistrationController::class, 'store'])
+        ->middleware('throttle:visitor-pre-register')
+        ->name('delivery.store');
+    Route::post('/delivery/return', [DeliveryRegistrationController::class, 'returning'])
+        ->middleware('throttle:visitor-pre-register')
+        ->name('delivery.returning');
+    Route::get('/delivery/success', [DeliveryRegistrationController::class, 'success'])->name('delivery.success');
 });
 
 Route::middleware(['auth', 'verified', 'granted', 'no.cache', 'role:Admin,Guard'])->group(function () {
@@ -312,7 +321,9 @@ Route::prefix('guard')->middleware(['auth', 'verified', 'granted', 'no.cache', '
         ->name('plate-lookup.lookup');
     Route::get('/monitor', [UserMonitorController::class, 'index'])->name('monitor');
     Route::get('/visitors/register', [VisitorController::class, 'register'])->name('visitors.register');
+    Route::get('/visitors/latest-unregistered', [VisitorController::class, 'latestUnregistered'])->name('visitors.latest-unregistered');
     Route::post('/visitors', [VisitorController::class, 'store'])->name('visitors.store');
+    Route::post('/visitors/delivery-return', [VisitorController::class, 'checkInDelivery'])->name('visitors.delivery-return');
     Route::get('/visitors', [VisitorController::class, 'active'])->name('visitors.active');
     Route::get('/visitors/live', [VisitorController::class, 'live'])->name('visitors.live');
     Route::get('/visitors/active', function () {

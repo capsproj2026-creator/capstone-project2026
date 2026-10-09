@@ -45,6 +45,26 @@ class RfidGateController extends Controller
     }
 
     /**
+     * Desk UID reader. Saves the card number for RFID assignment only.
+     * Does not open a gate, write an access log, or update the live gate monitor.
+     *
+     * POST /api/rfid/enroll
+     * Body: { "uid": "A1B2C3D4" }
+     * Header: X-RFID-TOKEN: <RFID_API_TOKEN>
+     */
+    public function enroll(Request $request, RfidAccessService $rfid): JsonResponse
+    {
+        $validated = $request->validate([
+            'uid' => ['required', 'string', 'min:4', 'max:64'],
+        ]);
+
+        $result = $rfid->rememberEnrollmentTap($validated['uid']);
+        $status = ($result['ok'] ?? false) ? 200 : 422;
+
+        return response()->json($result, $status);
+    }
+
+    /**
      * ESP32 keepalive + consume a pending emergency-open command.
      *
      * POST /api/rfid/heartbeat

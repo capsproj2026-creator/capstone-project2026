@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Vehicle;
 use App\Models\Visitor;
+use App\Services\RfidAccessService;
 use App\Services\VisitorService;
 use App\Support\VisitorPreRegister;
 use App\Support\VisitorPreRegisterQr;
@@ -18,6 +19,7 @@ class VisitorController extends Controller
     public function register(Request $request): View
     {
         $preRegisterUrl = VisitorPreRegisterQr::preRegisterUrl();
+        $deliveryUrl = route('delivery.show');
 
         return view('visitors.register', [
             'vehicles' => Vehicle::query()->orderBy('id')->get(),
@@ -26,7 +28,15 @@ class VisitorController extends Controller
             'preRegisterUsesGoogleForm' => VisitorPreRegister::usesGoogleForm(),
             'preRegisterQrUrl' => route('visitor.pre-register.qr'),
             'preRegisterQrSvg' => VisitorPreRegisterQr::svg($preRegisterUrl, 320),
+            'deliveryUrl' => $deliveryUrl,
+            'deliveryQrSvg' => VisitorPreRegisterQr::svg($deliveryUrl, 320),
+            'latestUnregisteredUrl' => route($this->routePrefix($request).'.visitors.latest-unregistered'),
         ]);
+    }
+
+    public function latestUnregistered(Request $request, RfidAccessService $rfid): JsonResponse
+    {
+        return response()->json($rfid->latestEnrollmentTap($request));
     }
 
     public function store(Request $request, VisitorService $visitors): RedirectResponse
@@ -63,7 +73,7 @@ class VisitorController extends Controller
         $status = $request->query('status');
         $search = $request->query('search');
         $view = (string) $request->query('view', 'all');
-        if (! in_array($view, ['all', 'qr', 'campus', 'overdue'], true)) {
+        if (! in_array($view, ['all', 'qr', 'delivery', 'campus', 'overdue'], true)) {
             $view = 'all';
         }
         $routePrefix = $this->routePrefix($request);
@@ -89,7 +99,7 @@ class VisitorController extends Controller
         $status = $request->query('status');
         $search = $request->query('search');
         $view = (string) $request->query('view', 'all');
-        if (! in_array($view, ['all', 'qr', 'campus', 'overdue'], true)) {
+        if (! in_array($view, ['all', 'qr', 'delivery', 'campus', 'overdue'], true)) {
             $view = 'all';
         }
 
@@ -120,6 +130,7 @@ class VisitorController extends Controller
             ->filter(function (Visitor $visitor) use ($view): bool {
                 return match ($view) {
                     'qr' => $visitor->isSelfPreRegistered(),
+                    'delivery' => $visitor->isDelivery(),
                     'campus' => in_array((string) $visitor->status, [Visitor::STATUS_INSIDE, Visitor::STATUS_OUTSIDE], true),
                     'overdue' => (string) $visitor->status === Visitor::STATUS_EXPIRED,
                     default => true,
@@ -225,6 +236,19 @@ class VisitorController extends Controller
         $visitors->returnRfid($visitor, markCompleted: $visitor->status !== Visitor::STATUS_COMPLETED);
 
         return back()->with('success', 'Temporary RFID returned.');
+    }
+
+    public function checkInDelivery(Request $request, VisitorService $visitors): RedirectResponse
+    {
+        $validated = $request->validate([
+            'plate_number' => ['required', 'string', 'max:20'],
+        ]);
+
+        $visitor = $visitors->checkInReturningDelivery($validated['plate_number']);
+
+        return redirect()
+            ->route($this->routePrefix($request).'.visitors.active', ['view' => 'delivery'])
+            ->with('success', "{$visitor->displayName()} is waiting at the gate. Plate {$visitor->plate_number}.");
     }
 
     public function markExited(Request $request, int $id, VisitorService $visitors): RedirectResponse

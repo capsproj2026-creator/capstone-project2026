@@ -22,6 +22,10 @@ Route::middleware([VerifyRfidApiToken::class, 'throttle:120,1'])->group(function
     Route::post('/rfid/heartbeat', [RfidGateController::class, 'heartbeat'])->name('api.rfid.heartbeat');
 });
 
+Route::middleware([VerifyRfidApiToken::class, 'throttle:60,1'])->group(function () {
+    Route::post('/rfid/enroll', [RfidGateController::class, 'enroll'])->name('api.rfid.enroll');
+});
+
 Route::middleware([VerifyAiParkingApiToken::class, 'throttle:180,1'])->group(function () {
     Route::post('/ai-parking/occupancy', [AiParkingController::class, 'occupancy'])->name('api.ai-parking.occupancy');
     Route::post('/ai-parking/events', [AiParkingController::class, 'events'])->name('api.ai-parking.events');

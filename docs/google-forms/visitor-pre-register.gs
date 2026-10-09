@@ -36,7 +36,7 @@ var FIELD_TITLES = {
   middleName: ['Middle Name', 'Middle name', 'M.I.', 'MI'],
   lastName: ['Last Name', 'Last name', 'Surname', 'Family Name'],
   contactNumber: ['Contact Number', 'Contact No', 'Phone', 'Mobile Number', 'Mobile', 'Contact'],
-  email: ['Email', 'E-mail', 'Email Address', 'E-mail Address'],
+  email: ['Email', 'E-mail', 'Email Address', 'E-mail Address', 'Your email', 'Iyong email', 'Gmail'],
   purpose: ['Purpose of Visit', 'Purpose', 'Purpose of visit', 'Reason for Visit'],
   office: [
     'Office / Person to Visit',
@@ -212,11 +212,14 @@ function onFormSubmit(e) {
 
     Logger.log('Raw answers: ' + JSON.stringify(byTitle));
     var details = buildDetailsFromTitles_(byTitle);
+    if (!details.email && e.response && e.response.getRespondentEmail) {
+      details.email = String(e.response.getRespondentEmail() || '').trim();
+    }
     Logger.log('Mapped: ' + JSON.stringify(details));
+    Logger.log('Webhook target: ' + resolveWebhookUrl_(PropertiesService.getScriptProperties().getProperty('WEBHOOK_URL')));
 
     if (!details.email) {
-      Logger.log('FAIL: Email empty. Make Email required and title it "Email".');
-      return;
+      Logger.log('WARN: Email empty. Visitor will still be saved. Title the question "Email".');
     }
 
     ensureNameParts_(details);
@@ -234,8 +237,12 @@ function onFormSubmit(e) {
       Logger.log('WARN: webhook failed — ' + details.webhook_error);
     }
 
-    sendConfirmationEmail_(details);
-    Logger.log('OK: confirmation emailed to ' + details.email);
+    if (details.email) {
+      sendConfirmationEmail_(details);
+      Logger.log('OK: confirmation emailed to ' + details.email);
+    } else {
+      Logger.log('WARN: no email sent because the Email answer was empty.');
+    }
   } catch (err) {
     Logger.log('ERROR: ' + err);
     throw err;

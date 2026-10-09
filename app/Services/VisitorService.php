@@ -7,6 +7,7 @@ use App\Models\GateLog;
 use App\Models\Notification;
 use App\Models\ParkingSlot;
 use App\Models\User;
+use App\Models\Vehicle;
 use App\Models\Visitor;
 use App\Models\VisitorRfidCard;
 use Illuminate\Support\Carbon;
@@ -361,6 +362,109 @@ class VisitorService
     }
 
     /**
+     * Short gate entry for a delivery rider. Expected exit is 30 minutes later.
+     *
+     * @param  array{full_name: string, contact_number: string, company: string, plate_number: string, recipient: string}  $data
+     */
+    public function registerDelivery(array $data): Visitor
+    {
+        $plate = strtoupper(trim($data['plate_number']));
+        $existing = $this->findActiveByPlate($plate);
+        if ($existing) {
+            if ($existing->isDelivery()) {
+                return $existing;
+            }
+
+            throw ValidationException::withMessages([
+                'plate_number' => 'This plate already has an active campus visit.',
+            ]);
+        }
+
+        $name = $this->splitDeliveryName($data['full_name']);
+
+        return Visitor::query()->create([
+            'first_name' => $name['first'],
+            'last_name' => $name['last'],
+            'middle_name' => null,
+            'contact_number' => trim($data['contact_number']),
+            'email' => null,
+            'purpose' => 'Delivery',
+            'office_to_visit' => trim($data['recipient']),
+            'expected_exit_at' => now()->addMinutes(30),
+            'plate_number' => $plate,
+            'vehicle_id' => $this->motorcycleVehicleId(),
+            'vehicle_color' => 'N/A',
+            'status' => Visitor::STATUS_WAITING,
+            'registered_by' => null,
+            'registration_source' => Visitor::SOURCE_DELIVERY,
+            'confirmation_code' => $this->generateConfirmationCode(),
+            'form_completed_at' => now(),
+            'notes' => trim($data['company']),
+            'time_in' => null,
+            'time_out' => null,
+        ]);
+    }
+
+    public function checkInReturningDelivery(string $plate): Visitor
+    {
+        $plate = strtoupper(trim($plate));
+        $active = $this->findActiveByPlate($plate);
+        if ($active?->isDelivery()) {
+            return $active;
+        }
+        if ($active) {
+            throw ValidationException::withMessages([
+                'plate_number' => 'This plate already has an active campus visit.',
+            ]);
+        }
+
+        $previous = Visitor::query()
+            ->where('plate_number', $plate)
+            ->where('registration_source', Visitor::SOURCE_DELIVERY)
+            ->orderByDesc('id')
+            ->first();
+
+        if (! $previous) {
+            throw ValidationException::withMessages([
+                'plate_number' => 'No previous delivery for this plate. Use the Delivery QR and fill in the short form.',
+            ]);
+        }
+
+        return $this->registerDelivery([
+            'full_name' => $previous->displayName(),
+            'contact_number' => (string) $previous->contact_number,
+            'company' => trim((string) ($previous->notes ?: 'Other')),
+            'plate_number' => $plate,
+            'recipient' => (string) $previous->office_to_visit,
+        ]);
+    }
+
+    /**
+     * @return array{first: string, last: string}
+     */
+    private function splitDeliveryName(string $fullName): array
+    {
+        $parts = preg_split('/\s+/', trim($fullName)) ?: [];
+        $parts = array_values(array_filter($parts, fn ($part) => $part !== ''));
+        $first = $parts[0] ?? 'Rider';
+        $last = count($parts) > 1 ? implode(' ', array_slice($parts, 1)) : $first;
+
+        return ['first' => $first, 'last' => $last];
+    }
+
+    private function motorcycleVehicleId(): int
+    {
+        $vehicle = Vehicle::query()->where('vehicle_name', 'Motorcycles')->first();
+        if (! $vehicle) {
+            throw ValidationException::withMessages([
+                'plate_number' => 'Motorcycle vehicle type is not set up yet. Ask the guard for help.',
+            ]);
+        }
+
+        return (int) $vehicle->id;
+    }
+
+    /**
      * Gate exit while the expected exit time is still ahead.
      * The visit stays on the active list as Outside until a guard marks it exited,
      * or until the expected time passes.
@@ -368,6 +472,12 @@ class VisitorService
     public function recordCampusExit(Visitor $visitor): void
     {
         if ($visitor->status === Visitor::STATUS_COMPLETED) {
+            return;
+        }
+
+        if ($visitor->isDelivery()) {
+            $this->completeOnExit($visitor);
+
             return;
         }
 

@@ -9,6 +9,8 @@ use App\Models\ParkingSlot;
 use App\Models\User;
 use App\Models\Visitor;
 use App\Models\VisitorRfidCard;
+use Illuminate\Http\Request;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Str;
 
@@ -510,6 +512,135 @@ class RfidAccessService
         $uid = preg_replace('/[^A-F0-9]/', '', $uid) ?? '';
 
         return $uid;
+    }
+
+    public const ENROLL_CACHE_KEY = 'rfid:enroll:latest';
+
+    /**
+     * Remember a desk-reader tap for the assignment screens.
+     * This is not a gate transaction: no access log and no live-monitor event.
+     *
+     * @return array{ok: bool, granted: bool, code: string, status: string, message: string, uid?: string}
+     */
+    public function rememberEnrollmentTap(string $uid): array
+    {
+        $uid = $this->normalizeUid($uid);
+        if (strlen($uid) < 6) {
+            return [
+                'ok' => false,
+                'granted' => false,
+                'code' => 'invalid_uid',
+                'status' => 'UID not captured',
+                'message' => 'The card UID must contain at least six hexadecimal characters.',
+            ];
+        }
+
+        Cache::put(self::ENROLL_CACHE_KEY, [
+            'uid' => $uid,
+            'scanned_at' => now()->toIso8601String(),
+            'id' => (string) Str::uuid(),
+        ], now()->addMinutes(3));
+
+        return [
+            'ok' => true,
+            'granted' => false,
+            'code' => 'uid_captured',
+            'status' => 'UID captured',
+            'message' => 'UID saved for assignment. This scan is not shown on the live gate monitor.',
+            'uid' => $uid,
+        ];
+    }
+
+    /**
+     * Latest desk-reader tap, for RFID assignment screens.
+     * Pass ?since=ISO8601 so only taps after the screen started listening are returned.
+     *
+     * @return array{ok: bool, uid: string|null, scanned_at?: string|null, log_id?: string}
+     */
+    public function latestEnrollmentTap(Request $request): array
+    {
+        $tap = Cache::get(self::ENROLL_CACHE_KEY);
+        if (! is_array($tap)) {
+            return ['ok' => true, 'uid' => null];
+        }
+
+        $uid = $this->normalizeUid((string) ($tap['uid'] ?? ''));
+        $scannedAt = trim((string) ($tap['scanned_at'] ?? ''));
+        if (strlen($uid) < 6 || $scannedAt === '') {
+            return ['ok' => true, 'uid' => null];
+        }
+
+        $sinceRaw = trim((string) $request->query('since', ''));
+        if ($sinceRaw !== '') {
+            try {
+                $since = Carbon::parse($sinceRaw)->subSeconds(2);
+                if (Carbon::parse($scannedAt)->lt($since)) {
+                    return ['ok' => true, 'uid' => null];
+                }
+            } catch (\Throwable) {
+                // Ignore a bad timestamp and return the current tap.
+            }
+        }
+
+        return [
+            'ok' => true,
+            'uid' => $uid,
+            'scanned_at' => $scannedAt,
+            'log_id' => (string) ($tap['id'] ?? $uid),
+        ];
+    }
+
+    /**
+     * Latest unknown gate tap, for RFID assignment screens.
+     * Pass ?since=ISO8601 so only taps after the screen started listening are returned.
+     *
+     * @return array{ok: bool, uid: string|null, gate_id?: string|null, action?: string|null, scanned_at?: string|null, log_id?: string}
+     */
+    public function latestUnknownTap(Request $request): array
+    {
+        $query = GateLog::query()
+            ->whereNull('user_id')
+            ->whereNull('visitor_id')
+            ->whereNotNull('rfid_uid')
+            ->where('rfid_uid', '!=', '')
+            ->where(function ($q) {
+                $q->where('result', self::STATUS_CARD_NOT_REGISTERED)
+                    ->orWhere('result', self::STATUS_DENIED);
+            });
+
+        $sinceRaw = trim((string) $request->query('since', ''));
+        $appliedSince = false;
+        if ($sinceRaw !== '') {
+            try {
+                $since = Carbon::parse($sinceRaw)->subSeconds(2);
+                $query->where('timestamp', '>=', $since);
+                $appliedSince = true;
+            } catch (\Throwable) {
+                $appliedSince = false;
+            }
+        }
+        if (! $appliedSince) {
+            $query->where('timestamp', '>=', now()->subMinutes(2));
+        }
+
+        $log = $query->orderByDesc('timestamp')->first();
+        if (! $log) {
+            return ['ok' => true, 'uid' => null];
+        }
+
+        $uid = $this->normalizeUid((string) $log->rfid_uid);
+        if (strlen($uid) < 6) {
+            return ['ok' => true, 'uid' => null];
+        }
+
+        return [
+            'ok' => true,
+            'uid' => $uid,
+            'gate_id' => $log->gate_id,
+            'action' => $log->action,
+            'scanned_at' => $log->timestamp?->toIso8601String(),
+            'log_id' => (string) $log->getKey(),
+        ];
     }
 
     private function normalizeDirection(string $direction): string

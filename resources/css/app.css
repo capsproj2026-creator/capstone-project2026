@@ -1322,6 +1322,7 @@
 
     html.dark .bg-amber-50,
     html.dark .bg-amber-50\/40,
+    html.dark .bg-amber-50\/60,
     html.dark .bg-amber-50\/70,
     html.dark .bg-yellow-50 {
         background-color: var(--portal-warning-bg) !important;
@@ -1350,6 +1351,7 @@
 
     html.dark .bg-emerald-50,
     html.dark .bg-emerald-50\/40,
+    html.dark .bg-emerald-50\/60,
     html.dark .bg-emerald-50\/70 {
         background-color: var(--portal-success-bg) !important;
     }
