@@ -339,14 +339,11 @@ class AiParkingViolationService
             'owner_role' => $ownerRole ?: $user->roleName(),
         ]);
 
-        $newStrikes = app(ViolationEnforcementService::class)->syncStrikesFromLogs($user);
+        $newStrikes = app(ViolationEnforcementService::class)->syncStrikesFromLogs($user, $log, 'AI-'.$cameraId);
         $user->refresh();
 
-        $message = "Your vehicle ({$plate}) was auto-cited by AI parking ({$violationType}). Strikes: {$newStrikes}/".User::MAX_STRIKES.'.';
-        $sanction = \App\Support\ViolationSanctionPresenter::labelForStrike($newStrikes);
-        if ($sanction) {
-            $message .= ' '.$sanction.'.';
-        }
+        $message = "Your vehicle ({$plate}) was auto-cited by AI parking ({$violationType}). Strikes: {$newStrikes}/".User::MAX_STRIKES.'. '
+            .\App\Support\ViolationSanctionPresenter::citationNotice($newStrikes);
 
         Notification::query()->create([
             'user_id' => $user->id,

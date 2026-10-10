@@ -111,8 +111,8 @@
                             $prefs = [
                                 [
                                     'name' => 'auto_lock_on_3rd_violation',
-                                    'title' => 'Auto-Lock on 3rd Violation',
-                                    'desc' => 'Automatically suspend accounts after 3 violations.',
+                                    'title' => 'Endorse 2nd and 3rd Offenses to the GSU',
+                                    'desc' => 'Send 2nd offenses to the GSU for a 6-month permit suspension, and 3rd offenses through the GSU to the VPAF for revocation.',
                                     'checked' => $systemSettings['auto_lock_on_3rd_violation'],
                                 ],
                                 [

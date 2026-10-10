@@ -216,6 +216,10 @@ class GateLogService
                 throw new InvalidArgumentException($user->loginBlockedReason() ?? 'This account cannot access the campus.');
             }
 
+            if ($action === 'Entry' && ($sanctionReason = $user->parkingSanctionReason()) !== null) {
+                throw new InvalidArgumentException($sanctionReason);
+            }
+
             if (! $user->hasGateAccess()) {
                 throw new InvalidArgumentException('Gate access is not granted for this vehicle.');
             }

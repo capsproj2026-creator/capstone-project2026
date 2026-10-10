@@ -8,7 +8,6 @@ use App\Models\Notification;
 use App\Models\User;
 use App\Models\ViolationLog;
 use App\Models\ViolationType;
-use App\Notifications\AccountLockedNotification;
 use App\Services\ViolationEnforcementService;
 use App\Support\PlateLookup;
 use App\Support\TrafficViolations;
@@ -148,29 +147,23 @@ class ViolationController extends Controller
 
         $primaryLog = $logs[0];
 
-        $locked = false;
         $newStrikes = 0;
         $settings = app(\App\Services\SystemSettingService::class);
-        $autoLock = $settings->bool('auto_lock_on_3rd_violation', true);
         $sendNotifications = $settings->bool('send_violation_notifications', true);
 
         if ($user) {
-            $newStrikes = app(ViolationEnforcementService::class)->syncStrikesFromLogs($user);
+            $newStrikes = app(ViolationEnforcementService::class)->syncStrikesFromLogs(
+                $user,
+                $logs[count($logs) - 1],
+                (string) $guardId
+            );
             $user->refresh();
 
             $message = $citationCount === 1
                 ? "Your vehicle ({$displayPlate}) has been cited for {$typeLabel}. Total strikes: {$newStrikes}/".User::MAX_STRIKES.'.'
                 : "Your vehicle ({$displayPlate}) has been cited for {$citationCount} violations ({$typeLabel}). Total strikes: {$newStrikes}/".User::MAX_STRIKES.'.';
 
-            $sanction = \App\Support\ViolationSanctionPresenter::labelForStrike($newStrikes);
-            if ($sanction) {
-                $message .= ' '.$sanction.'.';
-            }
-
-            $locked = $autoLock && $newStrikes >= User::MAX_STRIKES;
-            if ($locked) {
-                $message .= ' Your account has been permanently locked.';
-            }
+            $message .= ' '.\App\Support\ViolationSanctionPresenter::citationNotice($newStrikes);
 
             if ($sendNotifications) {
                 Notification::query()->create([
@@ -189,26 +182,27 @@ class ViolationController extends Controller
                     foreach ($logs as $createdLog) {
                         $createdLog->update(['owner_notified_at' => now()]);
                     }
-
-                    if ($locked) {
-                        $user->notify(new AccountLockedNotification($newStrikes));
-                    }
                 } catch (\Throwable $e) {
                     report($e);
                 }
             }
         }
 
+        $endorsed = $isRegistered && $newStrikes >= 2
+            && app(ViolationEnforcementService::class)->endorsementsEnabled();
         $loggedWord = $citationCount === 1 ? 'violation' : 'violations';
         $successMessage = $isRegistered
-            ? ("{$citationCount} {$loggedWord} logged successfully.".($locked ? ' Account locked (3/3 strikes).' : ''))
+            ? ("{$citationCount} {$loggedWord} logged successfully.".($endorsed
+                ? ' This is a '.($newStrikes >= 3 ? '3rd' : '2nd').' offense and has been endorsed to the GSU.'
+                : ''))
             : "{$citationCount} {$loggedWord} logged for unregistered plate {$displayPlate}. The owner will be emailed automatically when this plate is registered in the system.";
 
         if ($request->expectsJson()) {
             return response()->json([
                 'ok' => true,
                 'message' => $successMessage,
-                'locked' => $locked,
+                'locked' => false,
+                'endorsed_level' => $endorsed ? min(3, $newStrikes) : null,
                 'unregistered' => ! $isRegistered,
                 'count' => $citationCount,
                 'log_id' => (string) $primaryLog->getKey(),
@@ -219,7 +213,7 @@ class ViolationController extends Controller
         return redirect()->route('guard.violations', [
             'success' => 1,
             'count' => $citationCount,
-            'locked' => $locked ? 1 : 0,
+            'endorsed' => $endorsed ? min(3, $newStrikes) : 0,
             'unregistered' => $isRegistered ? 0 : 1,
         ]);
     }

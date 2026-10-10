@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\AccessLogController;
 use App\Http\Controllers\Admin\DashboardController as AdminDashboardController;
+use App\Http\Controllers\Admin\EndorsementController;
 use App\Http\Controllers\Admin\GuardRegistrationController;
 use App\Http\Controllers\Admin\RegistrationController;
 use App\Http\Controllers\Admin\RegisteredPlatesController;
@@ -27,11 +28,14 @@ use App\Http\Controllers\Guard\PlateLookupController;
 use App\Http\Controllers\Guard\UserMonitorController;
 use App\Http\Controllers\Guard\ViolationController as GuardViolationController;
 use App\Http\Controllers\LiveCameraController;
+use App\Http\Controllers\OvernightParkingController;
 use App\Http\Controllers\ParkingController;
 use App\Http\Controllers\ProfileController;
+use App\Http\Controllers\StalledVehicleController;
 use App\Http\Controllers\User\DashboardController as UserDashboardController;
 use App\Http\Controllers\User\EntryExitController;
 use App\Http\Controllers\User\NotificationController;
+use App\Http\Controllers\User\OvernightParkingController as UserOvernightParkingController;
 use App\Http\Controllers\User\ParkingController as UserParkingController;
 use App\Http\Controllers\User\PolicyController as UserPolicyController;
 use App\Http\Controllers\User\ViolationController as UserViolationController;
@@ -265,6 +269,25 @@ Route::prefix('admin')->middleware(['auth', 'verified', 'granted', 'no.cache', '
     Route::get('/violations/{id}/evidence/{index?}', [AdminViolationController::class, 'evidence'])
         ->whereNumber('index')
         ->name('violations.evidence');
+    Route::get('/endorsements', [EndorsementController::class, 'index'])
+        ->middleware('permission:clear_penalties')
+        ->name('endorsements');
+    Route::post('/endorsements/{id}/decide', [EndorsementController::class, 'decide'])
+        ->whereNumber('id')
+        ->middleware('permission:clear_penalties')
+        ->name('endorsements.decide');
+    Route::get('/overnight-parking', [OvernightParkingController::class, 'index'])
+        ->middleware('permission:manage_parking')
+        ->name('overnight-parking');
+    Route::post('/overnight-parking/{id}/decide', [OvernightParkingController::class, 'decide'])
+        ->whereNumber('id')
+        ->middleware('permission:manage_parking')
+        ->name('overnight-parking.decide');
+    Route::get('/stalled-vehicles', [StalledVehicleController::class, 'index'])->name('stalled-vehicles');
+    Route::post('/stalled-vehicles', [StalledVehicleController::class, 'store'])->name('stalled-vehicles.store');
+    Route::post('/stalled-vehicles/{id}/removed', [StalledVehicleController::class, 'markRemoved'])
+        ->whereNumber('id')
+        ->name('stalled-vehicles.removed');
     Route::get('/access-logs', [AccessLogController::class, 'index'])->name('access-logs');
     Route::get('/access-logs/events', [AccessLogController::class, 'events'])->name('access-logs.events');
     Route::get('/live-cameras', [LiveCameraController::class, 'index'])->name('live-cameras');
@@ -342,6 +365,14 @@ Route::prefix('guard')->middleware(['auth', 'verified', 'granted', 'no.cache', '
     Route::post('/gate/scan', [GateMonitorController::class, 'scan'])->middleware('throttle:30,1')->name('gate.scan');
     Route::get('/notifications', [GuardNotificationController::class, 'index'])->name('notifications');
     Route::post('/notifications/{action}', [GuardNotificationController::class, 'action'])->name('notifications.action');
+    Route::get('/overnight-check', [OvernightParkingController::class, 'index'])->name('overnight-check');
+    Route::get('/stalled-vehicles', [StalledVehicleController::class, 'index'])->name('stalled-vehicles');
+    Route::post('/stalled-vehicles', [StalledVehicleController::class, 'store'])
+        ->middleware('throttle:20,1')
+        ->name('stalled-vehicles.store');
+    Route::post('/stalled-vehicles/{id}/removed', [StalledVehicleController::class, 'markRemoved'])
+        ->whereNumber('id')
+        ->name('stalled-vehicles.removed');
 });
 
 Route::prefix('user')->middleware(['auth', 'verified', 'portal', 'no.cache', 'role:Student,Staff'])->name('user.')->group(function () {
@@ -358,4 +389,11 @@ Route::prefix('user')->middleware(['auth', 'verified', 'portal', 'no.cache', 'ro
     Route::get('/violations/{id}/evidence/{index?}', [UserViolationController::class, 'evidence'])
         ->whereNumber('index')
         ->name('violations.evidence');
+    Route::get('/overnight-parking', [UserOvernightParkingController::class, 'index'])->name('overnight-parking');
+    Route::post('/overnight-parking', [UserOvernightParkingController::class, 'store'])
+        ->middleware('throttle:10,1')
+        ->name('overnight-parking.store');
+    Route::post('/overnight-parking/{id}/cancel', [UserOvernightParkingController::class, 'cancel'])
+        ->whereNumber('id')
+        ->name('overnight-parking.cancel');
 });

@@ -35,6 +35,9 @@ class NavigationService
             ['label' => 'Registered Visitors', 'route' => 'admin.visitors.active', 'icon' => 'user-round-check', 'access' => ['admin']],
             ['label' => 'Visitor History', 'route' => 'admin.visitors.history', 'icon' => 'history', 'access' => ['admin']],
             ['label' => 'Violations', 'route' => 'admin.violations', 'icon' => 'triangle-alert', 'access' => ['admin']],
+            ['label' => 'Offense Endorsements', 'route' => 'admin.endorsements', 'icon' => 'gavel', 'access' => ['admin'], 'permission' => 'clear_penalties'],
+            ['label' => 'Overnight Parking', 'route' => 'admin.overnight-parking', 'icon' => 'moon', 'access' => ['admin'], 'permission' => 'manage_parking'],
+            ['label' => 'Stalled Vehicles', 'route' => 'admin.stalled-vehicles', 'icon' => 'wrench', 'access' => ['admin']],
             ['label' => 'Access Logs', 'route' => 'admin.access-logs', 'icon' => 'file-text', 'access' => ['admin']],
             ['label' => 'Parking', 'route' => 'admin.parking', 'icon' => 'parking-square', 'access' => ['admin']],
             ['label' => 'Live Cameras', 'route' => 'admin.live-cameras', 'icon' => 'camera', 'access' => ['admin']],
@@ -53,11 +56,14 @@ class NavigationService
             ['label' => 'AI Parking Monitor', 'route' => 'guard.ai-parking', 'icon' => 'scan', 'access' => ['guard']],
             ['label' => 'Plate Lookup', 'route' => 'guard.plate-lookup', 'icon' => 'search', 'access' => ['guard']],
             ['label' => 'Live Cameras', 'route' => 'guard.live-cameras', 'icon' => 'camera', 'access' => ['guard']],
+            ['label' => 'Stalled Vehicles', 'route' => 'guard.stalled-vehicles', 'icon' => 'wrench', 'access' => ['guard']],
+            ['label' => 'Overnight Check', 'route' => 'guard.overnight-check', 'icon' => 'moon', 'access' => ['guard']],
 
             ['label' => 'Notifications', 'route' => 'user.notifications', 'icon' => 'bell', 'access' => ['student', 'staff']],
             ['label' => 'My Violations', 'route' => 'user.violations', 'icon' => 'triangle-alert', 'access' => ['student', 'staff']],
             ['label' => 'Entry/Exit History', 'route' => 'user.entry-exit', 'icon' => 'history', 'access' => ['student', 'staff']],
             ['label' => 'Parking', 'route' => 'user.parking', 'icon' => 'parking-square', 'access' => ['student', 'staff']],
+            ['label' => 'Overnight Parking', 'route' => 'user.overnight-parking', 'icon' => 'moon', 'access' => ['staff']],
         ];
 
         return array_values(array_filter($routes, function (array $item) use ($role): bool {

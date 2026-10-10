@@ -33,15 +33,16 @@ class DashboardStatsService
         $nonAdmin = fn () => User::query()->where('user_role_id', '!=', NavigationService::ROLE_ADMIN);
 
         $totalUsers = $nonAdmin()->count();
+        $sanctionedIds = \App\Support\ParkingSanctions::activeUserIds();
         $activeUsers = $nonAdmin()
             ->where('status', User::STATUS_GRANTED)
-            ->where('strike_count', '<', User::MAX_STRIKES)
+            ->whereNotIn('id', $sanctionedIds !== [] ? $sanctionedIds : [-1])
             ->count();
         $suspendedUsers = $nonAdmin()
-            ->where(function ($q) {
+            ->where(function ($q) use ($sanctionedIds) {
                 $q->where('status', User::STATUS_LOCKED)
                     ->orWhere('status', 'Suspended')
-                    ->orWhere('strike_count', '>=', User::MAX_STRIKES);
+                    ->orWhereIn('id', $sanctionedIds !== [] ? $sanctionedIds : [-1]);
             })
             ->count();
 

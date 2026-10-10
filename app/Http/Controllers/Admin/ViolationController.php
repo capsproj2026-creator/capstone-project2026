@@ -3,9 +3,12 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
+use App\Models\SanctionEndorsement;
 use App\Models\User;
 use App\Models\ViolationLog;
 use App\Models\ViolationType;
+use App\Support\OffenseStatus;
+use App\Support\ParkingSanctions;
 use App\Support\SearchHelper;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
@@ -52,6 +55,17 @@ class ViolationController extends Controller
             $typeFilter = 'all';
         }
 
+        $suspendedIds = User::query()
+            ->whereIn('user_role_id', [3, 4])
+            ->where(function ($q) {
+                $sanctioned = ParkingSanctions::activeUserIds();
+                $q->where('status', User::STATUS_LOCKED)
+                    ->orWhereIn('id', $sanctioned !== [] ? $sanctioned : [-1]);
+            })
+            ->pluck('id')
+            ->map(fn ($id) => (int) $id)
+            ->all();
+
         if ($riskFilter === 'second') {
             $userIds = User::query()
                 ->where('strike_count', 2)
@@ -60,15 +74,7 @@ class ViolationController extends Controller
                 ->all();
             $query->whereIn('user_id', $userIds !== [] ? $userIds : [-1]);
         } elseif ($riskFilter === 'suspended') {
-            $userIds = User::query()
-                ->whereIn('user_role_id', [3, 4])
-                ->where(function ($q) {
-                    $q->where('status', User::STATUS_LOCKED)
-                        ->orWhere('strike_count', '>=', User::MAX_STRIKES);
-                })
-                ->pluck('id')
-                ->all();
-            $query->whereIn('user_id', $userIds !== [] ? $userIds : [-1]);
+            $query->whereIn('user_id', $suspendedIds !== [] ? $suspendedIds : [-1]);
         } else {
             $riskFilter = 'all';
         }
@@ -82,12 +88,9 @@ class ViolationController extends Controller
             ->where('strike_count', 2)
             ->whereIn('user_role_id', [3, 4])
             ->count();
-        $suspendedUsers = User::query()
-            ->whereIn('user_role_id', [3, 4])
-            ->where(function ($q) {
-                $q->where('status', User::STATUS_LOCKED)
-                    ->orWhere('strike_count', '>=', User::MAX_STRIKES);
-            })
+        $suspendedUsers = count($suspendedIds);
+        $pendingEndorsements = SanctionEndorsement::query()
+            ->whereIn('status', SanctionEndorsement::OPEN_STATUSES)
             ->count();
 
         $strikeOverviewQuery = User::query()
@@ -110,7 +113,12 @@ class ViolationController extends Controller
         }
         $typeCounts = $typeCounts->filter(fn ($count) => $count > 0)->sortDesc();
 
+        $offenseStatuses = OffenseStatus::forUsers(
+            $logs->getCollection()->pluck('user')->filter()->concat($strikeOverview)
+        );
+
         return view('admin.violations', [
+            'offenseStatuses' => $offenseStatuses,
             'logs' => $logs,
             'search' => $search,
             'statusFilter' => $statusFilter,
@@ -122,6 +130,7 @@ class ViolationController extends Controller
                 'total' => $totalViolations,
                 'second_strike' => $usersAtSecondStrike,
                 'suspended' => $suspendedUsers,
+                'pending_endorsements' => $pendingEndorsements,
             ],
             'strikeOverview' => $strikeOverview,
             'strikeOverviewCount' => $strikeOverviewCount,

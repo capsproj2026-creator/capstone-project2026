@@ -365,6 +365,13 @@ class RfidAccessService
             return $this->response(self::STATUS_DENIED, 'access_denied', false, $direction, $gateId, 'No registered vehicle found for this account.', $this->userPayload($user), $log->id);
         }
 
+        $sanctionReason = $direction === 'Entry' ? $user->parkingSanctionReason() : null;
+        if ($sanctionReason !== null) {
+            $log = $this->logDeniedAttempt($user, null, $uid, $gateId, $direction, self::STATUS_DENIED, $sanctionReason);
+
+            return $this->response(self::STATUS_DENIED, 'access_denied', false, $direction, $gateId, $sanctionReason, $this->userPayload($user), $log->id);
+        }
+
         if (! $user->hasGateAccess()) {
             $log = $this->logDeniedAttempt($user, null, $uid, $gateId, $direction, self::STATUS_DENIED, 'Gate / RFID access has not been granted.');
 

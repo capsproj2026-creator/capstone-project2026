@@ -61,8 +61,12 @@ class RolePortalWalkthroughTest extends TestCase
             ['admin.parking.zone-access'],
             ['admin.parking.layout'],
             ['admin.violations'],
+            ['admin.endorsements'],
+            ['admin.overnight-parking'],
+            ['admin.stalled-vehicles'],
             ['admin.access-logs'],
             ['admin.reports'],
+            ['admin.system-health'],
             ['admin.settings'],
             ['admin.live-cameras'],
             ['admin.guards.create'],
@@ -89,6 +93,8 @@ class RolePortalWalkthroughTest extends TestCase
             ['guard.ai-parking'],
             ['guard.plate-lookup'],
             ['guard.live-cameras'],
+            ['guard.stalled-vehicles'],
+            ['guard.overnight-check'],
             ['profile.edit'],
         ];
     }

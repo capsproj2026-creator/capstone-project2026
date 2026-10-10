@@ -12,9 +12,15 @@
         <div class="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
             <p class="text-sm text-gray-500">Strike Count</p>
             <p class="mt-1 text-3xl font-bold text-gray-900">{{ $strikeCount }} / {{ $maxStrikes }}</p>
-            @php($userSanction = \App\Support\ViolationSanctionPresenter::labelForStrike((int) $strikeCount))
-            @if ($userSanction && (int) $strikeCount > 0)
-                <p class="mt-2 text-xs leading-relaxed text-gray-600">{{ $userSanction }}</p>
+            @php($offense = \App\Support\OffenseStatus::for(auth()->user()))
+            @if ($offense)
+                <div class="mt-3 rounded-lg border px-3 py-2 {{ \App\Support\OffenseStatus::toneClasses($offense['tone']) }}">
+                    <p class="flex items-center gap-1.5 text-xs font-semibold">
+                        <i data-lucide="{{ $offense['icon'] }}" class="h-3.5 w-3.5"></i>
+                        {{ $offense['label'] }}
+                    </p>
+                    <p class="mt-0.5 text-[11px] leading-relaxed">{{ $offense['detail'] }}</p>
+                </div>
             @endif
         </div>
         <div class="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">

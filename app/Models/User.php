@@ -296,18 +296,48 @@ class User extends Authenticatable implements MustVerifyEmail
 
     public function isLocked(): bool
     {
-        if ($this->status === self::STATUS_LOCKED || $this->status === 'Suspended') {
-            return true;
+        return $this->status === self::STATUS_LOCKED || $this->status === 'Suspended';
+    }
+
+    private ?UserSuspension $parkingSanctionMemo = null;
+
+    private bool $parkingSanctionLoaded = false;
+
+    /**
+     * GSU-approved six-month suspension or VPAF-approved revocation currently in force.
+     */
+    public function activeParkingSanction(): ?UserSuspension
+    {
+        if (! $this->parkingSanctionLoaded) {
+            $this->parkingSanctionLoaded = true;
+            $this->parkingSanctionMemo = UserSuspension::query()
+                ->where('user_id', $this->id)
+                ->where('is_suspended', true)
+                ->get()
+                ->first(fn (UserSuspension $row) => $row->isActive());
         }
 
-        $autoLock = true;
-        try {
-            $autoLock = app(\App\Services\SystemSettingService::class)->bool('auto_lock_on_3rd_violation', true);
-        } catch (\Throwable) {
-            // Fall back to default enforcement when settings are unavailable.
+        return $this->parkingSanctionMemo;
+    }
+
+    public function forgetParkingSanction(): void
+    {
+        $this->parkingSanctionLoaded = false;
+        $this->parkingSanctionMemo = null;
+    }
+
+    public function parkingSanctionReason(): ?string
+    {
+        $sanction = $this->activeParkingSanction();
+        if (! $sanction) {
+            return null;
         }
 
-        return $autoLock && $this->strike_count >= self::MAX_STRIKES;
+        if ($sanction->isRevocation()) {
+            return 'Parking privileges revoked (3rd offense). Contact the GSU office.';
+        }
+
+        return 'Parking permit suspended until '.ph_date($sanction->suspended_until, 'M j, Y').' (2nd offense).';
     }
 
     public function registrationState(): string
@@ -423,7 +453,7 @@ class User extends Authenticatable implements MustVerifyEmail
     public function loginBlockedReason(): ?string
     {
         if ($this->isLocked()) {
-            return 'Your account has been permanently locked after receiving '.self::MAX_STRIKES.' violations. Contact the administration office.';
+            return 'Your account is locked. Contact the GSU office.';
         }
 
         if ($this->isTemporaryAccount()) {

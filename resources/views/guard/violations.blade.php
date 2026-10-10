@@ -20,8 +20,8 @@
                 @else
                     {{ $loggedCount }} {{ $loggedCount === 1 ? 'violation' : 'violations' }} logged successfully.
                 @endif
-                @if (request()->boolean('locked'))
-                    <strong>The violator's account has been permanently locked (3/3 strikes).</strong>
+                @if ((int) request()->query('endorsed') >= 2)
+                    <strong>This is a {{ (int) request()->query('endorsed') >= 3 ? '3rd' : '2nd' }} offense and has been endorsed to the GSU for review.</strong>
                 @endif
             </span>
         </div>
@@ -48,7 +48,7 @@
     <div class="mb-6 overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
         <div class="border-b border-gray-100 bg-gray-50 px-6 py-4">
             <h3 class="text-sm font-semibold text-gray-900">GSU Offense Levels</h3>
-            <p class="mt-1 text-xs text-gray-500">Official sanctions applied as strikes accumulate.</p>
+            <p class="mt-1 text-xs text-gray-500">A 1st offense is a warning. A 2nd offense is endorsed to the GSU, and a 3rd offense goes from the GSU to the VPAF. A sanction applies only after it is approved.</p>
         </div>
         <div class="grid grid-cols-1 gap-3 p-4 sm:grid-cols-3">
             @foreach ([1, 2, 3] as $level)

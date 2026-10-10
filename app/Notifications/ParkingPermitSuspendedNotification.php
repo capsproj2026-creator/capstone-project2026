@@ -2,15 +2,16 @@
 
 namespace App\Notifications;
 
+use Carbon\CarbonInterface;
 use Illuminate\Bus\Queueable;
 use Illuminate\Notifications\Messages\MailMessage;
 use Illuminate\Notifications\Notification;
 
-class AccountLockedNotification extends Notification
+class ParkingPermitSuspendedNotification extends Notification
 {
     use Queueable;
 
-    public function __construct(private readonly int $strikeCount)
+    public function __construct(private readonly CarbonInterface $until)
     {
     }
 
@@ -22,11 +23,11 @@ class AccountLockedNotification extends Notification
     public function toMail(object $notifiable): MailMessage
     {
         return (new MailMessage)
-            ->subject('Parking Privileges Revoked (3rd Offense)')
+            ->subject('Parking Permit Suspended (2nd Offense)')
             ->greeting('Hello '.$notifiable->fullname.'!')
-            ->line('You have '.$this->strikeCount.' recorded violations. The GSU endorsed your 3rd offense and the VPAF approved the revocation of your campus parking privileges.')
-            ->line('You can still sign in to view your records, but your vehicle can no longer enter campus.')
+            ->line('The GSU approved the endorsement of your 2nd offense. Your campus parking permit is suspended for six (6) months.')
+            ->line('Your vehicle cannot enter campus until '.ph_date($this->until, 'F j, Y').'.')
             ->line('If you believe this is incorrect, please contact the GSU office.')
-            ->action('Sign in', route('login'));
+            ->action('View my violations', route('user.violations'));
     }
 }

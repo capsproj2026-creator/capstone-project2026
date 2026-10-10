@@ -5,7 +5,7 @@
 @section('content')
     @include('partials.shell.page-header', [
         'title' => 'Violations',
-        'subtitle' => 'Monitor citations and the campus 3-strike policy',
+        'subtitle' => 'Monitor citations and the 1st, 2nd, and 3rd offense ladder',
     ])
 
     {{-- Compact toolbar (keeps existing filters) --}}
@@ -58,7 +58,7 @@
         <a href="{{ route('admin.violations', array_filter(['q' => $search ?: null, 'status' => $statusFilter !== 'all' ? $statusFilter : null, 'type' => $typeFilter !== 'all' ? $typeFilter : null, 'risk' => 'suspended'])) }}"
            class="flex items-center justify-between rounded-xl border border-gray-200 bg-white p-5 shadow-sm hover:border-red-200 {{ ($riskFilter ?? '') === 'suspended' ? 'ring-2 ring-red-200' : '' }}">
             <div>
-                <p class="text-sm text-gray-500">Suspended Users</p>
+                <p class="text-sm text-gray-500">Suspended or Revoked</p>
                 <p class="mt-1 text-3xl font-bold tracking-tight text-red-600">{{ $stats['suspended'] }}</p>
             </div>
             <i data-lucide="shield-alert" class="h-6 w-6 text-red-500"></i>
@@ -86,7 +86,7 @@
             @forelse ($logs as $row)
                 @php
                     $strikes = min(3, (int) ($row->user?->strike_count ?? 0));
-                    $locked = $row->user?->isLocked() ?? ($strikes >= 3);
+                    $offense = $row->user ? ($offenseStatuses[(int) $row->user->id] ?? null) : null;
                     $guardLabel = $guardNames[(string) ($row->guard_id ?? '')] ?? (
                         filled($row->guard_id)
                             ? (str_starts_with((string) $row->guard_id, 'AI-') ? 'AI Camera' : 'Guard #'.$row->guard_id)
@@ -118,7 +118,7 @@
                         'has_evidence' => count($evidenceUrls) > 0,
                         'datetime' => ph_datetime($row->created_at, 'n/j/Y, g:i:s A'),
                         'strikes' => $strikes,
-                        'locked' => $locked,
+                        'offense' => $offense['label'] ?? null,
                     ];
                 @endphp
 
@@ -184,14 +184,6 @@
                             'text-amber-600' => $strikes === 1,
                             'text-gray-800' => $strikes < 1,
                         ])>{{ $strikes }}/3 Strikes</p>
-                        @if ($strikes >= 1)
-                            @php
-                                $sanctionLabel = \App\Support\ViolationSanctionPresenter::labelForStrike($strikes);
-                            @endphp
-                            @if ($sanctionLabel)
-                                <p class="mb-2 text-xs leading-relaxed text-gray-600">{{ $sanctionLabel }}</p>
-                            @endif
-                        @endif
                         <div class="flex gap-1.5">
                             @for ($i = 1; $i <= 3; $i++)
                                 <div
@@ -202,16 +194,14 @@
                                 ></div>
                             @endfor
                         </div>
-                        @if ($locked || $strikes >= 3)
-                            <p class="mt-2 flex items-center gap-1.5 text-xs font-medium text-red-600">
-                                <i data-lucide="lock" class="h-3.5 w-3.5"></i>
-                                Account Suspended
-                            </p>
-                        @elseif ($strikes === 2)
-                            <p class="mt-2 flex items-center gap-1.5 text-xs font-medium text-orange-600">
-                                <i data-lucide="alert-triangle" class="h-3.5 w-3.5"></i>
-                                One more violation will suspend account
-                            </p>
+                        @if ($offense)
+                            <div class="mt-3 rounded-lg border px-3 py-2 {{ \App\Support\OffenseStatus::toneClasses($offense['tone']) }}">
+                                <p class="flex items-center gap-1.5 text-xs font-semibold">
+                                    <i data-lucide="{{ $offense['icon'] }}" class="h-3.5 w-3.5"></i>
+                                    {{ $offense['label'] }}
+                                </p>
+                                <p class="mt-0.5 text-[11px] leading-relaxed">{{ $offense['detail'] }}</p>
+                            </div>
                         @endif
                     </div>
                 </article>
@@ -229,12 +219,19 @@
         {{-- RIGHT: Side panel --}}
         <aside class="space-y-5 lg:sticky lg:top-24">
             <div class="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
-                <h3 class="text-base font-semibold text-gray-900">3-Strike System Overview</h3>
+                <div class="flex items-center justify-between gap-2">
+                    <h3 class="text-base font-semibold text-gray-900">Offense Ladder Overview</h3>
+                    @if (Route::has('admin.endorsements'))
+                        <a href="{{ route('admin.endorsements') }}" class="text-xs font-medium text-blue-700 hover:underline">
+                            {{ $stats['pending_endorsements'] }} awaiting review
+                        </a>
+                    @endif
+                </div>
                 <div class="mt-4 max-h-[24rem] space-y-5 overflow-y-auto">
                     @forelse ($strikeOverview as $user)
                         @php
                             $strikes = min(3, (int) ($user->strike_count ?? 0));
-                            $locked = $user->isLocked() || $strikes >= 3;
+                            $offense = $offenseStatuses[(int) $user->id] ?? null;
                             $barHex = $strikes >= 3 ? '#ef4444' : ($strikes === 2 ? '#f97316' : ($strikes === 1 ? '#fbbf24' : null));
                             $badgeClass = $strikes >= 3
                                 ? 'bg-red-100 text-red-700'
@@ -247,12 +244,6 @@
                                     {{ $strikes }}/3 Strikes
                                 </span>
                             </div>
-                            @php
-                                $overviewSanction = \App\Support\ViolationSanctionPresenter::descriptionForStrike($strikes);
-                            @endphp
-                            @if ($overviewSanction)
-                                <p class="mb-2 text-[11px] leading-relaxed text-gray-500">{{ $overviewSanction }}</p>
-                            @endif
                             <div class="flex gap-1">
                                 @for ($i = 1; $i <= 3; $i++)
                                     <div
@@ -263,15 +254,10 @@
                                     ></div>
                                 @endfor
                             </div>
-                            @if ($locked)
-                                <p class="mt-2 flex items-center gap-1 text-xs font-medium text-red-600">
-                                    <i data-lucide="lock" class="h-3 w-3"></i>
-                                    Account Suspended
-                                </p>
-                            @elseif ($strikes === 2)
-                                <p class="mt-2 flex items-center gap-1 text-xs font-medium text-orange-600">
-                                    <i data-lucide="alert-triangle" class="h-3 w-3"></i>
-                                    One more violation will suspend account
+                            @if ($offense)
+                                <p class="mt-2 flex items-center gap-1 text-xs font-medium {{ match ($offense['tone']) { 'red' => 'text-red-600', 'orange' => 'text-orange-600', 'amber' => 'text-amber-600', default => 'text-gray-600' } }}">
+                                    <i data-lucide="{{ $offense['icon'] }}" class="h-3 w-3"></i>
+                                    {{ $offense['label'] }}
                                 </p>
                             @endif
                         </a>
@@ -361,7 +347,7 @@
             set('vd-datetime', data.datetime);
             set('vd-reported', data.reported_by);
             set('vd-plate', data.plate);
-            set('vd-strikes', `${data.strikes ?? 0}/3${data.locked ? ' (Suspended)' : ''}`);
+            set('vd-strikes', `${data.strikes ?? 0}/3${data.offense ? ` (${data.offense})` : ''}`);
             set('vd-description', data.description);
 
             const evidenceEl = document.getElementById('vd-evidence');

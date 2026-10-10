@@ -54,6 +54,26 @@ class ViolationSanctionPresenter
         return $name ?: $description;
     }
 
+    /**
+     * Sentence added to the owner's citation notice for the offense this citation reached.
+     */
+    public static function citationNotice(int $strikes): string
+    {
+        if ($strikes <= 1) {
+            return '1st Offense — this is a warning ticket. No sanction applies.';
+        }
+
+        if (! app(\App\Services\ViolationEnforcementService::class)->endorsementsEnabled()) {
+            return (self::labelForStrike($strikes) ?? '').'.';
+        }
+
+        if ($strikes === 2) {
+            return '2nd Offense — Security has endorsed your case to the GSU for a six-month parking permit suspension. Nothing changes until the GSU approves it.';
+        }
+
+        return '3rd Offense — your case is endorsed to the GSU, which reviews it and endorses it to the VPAF for revocation of parking privileges. Nothing changes until the VPAF approves it.';
+    }
+
     public static function sanctionForStrike(int $strike): ?ViolationSanction
     {
         $strike = max(1, min(3, $strike));
