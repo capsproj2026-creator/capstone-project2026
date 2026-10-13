@@ -26,6 +26,13 @@ class RfidGateApiTest extends TestCase
         Config::set('services.rfid.api_token', self::TOKEN);
         Config::set('services.rfid.allow_exit_without_entry', false);
 
+        require_once base_path('bootstrap/gate_hardware_store.php');
+        $gateDir = gate_hw_storage_dir();
+        $this->assertStringContainsString('testing', $gateDir, 'Gate tests must not share the live boom command folder.');
+        foreach (glob($gateDir.DIRECTORY_SEPARATOR.'*.json') ?: [] as $file) {
+            @unlink($file);
+        }
+
         try {
             User::query()->where('rfid_uid', self::UID)->delete();
             GateLog::query()->whereIn('rfid_uid', [self::UID, 'DEADBEEF99'])->delete();
@@ -113,6 +120,8 @@ class RfidGateApiTest extends TestCase
 
     public function test_access_granted_on_entry_then_already_inside(): void
     {
+        // The repeat-scan suppression window is 3 seconds; remote MongoDB round trips can exceed it.
+        $this->freezeTime();
         Event::fake([GateScanProcessed::class]);
 
         $this->withTokenHeader()

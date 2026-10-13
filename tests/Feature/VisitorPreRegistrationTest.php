@@ -139,7 +139,7 @@ class VisitorPreRegistrationTest extends TestCase
             ->get(route('guard.visitors.active', ['search' => $visitor->confirmation_code]))
             ->assertOk()
             ->assertSee($visitor->confirmation_code, false)
-            ->assertSee('Pre-registered online', false);
+            ->assertSee('QR code', false);
     }
 
     public function test_qr_route_requires_guard_or_admin_auth(): void
@@ -179,6 +179,7 @@ class VisitorPreRegistrationTest extends TestCase
             'first_name' => 'Walkin',
             'last_name' => 'Guest',
             'contact_number' => '09170001111',
+            'email' => 'walkin.guest@example.com',
             'purpose' => 'Updated after entry',
             'office_to_visit' => 'Registrar',
             'expected_exit_at' => $exitAt,
@@ -218,6 +219,7 @@ class VisitorPreRegistrationTest extends TestCase
             'first_name' => 'Late',
             'last_name' => 'Form',
             'contact_number' => '09170002222',
+            'email' => 'late.form@example.com',
             'purpose' => 'Too late',
             'office_to_visit' => 'GSU',
             'expected_exit_at' => now()->addHours(2)->format('Y-m-d\TH:i'),

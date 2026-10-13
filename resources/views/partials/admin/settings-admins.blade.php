@@ -1,3 +1,9 @@
+@if (old('account_form') === 'guard' && $errors->any())
+    <div class="mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
+        {{ $errors->first() }}
+    </div>
+@endif
+
 <div class="mb-6 overflow-hidden rounded-xl border border-gray-200 bg-white p-5 shadow-sm sm:p-6">
     <div class="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
         <div class="min-w-0">
@@ -132,24 +138,37 @@
         </div>
         <form method="POST" action="{{ route('admin.guards.store') }}" class="grid grid-cols-1 gap-4 sm:grid-cols-2">
             @csrf
+            <input type="hidden" name="account_form" value="guard">
             <div class="min-w-0 sm:col-span-2">
-                <label class="mb-1.5 block text-sm font-semibold text-gray-800">Full Name</label>
-                <input type="text" name="name" required class="w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2.5 text-sm">
+                <label for="create_guard_fullname" class="mb-1.5 block text-sm font-semibold text-gray-800">Full Name</label>
+                <input id="create_guard_fullname" type="text" name="fullname" value="{{ old('fullname') }}" required maxlength="100" class="w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2.5 text-sm">
+                @error('fullname')
+                    <p class="mt-1 text-xs text-red-600">{{ $message }}</p>
+                @enderror
             </div>
             <div class="min-w-0">
-                <label class="mb-1.5 block text-sm font-semibold text-gray-800">Email</label>
-                <input type="email" name="email" required class="w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2.5 text-sm">
+                <label for="create_guard_email" class="mb-1.5 block text-sm font-semibold text-gray-800">Email</label>
+                <input id="create_guard_email" type="email" name="email" value="{{ old('email') }}" required maxlength="100" class="w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2.5 text-sm">
+                @error('email')
+                    <p class="mt-1 text-xs text-red-600">{{ $message }}</p>
+                @enderror
             </div>
             <div class="min-w-0">
-                <label class="mb-1.5 block text-sm font-semibold text-gray-800">ID Number</label>
-                <input type="text" name="id_number" required class="w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2.5 text-sm">
+                <label for="create_guard_id_number" class="mb-1.5 block text-sm font-semibold text-gray-800">ID Number</label>
+                <input id="create_guard_id_number" type="text" name="id_number" value="{{ old('id_number') }}" required maxlength="50" pattern="[A-Za-z0-9]+" class="w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2.5 text-sm">
+                @error('id_number')
+                    <p class="mt-1 text-xs text-red-600">{{ $message }}</p>
+                @enderror
             </div>
             <div class="min-w-0 sm:col-span-2">
-                <label class="mb-1.5 block text-sm font-semibold text-gray-800">Phone</label>
-                <input type="text" name="phone_number" required class="w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2.5 text-sm">
+                <label for="create_guard_phone" class="mb-1.5 block text-sm font-semibold text-gray-800">Phone</label>
+                <input id="create_guard_phone" type="text" name="phone_number" value="{{ old('phone_number') }}" required maxlength="20" class="w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2.5 text-sm">
+                @error('phone_number')
+                    <p class="mt-1 text-xs text-red-600">{{ $message }}</p>
+                @enderror
             </div>
             <div class="min-w-0">
-                <x-auth.password-input name="password" label="Password" autocomplete="new-password" />
+                <x-auth.password-input name="password" id="create_guard_password" label="Password" autocomplete="new-password" />
             </div>
             <div class="min-w-0">
                 <x-auth.password-input name="password_confirmation" id="create_guard_password_confirmation" label="Confirm Password" autocomplete="new-password" />

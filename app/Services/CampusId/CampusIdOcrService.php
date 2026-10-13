@@ -92,7 +92,10 @@ class CampusIdOcrService
         $imagePath = $tempPath.'.'.$extension;
 
         try {
-            $file->move(dirname($imagePath), basename($imagePath));
+            $source = $file->getRealPath();
+            if (! is_string($source) || $source === '' || ! @copy($source, $imagePath)) {
+                throw new RuntimeException('Unable to copy the ID photo for scanning.');
+            }
 
             $python = CampusIdPythonResolver::binary();
             $command = array_merge(

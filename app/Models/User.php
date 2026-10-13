@@ -133,6 +133,8 @@ class User extends Authenticatable implements MustVerifyEmail
         'temporary_sequence',
         'temp_identity_key',
         'temp_conversion_token',
+        'credential_photo_hashes',
+        'credential_photo_ahashes',
         'email_verified_at',
         'email_verification_token',
         'email_verification_expires_at',
@@ -161,6 +163,8 @@ class User extends Authenticatable implements MustVerifyEmail
             'paid_at' => 'datetime',
             'email_verified_at' => 'datetime',
             'email_verification_expires_at' => 'datetime',
+            'credential_photo_hashes' => 'array',
+            'credential_photo_ahashes' => 'array',
         ];
     }
 

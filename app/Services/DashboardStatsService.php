@@ -457,7 +457,8 @@ class DashboardStatsService
     {
         $student = User::query()->where('user_role_id', NavigationService::ROLE_STUDENT)->count();
         $staff = User::query()->where('user_role_id', NavigationService::ROLE_STAFF)->count();
-        $visitor = User::query()->where('user_role_id', NavigationService::ROLE_VISITOR)->count();
+        // Visitors live in their own records (including history), not as user accounts.
+        $visitor = Visitor::query()->count();
 
         return [
             'labels' => ['Students', 'Staff', 'Visitors'],
@@ -549,9 +550,9 @@ class DashboardStatsService
                 if (str_contains($text, 'gym')) {
                     $matched = $areaNames->first(fn ($n) => str_contains(strtolower((string) $n), 'gym')) ?: 'Campus';
                 } elseif (str_contains($text, 'gate 2') || str_contains($text, 'gate-out')) {
-                    $matched = 'Gate 2';
+                    $matched = 'Exit';
                 } elseif (str_contains($text, 'gate 1') || str_contains($text, 'gate-in') || str_contains($text, 'gate')) {
-                    $matched = 'Gate 1';
+                    $matched = 'Entry';
                 } elseif (str_contains($text, 'park')) {
                     $matched = 'Parking Areas';
                 }
@@ -566,7 +567,7 @@ class DashboardStatsService
 
         foreach ($gateDenied as $log) {
             $gate = strtoupper((string) ($log->gate_id ?? ''));
-            $label = str_contains($gate, 'OUT') ? 'Gate 2' : (str_contains($gate, 'IN') ? 'Gate 1' : ($gate !== '' ? $gate : 'Gate'));
+            $label = str_contains($gate, 'OUT') ? 'Exit' : (str_contains($gate, 'IN') ? 'Entry' : ($gate !== '' ? $gate : 'Entry'));
             $buckets[$label] = ($buckets[$label] ?? 0) + 1;
         }
 

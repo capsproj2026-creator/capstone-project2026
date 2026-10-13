@@ -41,6 +41,15 @@ Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
         Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue
     }
 
+if ($stopAi) {
+    Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
+        Where-Object { $_.CommandLine -and ($_.CommandLine -like '*start-camera-uplink.ps1*' -or $_.CommandLine -like '*camera_uplink.py*') } |
+        ForEach-Object {
+            Write-Host "  Stopping camera uplink PID $($_.ProcessId)" -ForegroundColor Cyan
+            Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue
+        }
+}
+
 Start-Sleep -Seconds 1
 Write-Host ''
 Write-Host 'Done. Verify with: .\scripts\status-system.ps1' -ForegroundColor Green

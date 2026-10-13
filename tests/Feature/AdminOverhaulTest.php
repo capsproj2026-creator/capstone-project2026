@@ -166,6 +166,46 @@ class AdminOverhaulTest extends TestCase
         $this->assertNull(\App\Models\User::query()->where('email', $email)->first());
     }
 
+    public function test_admin_can_create_guard_from_settings_form(): void
+    {
+        $suffix = (string) random_int(1000, 9999);
+        $email = "temp.guard{$suffix}@gmail.com";
+        $fullname = 'Temp Guard '.$suffix;
+
+        $response = $this->actingAs($this->admin)
+            ->from(route('admin.settings', ['section' => 'admins']))
+            ->post(route('admin.guards.store'), [
+                'name' => $fullname,
+                'email' => $email,
+                'id_number' => 'GRD'.$suffix,
+                'phone_number' => '09170001111',
+                'password' => 'password123',
+                'password_confirmation' => 'password123',
+            ]);
+
+        $response->assertRedirect(route('admin.settings', ['section' => 'admins']));
+        $response->assertSessionHasNoErrors();
+        $response->assertSessionHas('success');
+
+        $created = User::query()->where('email', $email)->first();
+        try {
+            $this->assertNotNull($created);
+            $this->assertSame($fullname, $created->fullname);
+            $this->assertSame(\App\Services\NavigationService::ROLE_GUARD, (int) $created->user_role_id);
+            $this->assertSame(User::STATUS_GRANTED, $created->status);
+            $this->assertNotNull($created->email_verified_at);
+            $this->assertTrue(password_verify('password123', $created->password));
+
+            $this->actingAs($this->admin)
+                ->get(route('admin.settings', ['section' => 'admins']))
+                ->assertOk()
+                ->assertSee($fullname)
+                ->assertSee($email);
+        } finally {
+            $created?->delete();
+        }
+    }
+
     public function test_settings_violations_tab_crud(): void
     {
         \App\Support\TrafficViolations::syncToDatabase();
@@ -180,19 +220,29 @@ class AdminOverhaulTest extends TestCase
             ->assertDontSee('Add Type')
             ->assertDontSee('Default Penalty');
 
-        // Creating custom types is blocked by campus policy (fixed four official types).
+        // Admins may add campus-specific types alongside the four official ones.
+        $customName = 'Custom Type '.random_int(1000, 9999);
         $this->actingAs($this->admin)
             ->from(route('admin.settings', ['section' => 'violations']))
             ->post(route('admin.settings.violations.store'), [
-                'violation_name' => 'Custom Type '.random_int(1000, 9999),
-                'description' => 'Should be rejected',
+                'violation_name' => $customName,
+                'description' => 'QA custom type',
             ])
             ->assertRedirect(route('admin.settings', ['section' => 'violations']))
-            ->assertSessionHas('error');
+            ->assertSessionHas('success');
 
-        $this->assertNull(
-            \App\Models\ViolationType::query()->where('violation_name', 'like', 'Custom Type %')->first()
-        );
+        $custom = \App\Models\ViolationType::query()->where('violation_name', $customName)->first();
+        $this->assertNotNull($custom);
+        $this->assertGreaterThanOrEqual(5, (int) $custom->id);
+        $custom->delete();
+
+        $this->actingAs($this->admin)
+            ->from(route('admin.settings', ['section' => 'violations']))
+            ->post(route('admin.settings.violations.store'), [
+                'violation_name' => 'Wrong Parking',
+                'description' => 'Duplicate of an official type',
+            ])
+            ->assertSessionHasErrors('violation_name');
 
         $wrongParking = \App\Models\ViolationType::query()
             ->where('violation_name', 'Wrong Parking')

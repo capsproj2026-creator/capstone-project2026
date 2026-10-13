@@ -3,7 +3,7 @@
 namespace App\Models;
 
 /**
- * One live occupancy snapshot per camera, shared through MongoDB.
+ * One live occupancy snapshot per , shared through MongoDB.
  * The campus PC writes it. The public site reads it.
  */
 class AiParkingSnapshot extends MongoModel
@@ -13,7 +13,7 @@ class AiParkingSnapshot extends MongoModel
     public $timestamps = false;
 
     protected $fillable = [
-        'camera_id',
+        '_id',
         'payload',
     ];
 }

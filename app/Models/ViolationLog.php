@@ -31,7 +31,7 @@ class ViolationLog extends MongoModel
         'status',
         'owner_notified_at',
         'created_at',
-        'camera_id',
+        '_id',
         'area_id',
         'area_name',
         'vehicle_details',

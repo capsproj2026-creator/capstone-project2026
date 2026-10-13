@@ -151,9 +151,13 @@ class LiveCameraController extends Controller
         }
 
         return response()->stream(function () use ($upstream) {
-            $handle = @fopen($upstream, 'rb', false, stream_context_create([
-                'http' => ['timeout' => 8],
-            ]));
+            $handle = $this->openUpstream($upstream);
+            if ($handle === false) {
+                $uplink = preg_replace('#://(127\.0\.0\.1|localhost):18090(?=/|$)#', '://127.0.0.1:18091', $upstream);
+                if (is_string($uplink) && $uplink !== $upstream) {
+                    $handle = $this->openUpstream($uplink);
+                }
+            }
             if ($handle === false) {
                 return;
             }
@@ -174,6 +178,16 @@ class LiveCameraController extends Controller
             'Cache-Control' => 'no-cache, no-store, must-revalidate',
             'X-Accel-Buffering' => 'no',
         ]);
+    }
+
+    /**
+     * @return resource|false
+     */
+    private function openUpstream(string $upstream)
+    {
+        return @fopen($upstream, 'rb', false, stream_context_create([
+            'http' => ['timeout' => 8],
+        ]));
     }
 
     public function status(AiParkingOccupancyService $ai): JsonResponse

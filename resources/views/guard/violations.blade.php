@@ -182,16 +182,27 @@
                     <p id="violation-description-error" class="mt-1 hidden text-xs text-red-600">Enter a description before submitting.</p>
                 </div>
                 <div>
-                    <x-auth.file-input
-                        name="evidence_photos[]"
-                        id="evidence_photos"
-                        label="Photo Evidence"
-                        required
-                        accept="image/*"
-                        multiple
-                    />
-                    <p class="mt-1 text-xs text-gray-500">Required — upload at least one image (up to 5).</p>
-                    <p id="violation-evidence-error" class="mt-1 hidden text-xs text-red-600">Add at least one photo before submitting.</p>
+                    <p class="mb-1 text-sm font-medium text-gray-700">Photo Evidence <span class="text-red-600">*</span></p>
+                    <p class="mb-2 text-xs text-gray-500">Required — capture at least one photo (up to 5).</p>
+                    <div class="overflow-hidden rounded-xl border border-gray-200 bg-slate-950">
+                        <video id="violation-camera" class="hidden h-48 w-full bg-black object-cover" playsinline webkit-playsinline autoplay muted></video>
+                        <p id="violation-camera-hint" class="px-4 py-8 text-center text-sm text-slate-300">Starting camera…</p>
+                    </div>
+                    <div class="mt-2 flex flex-wrap items-center gap-2">
+                        <button
+                            type="button"
+                            id="violation-capture-btn"
+                            class="inline-flex cursor-pointer items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-blue-300"
+                        >
+                            <i data-lucide="camera" class="h-4 w-4"></i>
+                            Capture Photo
+                        </button>
+                        <span id="violation-photo-count" class="text-xs text-gray-500">0 of 5 photos</span>
+                    </div>
+                    <div id="violation-photo-thumbs" class="mt-3 grid grid-cols-5 gap-2"></div>
+                    <input type="file" name="evidence_photos[]" id="evidence_photos" class="hidden" accept="image/*" multiple>
+                    <input type="file" id="violation-native-camera" class="sr-only" accept="image/*" capture="environment" data-capture="environment">
+                    <p id="violation-evidence-error" class="mt-1 hidden text-xs text-red-600">Capture at least one photo before submitting.</p>
                 </div>
                 <div class="flex gap-3">
                     <button type="button" id="close-violation-modal" class="flex-1 cursor-pointer rounded-lg border border-gray-300 py-2 text-sm font-medium">Cancel</button>
@@ -212,15 +223,197 @@
     const closeBtn = document.getElementById('close-violation-modal');
     const submitBtn = document.getElementById('violation-submit-btn');
     const typesError = document.getElementById('violation-types-error');
+    const video = document.getElementById('violation-camera');
+    const cameraHint = document.getElementById('violation-camera-hint');
+    const captureBtn = document.getElementById('violation-capture-btn');
+    const thumbs = document.getElementById('violation-photo-thumbs');
+    const photoCount = document.getElementById('violation-photo-count');
+    const evidenceInput = document.getElementById('evidence_photos');
+    const nativeCamera = document.getElementById('violation-native-camera');
+    const MAX_PHOTOS = 5;
+    const captured = [];
+    let cameraStream = null;
+    let liveCamera = false;
+
+    const syncEvidenceInput = () => {
+        if (!evidenceInput) return;
+        const dt = new DataTransfer();
+        captured.forEach((file) => dt.items.add(file));
+        evidenceInput.files = dt.files;
+        if (photoCount) photoCount.textContent = `${captured.length} of ${MAX_PHOTOS} photos`;
+        if (captureBtn) captureBtn.disabled = captured.length >= MAX_PHOTOS;
+        if (!thumbs) return;
+        thumbs.replaceChildren();
+        captured.forEach((file, index) => {
+            const wrap = document.createElement('div');
+            wrap.className = 'relative';
+            const img = document.createElement('img');
+            img.src = URL.createObjectURL(file);
+            img.alt = `Photo ${index + 1}`;
+            img.className = 'h-16 w-full rounded-lg object-cover ring-1 ring-gray-200';
+            img.onload = () => URL.revokeObjectURL(img.src);
+            const remove = document.createElement('button');
+            remove.type = 'button';
+            remove.className = 'absolute -right-1 -top-1 flex h-5 w-5 items-center justify-center rounded-full bg-red-600 text-[10px] font-bold text-white';
+            remove.setAttribute('aria-label', 'Remove photo');
+            remove.textContent = '×';
+            remove.addEventListener('click', () => {
+                captured.splice(index, 1);
+                syncEvidenceInput();
+            });
+            wrap.append(img, remove);
+            thumbs.append(wrap);
+        });
+    };
+
+    const stopCamera = () => {
+        cameraStream?.getTracks().forEach((track) => track.stop());
+        cameraStream = null;
+        liveCamera = false;
+        if (video) {
+            video.srcObject = null;
+            video.classList.add('hidden');
+        }
+    };
+
+    const showHint = (text) => {
+        if (!cameraHint) return;
+        cameraHint.textContent = text;
+        cameraHint.classList.remove('hidden');
+    };
+
+    const isPhone = () => /Android|iPhone|iPad|iPod|Mobile|IEMobile/i.test(navigator.userAgent || '')
+        || ((navigator.maxTouchPoints || 0) > 1 && window.matchMedia('(pointer: coarse)').matches);
+
+    const isFrontTrack = (track) => {
+        const mode = String(track?.getSettings?.().facingMode || '').toLowerCase();
+        const label = String(track?.label || '').toLowerCase();
+        return mode === 'user' || /front|face|user|selfie/.test(label);
+    };
+
+    const backCameraDeviceId = async () => {
+        const videos = (await navigator.mediaDevices.enumerateDevices())
+            .filter((device) => device.kind === 'videoinput' && device.deviceId);
+        const back = videos.find((device) => /back|rear|environment|world/i.test(device.label));
+        if (back) return back.deviceId;
+        const notFront = videos.find((device) => !/front|face|user|selfie/i.test(device.label));
+        return notFront?.deviceId || null;
+    };
+
+    const openStream = (constraints) => navigator.mediaDevices.getUserMedia({
+        video: constraints,
+        audio: false,
+    });
+
+    const attachStream = async (stream) => {
+        cameraStream = stream;
+        liveCamera = true;
+        if (video) {
+            video.srcObject = stream;
+            video.classList.remove('hidden');
+            await video.play().catch(() => {});
+        }
+        if (cameraHint) cameraHint.classList.add('hidden');
+    };
+
+    const startCamera = async () => {
+        stopCamera();
+        if (!navigator.mediaDevices?.getUserMedia) {
+            liveCamera = false;
+            showHint('Tap Capture Photo to open the back camera.');
+            return;
+        }
+        try {
+            let stream;
+            if (isPhone()) {
+                try {
+                    stream = await openStream({ facingMode: { exact: 'environment' }, width: { ideal: 1280 } });
+                } catch (_) {
+                    try {
+                        stream = await openStream({ facingMode: 'environment', width: { ideal: 1280 } });
+                    } catch (__) {
+                        const id = await backCameraDeviceId();
+                        if (!id) throw new Error('no-back-camera');
+                        stream = await openStream({ deviceId: { exact: id } });
+                    }
+                }
+                let track = stream.getVideoTracks()[0];
+                if (isFrontTrack(track)) {
+                    stream.getTracks().forEach((item) => item.stop());
+                    const id = await backCameraDeviceId();
+                    if (!id) throw new Error('no-back-camera');
+                    stream = await openStream({ deviceId: { exact: id } });
+                    track = stream.getVideoTracks()[0];
+                    if (isFrontTrack(track)) {
+                        stream.getTracks().forEach((item) => item.stop());
+                        throw new Error('front-only');
+                    }
+                }
+            } else {
+                stream = await openStream({ width: { ideal: 1280 } });
+            }
+            await attachStream(stream);
+        } catch (err) {
+            liveCamera = false;
+            showHint('Tap Capture Photo to open the back camera.');
+        }
+    };
+
+    const addCapturedFile = (file) => {
+        const isPhoto = (file.type && file.type.startsWith('image/'))
+            || /\.(jpe?g|png|gif|webp|heic|heif)$/i.test(file.name || '');
+        if (!file || !isPhoto || captured.length >= MAX_PHOTOS) return;
+        captured.push(file);
+        syncEvidenceInput();
+        document.getElementById('violation-evidence-error')?.classList.add('hidden');
+    };
+
+    const captureFromVideo = () => {
+        if (!video || !video.videoWidth) {
+            nativeCamera?.click();
+            return;
+        }
+        const canvas = document.createElement('canvas');
+        const max = 1600;
+        const scale = Math.min(1, max / Math.max(video.videoWidth, video.videoHeight));
+        canvas.width = Math.round(video.videoWidth * scale);
+        canvas.height = Math.round(video.videoHeight * scale);
+        canvas.getContext('2d').drawImage(video, 0, 0, canvas.width, canvas.height);
+        canvas.toBlob((blob) => {
+            if (!blob) return;
+            addCapturedFile(new File([blob], `evidence-${Date.now()}.jpg`, { type: 'image/jpeg' }));
+        }, 'image/jpeg', 0.86);
+    };
+
+    const resetEvidence = () => {
+        captured.splice(0, captured.length);
+        if (nativeCamera) nativeCamera.value = '';
+        syncEvidenceInput();
+    };
 
     const openModal = () => {
         modal?.classList.remove('hidden');
         modal?.classList.add('flex');
+        showHint('Starting camera…');
+        startCamera();
+        if (window.lucide) window.lucide.createIcons();
     };
     const closeModal = () => {
         modal?.classList.add('hidden');
         modal?.classList.remove('flex');
+        stopCamera();
     };
+
+    captureBtn?.addEventListener('click', () => {
+        if (captured.length >= MAX_PHOTOS) return;
+        if (liveCamera) captureFromVideo();
+        else nativeCamera?.click();
+    });
+    nativeCamera?.addEventListener('change', () => {
+        const file = nativeCamera.files?.[0];
+        if (file) addCapturedFile(file);
+        nativeCamera.value = '';
+    });
 
     openBtn?.addEventListener('click', openModal);
     closeBtn?.addEventListener('click', closeModal);
@@ -240,7 +433,6 @@
         e.preventDefault();
         const checked = form.querySelectorAll('input[name="violation_types[]"]:checked');
         const description = (form.querySelector('[name="description"]')?.value || '').trim();
-        const evidence = form.querySelector('[name="evidence_photos[]"]');
         const descriptionError = document.getElementById('violation-description-error');
         const evidenceError = document.getElementById('violation-evidence-error');
         if (!checked.length) {
@@ -253,7 +445,7 @@
             return;
         }
         descriptionError?.classList.add('hidden');
-        if (!evidence || !evidence.files || evidence.files.length < 1) {
+        if (captured.length < 1) {
             evidenceError?.classList.remove('hidden');
             return;
         }
@@ -268,6 +460,8 @@
         // Keep only checked violation types (prevents stale/duplicate fields).
         fd.delete('violation_types[]');
         checked.forEach((el) => fd.append('violation_types[]', el.value));
+        fd.delete('evidence_photos[]');
+        captured.forEach((file) => fd.append('evidence_photos[]', file, file.name));
 
         if (submitBtn) {
             submitBtn.disabled = true;
@@ -299,6 +493,7 @@
             showFlash(true, data.message || `${savedCount} violation${savedCount === 1 ? '' : 's'} logged successfully.`);
             closeModal();
             form.reset();
+            resetEvidence();
             window.setTimeout(() => { window.location.reload(); }, 400);
         } catch (err) {
             showFlash(false, 'Network error — please try again.');

@@ -8,6 +8,41 @@ use Tests\TestCase;
 
 class RfidAssignmentUiTest extends TestCase
 {
+    /** @var list<User> */
+    private array $fixtures = [];
+
+    protected function tearDown(): void
+    {
+        foreach ($this->fixtures as $user) {
+            $user->delete();
+        }
+        $this->fixtures = [];
+
+        parent::tearDown();
+    }
+
+    /** One student waiting for a card and one already assigned, so the table and both counters have rows. */
+    private function seedStudents(): void
+    {
+        foreach ([null, 'TST'.strtoupper(substr(uniqid(), -7))] as $uid) {
+            $this->fixtures[] = User::query()->create([
+                'fullname' => 'RFID UI Fixture '.($uid ? 'Assigned' : 'Pending'),
+                'email' => 'rfid.ui.'.uniqid().'@my.cspc.edu.ph',
+                'password' => bcrypt('password123'),
+                'user_role_id' => NavigationService::ROLE_STUDENT,
+                'department_code' => 'CCS',
+                'vehicle_id' => 1,
+                'id_number' => 'RUI'.strtoupper(substr(uniqid(), -6)),
+                'plate_number' => 'RUI'.random_int(1000, 9999),
+                'status' => User::STATUS_GRANTED,
+                'rfid_uid' => $uid,
+                'strike_count' => 0,
+                'email_verified_at' => now(),
+                'created_at' => now(),
+            ]);
+        }
+    }
+
     private function adminOrSkip(): User
     {
         try {
@@ -30,6 +65,7 @@ class RfidAssignmentUiTest extends TestCase
     public function test_rfid_page_shows_filter_cards_without_list_tabs(): void
     {
         $admin = $this->adminOrSkip();
+        $this->seedStudents();
 
         $html = $this->actingAs($admin)
             ->get(route('admin.rfid'))
@@ -56,6 +92,7 @@ class RfidAssignmentUiTest extends TestCase
     public function test_rfid_stats_match_filter_definitions(): void
     {
         $admin = $this->adminOrSkip();
+        $this->seedStudents();
 
         $eligible = User::query()->whereIn('user_role_id', [
             NavigationService::ROLE_STUDENT,

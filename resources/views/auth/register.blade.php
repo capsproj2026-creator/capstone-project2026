@@ -36,6 +36,7 @@
                 </p>
                 <p class="text-xs text-slate-500">
                     For privacy concerns, contact the CSPC Data Protection Officer or the campus administration office.
+                    <a href="{{ route('legal.privacy') }}" class="font-medium text-[#1A365D] underline">Read the full Privacy Notice</a>
                 </p>
             </div>
             <div class="flex flex-col gap-2 border-t border-slate-100 bg-slate-50 px-5 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-6">
@@ -144,28 +145,37 @@
                             <span class="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-blue-600 text-xs font-bold text-white">2</span>
                             <div>
                                 <h2 class="text-base font-semibold text-gray-900">Your information</h2>
-                                <p class="mt-0.5 text-sm text-gray-600">Photos, contact details, and campus account. Correct anything the license scan missed.</p>
+                                <p class="mt-0.5 text-sm text-gray-600">Photos, contact details, and campus account. The name and face on your profile, school ID, and license must match — another person&rsquo;s photos cannot be used.</p>
                             </div>
                         </div>
                     </div>
 
                     <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                        <x-auth.file-input
-                            name="profile_pic"
-                            id="profile_pic"
-                            label="Profile Picture"
-                            required
-                            accept="image/*"
-                        />
+                        <div>
+                            <x-auth.file-input
+                                name="profile_pic"
+                                id="profile_pic"
+                                label="Profile Picture"
+                                required
+                                accept="image/*"
+                            />
+                            @error('profile_pic')
+                                <p class="mt-1 text-xs text-red-600">{{ $message }}</p>
+                            @enderror
+                        </div>
                         <div>
                             <x-auth.file-input
                                 name="id_document"
                                 id="id_document"
                                 label="School ID"
                                 required
-                                accept="image/*,application/pdf"
+                                accept="image/*"
                             />
-                            <p class="mt-1 text-xs text-gray-500">Clear photo of your school ID. It is saved with your registration and is not scanned.</p>
+                            <p class="mt-1 text-xs text-gray-500">Clear photo of your school ID. We scan the name and SN and check that the face matches your profile and license.</p>
+                            <p id="id_scan_status" class="mt-1 hidden text-xs"></p>
+                            @error('id_document')
+                                <p class="mt-1 text-xs text-red-600">{{ $message }}</p>
+                            @enderror
                         </div>
                     </div>
 
@@ -516,7 +526,7 @@
                     return;
                 }
 
-                setStatus(statusEl, 'Reading your license… this can take a moment.', 'info');
+                setStatus(statusEl, 'Reading this photo… this can take a moment.', 'info');
 
                 const body = new FormData();
                 body.append(fieldName, file);
@@ -549,7 +559,7 @@
                         return;
                     }
 
-                    if (data.address || data.full_name || data.driver_license_number || data.plate_number || (Array.isArray(data.warnings) && data.warnings.length)) {
+                    if (data.address || data.full_name || data.driver_license_number || data.plate_number || data.id_number || (Array.isArray(data.warnings) && data.warnings.length)) {
                         onSuccess(data);
                         return;
                     }
@@ -566,7 +576,9 @@
             const applyLicenseScan = (data) => {
                 fillField(document.getElementById('full_name'), data.full_name);
                 fillField(document.getElementById('address'), data.address);
-                fillField(document.getElementById('phone_number'), data.phone_number);
+                if (/^09\d{9}$/.test(String(data.phone_number || ''))) {
+                    fillField(document.getElementById('phone_number'), data.phone_number);
+                }
                 fillField(document.getElementById('driver_license_number'), data.driver_license_number);
                 if (data.plate_number) {
                     fillField(document.getElementById('plate_number'), data.plate_number);
@@ -639,6 +651,10 @@
                         return;
                     }
                     const warnings = Array.isArray(data.warnings) ? data.warnings.filter(Boolean) : [];
+                    const formName = document.getElementById('full_name')?.value || '';
+                    if (data.owner_name && formName && !namesLookSame(formName, data.owner_name)) {
+                        warnings.push('Owner name on this document does not match the applicant name.');
+                    }
                     if (warnings.length) {
                         setStatus(statusEl, warnings.join(' '), 'warning');
                     } else {
@@ -651,6 +667,46 @@
                     setStatus(statusEl, 'Could not auto-check this file. Review it manually before submitting.', 'warning');
                 });
             };
+
+            const idInput = document.getElementById('id_document');
+            const idStatus = document.getElementById('id_scan_status');
+            const namesLookSame = (left, right) => {
+                const compact = (value) => String(value || '').toUpperCase().replace(/[^A-Z]/g, '');
+                const a = compact(left);
+                const b = compact(right);
+                if (a.length < 6 || b.length < 6) return false;
+                if (a === b) return true;
+                const sorted = (s) => s.split('').sort().join('');
+                if (sorted(a) === sorted(b)) return true;
+                const tokens = (value) => String(value || '').toUpperCase().replace(/[^A-Z]+/g, ' ').trim().split(/\s+/).filter((w) => w.length >= 2);
+                const ta = tokens(left);
+                const tb = tokens(right);
+                const shared = ta.filter((word) => tb.some((other) => other === word || other.includes(word) || word.includes(other))).length;
+                return shared >= 2;
+            };
+            idInput?.addEventListener('change', () => {
+                scanDocument({
+                    input: idInput,
+                    endpoint: @json(route('register.scan-id')),
+                    fieldName: 'id_document',
+                    statusEl: idStatus,
+                    onSuccess: (data) => {
+                        if (data.id_number) fillField(document.getElementById('id_number'), data.id_number);
+                        const formName = document.getElementById('full_name')?.value || '';
+                        if (data.full_name && !formName) fillField(document.getElementById('full_name'), data.full_name);
+                        const warnings = Array.isArray(data.warnings) ? data.warnings.filter(Boolean) : [];
+                        if (data.full_name && formName && !namesLookSame(formName, data.full_name)) {
+                            setStatus(idStatus, 'The school ID name does not match the name from the driver\'s license. Use your own ID.', 'error');
+                            return;
+                        }
+                        if (warnings.length) {
+                            setStatus(idStatus, warnings.join(' '), 'warning');
+                        } else {
+                            setStatus(idStatus, 'School ID details match. The face will be checked again when you submit.', 'success');
+                        }
+                    },
+                });
+            });
 
             document.getElementById('lto_or_photo')?.addEventListener('change', function () {
                 scanOrCr(this, 'or', document.getElementById('or_scan_status'));

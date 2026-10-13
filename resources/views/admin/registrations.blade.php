@@ -92,23 +92,14 @@
         </div>
 
         <div class="overflow-x-auto">
-            <table class="w-full min-w-[56rem] table-fixed border-collapse text-left text-sm">
-                <colgroup>
-                    <col class="w-[14rem]">
-                    <col class="w-[7rem]">
-                    <col class="w-[9rem]">
-                    <col class="w-[16rem]">
-                    <col class="w-[10rem]">
-                    <col class="w-[7rem]">
-                    <col class="w-[12rem]">
-                </colgroup>
+            <table class="reg-table w-full border-collapse text-left text-sm">
                 <thead>
                     <tr class="border-b border-gray-100 bg-gray-50 text-[11px] font-semibold uppercase tracking-wide text-gray-500">
                         <th scope="col" class="px-4 py-3 sm:px-5">Name</th>
-                        <th scope="col" class="px-3 py-3">Role</th>
-                        <th scope="col" class="px-3 py-3">ID</th>
-                        <th scope="col" class="px-3 py-3">Email</th>
-                        <th scope="col" class="px-3 py-3">Registered</th>
+                        <th scope="col" class="reg-desktop-col px-3 py-3">Role</th>
+                        <th scope="col" class="reg-desktop-col px-3 py-3">ID</th>
+                        <th scope="col" class="reg-desktop-col px-3 py-3">Email</th>
+                        <th scope="col" class="reg-desktop-col px-3 py-3">Registered</th>
                         <th scope="col" class="px-3 py-3">Status</th>
                         <th scope="col" class="px-4 py-3 text-right sm:px-5">Actions</th>
                     </tr>
@@ -140,12 +131,12 @@
                         @endphp
                         <tr class="reg-row align-middle hover:bg-gray-50/60" data-search="{{ e($searchBlob) }}">
                             <td class="px-4 py-3 sm:px-5">
-                                <div class="flex min-w-0 items-center gap-3">
+                                <div class="flex min-w-0 items-center gap-3 overflow-hidden">
                                     <x-portal.avatar :user="$row" size="sm" class="shrink-0 !ring-0" />
                                     <span class="truncate font-semibold text-gray-900" title="{{ $row->fullname }}">{{ $row->fullname }}</span>
                                 </div>
                             </td>
-                            <td class="px-3 py-3">
+                            <td class="reg-desktop-col px-3 py-3">
                                 <span @class([
                                     'inline-flex rounded-md px-2 py-0.5 text-xs font-medium',
                                     'bg-blue-50 text-blue-700' => $isStudent,
@@ -154,13 +145,13 @@
                                     'bg-gray-100 text-gray-600' => ! $isStudent && ! $isStaff && ! $isUnregistered,
                                 ])>{{ $roleLabel }}</span>
                             </td>
-                            <td class="px-3 py-3">
+                            <td class="reg-desktop-col px-3 py-3">
                                 <p class="truncate font-medium text-gray-800" title="{{ $idNumber }}">{{ $idNumber }}</p>
                             </td>
-                            <td class="min-w-0 px-3 py-3">
+                            <td class="reg-desktop-col min-w-0 px-3 py-3">
                                 <p class="truncate text-gray-600" title="{{ $email }}">{{ $email }}</p>
                             </td>
-                            <td class="px-3 py-3 text-gray-600" title="{{ $registeredAt }}">
+                            <td class="reg-desktop-col px-3 py-3 text-gray-600" title="{{ $registeredAt }}">
                                 @if ($registeredTime !== '')
                                     <p class="whitespace-nowrap font-medium text-gray-800">{{ $registeredDate }}</p>
                                     <p class="mt-0.5 whitespace-nowrap text-xs text-gray-500">{{ $registeredTime }}</p>
@@ -184,29 +175,27 @@
                                 @endif
                             </td>
                             <td class="px-4 py-3 sm:px-5">
-                                <div class="flex flex-col items-stretch gap-2 sm:items-end">
-                                    <div class="flex flex-wrap justify-end gap-2">
-                                        <a href="{{ route('admin.users.show', ['id' => $row->id, 'from' => 'registrations']) }}"
-                                           class="inline-flex items-center justify-center rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-50">
-                                            View profile
-                                        </a>
-                                        @if ($row->status === 'Pending' && ! $isIncompleteTemp)
-                                            {{-- TODO payment gate: hide/disable Approve until $row->payment_status === 'paid'
-                                            @if (($row->payment_status ?? null) !== 'paid')
-                                                <button type="button" disabled class="inline-flex cursor-not-allowed items-center justify-center rounded-lg bg-gray-300 px-3 py-1.5 text-xs font-semibold text-gray-600">Approve (awaiting payment)</button>
-                                            @else
-                                            --}}
-                                            <form method="POST" action="{{ route('admin.registrations.approve', $row->id) }}" onsubmit="return confirm('Approve this registration?')">
-                                                @csrf
-                                                <button type="submit" class="inline-flex items-center justify-center rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700">Approve</button>
-                                            </form>
-                                            {{-- @endif --}}
-                                        @endif
-                                    </div>
+                                <div class="reg-actions ml-auto flex w-full flex-col gap-1.5">
+                                    <a href="{{ route('admin.users.show', ['id' => $row->id, 'from' => 'registrations']) }}"
+                                       class="inline-flex w-full items-center justify-center rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-50">
+                                        View profile
+                                    </a>
+                                    @if ($row->status === 'Pending' && ! $isIncompleteTemp)
+                                        {{-- TODO payment gate: hide/disable Approve until $row->payment_status === 'paid'
+                                        @if (($row->payment_status ?? null) !== 'paid')
+                                            <button type="button" disabled class="inline-flex w-full cursor-not-allowed items-center justify-center rounded-lg bg-gray-300 px-3 py-1.5 text-xs font-semibold text-gray-600">Approve (awaiting payment)</button>
+                                        @else
+                                        --}}
+                                        <form method="POST" action="{{ route('admin.registrations.approve', $row->id) }}" class="m-0" onsubmit="return confirm('Approve this registration?')">
+                                            @csrf
+                                            <button type="submit" class="inline-flex w-full items-center justify-center rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700">Approve</button>
+                                        </form>
+                                        {{-- @endif --}}
+                                    @endif
                                     @if ($row->status === 'Pending')
                                         <button
                                             type="button"
-                                            class="js-open-decline inline-flex items-center justify-center rounded-lg bg-rose-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-rose-700"
+                                            class="js-open-decline inline-flex w-full items-center justify-center rounded-lg bg-rose-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-rose-700"
                                             data-decline-url="{{ route('admin.registrations.decline', $row->id) }}"
                                             data-decline-name="{{ $row->fullname }}"
                                         >
@@ -287,6 +276,19 @@
         </form>
     </div>
 @endsection
+
+@push('styles')
+<style>
+    @media (max-width: 1023px) {
+        .reg-desktop-col { display: none; }
+        .reg-table { table-layout: fixed; width: 100%; }
+    }
+    @media (min-width: 1024px) {
+        .reg-table { min-width: 56rem; }
+        .reg-actions { width: 7.75rem; }
+    }
+</style>
+@endpush
 
 @push('scripts')
 <script>

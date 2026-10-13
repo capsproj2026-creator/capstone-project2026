@@ -3,26 +3,27 @@
 @section('title', 'Violations')
 
 @section('content')
+<div class="violations-page min-w-0 max-w-full">
     @include('partials.shell.page-header', [
         'title' => 'Violations',
         'subtitle' => 'Monitor citations and the 1st, 2nd, and 3rd offense ladder',
     ])
 
     {{-- Compact toolbar (keeps existing filters) --}}
-    <form method="GET" class="mb-5 flex flex-wrap items-center gap-2">
+    <form method="GET" class="mb-5 grid min-w-0 grid-cols-1 gap-2 sm:flex sm:flex-wrap sm:items-center">
         <input
             type="search"
             name="q"
             value="{{ $search }}"
             placeholder="Search plate, name, or type..."
-            class="min-w-[180px] flex-1 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm shadow-sm"
+            class="w-full min-w-0 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm shadow-sm sm:min-w-[180px] sm:flex-1"
         >
-        <select name="status" class="rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm shadow-sm">
+        <select name="status" class="w-full min-w-0 max-w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm shadow-sm sm:w-auto">
             <option value="all" @selected($statusFilter === 'all')>All statuses</option>
             <option value="Active" @selected($statusFilter === 'Active')>Active</option>
             <option value="Resolved" @selected($statusFilter === 'Resolved')>Resolved</option>
         </select>
-        <select name="type" class="rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm shadow-sm">
+        <select name="type" class="w-full min-w-0 max-w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm shadow-sm sm:w-auto">
             <option value="all" @selected($typeFilter === 'all')>All Types</option>
             @foreach ($violationTypes as $typeName)
                 <option value="{{ $typeName }}" @selected($typeFilter === $typeName)>{{ $typeName }}</option>
@@ -38,7 +39,7 @@
     </form>
 
     {{-- Summary cards --}}
-    <div class="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-3">
+    <div class="mb-6 grid min-w-0 grid-cols-1 gap-4 sm:grid-cols-3">
         <a href="{{ route('admin.violations', array_filter(['q' => $search ?: null, 'status' => $statusFilter !== 'all' ? $statusFilter : null, 'type' => $typeFilter !== 'all' ? $typeFilter : null])) }}"
            class="flex items-center justify-between rounded-xl border border-gray-200 bg-white p-5 shadow-sm hover:border-gray-300">
             <div>
@@ -65,16 +66,16 @@
         </a>
     </div>
 
-    <div class="grid grid-cols-1 items-start gap-6 lg:grid-cols-3">
+    <div class="grid min-w-0 grid-cols-1 items-start gap-6 lg:grid-cols-3">
         {{-- LEFT: Recent Violations --}}
-        <section class="space-y-4 lg:col-span-2">
-            <div class="flex flex-wrap items-center justify-between gap-3">
+        <section class="min-w-0 space-y-4 lg:col-span-2">
+            <div class="flex min-w-0 flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
                 <h2 class="text-lg font-semibold text-gray-900">Recent Violations</h2>
                 <form method="GET">
                     @if ($search !== '') <input type="hidden" name="q" value="{{ $search }}"> @endif
                     @if ($statusFilter !== 'all') <input type="hidden" name="status" value="{{ $statusFilter }}"> @endif
                     @if (($riskFilter ?? 'all') !== 'all') <input type="hidden" name="risk" value="{{ $riskFilter }}"> @endif
-                    <select name="type" onchange="this.form.submit()" class="rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-sm text-gray-700 shadow-sm">
+                    <select name="type" onchange="this.form.submit()" class="w-full min-w-0 max-w-full rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-sm text-gray-700 shadow-sm sm:w-auto">
                         <option value="all" @selected($typeFilter === 'all')>All Types</option>
                         @foreach ($violationTypes as $typeName)
                             <option value="{{ $typeName }}" @selected($typeFilter === $typeName)>{{ $typeName }}</option>
@@ -122,8 +123,8 @@
                     ];
                 @endphp
 
-                <article class="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
-                    <div class="flex items-start justify-between gap-3">
+                <article class="min-w-0 overflow-hidden rounded-xl border border-gray-200 bg-white p-4 shadow-sm sm:p-5">
+                    <div class="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                         <div class="min-w-0 flex-1">
                             <div class="flex flex-wrap items-center gap-2">
                                 <h3 class="text-base font-semibold text-gray-900">{{ $row->violator_name }}</h3>
@@ -168,7 +169,7 @@
                         </div>
                         <button
                             type="button"
-                            class="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50"
+                            class="inline-flex w-full shrink-0 items-center justify-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50 sm:w-auto"
                             data-violation-detail='@json($detail)'
                         >
                             <i data-lucide="eye" class="h-4 w-4"></i>
@@ -217,7 +218,7 @@
         </section>
 
         {{-- RIGHT: Side panel --}}
-        <aside class="space-y-5 lg:sticky lg:top-24">
+        <aside class="min-w-0 space-y-5 lg:sticky lg:top-24">
             <div class="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
                 <div class="flex items-center justify-between gap-2">
                     <h3 class="text-base font-semibold text-gray-900">Offense Ladder Overview</h3>
@@ -281,7 +282,7 @@
                                 ])) }}"
                                 class="flex items-center justify-between text-sm {{ $typeFilter === $typeName ? 'font-semibold text-blue-700' : 'text-gray-700 hover:text-gray-900' }}"
                             >
-                                <span>{{ $typeName }}</span>
+                                <span class="min-w-0 break-words">{{ $typeName }}</span>
                                 <span class="inline-flex h-6 min-w-6 items-center justify-center rounded-full bg-gray-100 px-1.5 text-xs font-semibold text-gray-700">
                                     {{ $count }}
                                 </span>
@@ -293,6 +294,8 @@
                 </ul>
             </div>
         </aside>
+    </div>
+
     </div>
 
     {{-- Details modal --}}
@@ -330,6 +333,14 @@
         </div>
     </div>
 @endsection
+
+@push('styles')
+<style>
+    .violations-page { max-width: 100%; overflow-x: clip; }
+    .violations-page select,
+    .violations-page input[type="search"] { max-width: 100%; }
+</style>
+@endpush
 
 @push('scripts')
 <script>

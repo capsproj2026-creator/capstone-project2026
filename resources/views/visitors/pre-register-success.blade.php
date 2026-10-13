@@ -26,7 +26,7 @@
         ];
     @endphp
 
-    <div class="w-full overflow-hidden rounded-2xl border border-white/30 bg-white/95 shadow-2xl backdrop-blur-sm">
+    <div class="guest-card w-full overflow-hidden rounded-2xl border border-white/30 bg-white/95 shadow-2xl backdrop-blur-sm">
         <div class="relative overflow-hidden bg-gradient-to-br from-emerald-600 via-emerald-700 to-slate-900 px-6 py-8 text-center text-white">
             <div class="relative">
                 <div class="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-white/15">
@@ -34,7 +34,12 @@
                 </div>
                 <p class="text-xs font-semibold uppercase tracking-[0.2em] text-emerald-100">Already pre-registered</p>
                 <h1 class="mt-2 text-2xl font-bold sm:text-3xl">Thank you, {{ $visitorName }}</h1>
-                <p class="mt-2 text-sm text-emerald-100">Show this screen to the guard at the booth@if ($visitor->email). A confirmation was also sent to {{ $visitor->email }}@endif</p>
+                <p class="mt-2 text-sm text-emerald-100">
+                    Show this screen to the guard at the booth.
+                    @if ($visitor->email)
+                        A confirmation was also sent to {{ $visitor->email }}.
+                    @endif
+                </p>
             </div>
         </div>
 

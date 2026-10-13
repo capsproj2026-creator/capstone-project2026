@@ -19,6 +19,9 @@ class AiParkingOccupancyService
     /** @var array<string, list<array<string, mixed>>> */
     private array $dayEventsMemo = [];
 
+    /** @var array<string, array<string, mixed>> */
+    private array $identityMemo = [];
+
     /** Labels that YOLO/registry may send which still count as a COCO vehicle. */
     private const VEHICLE_TYPE_ALIASES = [
         'tricycle' => 'motorcycle',
@@ -81,10 +84,29 @@ class AiParkingOccupancyService
             // A new plate still has to create violation events and reach the public site.
             $liveDetections = $detections;
             $plateChanged = ($previous['plate_signature'] ?? null) !== $plateSignature;
-            if ($plateChanged) {
+            // A one-frame YOLO miss posts an empty list while the bay is still occupied.
+            // Keep the last plated row so Latest Detections does not go blank.
+            if ($detections === [] && $vehicleCount > 0) {
+                $kept = $this->platedDetections($previous['detections'] ?? []);
+                if ($kept !== []) {
+                    $liveDetections = $kept;
+                    $plateSignature = (string) ($previous['plate_signature'] ?? $plateSignature);
+                    $plateChanged = false;
+                }
+            }
+            // YOLO frames do not include the owner. Copy it from the last snapshot,
+            // and look the plate up once if that copy is still blank.
+            $liveDetections = $this->carryForwardIdentity(
+                $liveDetections,
+                is_array($previous) ? ($previous['detections'] ?? []) : []
+            );
+            $ruleEvents = [];
+            if ($plateChanged || $this->detectionsMissingIdentity($liveDetections)) {
                 $liveDetections = $this->applyPlateCorrections($cameraId, $liveDetections);
                 $liveDetections = $this->enrichWithOwners($liveDetections);
                 $liveDetections = $this->dedupeDetectionsByTrack($liveDetections);
+            }
+            if ($plateChanged) {
                 $ruleEvents = array_merge(
                     app(AiParkingViolationService::class)->unauthorizedFromDetections($liveDetections, $cameraId),
                     app(AiParkingViolationService::class)->wrongParkingFromDetections($liveDetections, $cameraId, $areaId)
@@ -93,8 +115,11 @@ class AiParkingOccupancyService
                     app(AiParkingViolationService::class)->processEvents($ruleEvents, $cameraId);
                     $this->rememberDayEvents($cameraId, $ruleEvents);
                 }
-                $liveDetections = $this->attachViolationStatus($liveDetections, $ruleEvents);
             }
+            $liveDetections = $this->attachViolationStatus(
+                $liveDetections,
+                array_merge($ruleEvents, $this->cachedDayEvents())
+            );
             $snapshot = array_merge($previous, [
                 'detections' => $this->stripHeavyBinaryFields($liveDetections, keepThumbs: true),
                 'reported_vehicle_count' => $vehicleCount,
@@ -165,8 +190,19 @@ class AiParkingOccupancyService
             $events = array_merge($events, $ruleEvents);
         }
 
+        if ($detections === [] && $vehicleCount > 0 && is_array($previous)) {
+            $kept = $this->platedDetections($previous['detections'] ?? []);
+            if ($kept !== []) {
+                $detections = $kept;
+                $plateSignature = (string) ($previous['plate_signature'] ?? $plateSignature);
+            }
+        }
+
         $this->persistAutoMatchedPlates($cameraId, $detections);
-        $detections = $this->attachViolationStatus($detections, $events);
+        $detections = $this->attachViolationStatus(
+            $detections,
+            array_merge($events, $this->cachedDayEvents())
+        );
         $events = $this->stripHeavyBinaryFields($events);
         $detections = $this->stripHeavyBinaryFields($detections, keepThumbs: true);
 
@@ -885,9 +921,9 @@ class AiParkingOccupancyService
      * Attach plate status + registered owner identity to detections/events.
      *
      * Display contract:
-     * - plate_status=unreadable → "Plate Unreadable" (no invented plate text)
+     * - plate_status=unreadable / not_read → plate_label "Unknown" (no invented plate text)
      * - registered match → owner full name (auto-correct OCR to DB plate when fuzzy)
-     * - readable but unmatched → "Unknown"
+     * - readable but unmatched → owner "Unknown", registration_status "Unregistered"
      *
      * @param  list<array<string, mixed>>  $rows
      * @return list<array<string, mixed>>
@@ -1055,6 +1091,176 @@ class AiParkingOccupancyService
      * @param  list<array<string, mixed>>  $detections
      * @return list<array<string, mixed>>
      */
+    /**
+     * YOLO posts a plate without the registered owner. Keep the last lookup.
+     *
+     * @param  list<array<string, mixed>>  $detections
+     * @param  mixed  $previous
+     * @return list<array<string, mixed>>
+     */
+    private function carryForwardIdentity(array $detections, mixed $previous): array
+    {
+        if (! is_array($previous) || $previous === []) {
+            return $detections;
+        }
+
+        $byPlate = [];
+        foreach ($previous as $prev) {
+            if (! is_array($prev)) {
+                continue;
+            }
+            $plate = PlateLookup::normalize((string) ($prev['plate'] ?? ''));
+            if ($plate === '') {
+                continue;
+            }
+            $byPlate[$plate] = $prev;
+        }
+        if ($byPlate === []) {
+            return $detections;
+        }
+
+        $fields = [
+            'owner_name', 'owner_label', 'owner_role', 'role', 'owner_id_number', 'id_number',
+            'user_id', 'visitor_id', 'registration_status', 'vehicle_details', 'department',
+            'recognition_status',
+        ];
+
+        foreach ($detections as $i => $det) {
+            if (! is_array($det)) {
+                continue;
+            }
+            $plate = PlateLookup::normalize((string) ($det['plate'] ?? ''));
+            if ($plate === '' || ! isset($byPlate[$plate])) {
+                continue;
+            }
+            $prev = $byPlate[$plate];
+            foreach ($fields as $field) {
+                if (empty($det[$field]) && ! empty($prev[$field])) {
+                    $det[$field] = $prev[$field];
+                }
+            }
+            if ((! array_key_exists('registered', $det) || $det['registered'] === null)
+                && array_key_exists('registered', $prev)
+                && $prev['registered'] !== null) {
+                $det['registered'] = $prev['registered'];
+            }
+            $detections[$i] = $det;
+        }
+
+        return $detections;
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $detections
+     */
+    private function detectionsMissingIdentity(array $detections): bool
+    {
+        foreach ($detections as $det) {
+            if (! is_array($det)) {
+                continue;
+            }
+            $plate = PlateLookup::normalize((string) ($det['plate'] ?? ''));
+            if (strlen($plate) < 4) {
+                continue;
+            }
+            $status = strtolower((string) ($det['plate_status'] ?? ''));
+            if (in_array($status, ['unreadable', 'not_read', 'pending', 'detecting'], true)) {
+                continue;
+            }
+            if (! empty($det['owner_name']) || ($det['registered'] ?? null) === false) {
+                continue;
+            }
+
+            return true;
+        }
+
+        return false;
+    }
+
+    /**
+     * Today's cached AI events, newest first. No database read.
+     *
+     * @return list<array<string, mixed>>
+     */
+    private function cachedDayEvents(): array
+    {
+        $rows = Cache::get($this->dayEventsCacheKey(null), []);
+
+        return is_array($rows) ? array_values(array_filter($rows, 'is_array')) : [];
+    }
+
+    /**
+     * Fill the label and owner the monitor needs on a stored AI event.
+     *
+     * @param  array<string, mixed>  $row
+     * @param  array<string, array<string, mixed>>  $identityMemo
+     * @return array<string, mixed>
+     */
+    private function presentDayEvent(array $row, array &$identityMemo): array
+    {
+        $type = (string) ($row['type'] ?? '');
+        if ($type !== '' && empty($row['violation_type']) && isset(AiParkingViolationService::TYPE_MAP[$type])) {
+            $row['violation_type'] = AiParkingViolationService::TYPE_MAP[$type];
+            $row['violation_status'] = $row['violation_status'] ?? $row['violation_type'];
+        }
+        if ($type !== '' && empty($row['reason']) && empty($row['violation_reason']) && isset(AiParkingViolationService::REASON_LABELS[$type])) {
+            $row['reason'] = AiParkingViolationService::REASON_LABELS[$type];
+        }
+
+        $plate = PlateLookup::normalize((string) ($row['plate'] ?? ''));
+        if ($plate === '' || ! empty($row['owner_name'])) {
+            return $row;
+        }
+        if (! isset($identityMemo[$plate])) {
+            $identityMemo[$plate] = PlateLookup::identity($plate);
+        }
+        $identity = $identityMemo[$plate];
+        if (empty($identity['owner_name']) && ($identity['registered'] ?? null) !== false) {
+            return $row;
+        }
+
+        $row['owner_name'] = $identity['owner_name'] ?? ($row['owner_name'] ?? null);
+        $row['owner_label'] = $identity['owner_label'] ?? ($row['owner_label'] ?? null);
+        $row['owner_role'] = $identity['role'] ?? ($row['owner_role'] ?? null);
+        $row['role'] = $identity['role'] ?? ($row['role'] ?? null);
+        $row['owner_id_number'] = $identity['id_number'] ?? ($row['owner_id_number'] ?? null);
+        $row['registered'] = $identity['registered'] ?? ($row['registered'] ?? null);
+        $row['registration_status'] = $identity['registration_status'] ?? ($row['registration_status'] ?? null);
+        if (empty($row['vehicle_details']) && ! empty($identity['vehicle_details'])) {
+            $row['vehicle_details'] = $identity['vehicle_details'];
+        }
+
+        return $row;
+    }
+
+    /**
+     * Rows that already have a readable plate. Used so a blank YOLO frame
+     * cannot erase Latest Detections while the vehicle is still counted.
+     *
+     * @param  mixed  $detections
+     * @return list<array<string, mixed>>
+     */
+    private function platedDetections(mixed $detections): array
+    {
+        if (! is_array($detections)) {
+            return [];
+        }
+
+        $kept = [];
+        foreach ($detections as $det) {
+            if (! is_array($det)) {
+                continue;
+            }
+            $plate = strtoupper((string) preg_replace('/[^A-Z0-9]/', '', (string) ($det['plate'] ?? '')));
+            if (strlen($plate) < 4) {
+                continue;
+            }
+            $kept[] = $det;
+        }
+
+        return $kept;
+    }
+
     private function filterVehicleDetections(array $detections): array
     {
         return array_values(array_filter($detections, function (array $det): bool {
@@ -1124,10 +1330,13 @@ class AiParkingOccupancyService
                 continue;
             }
             if (isset($event['track_id']) && is_numeric($event['track_id'])) {
-                $byTrack[(int) $event['track_id']] = $type;
+                $tid = (int) $event['track_id'];
+                if (! isset($byTrack[$tid])) {
+                    $byTrack[$tid] = $type;
+                }
             }
             $plate = PlateLookup::normalize((string) ($event['plate'] ?? ''));
-            if ($plate !== '') {
+            if ($plate !== '' && ! isset($byPlate[$plate])) {
                 $byPlate[$plate] = $type;
             }
         }
@@ -1337,6 +1546,7 @@ class AiParkingOccupancyService
             $row['camera_id'] = (string) ($row['camera_id'] ?? $cameraId);
             $row['logged_at'] = $row['logged_at'] ?? $nowIso;
             $row['logged_at_label'] = $row['logged_at_label'] ?? $stamp;
+            $row = $this->presentDayEvent($row, $this->identityMemo);
             if (empty($row['ts'])) {
                 $row['ts'] = microtime(true);
             }
@@ -1446,8 +1656,14 @@ class AiParkingOccupancyService
         usort($merged, function (array $a, array $b): int {
             return ((float) ($b['ts'] ?? 0)) <=> ((float) ($a['ts'] ?? 0));
         });
+        $merged = array_slice($merged, 0, 200);
 
-        return array_slice($merged, 0, 200);
+        $presented = [];
+        foreach ($merged as $row) {
+            $presented[] = $this->presentDayEvent($row, $this->identityMemo);
+        }
+
+        return $presented;
     }
 
     /**
@@ -1580,13 +1796,28 @@ class AiParkingOccupancyService
 
         $event['plate'] = $plate;
         $event['plate_status'] = $status !== '' ? $status : 'ok';
-        $event['owner_name'] = $det['owner_name'] ?? null;
-        $event['owner_label'] = $det['owner_label'] ?? null;
-        $event['owner_role'] = $det['owner_role'] ?? ($det['role'] ?? null);
-        $event['role'] = $det['role'] ?? ($det['owner_role'] ?? null);
-        $event['owner_id_number'] = $det['owner_id_number'] ?? ($det['id_number'] ?? null);
-        $event['registration_status'] = $det['registration_status'] ?? null;
-        $event['registered'] = array_key_exists('registered', $det) ? $det['registered'] : null;
+        // A live frame often has the plate and no owner yet. Do not blank a known owner.
+        if (! empty($det['owner_name'])) {
+            $event['owner_name'] = $det['owner_name'];
+        }
+        if (! empty($det['owner_label'])) {
+            $event['owner_label'] = $det['owner_label'];
+        }
+        $liveRole = $det['owner_role'] ?? ($det['role'] ?? null);
+        if (! empty($liveRole)) {
+            $event['owner_role'] = $liveRole;
+            $event['role'] = $liveRole;
+        }
+        $liveId = $det['owner_id_number'] ?? ($det['id_number'] ?? null);
+        if (! empty($liveId)) {
+            $event['owner_id_number'] = $liveId;
+        }
+        if (! empty($det['registration_status'])) {
+            $event['registration_status'] = $det['registration_status'];
+        }
+        if (array_key_exists('registered', $det) && $det['registered'] !== null) {
+            $event['registered'] = $det['registered'];
+        }
         if (! empty($det['vehicle_details'])) {
             $event['vehicle_details'] = $det['vehicle_details'];
         }

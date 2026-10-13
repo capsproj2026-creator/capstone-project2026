@@ -260,27 +260,46 @@ class AiParkingHealthService
             return null;
         }
 
-        try {
-            // /health shares the SSH tunnel with the MJPEG stream. While the
-            // picture is playing, this often takes about 3 seconds.
-            $response = Http::connectTimeout(3)
-                ->timeout(8)
-                ->acceptJson()
-                ->get($healthUrl);
+        foreach ($this->healthProbeUrls($healthUrl) as $probeUrl) {
+            try {
+                // The first URL is the SSH tunnel. While the picture is playing,
+                // that probe often takes about 3 seconds. The second URL is the
+                // camera's own uplink and is used only when the tunnel is down.
+                $response = Http::connectTimeout(2)
+                    ->timeout($probeUrl === $healthUrl ? 8 : 3)
+                    ->acceptJson()
+                    ->get($probeUrl);
 
-            if ($response->successful()) {
-                $json = $response->json();
-                if (is_array($json)) {
-                    Cache::put($cacheKey, $json, now()->addSeconds(8));
+                if ($response->successful()) {
+                    $json = $response->json();
+                    if (is_array($json)) {
+                        Cache::put($cacheKey, $json, now()->addSeconds(8));
 
-                    return $json;
+                        return $json;
+                    }
                 }
+            } catch (\Throwable) {
+                continue;
             }
-        } catch (\Throwable) {
-            Cache::put($missKey, 1, now()->addSeconds(2));
         }
 
+        Cache::put($missKey, 1, now()->addSeconds(2));
+
         return null;
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function healthProbeUrls(string $healthUrl): array
+    {
+        $urls = [$healthUrl];
+        $uplink = preg_replace('#://(127\.0\.0\.1|localhost):18090(?=/|$)#', '://127.0.0.1:18091', $healthUrl);
+        if (is_string($uplink) && $uplink !== $healthUrl) {
+            $urls[] = $uplink;
+        }
+
+        return $urls;
     }
 
     /**

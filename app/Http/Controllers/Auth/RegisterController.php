@@ -7,6 +7,7 @@ use App\Models\Department;
 use App\Models\Notification;
 use App\Models\User;
 use App\Models\Vehicle;
+use App\Services\CampusId\RegistrationCredentialVerifier;
 use App\Services\NavigationService;
 use App\Services\SequenceService;
 use App\Services\TemporaryRfidService;
@@ -198,6 +199,11 @@ class RegisterController extends Controller
             'lto_cr_photo.required' => 'Please upload a clear photo of the LTO Certificate of Registration (CR).',
         ]);
 
+        $credentialErrors = app(RegistrationCredentialVerifier::class)->assert($request, $ignoreId);
+        if ($credentialErrors !== []) {
+            throw ValidationException::withMessages($credentialErrors);
+        }
+
         if ($blocking && RegistrationCooldown::passwordMatchesDenied($blocking, $validated['password'])) {
             throw ValidationException::withMessages([
                 'password' => 'Please choose a password different from your previous registration password.',
@@ -305,6 +311,16 @@ class RegisterController extends Controller
             app(\App\Services\UserVehicleService::class)->ensureMigrated($user);
         } catch (\Throwable) {
             // User row already has plate; profile can re-add if sync failed.
+        }
+
+        try {
+            app(RegistrationCredentialVerifier::class)->persistFingerprints(
+                $user,
+                (array) $request->attributes->get('credential_photo_hashes', []),
+                (array) $request->attributes->get('credential_photo_ahashes', [])
+            );
+        } catch (\Throwable $e) {
+            report($e);
         }
 
         try {

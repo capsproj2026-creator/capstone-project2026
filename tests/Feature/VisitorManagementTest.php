@@ -102,7 +102,7 @@ class VisitorManagementTest extends TestCase
         $this->actingAs($this->guardUser->fresh())
             ->get(route('guard.visitors.active'))
             ->assertOk()
-            ->assertSee('Active Visitors', false);
+            ->assertSee('QR signups waiting at the gate', false);
         $this->actingAs($this->guardUser->fresh())
             ->get(route('guard.visitors.history'))
             ->assertOk()
@@ -179,6 +179,19 @@ class VisitorManagementTest extends TestCase
         ], ['X-RFID-TOKEN' => self::TOKEN])
             ->assertOk()
             ->assertJsonPath('code', 'access_granted');
+
+        // Leaving before the expected exit time keeps the visit open as Outside with the card still held.
+        $visitor->refresh();
+        $card->refresh();
+        $this->assertSame(Visitor::STATUS_OUTSIDE, $visitor->status);
+        $this->assertNotNull($visitor->time_out);
+        $this->assertSame(VisitorRfidCard::STATUS_ACTIVE, $card->status);
+
+        $this->flushSession();
+        $this->actingAs($this->guardUser->fresh())
+            ->post(route('guard.visitors.mark-exited', $visitor->id))
+            ->assertRedirect()
+            ->assertSessionHas('success');
 
         $visitor->refresh();
         $card->refresh();

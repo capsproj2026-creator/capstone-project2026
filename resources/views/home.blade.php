@@ -148,7 +148,7 @@
             <a href="{{ route('login') }}" class="btn btn-login"><i data-lucide="log-in"></i> Login to Portal</a>
             <a href="{{ route('register') }}" class="btn btn-register"><i data-lucide="user-plus"></i> Create New Account</a>
         </div>
-        <div class="footer">&copy; {{ date('Y') }} Smart Campus Security Department</div>
+        @include('partials.public-footer', ['tone' => 'on-light', 'class' => 'home-footer'])
     </div>
     <script>window.lucide?.createIcons?.();</script>
 </body>

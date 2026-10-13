@@ -50,6 +50,14 @@ foreach ($p in $ports) {
     Write-StatusRow -Name $p.Name -State $state -Detail $detail
 }
 
+# Camera feed to iscvms.com: SSH tunnel first, HTTPS uplink when the tunnel is down
+$tunnel = @(Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
+    Where-Object { $_.Name -eq 'ssh.exe' -and $_.CommandLine -like '*18090:127.0.0.1:8090*' })
+$uplink = @(Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
+    Where-Object { $_.CommandLine -and $_.CommandLine -like '*camera_uplink.py*' })
+Write-StatusRow -Name 'Camera tunnel' -State $(if ($tunnel.Count) { 'Online' } else { 'Not running' }) -Detail 'optional; the uplink covers the live feed without it'
+Write-StatusRow -Name 'Camera uplink' -State $(if ($uplink.Count) { 'Online' } else { 'Offline' }) -Detail 'start: .\scripts\start-camera-uplink.ps1'
+
 # MongoDB
 $mongoListening = Test-TcpPort -HostName '127.0.0.1' -Port 27017
 $mongoState = if ($mongoListening) { 'Listening' } else { 'Closed/Remote' }

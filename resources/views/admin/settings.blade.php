@@ -360,6 +360,12 @@
             closeModal('stalled-vehicle-modal');
         }
     });
+
+    if (@json(old('account_form') === 'guard' && $errors->any())) {
+        openModal('create-guard-modal');
+    } else if (@json($errors->any() && filled(old('job_title')))) {
+        openModal('create-admin-modal');
+    }
 })();
 </script>
 @endpush

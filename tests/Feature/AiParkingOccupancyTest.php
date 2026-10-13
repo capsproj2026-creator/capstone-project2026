@@ -96,6 +96,8 @@ class AiParkingOccupancyTest extends TestCase
 
     private function seedFixtures(): void
     {
+        $this->forgetFixtureSnapshots();
+
         foreach (self::FIXTURES as $lot) {
             ParkingArea::query()->updateOrCreate(
                 ['id' => $lot['id']],
@@ -127,6 +129,15 @@ class AiParkingOccupancyTest extends TestCase
         $ids = array_column(self::FIXTURES, 'id');
         ParkingSlot::query()->whereIn('area_id', $ids)->delete();
         ParkingArea::query()->whereIn('id', $ids)->delete();
+        $this->forgetFixtureSnapshots();
+    }
+
+    /** Snapshots are shared through MongoDB, so they outlive the per-test array cache. */
+    private function forgetFixtureSnapshots(): void
+    {
+        \App\Models\AiParkingSnapshot::query()
+            ->whereIn('camera_id', array_column(self::FIXTURES, 'camera'))
+            ->delete();
     }
 
     public function test_rejects_missing_ai_token(): void
@@ -555,7 +566,8 @@ class AiParkingOccupancyTest extends TestCase
         $this->assertSame('ZZZ9999', $det['plate']);
         $this->assertFalse($det['registered']);
         $this->assertSame('Unknown', $det['owner_label']);
-        $this->assertSame('Plate Not Registered', $det['registration_status']);
+        $this->assertSame('Unregistered', $det['registration_status']);
+        $this->assertSame('USER_NOT_FOUND', $det['recognition_status']);
         $this->assertNull($det['owner_name']);
     }
 
@@ -580,7 +592,8 @@ class AiParkingOccupancyTest extends TestCase
 
         $det = $response->json('data.detections.0');
         $this->assertSame('unreadable', $det['plate_status']);
-        $this->assertSame('Plate Unreadable', $det['plate_label']);
+        $this->assertSame('Unknown', $det['plate_label']);
+        $this->assertSame('OCR_FAILED', $det['recognition_status']);
         $this->assertNull($det['plate']);
         $this->assertNull($det['owner_name']);
     }
@@ -607,7 +620,8 @@ class AiParkingOccupancyTest extends TestCase
 
         $det = $response->json('data.detections.0');
         $this->assertSame('not_read', $det['plate_status']);
-        $this->assertSame('Plate Not Read', $det['plate_label']);
+        $this->assertSame('Unknown', $det['plate_label']);
+        $this->assertSame('OCR_FAILED', $det['recognition_status']);
         $this->assertNull($det['plate']);
         $this->assertNull($det['owner_name']);
     }
@@ -691,7 +705,7 @@ class AiParkingOccupancyTest extends TestCase
                 ->assertOk();
 
             $det = $response->json('data.detections.0');
-            $this->assertSame('no_parking', $det['violation_status'] ?? null);
+            $this->assertSame('Wrong Parking', $det['violation_status'] ?? null);
 
             $log = ViolationLog::query()
                 ->where('plate_number', 'CIT1111')
@@ -913,7 +927,6 @@ class AiParkingOccupancyTest extends TestCase
         $this->assertStringContainsString('Latest Detections', $html);
         $this->assertStringContainsString('camera-zoom-in', $html);
         $this->assertStringContainsString('camera-zoom-out', $html);
-        $this->assertStringContainsString('Fix plate number', $html);
     }
 
     public function test_guard_plate_crop_proxies_jpeg_without_saving(): void

@@ -130,15 +130,23 @@ class PlateDeadlineTests(unittest.TestCase):
         self.assertEqual(mem.plate, "EBD814")
 
     def test_read_plate_locks_and_unread_does_not(self):
+        weak = TrackMemory(first_seen=time.time())
+        weak.ocr_attempts = 1
+        weak.ocr_result_pending = False
+        weak.apply_ocr_vote("N123VAJ", "ok", 0.28)
+        self.assertEqual(weak.plate_status, "pending", "one weak read must wait for confirmation")
+        self.assertIsNone(weak.plate)
+
         mem = TrackMemory(first_seen=time.time())
-        mem.ocr_attempts = 1
+        mem.ocr_attempts = 2
         mem.ocr_result_pending = False
-        mem.apply_ocr_vote("N123VAJ", "ok", 0.28)
+        mem.apply_ocr_vote("ABC1234", "ok", 0.80)
+        mem.apply_ocr_vote("ABC1234", "ok", 0.80)
         self.assertEqual(mem.plate_status, "ok")
-        self.assertEqual(mem.plate, "N123VAJ")
+        self.assertEqual(mem.plate, "ABC1234")
         self.assertFalse(mem.allows_ocr())
         mem.apply_ocr_vote("ZZZ999", "ok", 0.99)
-        self.assertEqual(mem.plate, "N123VAJ")
+        self.assertEqual(mem.plate, "ABC1234")
 
         missed = TrackMemory(first_seen=time.time())
         missed.ocr_attempts = max(OCR_MAX_ATTEMPTS, 1)
@@ -151,7 +159,9 @@ class PlateDeadlineTests(unittest.TestCase):
         """Regression: leader_conf must use hit counts, not vote weights (was blocking all locks)."""
         mem = TrackMemory(first_seen=time.time())
         mem.apply_ocr_vote("EBD814", "ok", 0.55)
-        self.assertEqual(mem.plate_status, "ok", "0.55 known-PH should lock via single_solid")
+        self.assertEqual(mem.plate_status, "pending", "a single 0.55 read waits for a second match")
+        mem.apply_ocr_vote("EBD814", "ok", 0.55)
+        self.assertEqual(mem.plate_status, "ok", "two matching 0.55 known-PH reads should lock")
         self.assertEqual(mem.plate, "EBD814")
 
     def test_apply_ocr_vote_ignores_after_ok(self):

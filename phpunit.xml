@@ -19,6 +19,11 @@
     </source>
     <php>
         <env name="APP_ENV" value="testing"/>
+        <env name="APP_CONFIG_CACHE" value="bootstrap/cache/config.testing.php" force="true"/>
+        <env name="MONGODB_DATABASE" value="capstone_test" force="true"/>
+        <env name="MONGODB_ATLAS_DATABASE" value="capstone_test" force="true"/>
+        <env name="SYNC_ENABLED" value="false" force="true"/>
+        <env name="GATE_HW_STORAGE_DIR" value="storage/framework/testing/gate-hw" force="true"/>
         <env name="APP_MAINTENANCE_DRIVER" value="file"/>
         <env name="BCRYPT_ROUNDS" value="4"/>
         <env name="BROADCAST_CONNECTION" value="reverb"/>

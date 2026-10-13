@@ -40,11 +40,19 @@ use App\Http\Controllers\User\ParkingController as UserParkingController;
 use App\Http\Controllers\User\PolicyController as UserPolicyController;
 use App\Http\Controllers\User\ViolationController as UserViolationController;
 use App\Http\Controllers\DeliveryRegistrationController;
+use App\Http\Controllers\LegalPageController;
 use App\Http\Controllers\VisitorPreRegistrationController;
 use App\Http\Controllers\VisitorController;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/', fn () => view('home'))->name('home')->middleware('no.cache');
+
+Route::middleware(['no.cache'])->group(function () {
+    Route::get('/privacy', [LegalPageController::class, 'privacy'])->name('legal.privacy');
+    Route::get('/terms', [LegalPageController::class, 'terms'])->name('legal.terms');
+    Route::get('/campus-policy', [LegalPageController::class, 'policy'])->name('legal.policy');
+    Route::get('/accessibility', [LegalPageController::class, 'accessibility'])->name('legal.accessibility');
+});
 
 Route::middleware(['no.cache'])->group(function () {
     Route::get('/visitor/pre-register', [VisitorPreRegistrationController::class, 'show'])->name('visitor.pre-register');

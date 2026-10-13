@@ -16,6 +16,7 @@ class OrCrOcrService
      *     ok: bool,
      *     kind: string,
      *     plate_number: ?string,
+     *     owner_name: ?string,
      *     warnings: list<string>,
      *     message: string
      * }
@@ -30,6 +31,7 @@ class OrCrOcrService
                 'ok' => true,
                 'kind' => $kind,
                 'plate_number' => null,
+                'owner_name' => null,
                 'warnings' => ['Auto-check works best with a photo. Review this file before submitting.'],
                 'message' => 'Review this file before submitting.',
             ];
@@ -43,6 +45,7 @@ class OrCrOcrService
             'ok' => true,
             'kind' => $kind,
             'plate_number' => $parsed['plate_number'],
+            'owner_name' => $parsed['owner_name'] ?? null,
             'warnings' => $warnings,
             'message' => $warnings === []
                 ? 'Document keywords look consistent with an LTO file. Please still review before submitting.'

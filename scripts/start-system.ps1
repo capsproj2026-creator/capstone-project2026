@@ -452,6 +452,12 @@ if ($startAi) {
         "-File", $aiScript,
         "-SkipWebStack"
     )
+    $uplinkScript = Join-Path $PSScriptRoot "start-camera-uplink.ps1"
+    Start-ProjectWindow "Camera uplink" @(
+        $psExe,
+        "-ExecutionPolicy", "Bypass",
+        "-File", $uplinkScript
+    )
 }
 
 if ($WithGitSync) {

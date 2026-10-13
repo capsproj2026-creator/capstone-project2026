@@ -56,6 +56,9 @@ function applyPortalTheme(mode) {
 }
 
 function initPortalTheme() {
+    if (document.querySelector('[data-theme-menu]')) {
+        return;
+    }
     const toggle = document.getElementById('portal-theme-toggle');
     syncThemeToggleIcons();
     toggle?.addEventListener('click', () => {

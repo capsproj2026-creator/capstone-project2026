@@ -338,7 +338,7 @@ class LicenseParser
                 $last = $this->titleCase($match[1]);
                 $rest = $this->titleCase($match[2]);
 
-                return trim($rest.' '.$last);
+                return trim($this->splitGluedGivenNames($rest).' '.$last);
             }
         }
 
@@ -352,10 +352,43 @@ class LicenseParser
                 continue;
             }
 
-            return $this->titleCase($line);
+            return $this->splitGluedGivenNames($this->titleCase($line));
         }
 
         return null;
+    }
+
+    private function splitGluedGivenNames(string $value): string
+    {
+        $known = ['MARIA', 'ANTONIA', 'ANTONIO', 'ANNA', 'ANNE', 'JOSE', 'JUAN', 'CRUZ', 'FUERTES'];
+        $parts = preg_split('/\s+/u', trim($value)) ?: [];
+        $out = [];
+        foreach ($parts as $part) {
+            $upper = strtoupper((string) preg_replace('/[^A-Za-z]/', '', $part));
+            $split = false;
+            foreach ($known as $first) {
+                if (! str_starts_with($upper, $first) || strlen($upper) < strlen($first) + 4) {
+                    continue;
+                }
+                $rest = substr($upper, strlen($first));
+                foreach ($known as $second) {
+                    if ($rest === $second || str_starts_with($rest, $second)) {
+                        $out[] = $this->titleCase($first);
+                        $out[] = $this->splitGluedGivenNames($this->titleCase($rest));
+                        $split = true;
+                        break;
+                    }
+                }
+                if ($split) {
+                    break;
+                }
+            }
+            if (! $split) {
+                $out[] = $part;
+            }
+        }
+
+        return trim(implode(' ', array_filter($out)));
     }
 
     /**

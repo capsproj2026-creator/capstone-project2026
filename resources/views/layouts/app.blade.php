@@ -27,8 +27,9 @@
     <script>
         (function () {
             try {
-                var theme = localStorage.getItem('portal-theme');
-                if (theme === 'dark' || (!theme && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+                var theme = localStorage.getItem('portal-theme') || 'system';
+                var prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+                if (theme === 'dark' || (theme !== 'light' && prefersDark)) {
                     document.documentElement.classList.add('dark');
                 }
             } catch (e) { /* ignore */ }
@@ -100,16 +101,7 @@
                 </div>
 
                 <div class="flex shrink-0 items-center gap-1.5 sm:gap-3">
-                    <button
-                        type="button"
-                        id="portal-theme-toggle"
-                        class="portal-theme-toggle inline-flex h-10 w-10 items-center justify-center rounded-xl transition-colors"
-                        aria-label="Toggle dark mode"
-                        title="Toggle light / dark theme"
-                    >
-                        <i data-lucide="moon" id="portal-theme-icon-dark" class="h-[18px] w-[18px]"></i>
-                        <i data-lucide="sun" id="portal-theme-icon-light" class="hidden h-[18px] w-[18px]"></i>
-                    </button>
+                    @include('partials.theme-menu')
 
                     <div
                         class="hidden items-center gap-2 px-1 py-1.5 sm:flex"

@@ -115,7 +115,9 @@ class CampusIdParser
      */
     private function extractIdNumber(array $lines, string $rawText): ?string
     {
-        if (preg_match('/\bSN\s*[:#.]?\s*([0-9]{6,12})\b/i', $rawText, $match)) {
+        $normalized = strtoupper(strtr($rawText, ['O' => '0', 'I' => '1', 'S/N' => 'SN']));
+        if (preg_match('/\bS[\sN5]\s*[:#.\-]?\s*([0-9]{6,12})\b/i', $normalized, $match)
+            || preg_match('/\bSN\s*[:#.]?\s*([0-9]{6,12})\b/i', $rawText, $match)) {
             return $match[1];
         }
 
@@ -324,11 +326,22 @@ class CampusIdParser
 
     private function looksLikeNameLine(string $text): bool
     {
+        if (preg_match('/^[A-Za-z][A-Za-z\'.\- ]+,\s*[A-Za-z][A-Za-z\'.\- ]+$/u', $text)
+            && ! preg_match('/\b(city|street|barangay|province|village)\b/i', $text)) {
+            foreach (self::SKIP_LINE_PATTERNS as $pattern) {
+                if (preg_match($pattern, $text)) {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
         if (! preg_match('/^[A-Za-z][A-Za-z\s\'.-]+$/u', $text)) {
             return false;
         }
 
-        if (str_contains($text, ',') || str_contains($text, '#')) {
+        if (str_contains($text, '#')) {
             return false;
         }
 

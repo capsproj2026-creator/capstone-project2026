@@ -176,8 +176,8 @@ def scan_image(image_path: Path, full_card: bool = False):
             "sn_lines": [],
         }
 
-    # SN region (left of photo, mid-upper card).
-    sn_crop = enhanced[int(height * 0.12) : int(height * 0.36), int(width * 0.03) : int(width * 0.58)]
+    # SN region (left of photo). Newer IDs print SN lower, under ISO.
+    sn_crop = enhanced[int(height * 0.16) : int(height * 0.58), int(width * 0.02) : int(width * 0.58)]
     sn_lines = _rapidocr_lines(engine, sn_crop, height) if sn_crop.size > 0 else []
 
     # Name region ONLY — below photo/DOB, above address (circled area on CSPC IDs).

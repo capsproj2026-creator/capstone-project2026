@@ -15,6 +15,15 @@
         badge.textContent = n > 9 ? '9+' : String(n);
     };
 
+    const updateSummary = (count) => {
+        const summary = document.getElementById('notification-unread-summary');
+        if (!summary) return;
+        const n = Math.max(0, Number(count) || 0);
+        summary.innerHTML = n > 0
+            ? `<span class="font-medium text-blue-700">${n} unread</span>`
+            : "You're all caught up.";
+    };
+
     const markRowRead = (form) => {
         const row = form.closest('[data-notification-row]');
         if (!row) return;
@@ -49,13 +58,11 @@
 
                 const data = await response.json();
                 updateBadge(data.unread_count);
+                updateSummary(data.unread_count);
 
                 if (form.action.includes('mark_all_read')) {
-                    document.querySelectorAll('[data-notification-row]').forEach((row) => {
-                        row.classList.remove('border-l-4', 'border-l-blue-600', 'bg-blue-50/50');
-                        row.querySelector('form[data-notification-action]')?.remove();
-                    });
-                    form.querySelector('button[type="submit"]')?.setAttribute('disabled', 'disabled');
+                    window.location.reload();
+                    return;
                 } else if (form.action.includes('mark_read')) {
                     markRowRead(form);
                 } else {

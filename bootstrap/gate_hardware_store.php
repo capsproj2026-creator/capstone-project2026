@@ -22,7 +22,14 @@ const GATE_HW_GATES = [
 
 function gate_hw_storage_dir(): string
 {
-    $dir = dirname(__DIR__).DIRECTORY_SEPARATOR.'storage'.DIRECTORY_SEPARATOR.'framework'.DIRECTORY_SEPARATOR.'gate-hw';
+    $root = dirname(__DIR__);
+    $override = trim((string) (getenv('GATE_HW_STORAGE_DIR') ?: ($_ENV['GATE_HW_STORAGE_DIR'] ?? $_SERVER['GATE_HW_STORAGE_DIR'] ?? '')));
+    if ($override !== '') {
+        $isAbsolute = str_starts_with($override, '/') || str_starts_with($override, '\\') || preg_match('/^[A-Za-z]:[\\\\\/]/', $override) === 1;
+        $dir = $isAbsolute ? $override : $root.DIRECTORY_SEPARATOR.$override;
+    } else {
+        $dir = $root.DIRECTORY_SEPARATOR.'storage'.DIRECTORY_SEPARATOR.'framework'.DIRECTORY_SEPARATOR.'gate-hw';
+    }
     if (! is_dir($dir)) {
         @mkdir($dir, 0775, true);
     }

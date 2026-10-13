@@ -13,7 +13,7 @@
     ])
 
     <div class="mb-6 flex flex-wrap items-center justify-between gap-3">
-        <p class="text-sm text-gray-500">
+        <p id="notification-unread-summary" class="text-sm text-gray-500">
             @if (($unreadCount ?? 0) > 0)
                 <span class="font-medium text-blue-700">{{ $unreadCount }} unread</span>
             @else

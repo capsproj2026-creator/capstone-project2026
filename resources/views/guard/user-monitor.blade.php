@@ -20,49 +20,51 @@
     </form>
 
     <div class="overflow-hidden rounded-xl border border-gray-200 bg-white">
-        <table class="w-full text-left text-sm">
-            <thead class="border-b border-gray-200 bg-gray-50 text-gray-500">
-                <tr>
-                    <th class="px-6 py-3 font-medium">Name</th>
-                    <th class="px-6 py-3 font-medium">ID</th>
-                    <th class="px-6 py-3 font-medium">Plate</th>
-                    <th class="px-6 py-3 font-medium">Role</th>
-                    <th class="px-6 py-3 font-medium">Gate Access</th>
-                    <th class="px-6 py-3 font-medium">Strikes</th>
-                    <th class="px-6 py-3 font-medium">Status</th>
-                </tr>
-            </thead>
-            <tbody class="divide-y divide-gray-100">
-                @forelse ($users as $campusUser)
-                    <tr class="hover:bg-gray-50">
-                        <td class="px-6 py-4 font-medium text-gray-900">{{ $campusUser->fullname }}</td>
-                        <td class="px-6 py-4 text-gray-600">{{ $campusUser->id_number }}</td>
-                        <td class="px-6 py-4"><code>{{ $campusUser->plate_number ?? '—' }}</code></td>
-                        <td class="px-6 py-4">{{ $campusUser->displayRoleLabel() }}</td>
-                        <td class="px-6 py-4">
-                            @php
-                                $gateAccess = $campusUser->Gate_access ?: '';
-                                if ($campusUser->status === \App\Models\User::STATUS_DENIED || $gateAccess === 'Denied') {
-                                    $gateLabel = 'Denied';
-                                    $gateTone = 'bg-red-100 text-red-700';
-                                } elseif (in_array($gateAccess, ['Granted', 'Access'], true)) {
-                                    $gateLabel = 'Granted';
-                                    $gateTone = 'bg-green-100 text-green-700';
-                                } else {
-                                    $gateLabel = 'Pending';
-                                    $gateTone = 'bg-amber-100 text-amber-700';
-                                }
-                            @endphp
-                            <span class="inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium {{ $gateTone }}">{{ $gateLabel }}</span>
-                        </td>
-                        <td class="px-6 py-4">{{ $campusUser->strike_count ?? 0 }}/{{ \App\Models\User::MAX_STRIKES }}</td>
-                        <td class="px-6 py-4">{{ $campusUser->status }}</td>
+        <div class="overflow-x-auto overscroll-x-contain">
+            <table class="w-full min-w-[48rem] text-left text-sm">
+                <thead class="border-b border-gray-200 bg-gray-50 text-gray-500">
+                    <tr>
+                        <th class="whitespace-nowrap px-6 py-3 font-medium">Name</th>
+                        <th class="whitespace-nowrap px-6 py-3 font-medium">ID</th>
+                        <th class="whitespace-nowrap px-6 py-3 font-medium">Plate</th>
+                        <th class="whitespace-nowrap px-6 py-3 font-medium">Role</th>
+                        <th class="whitespace-nowrap px-6 py-3 font-medium">Gate Access</th>
+                        <th class="whitespace-nowrap px-6 py-3 font-medium">Strikes</th>
+                        <th class="whitespace-nowrap px-6 py-3 font-medium">Status</th>
                     </tr>
-                @empty
-                    <tr><td colspan="7" class="px-6 py-10 text-center text-gray-500">No users found.</td></tr>
-                @endforelse
-            </tbody>
-        </table>
+                </thead>
+                <tbody class="divide-y divide-gray-100">
+                    @forelse ($users as $campusUser)
+                        <tr class="hover:bg-gray-50">
+                            <td class="whitespace-nowrap px-6 py-4 font-medium text-gray-900">{{ $campusUser->fullname }}</td>
+                            <td class="whitespace-nowrap px-6 py-4 text-gray-600">{{ $campusUser->id_number }}</td>
+                            <td class="whitespace-nowrap px-6 py-4"><code>{{ $campusUser->plate_number ?? '—' }}</code></td>
+                            <td class="whitespace-nowrap px-6 py-4">{{ $campusUser->displayRoleLabel() }}</td>
+                            <td class="whitespace-nowrap px-6 py-4">
+                                @php
+                                    $gateAccess = $campusUser->Gate_access ?: '';
+                                    if ($campusUser->status === \App\Models\User::STATUS_DENIED || $gateAccess === 'Denied') {
+                                        $gateLabel = 'Denied';
+                                        $gateTone = 'bg-red-100 text-red-700';
+                                    } elseif (in_array($gateAccess, ['Granted', 'Access'], true)) {
+                                        $gateLabel = 'Granted';
+                                        $gateTone = 'bg-green-100 text-green-700';
+                                    } else {
+                                        $gateLabel = 'Pending';
+                                        $gateTone = 'bg-amber-100 text-amber-700';
+                                    }
+                                @endphp
+                                <span class="inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium {{ $gateTone }}">{{ $gateLabel }}</span>
+                            </td>
+                            <td class="whitespace-nowrap px-6 py-4">{{ $campusUser->strike_count ?? 0 }}/{{ \App\Models\User::MAX_STRIKES }}</td>
+                            <td class="whitespace-nowrap px-6 py-4">{{ $campusUser->status }}</td>
+                        </tr>
+                    @empty
+                        <tr><td colspan="7" class="px-6 py-10 text-center text-gray-500">No users found.</td></tr>
+                    @endforelse
+                </tbody>
+            </table>
+        </div>
         @if ($users->hasPages())
             <div class="border-t border-gray-200 px-6 py-4">{{ $users->links() }}</div>
         @endif

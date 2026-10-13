@@ -9,6 +9,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\View\View;
 
 class NotificationController extends Controller
@@ -113,6 +114,8 @@ class NotificationController extends Controller
                 ->delete();
         }
 
+        $this->forgetUnreadBadgeCache($guardId);
+
         $unreadCount = Notification::query()
             ->where('user_id', $guardId)
             ->whereIn('type', self::GUARD_TYPES)
@@ -129,5 +132,11 @@ class NotificationController extends Controller
         return redirect()
             ->route('guard.notifications')
             ->with('success', $action === 'clear_all' ? 'All updates cleared.' : 'Updates marked as read.');
+    }
+
+    private function forgetUnreadBadgeCache(int $userId): void
+    {
+        $roleId = (int) (Auth::user()->user_role_id ?? 0);
+        Cache::forget('layout.unread_notifications.'.$userId.'.'.$roleId);
     }
 }

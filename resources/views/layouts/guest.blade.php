@@ -4,8 +4,9 @@
     <script>
         (function () {
             try {
-                var theme = localStorage.getItem('portal-theme');
-                if (theme === 'dark' || (!theme && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+                var theme = localStorage.getItem('portal-theme') || 'system';
+                var prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+                if (theme === 'dark' || (theme !== 'light' && prefersDark)) {
                     document.documentElement.classList.add('dark');
                 }
             } catch (e) { /* ignore */ }
@@ -21,11 +22,59 @@
             border-color: rgba(255, 255, 255, 0.08) !important;
             color: #e7edf5;
         }
+        html.dark { color-scheme: dark; }
         html.dark .guest-card .bg-white\/95,
         html.dark .guest-card .bg-white,
         html.dark .guest-card .bg-gray-50,
-        html.dark .guest-card .bg-amber-50 {
+        html.dark .guest-card .bg-gray-50\/50,
+        html.dark .guest-card .bg-amber-50,
+        html.dark .guest-card .bg-emerald-50,
+        html.dark .guest-card .bg-red-50,
+        html.dark .guest-card .bg-green-50 {
             background-color: #121820 !important;
+        }
+        html.dark .guest-card,
+        html.dark .guest-card .text-gray-900,
+        html.dark .guest-card .text-gray-800,
+        html.dark .guest-card .text-emerald-950,
+        html.dark .guest-card .text-amber-950,
+        html.dark .guest-card .text-amber-900 {
+            color: #e7edf5;
+        }
+        html.dark .guest-card .text-gray-700,
+        html.dark .guest-card .text-gray-600,
+        html.dark .guest-card .text-gray-500,
+        html.dark .guest-card .text-emerald-800,
+        html.dark .guest-card .text-emerald-700,
+        html.dark .guest-card .text-amber-800,
+        html.dark .guest-card .text-red-800,
+        html.dark .guest-card .text-red-700,
+        html.dark .guest-card .text-green-800 {
+            color: #cbd5e1 !important;
+        }
+        html.dark .guest-card .border-gray-200,
+        html.dark .guest-card .border-gray-100,
+        html.dark .guest-card .border-gray-300,
+        html.dark .guest-card .border-emerald-300,
+        html.dark .guest-card .border-amber-200,
+        html.dark .guest-card .border-red-200,
+        html.dark .guest-card .border-green-200,
+        html.dark .guest-card .divide-gray-100 > :not([hidden]) ~ :not([hidden]) {
+            border-color: rgba(255, 255, 255, 0.1) !important;
+        }
+        html.dark .guest-card input:not([type='checkbox']):not([type='radio']):not([type='hidden']),
+        html.dark .guest-card select,
+        html.dark .guest-card textarea {
+            background-color: #0f1724 !important;
+            border-color: rgba(255, 255, 255, 0.14) !important;
+            color: #e7edf5 !important;
+        }
+        html.dark .guest-card input::placeholder,
+        html.dark .guest-card textarea::placeholder {
+            color: #94a3b8 !important;
+        }
+        html.dark .guest-card a {
+            color: #93c5fd;
         }
         .delivery-checkin {
             background-color: #1A365D;
@@ -58,21 +107,15 @@
         <div class="pointer-events-none fixed inset-0 opacity-40" style="background-image: radial-gradient(circle at 12% 18%, rgba(37,99,235,.18), transparent 28%), radial-gradient(circle at 88% 10%, rgba(29,78,216,.12), transparent 24%), radial-gradient(circle at 70% 85%, rgba(59,130,246,.10), transparent 30%);"></div>
     @endif
 
-    <button
-        type="button"
-        id="portal-theme-toggle"
-        class="portal-theme-toggle fixed right-4 top-4 inline-flex h-10 w-10 items-center justify-center rounded-xl shadow-sm"
-        style="z-index: 200;"
-        aria-label="Toggle dark mode"
-        title="Toggle light / dark theme"
-    >
-        <i data-lucide="moon" id="portal-theme-icon-dark" class="h-[18px] w-[18px]"></i>
-        <i data-lucide="sun" id="portal-theme-icon-light" class="hidden h-[18px] w-[18px]"></i>
-    </button>
-
-    <div class="relative flex min-h-screen flex-col items-center justify-center px-4 py-10">
+    <div @class([
+        'relative flex min-h-screen flex-col items-center px-4 py-8 sm:py-10',
+        'justify-start' => trim($__env->yieldContent('guest_align')) === 'start',
+        'justify-center' => trim($__env->yieldContent('guest_align')) !== 'start',
+    ])>
+        <div @class(['w-full', trim($__env->yieldContent('card_width')) ?: 'max-w-md'])>
+        <div class="relative z-30 mb-6 flex items-center justify-between gap-3">
         <a href="{{ route('home') }}" @class([
-            'mb-8 flex cursor-pointer items-center gap-3 no-underline',
+            'flex min-w-0 cursor-pointer items-center gap-3 no-underline',
             'text-white' => $useCampusBg,
             'text-gray-900' => ! $useCampusBg,
         ])>
@@ -92,16 +135,13 @@
                 <p @class(['text-xs', 'text-blue-100/90' => $useCampusBg, 'text-gray-500' => ! $useCampusBg])>Camarines Sur Polytechnic Colleges</p>
             </div>
         </a>
-
-        <div @class(['w-full', trim($__env->yieldContent('card_width')) ?: 'max-w-md'])>
-            @yield('content')
+        @include('partials.theme-menu')
         </div>
 
-        <p @class([
-            'mt-8 text-center text-xs',
-            'text-blue-100/70' => $useCampusBg,
-            'text-gray-400' => ! $useCampusBg,
-        ])>&copy; {{ date('Y') }} Smart Campus Security Department</p>
+            @yield('content')
+
+        @include('partials.public-footer', ['tone' => $useCampusBg ? 'on-photo' : 'on-light'])
+        </div>
     </div>
 
     <script>

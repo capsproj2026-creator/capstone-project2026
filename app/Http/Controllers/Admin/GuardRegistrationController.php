@@ -21,6 +21,13 @@ class GuardRegistrationController extends Controller
 
     public function store(Request $request): RedirectResponse
     {
+        // Settings modal posts "name"; the dedicated page posts "fullname".
+        if (! $request->filled('fullname') && $request->filled('name')) {
+            $request->merge([
+                'fullname' => trim((string) $request->input('name')),
+            ]);
+        }
+
         $validated = $request->validate([
             'fullname' => ['required', 'string', 'max:100'],
             'email' => [
@@ -33,9 +40,14 @@ class GuardRegistrationController extends Controller
             'id_number' => ['required', 'string', 'max:50', 'regex:/^[A-Za-z0-9]+$/', Rule::unique(User::class, 'id_number')],
             'password' => ['required', 'string', 'min:8', 'confirmed'],
         ], [
-            'email.required' => 'Please enter your email address.',
+            'fullname.required' => 'Please enter the guard\'s full name.',
+            'email.required' => 'Please enter an email address.',
             'email.email' => 'Please enter a valid email address with a working domain (format and DNS check).',
             'email.unique' => 'This email address is already registered.',
+            'phone_number.required' => 'Please enter a phone number.',
+            'id_number.required' => 'Please enter an ID number.',
+            'id_number.unique' => 'This ID number is already registered.',
+            'password.confirmed' => 'Password confirmation does not match.',
         ]);
 
         User::query()->create([

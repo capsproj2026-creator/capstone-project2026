@@ -346,11 +346,13 @@
                             const data = chart.data;
                             return (data.labels || []).map((label, i) => {
                                 const value = data.datasets[0].data[i] || 0;
-                                const pct = distTotal > 0 ? Math.round((value / distTotal) * 100) : 0;
+                                const pct = distTotal > 0 ? (value / distTotal) * 100 : 0;
+                                const pctLabel = pct > 0 && pct < 1 ? pct.toFixed(1) : String(Math.round(pct));
                                 return {
-                                    text: `${label} (${pct}%)`,
+                                    text: `${label} (${pctLabel}%)`,
                                     fillStyle: data.datasets[0].backgroundColor[i],
                                     strokeStyle: data.datasets[0].backgroundColor[i],
+                                    fontColor: legendColor(),
                                     lineWidth: 0,
                                     hidden: false,
                                     index: i,
@@ -363,8 +365,9 @@
                     callbacks: {
                         label(ctx) {
                             const value = ctx.raw || 0;
-                            const pct = distTotal > 0 ? Math.round((value / distTotal) * 100) : 0;
-                            return ` ${ctx.label}: ${value} (${pct}%)`;
+                            const pct = distTotal > 0 ? (value / distTotal) * 100 : 0;
+                            const pctLabel = pct > 0 && pct < 1 ? pct.toFixed(1) : String(Math.round(pct));
+                            return ` ${ctx.label}: ${value} (${pctLabel}%)`;
                         },
                     },
                 },

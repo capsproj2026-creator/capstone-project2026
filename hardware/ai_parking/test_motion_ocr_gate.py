@@ -6,6 +6,8 @@ import time
 import unittest
 from unittest.mock import MagicMock, patch
 
+import numpy as np
+
 from parking_rules import (
     MOVEMENT_CONFIRMATION_FRAMES,
     OCR_MAX_ATTEMPTS,
@@ -18,6 +20,11 @@ from plate_ocr import AsyncPlateQueue
 
 def _box(cx: float, cy: float, w: float = 200.0, h: float = 120.0):
     return (cx - w / 2, cy - h / 2, cx + w / 2, cy + h / 2)
+
+
+def _plate_crop():
+    """Blank crop above the minimum plate size so submit() reaches the queue."""
+    return np.zeros((60, 180, 3), dtype=np.uint8)
 
 
 class MotionStateTests(unittest.TestCase):
@@ -69,7 +76,7 @@ class AttemptBudgetOcrTests(unittest.TestCase):
         intel.tracks = {7: mem}
         q = self._queue()
         frame = MagicMock()
-        crop = MagicMock()
+        crop = _plate_crop()
         with patch("plate_ocr.PlateOCR.crop_plate_region", return_value=crop):
             with patch.object(q, "_q") as mock_q:
                 q.submit("CAM-1", 7, frame, (10, 10, 200, 120), intel, every_sec=0.0)
@@ -83,7 +90,7 @@ class AttemptBudgetOcrTests(unittest.TestCase):
         intel.tracks = {7: mem}
         q = self._queue()
         frame = MagicMock()
-        crop = MagicMock()
+        crop = _plate_crop()
         with patch("plate_ocr.PlateOCR.crop_plate_region", return_value=crop):
             with patch.object(q, "_q") as mock_q:
                 q.submit("CAM-1", 7, frame, (10, 10, 200, 120), intel, every_sec=0.0)
@@ -98,7 +105,7 @@ class AttemptBudgetOcrTests(unittest.TestCase):
         intel.tracks = {7: mem}
         q = self._queue()
         frame = MagicMock()
-        crop = MagicMock()
+        crop = _plate_crop()
         with patch("plate_ocr.PlateOCR.crop_plate_region", return_value=crop):
             with patch.object(q, "_q") as mock_q:
                 q.submit("CAM-1", 7, frame, (10, 10, 200, 120), intel, every_sec=0.0)
@@ -140,6 +147,8 @@ class AttemptBudgetOcrTests(unittest.TestCase):
         for _ in range(OCR_MAX_ATTEMPTS):
             mem.mark_ocr_attempt()
         self.assertEqual(mem.ocr_attempts, OCR_MAX_ATTEMPTS)
+        # The worker clears the pending flag once the last read's result is applied.
+        mem.ocr_result_pending = False
         mem.tick_plate_deadline()
         self.assertEqual(mem.plate_status, "not_read")
         self.assertFalse(mem.allows_ocr())

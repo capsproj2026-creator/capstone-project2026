@@ -1061,6 +1061,7 @@ window.__aiClosePlateModal = function () {
         const motion = motionLabelFor(det);
         if (motion) bits.push(motion);
         bits.push(`Role: ${role}`);
+        if (String(det.registration_status || '').toLowerCase() === 'locked') bits.push('Locked');
         if (det.class) bits.push(String(det.class).charAt(0).toUpperCase() + String(det.class).slice(1));
         if (det.slot_id) bits.push(`Parking: ${det.slot_id} OCCUPIED`);
         if (camId) bits.push(camId);
@@ -1931,21 +1932,29 @@ window.__aiClosePlateModal = function () {
                 const status = String(det.plate_status || '').toLowerCase();
                 const plate = String(det.plate || '').trim();
                 if (!plate || ['pending', 'detecting', 'not_read', 'unreadable'].includes(status)) return evt;
-                return {
+                const next = {
                     ...evt,
                     plate,
                     plate_status: status || 'ok',
-                    owner_name: det.owner_name || null,
-                    owner_label: det.owner_label || null,
-                    owner_role: det.owner_role || det.role || null,
-                    role: det.role || det.owner_role || null,
-                    owner_id_number: det.owner_id_number || det.id_number || null,
-                    registration_status: det.registration_status || null,
-                    registered: Object.prototype.hasOwnProperty.call(det, 'registered') ? det.registered : null,
-                    vehicle_details: det.vehicle_details || evt.vehicle_details,
-                    vehicle_type: det.vehicle_type || det.class || evt.vehicle_type,
-                    class: det.class || evt.class,
                 };
+                const owner = String(det.owner_name || '').trim();
+                if (owner) {
+                    next.owner_name = owner;
+                    next.owner_label = det.owner_label || owner;
+                }
+                const roleName = det.owner_role || det.role;
+                if (roleName) {
+                    next.owner_role = roleName;
+                    next.role = roleName;
+                }
+                const idNo = det.owner_id_number || det.id_number;
+                if (idNo) next.owner_id_number = idNo;
+                if (det.registration_status) next.registration_status = det.registration_status;
+                if (det.registered === true || det.registered === false) next.registered = det.registered;
+                if (det.vehicle_details) next.vehicle_details = det.vehicle_details;
+                if (det.vehicle_type || det.class) next.vehicle_type = det.vehicle_type || det.class;
+                if (det.class) next.class = det.class;
+                return next;
             };
 
             if (eventsList) {

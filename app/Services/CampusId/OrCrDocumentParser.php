@@ -12,6 +12,7 @@ class OrCrDocumentParser
      * @param  list<array{text: string, confidence?: float|null}|string>  $lines
      * @return array{
      *     plate_number: ?string,
+     *     owner_name: ?string,
      *     has_lto: bool,
      *     has_document_keyword: bool,
      *     warnings: list<string>
@@ -42,6 +43,7 @@ class OrCrDocumentParser
                 || (bool) preg_match('/cert(?:ificate)?\s*of\s*reg/i', $raw));
 
         $plate = $this->extractPlateNumber($raw);
+        $ownerName = $this->extractOwnerName($raw);
         $warnings = [];
 
         if (! $hasLto) {
@@ -62,10 +64,47 @@ class OrCrDocumentParser
 
         return [
             'plate_number' => $plate,
+            'owner_name' => $ownerName,
             'has_lto' => $hasLto,
             'has_document_keyword' => $hasDocumentKeyword,
             'warnings' => $warnings,
         ];
+    }
+
+    public function extractOwnerName(string $rawText): ?string
+    {
+        if (preg_match('/owner\'?s?\s*name\s*[:.\-]?\s*([A-Za-z][A-Za-z\s,.\']{4,80})/i', $rawText, $match)) {
+            $name = $this->cleanOwnerName($match[1]);
+            if ($name !== null) {
+                return $name;
+            }
+        }
+
+        if (preg_match('/\b([A-Z]{2,}(?:\s+[A-Z]{2,}){0,2}),\s*([A-Z][A-Z\s.]{3,60})/', $rawText, $match)) {
+            $name = $this->cleanOwnerName($match[1].', '.$match[2]);
+            if ($name !== null) {
+                return $name;
+            }
+        }
+
+        return null;
+    }
+
+    private function cleanOwnerName(string $raw): ?string
+    {
+        $name = trim((string) preg_replace('/\s+/u', ' ', $raw));
+        $name = trim($name, " :.-");
+        $name = preg_replace('/\b(address|plate|engine|chassis|file|make|series)\b.*$/i', '', $name) ?? $name;
+        $name = trim($name, " :,-");
+        if (strlen($name) < 5 || ! preg_match('/[A-Za-z]{2,}/', $name)) {
+            return null;
+        }
+
+        if (preg_match('/\b(city|metro|manila|address|street|st\.?|barangay|quezon|camarines|village|west)\b/i', $name)) {
+            return null;
+        }
+
+        return $name;
     }
 
     public function extractPlateNumber(string $rawText): ?string
