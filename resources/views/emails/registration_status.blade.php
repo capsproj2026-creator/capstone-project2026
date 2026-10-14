@@ -1,22 +1,29 @@
 @extends('emails.layout', [
-    'heading' => $status === 'Approved' ? 'Registration Approved' : 'Registration Declined',
+    'heading' => match ($status) {
+        'Approved' => 'Registration Approved',
+        'Approval removed' => 'Approval Removed',
+        default => 'Registration Declined',
+    },
 ])
 
 @section('content')
     @php
-        // Pick colors based on approval vs decline so the email tone matches the outcome.
         $isApproved = $status === 'Approved';
-        $bannerBg = $isApproved ? '#ecfdf5' : '#fef2f2';
-        $bannerBorder = $isApproved ? '#a7f3d0' : '#fecaca';
-        $bannerText = $isApproved ? '#065f46' : '#991b1b';
-        $statusColor = $isApproved ? '#047857' : '#b91c1c';
-        $icon = $isApproved ? '✓' : '✕';
+        $isRevoked = $status === 'Approval removed';
+        $bannerBg = $isApproved ? '#ecfdf5' : ($isRevoked ? '#fffbeb' : '#fef2f2');
+        $bannerBorder = $isApproved ? '#a7f3d0' : ($isRevoked ? '#fcd34d' : '#fecaca');
+        $bannerText = $isApproved ? '#065f46' : ($isRevoked ? '#92400e' : '#991b1b');
+        $statusColor = $isApproved ? '#047857' : ($isRevoked ? '#b45309' : '#b91c1c');
+        $icon = $isApproved ? '✓' : ($isRevoked ? '!' : '✕');
+        $bannerLine = $isRevoked
+            ? 'Your approved vehicle registration was returned to pending.'
+            : 'Your vehicle registration request has been '.strtolower($status).'.';
     @endphp
 
     {{-- Status banner --}}
     <div style="margin-bottom:20px;padding:14px 16px;border-radius:12px;background:{{ $bannerBg }};border:1px solid {{ $bannerBorder }};">
         <p style="margin:0;font-size:14px;font-weight:700;color:{{ $bannerText }};">
-            {{ $icon }} Your vehicle registration request has been {{ strtolower($status) }}.
+            {{ $icon }} {{ $bannerLine }}
         </p>
     </div>
 
@@ -29,6 +36,11 @@
             Good news! An administrator has reviewed and approved your vehicle registration
             for the Smart Campus Vehicle Management System. You may now sign in and use
             campus services according to your assigned access level.
+        </p>
+    @elseif ($isRevoked)
+        <p style="margin:0 0 20px;font-size:15px;line-height:1.6;color:#374151;">
+            An administrator removed the approval on your vehicle registration and returned
+            it to pending. Your gate access is on hold until it is reviewed again.
         </p>
     @else
         <p style="margin:0 0 20px;font-size:15px;line-height:1.6;color:#374151;">
@@ -66,6 +78,12 @@
         <div style="padding:16px 18px;border-radius:12px;background:#eff6ff;border:1px solid #bfdbfe;">
             <p style="margin:0;font-size:14px;line-height:1.6;color:#1e40af;">
                 You can sign in to the portal to view your dashboard, parking information, and notifications.
+            </p>
+        </div>
+    @elseif ($isRevoked)
+        <div style="padding:16px 18px;border-radius:12px;background:#fffbeb;border:1px solid #fcd34d;">
+            <p style="margin:0;font-size:14px;line-height:1.6;color:#92400e;">
+                Sign in to the portal to read this notice. Your registration stays pending until an administrator approves it again.
             </p>
         </div>
     @else

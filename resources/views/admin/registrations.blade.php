@@ -189,12 +189,14 @@
                                         </form>
                                     @endif
                                     @if ($row->status === 'Granted')
-                                        <form method="POST" action="{{ route('admin.registrations.revoke', $row->id) }}" class="m-0 flex flex-col gap-1.5" onsubmit="return confirm('Remove this approval and return the application to pending?')">
-                                            @csrf
-                                            <input type="text" name="reason" required minlength="3" maxlength="500" placeholder="Why this approval is being removed"
-                                                class="w-full rounded-lg border border-gray-300 px-2 py-1.5 text-xs">
-                                            <button type="submit" class="inline-flex w-full items-center justify-center rounded-lg bg-amber-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-amber-700">Remove approval</button>
-                                        </form>
+                                        <button
+                                            type="button"
+                                            class="js-open-revoke inline-flex w-full items-center justify-center rounded-lg bg-rose-600 px-3 py-2 text-xs font-semibold text-white hover:bg-rose-700"
+                                            data-revoke-url="{{ route('admin.registrations.revoke', $row->id) }}"
+                                            data-revoke-name="{{ $row->fullname }}"
+                                        >
+                                            Remove approval
+                                        </button>
                                     @endif
                                     @if ($row->status === 'Pending')
                                         <button
@@ -279,6 +281,32 @@
             </div>
         </form>
     </div>
+
+    <div id="revoke-modal" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/50 p-4" role="dialog" aria-modal="true" aria-labelledby="revoke-modal-title">
+        <form id="revoke-form" method="POST" action="" class="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
+            @csrf
+            <h3 id="revoke-modal-title" class="text-lg font-bold text-gray-900">Remove approval</h3>
+            <p id="revoke-modal-subtitle" class="mt-1 text-sm text-gray-500">A reason is required. The applicant is notified in the portal and by email.</p>
+            <label class="mt-4 block text-sm font-medium text-gray-700" for="revoke-reason">
+                Reason <span class="text-rose-600">*</span>
+            </label>
+            <textarea
+                id="revoke-reason"
+                name="reason"
+                rows="4"
+                required
+                minlength="3"
+                maxlength="500"
+                placeholder="Explain why this approval is being removed"
+                class="mt-1 w-full rounded-xl border border-gray-300 px-3 py-2 text-sm text-gray-900"
+            ></textarea>
+            <p id="revoke-reason-error" class="mt-1 hidden text-xs text-rose-600">Enter a reason of at least 3 characters.</p>
+            <div class="mt-5 flex justify-end gap-2">
+                <button type="button" id="revoke-cancel" class="rounded-xl border border-gray-200 px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50">Cancel</button>
+                <button type="submit" class="rounded-xl bg-rose-600 px-4 py-2 text-sm font-semibold text-white hover:bg-rose-700">Remove approval</button>
+            </div>
+        </form>
+    </div>
 @endsection
 
 @push('styles')
@@ -289,7 +317,7 @@
     }
     @media (min-width: 1024px) {
         .reg-table { min-width: 56rem; }
-        .reg-actions { width: 7.75rem; }
+        .reg-actions { width: 9.5rem; }
     }
 </style>
 @endpush
@@ -377,8 +405,61 @@
         modal?.addEventListener('click', (event) => {
             if (event.target === modal) closeModal();
         });
+
+        const revokeModal = document.getElementById('revoke-modal');
+        const revokeForm = document.getElementById('revoke-form');
+        const revokeSubtitle = document.getElementById('revoke-modal-subtitle');
+        const revokeReason = document.getElementById('revoke-reason');
+        const revokeError = document.getElementById('revoke-reason-error');
+        const setRevokeError = (show) => {
+            revokeError?.classList.toggle('hidden', !show);
+            revokeReason?.classList.toggle('border-rose-400', show);
+            revokeReason?.setAttribute('aria-invalid', show ? 'true' : 'false');
+        };
+        const closeRevoke = () => {
+            revokeModal?.classList.add('hidden');
+            revokeModal?.classList.remove('flex');
+            if (revokeReason) revokeReason.value = '';
+            setRevokeError(false);
+        };
+        document.querySelectorAll('.js-open-revoke').forEach((button) => {
+            button.addEventListener('click', () => {
+                if (!revokeForm) return;
+                revokeForm.action = button.dataset.revokeUrl || '';
+                if (revokeSubtitle) {
+                    const name = button.dataset.revokeName || 'this applicant';
+                    revokeSubtitle.textContent = `Remove approval for ${name}? A reason is required, and they will be notified in the portal and by email.`;
+                }
+                setRevokeError(false);
+                revokeModal?.classList.remove('hidden');
+                revokeModal?.classList.add('flex');
+                revokeReason?.focus();
+            });
+        });
+        revokeForm?.addEventListener('submit', (event) => {
+            const value = (revokeReason?.value || '').trim();
+            if (value.length < 3) {
+                event.preventDefault();
+                if (revokeReason) revokeReason.value = value;
+                setRevokeError(true);
+                revokeReason?.focus();
+            }
+        });
+        revokeReason?.addEventListener('input', () => {
+            if ((revokeReason.value || '').trim().length >= 3) {
+                setRevokeError(false);
+            }
+        });
+        document.getElementById('revoke-cancel')?.addEventListener('click', closeRevoke);
+        revokeModal?.addEventListener('click', (event) => {
+            if (event.target === revokeModal) closeRevoke();
+        });
+
         document.addEventListener('keydown', (event) => {
-            if (event.key === 'Escape') closeModal();
+            if (event.key === 'Escape') {
+                closeModal();
+                closeRevoke();
+            }
         });
     });
 </script>

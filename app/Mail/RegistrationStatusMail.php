@@ -32,9 +32,11 @@ class RegistrationStatusMail extends Mailable
      */
     public function envelope(): Envelope
     {
-        $subject = $this->status === 'Approved'
-            ? 'Vehicle Registration Approved'
-            : 'Vehicle Registration Declined';
+        $subject = match ($this->status) {
+            'Approved' => 'Vehicle Registration Approved',
+            'Approval removed' => 'Vehicle Registration Returned to Pending',
+            default => 'Vehicle Registration Declined',
+        };
 
         return new Envelope(
             subject: $subject,

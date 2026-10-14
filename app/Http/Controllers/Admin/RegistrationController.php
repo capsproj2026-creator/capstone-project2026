@@ -10,6 +10,7 @@ use App\Services\NavigationService;
 use App\Services\RemedialRfidService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Validation\Rule;
 use Illuminate\View\View;
@@ -170,19 +171,25 @@ class RegistrationController extends Controller
             'rfid_uid' => null,
         ]);
 
+        $message = "Your registration was returned to pending. Reason: {$reason}";
+
         Notification::query()->create([
             'user_id' => $user->id,
             'sender_id' => auth()->id(),
             'title' => 'Approval removed',
-            'message' => "Your registration was returned to pending. Reason: {$reason}",
+            'message' => $message,
             'type' => 'System',
             'is_read' => false,
             'created_at' => now(),
         ]);
 
+        Cache::forget('layout.unread_notifications.'.$user->id.'.'.(int) $user->user_role_id);
+
+        $this->updateRegistrationStatus($user, 'Approval removed', $reason);
+
         return redirect()
             ->route('admin.registrations', ['status' => User::STATUS_PENDING])
-            ->with('success', 'Approval removed. The registration is pending again.');
+            ->with('success', 'Approval removed. The applicant was notified by email and in the portal.');
     }
 
     public function decline(Request $request, int $id): RedirectResponse
