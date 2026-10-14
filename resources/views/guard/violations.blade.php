@@ -183,24 +183,34 @@
                 </div>
                 <div>
                     <p class="mb-1 text-sm font-medium text-gray-700">Photo Evidence <span class="text-red-600">*</span></p>
-                    <p class="mb-2 text-xs text-gray-500">Required — capture at least one photo (up to 5).</p>
+                    <p class="mb-2 text-xs text-gray-500">Add at least one photo, up to 5. Use gallery on a phone, files on a laptop, or capture a live photo.</p>
                     <div class="overflow-hidden rounded-xl border border-gray-200 bg-slate-950">
                         <video id="violation-camera" class="hidden h-48 w-full bg-black object-cover" playsinline webkit-playsinline autoplay muted></video>
-                        <p id="violation-camera-hint" class="px-4 py-8 text-center text-sm text-slate-300">Starting camera…</p>
+                        <p id="violation-camera-hint" class="px-4 py-8 text-center text-sm text-slate-300">Choose gallery, files, or capture.</p>
                     </div>
                     <div class="mt-2 flex flex-wrap items-center gap-2">
+                        <button type="button" id="violation-gallery-btn" class="inline-flex cursor-pointer items-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-800 hover:bg-gray-50">
+                            <i data-lucide="image" class="h-4 w-4"></i>
+                            Gallery
+                        </button>
+                        <button type="button" id="violation-files-btn" class="inline-flex cursor-pointer items-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-800 hover:bg-gray-50">
+                            <i data-lucide="folder" class="h-4 w-4"></i>
+                            Files
+                        </button>
                         <button
                             type="button"
                             id="violation-capture-btn"
                             class="inline-flex cursor-pointer items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-blue-300"
                         >
                             <i data-lucide="camera" class="h-4 w-4"></i>
-                            Capture Photo
+                            Capture
                         </button>
                         <span id="violation-photo-count" class="text-xs text-gray-500">0 of 5 photos</span>
                     </div>
                     <div id="violation-photo-thumbs" class="mt-3 grid grid-cols-5 gap-2"></div>
                     <input type="file" name="evidence_photos[]" id="evidence_photos" class="hidden" accept="image/*" multiple>
+                    <input type="file" id="violation-gallery" class="sr-only" accept="image/*" multiple>
+                    <input type="file" id="violation-files" class="sr-only" multiple>
                     <input type="file" id="violation-native-camera" class="sr-only" accept="image/*" capture="environment" data-capture="environment">
                     <p id="violation-evidence-error" class="mt-1 hidden text-xs text-red-600">Capture at least one photo before submitting.</p>
                 </div>
@@ -229,6 +239,8 @@
     const thumbs = document.getElementById('violation-photo-thumbs');
     const photoCount = document.getElementById('violation-photo-count');
     const evidenceInput = document.getElementById('evidence_photos');
+    const galleryInput = document.getElementById('violation-gallery');
+    const filesInput = document.getElementById('violation-files');
     const nativeCamera = document.getElementById('violation-native-camera');
     const MAX_PHOTOS = 5;
     const captured = [];
@@ -394,8 +406,7 @@
     const openModal = () => {
         modal?.classList.remove('hidden');
         modal?.classList.add('flex');
-        showHint('Starting camera…');
-        startCamera();
+        showHint('Choose gallery, files, or capture.');
         if (window.lucide) window.lucide.createIcons();
     };
     const closeModal = () => {
@@ -404,8 +415,31 @@
         stopCamera();
     };
 
-    captureBtn?.addEventListener('click', () => {
+    const addPickedFiles = (list) => {
+        Array.from(list || []).forEach((file) => addCapturedFile(file));
+    };
+    document.getElementById('violation-gallery-btn')?.addEventListener('click', () => galleryInput?.click());
+    document.getElementById('violation-files-btn')?.addEventListener('click', () => filesInput?.click());
+    galleryInput?.addEventListener('change', () => {
+        addPickedFiles(galleryInput.files);
+        galleryInput.value = '';
+    });
+    filesInput?.addEventListener('change', () => {
+        const picked = Array.from(filesInput.files || []);
+        const images = picked.filter((file) => String(file.type || '').startsWith('image/'));
+        if (picked.length && images.length !== picked.length) {
+            const error = document.getElementById('violation-evidence-error');
+            if (error) {
+                error.textContent = 'Only image files can be used as evidence.';
+                error.classList.remove('hidden');
+            }
+        }
+        addPickedFiles(images);
+        filesInput.value = '';
+    });
+    captureBtn?.addEventListener('click', async () => {
         if (captured.length >= MAX_PHOTOS) return;
+        if (!liveCamera) await startCamera();
         if (liveCamera) captureFromVideo();
         else nativeCamera?.click();
     });

@@ -9,6 +9,8 @@ use App\Models\UserSuspension;
 use App\Models\ViolationLog;
 use App\Notifications\AccountLockedNotification;
 use App\Notifications\ParkingPermitSuspendedNotification;
+use App\Services\NavigationService;
+use App\Services\RegistrationAlertService;
 use Illuminate\Support\Facades\Cache;
 use InvalidArgumentException;
 
@@ -250,6 +252,16 @@ class ViolationEnforcementService
             'gsu_remarks' => $remarks,
             'closed_at' => $endorseToVpaf ? null : now(),
         ]);
+
+        if ($endorseToVpaf) {
+            $plate = $endorsement->plate_number ?: 'a vehicle';
+            app(RegistrationAlertService::class)->notifyRole(
+                NavigationService::ROLE_VPAF,
+                $reviewerId,
+                '3rd offense needs your approval',
+                'The GSU endorsed '.$plate.' for revocation of parking privileges. Open Endorsements to approve or reject it.'
+            );
+        }
 
         if ($endorsement->user && ! $endorseToVpaf) {
             $this->notify($endorsement->user, '3rd Offense: Not Endorsed',

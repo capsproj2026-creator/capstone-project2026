@@ -26,6 +26,7 @@
             @if($required) required @endif
             autocomplete="{{ $autocomplete }}"
             placeholder="{{ $placeholder }}"
+            @if($autocomplete === 'new-password') minlength="8" maxlength="15" @endif
             data-clear="1"
             class="sc-has-password-toggle w-full rounded-lg border border-gray-300 bg-white py-2.5 pl-3 pr-[4.5rem] text-sm text-gray-900 shadow-sm placeholder:text-gray-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20 @error($name) border-red-500 focus:border-red-500 focus:ring-red-500/20 @enderror"
         >

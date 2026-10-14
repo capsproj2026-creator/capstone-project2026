@@ -5,6 +5,8 @@ namespace App\Http\Controllers;
 use App\Models\Notification;
 use App\Models\StalledVehicleReport;
 use App\Models\User;
+use App\Services\NavigationService;
+use App\Services\RegistrationAlertService;
 use App\Support\PlateLookup;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -19,6 +21,11 @@ class StalledVehicleController extends Controller
 {
     public function index(Request $request): View
     {
+        $pending = StalledVehicleReport::query()
+            ->where('status', StalledVehicleReport::STATUS_PENDING)
+            ->orderBy('reported_at')
+            ->get();
+
         $active = StalledVehicleReport::query()
             ->where('status', StalledVehicleReport::STATUS_ACTIVE)
             ->orderBy('reported_at')
@@ -32,7 +39,10 @@ class StalledVehicleController extends Controller
             ->limit(15)
             ->get();
 
-        $staffIds = $active->pluck('reported_by')->concat($removed->pluck('reported_by'))->concat($removed->pluck('removed_by'))
+        $staffIds = $pending->pluck('reported_by')
+            ->concat($active->pluck('reported_by'))
+            ->concat($removed->pluck('reported_by'))
+            ->concat($removed->pluck('removed_by'))
             ->filter()->map(fn ($id) => (int) $id)->unique()->values()->all();
         $staffNames = $staffIds === []
             ? []
@@ -44,6 +54,8 @@ class StalledVehicleController extends Controller
         return view('stalled.index', [
             'layout' => $prefix === 'admin' ? 'layouts.admin' : 'layouts.guard',
             'prefix' => $prefix,
+            'canReport' => $prefix === 'guard',
+            'pending' => $pending,
             'active' => $active,
             'removed' => $removed,
             'staffNames' => $staffNames,
@@ -52,11 +64,18 @@ class StalledVehicleController extends Controller
 
     public function store(Request $request): RedirectResponse
     {
+        abort_unless($request->routeIs('guard.*'), 403, 'Only a guard can file a stalled vehicle report.');
+
         $data = $request->validate([
             'plate_number' => ['required', 'string', 'max:20'],
             'owner_name' => ['nullable', 'string', 'max:120'],
             'location' => ['required', 'string', 'max:160'],
-            'cause' => ['required', Rule::in([StalledVehicleReport::CAUSE_STALLED, StalledVehicleReport::CAUSE_KEY])],
+            'cause' => ['required', Rule::in([
+                StalledVehicleReport::CAUSE_STALLED,
+                StalledVehicleReport::CAUSE_KEY,
+                StalledVehicleReport::CAUSE_OTHER,
+            ])],
+            'other_reason' => ['nullable', 'required_if:cause,'.StalledVehicleReport::CAUSE_OTHER, 'string', 'min:3', 'max:200'],
             'notes' => ['nullable', 'string', 'max:500'],
         ]);
 
@@ -69,7 +88,7 @@ class StalledVehicleController extends Controller
         }
 
         $alreadyOpen = StalledVehicleReport::query()
-            ->where('status', StalledVehicleReport::STATUS_ACTIVE)
+            ->whereIn('status', [StalledVehicleReport::STATUS_PENDING, StalledVehicleReport::STATUS_ACTIVE])
             ->where('plate_number', $plate)
             ->exists();
         if ($alreadyOpen) {
@@ -82,21 +101,75 @@ class StalledVehicleController extends Controller
             'plate_number' => $plate,
             'location' => trim($data['location']),
             'cause' => $data['cause'],
+            'other_reason' => $data['cause'] === StalledVehicleReport::CAUSE_OTHER ? trim((string) $data['other_reason']) : null,
             'notes' => filled($data['notes'] ?? null) ? trim($data['notes']) : null,
             'reported_by' => (int) $request->user()->id,
             'reported_at' => now(),
-            'status' => StalledVehicleReport::STATUS_ACTIVE,
+            'status' => StalledVehicleReport::STATUS_PENDING,
         ]);
 
+        app(RegistrationAlertService::class)->notifyAdmins(
+            $request->user(),
+            'Stalled vehicle needs approval',
+            "{$ownerName} ({$plate}) was reported at {$report->location}: {$report->causeLabel()}. Approve or decline it under Stalled Vehicles."
+        );
+
+        return redirect()->route('guard.stalled-vehicles')
+            ->with('success', "Report for {$plate} was sent to the admin for approval.");
+    }
+
+    public function approve(Request $request, int $id): RedirectResponse
+    {
+        abort_unless($request->routeIs('admin.*'), 403);
+
+        $report = StalledVehicleReport::query()->findOrFail($id);
+        if ($report->status !== StalledVehicleReport::STATUS_PENDING) {
+            return back()->with('error', 'This report is no longer waiting for approval.');
+        }
+
+        $report->update([
+            'status' => StalledVehicleReport::STATUS_ACTIVE,
+            'reported_at' => now(),
+        ]);
+        $report->refresh();
+
+        $owner = $report->user_id ? User::query()->find((int) $report->user_id) : null;
         if ($owner) {
             $this->notifyOwner($owner, 'Stalled Vehicle Reported',
-                "Your vehicle ({$plate}) was reported as stalled at {$report->location} ({$report->causeLabel()}). "
+                "Your vehicle ({$report->plate_number}) was reported as stalled at {$report->location} ({$report->causeLabel()}). "
                 .'You have '.StalledVehicleReport::GRACE_HOURS.' hours, until '.ph_datetime($report->graceEndsAt(), 'M j, g:i A')
                 .', to have it repaired or moved. After that it must be towed within '.StalledVehicleReport::TOW_HOURS.' hours.');
         }
 
-        return redirect()->route($this->routePrefix($request).'.stalled-vehicles')
-            ->with('success', "Stalled vehicle {$plate} logged. Grace period ends ".ph_datetime($report->graceEndsAt(), 'M j, g:i A').'.');
+        return back()->with('success', "Approved. Grace period for {$report->plate_number} ends ".ph_datetime($report->graceEndsAt(), 'M j, g:i A').'.');
+    }
+
+    public function decline(Request $request, int $id): RedirectResponse
+    {
+        abort_unless($request->routeIs('admin.*'), 403);
+
+        $data = $request->validate([
+            'decline_reason' => ['required', 'string', 'min:3', 'max:300'],
+        ]);
+
+        $report = StalledVehicleReport::query()->findOrFail($id);
+        if ($report->status !== StalledVehicleReport::STATUS_PENDING) {
+            return back()->with('error', 'This report is no longer waiting for approval.');
+        }
+
+        $reason = trim($data['decline_reason']);
+        $report->update([
+            'status' => StalledVehicleReport::STATUS_DECLINED,
+            'decline_reason' => $reason,
+        ]);
+
+        $guard = $report->reported_by ? User::query()->find((int) $report->reported_by) : null;
+        if ($guard && (int) $guard->user_role_id === NavigationService::ROLE_GUARD) {
+            $this->notifyOwner($guard, 'Stalled report declined',
+                "The admin declined the stalled report for {$report->plate_number}. Reason: {$reason}");
+        }
+
+        return back()->with('success', "Declined the report for {$report->plate_number}.");
     }
 
     public function markRemoved(Request $request, int $id): RedirectResponse

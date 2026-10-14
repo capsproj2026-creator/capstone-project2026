@@ -154,6 +154,8 @@ class VisitorController extends Controller
     public function history(Request $request): View
     {
         $search = trim((string) $request->query('search', ''));
+        $from = trim((string) $request->query('from', ''));
+        $to = trim((string) $request->query('to', ''));
 
         $query = Visitor::query()
             ->with(['vehicleType', 'rfidCard'])
@@ -163,16 +165,38 @@ class VisitorController extends Controller
 
         $all = $query->get();
 
+        if ($from !== '' || $to !== '') {
+            $all = $all->filter(function (Visitor $visitor) use ($from, $to) {
+                $day = optional($visitor->time_out ?? $visitor->time_in)->toDateString();
+                if ($day === null) {
+                    return false;
+                }
+                if ($from !== '' && $day < $from) {
+                    return false;
+                }
+                if ($to !== '' && $day > $to) {
+                    return false;
+                }
+
+                return true;
+            })->values();
+        }
+
         if ($search !== '') {
             $q = strtolower($search);
             $all = $all->filter(function (Visitor $v) use ($q) {
-                $blob = strtolower(implode(' ', [
+                $blob = strtolower(implode(' ', array_filter([
                     $v->displayName(),
+                    $v->first_name ?? null,
+                    $v->last_name ?? null,
+                    $v->middle_name ?? null,
                     $v->plate_number,
                     $v->rfid_uid,
                     $v->purpose,
                     $v->office_to_visit,
-                ]));
+                    $v->contact_number ?? null,
+                    $v->confirmation_code ?? null,
+                ])));
 
                 return str_contains($blob, $q);
             })->values();
@@ -186,6 +210,8 @@ class VisitorController extends Controller
         return view('visitors.history', [
             'visitors' => $items,
             'search' => $search,
+            'from' => $from,
+            'to' => $to,
             'page' => $page,
             'perPage' => $perPage,
             'total' => $total,

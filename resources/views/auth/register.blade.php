@@ -498,12 +498,37 @@
                 }
             });
 
-            const fillField = (field, value) => {
+            const fillField = (field, value, rememberScan = false) => {
                 if (!field || value == null || value === '') return;
                 field.value = field.id === 'address' ? String(value).toUpperCase() : value;
+                if (rememberScan) field.dataset.scanned = String(value);
                 field.dispatchEvent(new Event('input', { bubbles: true }));
                 field.dispatchEvent(new Event('change', { bubbles: true }));
             };
+
+            const warnIfEdited = (field, label) => {
+                if (!field) return;
+                let note = field.parentElement?.querySelector('[data-doc-mismatch]');
+                if (!note) {
+                    note = document.createElement('p');
+                    note.dataset.docMismatch = '1';
+                    note.className = 'mt-1 hidden text-xs text-amber-700';
+                    field.parentElement?.appendChild(note);
+                }
+                const check = () => {
+                    const scanned = String(field.dataset.scanned || '').replace(/[^A-Za-z0-9]/g, '').toUpperCase();
+                    const current = String(field.value || '').replace(/[^A-Za-z0-9]/g, '').toUpperCase();
+                    if (scanned && current && scanned !== current) {
+                        note.textContent = 'This ' + label + ' does not match the uploaded document (' + field.dataset.scanned + ').';
+                        note.classList.remove('hidden');
+                    } else {
+                        note.classList.add('hidden');
+                    }
+                };
+                field.addEventListener('input', check);
+            };
+            warnIfEdited(document.getElementById('id_number'), 'ID number');
+            warnIfEdited(document.getElementById('driver_license_number'), 'license number');
 
             document.getElementById('address')?.addEventListener('input', function () {
                 const start = this.selectionStart;
@@ -579,7 +604,7 @@
                 if (/^09\d{9}$/.test(String(data.phone_number || ''))) {
                     fillField(document.getElementById('phone_number'), data.phone_number);
                 }
-                fillField(document.getElementById('driver_license_number'), data.driver_license_number);
+                fillField(document.getElementById('driver_license_number'), data.driver_license_number, true);
                 if (data.plate_number) {
                     fillField(document.getElementById('plate_number'), data.plate_number);
                 }
@@ -657,10 +682,16 @@
                     }
                     if (warnings.length) {
                         setStatus(statusEl, warnings.join(' '), 'warning');
+                    } else if (kind === 'cr' && (data.vehicle_model || data.vehicle_color || data.plate_number)) {
+                        setStatus(statusEl, 'Model, color, and plate were filled from the CR. Please review them.', 'success');
                     } else {
                         setStatus(statusEl, data.message || 'Document looks like an LTO file. Please still review before submitting.', 'success');
                     }
-                    if (data.plate_number && !document.getElementById('plate_number')?.value) {
+                    if (kind === 'cr') {
+                        if (data.vehicle_model) fillField(document.getElementById('vehicle_model'), data.vehicle_model);
+                        if (data.vehicle_color) fillField(document.getElementById('vehicle_color'), data.vehicle_color);
+                        if (data.plate_number) fillField(document.getElementById('plate_number'), data.plate_number);
+                    } else if (data.plate_number && !document.getElementById('plate_number')?.value) {
                         fillField(document.getElementById('plate_number'), data.plate_number);
                     }
                 }).catch(() => {
@@ -691,7 +722,7 @@
                     fieldName: 'id_document',
                     statusEl: idStatus,
                     onSuccess: (data) => {
-                        if (data.id_number) fillField(document.getElementById('id_number'), data.id_number);
+                        if (data.id_number) fillField(document.getElementById('id_number'), data.id_number, true);
                         const formName = document.getElementById('full_name')?.value || '';
                         if (data.full_name && !formName) fillField(document.getElementById('full_name'), data.full_name);
                         const warnings = Array.isArray(data.warnings) ? data.warnings.filter(Boolean) : [];

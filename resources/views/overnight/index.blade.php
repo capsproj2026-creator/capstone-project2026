@@ -61,6 +61,9 @@
                                     @if ($row['request']->area_name)
                                         <span class="ml-1 text-xs text-gray-500">{{ $row['request']->area_name }}</span>
                                     @endif
+                                    @if ($row['request']->proof_path)
+                                        <a href="{{ route($isAdmin ? 'admin.overnight-parking.proof' : 'guard.overnight-parking.proof', $row['request']->id) }}" target="_blank" class="ml-2 text-xs font-semibold text-blue-700 hover:underline">Proof</a>
+                                    @endif
                                 @else
                                     <span class="rounded-full border border-red-200 bg-red-50 px-2 py-0.5 text-xs font-medium text-red-700">No approval</span>
                                 @endif
@@ -110,6 +113,9 @@
                             · Sent {{ ph_datetime($req->created_at, 'M j, Y g:i A') }}
                         </p>
                         <p class="mt-1 text-sm text-gray-600">{{ $req->reason }}</p>
+                        @if ($req->proof_path)
+                            <a href="{{ route('admin.overnight-parking.proof', $req->id) }}" target="_blank" class="mt-1 inline-flex text-xs font-semibold text-blue-700 hover:underline">View proof</a>
+                        @endif
                         @if ($req->review_remarks)
                             <p class="mt-1 text-xs text-gray-500">Remarks: {{ $req->review_remarks }}</p>
                         @endif

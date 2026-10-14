@@ -9,7 +9,9 @@ use App\Services\SystemSettingService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\View\View;
+use Symfony\Component\HttpFoundation\Response;
 
 /**
  * GSU approval queue (admin) and the overnight check of vehicles still inside campus (admin and guard).
@@ -92,5 +94,16 @@ class OvernightParkingController extends Controller
         }
 
         return back()->with('success', $approve ? 'Overnight parking approved.' : 'Overnight parking request denied.');
+    }
+
+    public function proof(int $id): Response
+    {
+        $overnightRequest = OvernightParkingRequest::query()->findOrFail($id);
+        $path = (string) ($overnightRequest->proof_path ?? '');
+        if ($path === '' || str_contains($path, '..') || ! str_starts_with($path, 'overnight-proofs/') || ! Storage::disk('private')->exists($path)) {
+            abort(404);
+        }
+
+        return Storage::disk('private')->response($path, basename($path));
     }
 }

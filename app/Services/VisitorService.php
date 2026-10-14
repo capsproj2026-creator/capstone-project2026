@@ -440,6 +440,46 @@ class VisitorService
     }
 
     /**
+     * Earlier delivery details used to fill the form. The previous destination is never included.
+     *
+     * @return array{full_name: string, contact_number: string, company: string, company_other: string, plate_number: string}|null
+     */
+    public function previousDeliveryProfile(string $fullName): ?array
+    {
+        $needle = strtolower(trim(preg_replace('/\s+/', ' ', $fullName) ?? ''));
+        if (strlen($needle) < 2) {
+            return null;
+        }
+
+        $match = Visitor::query()
+            ->where('registration_source', Visitor::SOURCE_DELIVERY)
+            ->orderByDesc('id')
+            ->limit(300)
+            ->get()
+            ->first(function (Visitor $visitor) use ($needle) {
+                $name = strtolower(trim($visitor->displayName()));
+
+                return $name === $needle || str_contains($name, $needle);
+            });
+
+        if (! $match) {
+            return null;
+        }
+
+        $company = trim((string) ($match->notes ?: ''));
+        $known = ['Grab', 'Foodpanda', 'Lalamove'];
+        $isKnown = in_array($company, $known, true);
+
+        return [
+            'full_name' => $match->displayName(),
+            'contact_number' => (string) ($match->contact_number ?? ''),
+            'company' => $isKnown ? $company : 'Other',
+            'company_other' => $isKnown ? '' : $company,
+            'plate_number' => (string) ($match->plate_number ?? ''),
+        ];
+    }
+
+    /**
      * @return array{first: string, last: string}
      */
     private function splitDeliveryName(string $fullName): array

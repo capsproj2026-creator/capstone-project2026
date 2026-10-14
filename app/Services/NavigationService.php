@@ -69,6 +69,7 @@ class NavigationService
             ['label' => 'Parking', 'route' => 'user.parking', 'icon' => 'parking-square', 'access' => ['student', 'staff']],
             ['label' => 'Overnight Parking', 'route' => 'user.overnight-parking', 'icon' => 'moon', 'access' => ['staff']],
 
+            ['label' => 'Dashboard', 'route' => 'vpaf.dashboard', 'icon' => 'layout-dashboard', 'access' => ['vpaf']],
             ['label' => 'Endorsements', 'route' => 'vpaf.endorsements', 'icon' => 'file-text', 'access' => ['vpaf']],
             ['label' => 'Notifications', 'route' => 'vpaf.notifications', 'icon' => 'bell', 'access' => ['vpaf']],
         ];
@@ -108,12 +109,12 @@ class NavigationService
             self::ROLE_ADMIN => 'admin.dashboard',
             self::ROLE_GUARD => 'guard.dashboard',
             self::ROLE_STUDENT, self::ROLE_STAFF => 'user.dashboard',
-            self::ROLE_VPAF => 'vpaf.endorsements',
+            self::ROLE_VPAF => 'vpaf.dashboard',
             default => match (strtolower($user->roleName())) {
                 'admin' => 'admin.dashboard',
                 'guard' => 'guard.dashboard',
                 'student', 'staff' => 'user.dashboard',
-                'vpaf' => 'vpaf.endorsements',
+                'vpaf' => 'vpaf.dashboard',
                 default => 'home',
             },
         };

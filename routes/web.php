@@ -45,6 +45,7 @@ use App\Http\Controllers\User\ViolationController as UserViolationController;
 use App\Http\Controllers\DeliveryRegistrationController;
 use App\Http\Controllers\LegalPageController;
 use App\Http\Controllers\VisitorPreRegistrationController;
+use App\Http\Controllers\Vpaf\DashboardController as VpafDashboardController;
 use App\Http\Controllers\Vpaf\EndorsementController as VpafEndorsementController;
 use App\Http\Controllers\VisitorController;
 use Illuminate\Support\Facades\Route;
@@ -71,6 +72,9 @@ Route::middleware(['no.cache'])->group(function () {
     Route::post('/delivery/return', [DeliveryRegistrationController::class, 'returning'])
         ->middleware('throttle:visitor-pre-register')
         ->name('delivery.returning');
+    Route::post('/delivery/lookup', [DeliveryRegistrationController::class, 'lookup'])
+        ->middleware('throttle:visitor-pre-register')
+        ->name('delivery.lookup');
     Route::get('/delivery/success', [DeliveryRegistrationController::class, 'success'])->name('delivery.success');
 });
 
@@ -307,8 +311,18 @@ Route::prefix('admin')->middleware(['auth', 'verified', 'granted', 'no.cache', '
         ->whereNumber('id')
         ->middleware('permission:manage_parking')
         ->name('overnight-parking.decide');
+    Route::get('/overnight-parking/{id}/proof', [OvernightParkingController::class, 'proof'])
+        ->whereNumber('id')
+        ->middleware('permission:manage_parking')
+        ->name('overnight-parking.proof');
     Route::get('/stalled-vehicles', [StalledVehicleController::class, 'index'])->name('stalled-vehicles');
     Route::post('/stalled-vehicles', [StalledVehicleController::class, 'store'])->name('stalled-vehicles.store');
+    Route::post('/stalled-vehicles/{id}/approve', [StalledVehicleController::class, 'approve'])
+        ->whereNumber('id')
+        ->name('stalled-vehicles.approve');
+    Route::post('/stalled-vehicles/{id}/decline', [StalledVehicleController::class, 'decline'])
+        ->whereNumber('id')
+        ->name('stalled-vehicles.decline');
     Route::post('/stalled-vehicles/{id}/removed', [StalledVehicleController::class, 'markRemoved'])
         ->whereNumber('id')
         ->name('stalled-vehicles.removed');
@@ -393,6 +407,9 @@ Route::prefix('guard')->middleware(['auth', 'verified', 'granted', 'no.cache', '
     Route::get('/notifications', [GuardNotificationController::class, 'index'])->name('notifications');
     Route::post('/notifications/{action}', [GuardNotificationController::class, 'action'])->name('notifications.action');
     Route::get('/overnight-check', [OvernightParkingController::class, 'index'])->name('overnight-check');
+    Route::get('/overnight-parking/{id}/proof', [OvernightParkingController::class, 'proof'])
+        ->whereNumber('id')
+        ->name('overnight-parking.proof');
     Route::get('/stalled-vehicles', [StalledVehicleController::class, 'index'])->name('stalled-vehicles');
     Route::post('/stalled-vehicles', [StalledVehicleController::class, 'store'])
         ->middleware('throttle:20,1')
@@ -426,7 +443,8 @@ Route::prefix('user')->middleware(['auth', 'verified', 'portal', 'no.cache', 'ro
 });
 
 Route::prefix('vpaf')->middleware(['auth', 'verified', 'granted', 'no.cache', 'role:VPAF'])->name('vpaf.')->group(function () {
-    Route::get('/', [VpafEndorsementController::class, 'index'])->name('endorsements');
+    Route::get('/', [VpafDashboardController::class, 'index'])->name('dashboard');
+    Route::get('/endorsements', [VpafEndorsementController::class, 'index'])->name('endorsements');
     Route::post('/endorsements/{id}', [VpafEndorsementController::class, 'decide'])->name('endorsements.decide');
     Route::get('/notifications', [AdminNotificationController::class, 'index'])->name('notifications');
     Route::post('/notifications/{action}', [AdminNotificationController::class, 'action'])->name('notifications.action');

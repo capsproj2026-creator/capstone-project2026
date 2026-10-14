@@ -8,11 +8,23 @@
         'subtitle' => 'Completed visits after exit or RFID return',
     ])
 
-    <form method="GET" class="mb-5">
-        <div class="relative">
-            <i data-lucide="search" class="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400"></i>
-            <input type="search" name="search" value="{{ $search }}" placeholder="Search visitor, plate, purpose, office..."
-                class="w-full rounded-xl border border-gray-200 bg-white py-3 pl-11 pr-4 text-sm shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20">
+    <form method="GET" class="mb-5 grid grid-cols-1 gap-3 rounded-xl border border-gray-200 bg-white p-4 shadow-sm sm:grid-cols-4 sm:items-end">
+        <div class="sm:col-span-2">
+            <label for="history-search" class="mb-1 block text-xs font-medium text-gray-600">Search</label>
+            <input id="history-search" type="search" name="search" value="{{ $search }}" placeholder="Name, plate, purpose, office, RFID"
+                class="w-full rounded-lg border border-gray-200 bg-white px-3 py-2.5 text-sm text-gray-900">
+        </div>
+        <div>
+            <label for="history-from" class="mb-1 block text-xs font-medium text-gray-600">From</label>
+            <input id="history-from" type="date" name="from" value="{{ $from }}" class="w-full rounded-lg border border-gray-200 bg-white px-3 py-2.5 text-sm text-gray-900">
+        </div>
+        <div>
+            <label for="history-to" class="mb-1 block text-xs font-medium text-gray-600">To</label>
+            <input id="history-to" type="date" name="to" value="{{ $to }}" class="w-full rounded-lg border border-gray-200 bg-white px-3 py-2.5 text-sm text-gray-900">
+        </div>
+        <div class="flex gap-2 sm:col-span-4">
+            <button type="submit" class="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700">Apply filter</button>
+            <a href="{{ route($routePrefix.'.visitors.history') }}" class="rounded-lg border border-gray-200 px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50">Clear</a>
         </div>
     </form>
 
@@ -56,10 +68,10 @@
                 <span>Page {{ $page }} of {{ $lastPage }} · {{ $total }} total</span>
                 <div class="flex gap-2">
                     @if ($page > 1)
-                        <a href="{{ route($routePrefix.'.visitors.history', ['page' => $page - 1, 'search' => $search]) }}" class="rounded-lg border border-gray-200 px-3 py-1.5 font-medium hover:bg-gray-50">Prev</a>
+                        <a href="{{ route($routePrefix.'.visitors.history', ['page' => $page - 1, 'search' => $search, 'from' => $from, 'to' => $to]) }}" class="rounded-lg border border-gray-200 px-3 py-1.5 font-medium hover:bg-gray-50">Prev</a>
                     @endif
                     @if ($page < $lastPage)
-                        <a href="{{ route($routePrefix.'.visitors.history', ['page' => $page + 1, 'search' => $search]) }}" class="rounded-lg border border-gray-200 px-3 py-1.5 font-medium hover:bg-gray-50">Next</a>
+                        <a href="{{ route($routePrefix.'.visitors.history', ['page' => $page + 1, 'search' => $search, 'from' => $from, 'to' => $to]) }}" class="rounded-lg border border-gray-200 px-3 py-1.5 font-medium hover:bg-gray-50">Next</a>
                     @endif
                 </div>
             </div>

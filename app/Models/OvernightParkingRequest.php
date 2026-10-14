@@ -30,6 +30,7 @@ class OvernightParkingRequest extends MongoModel
         'first_night',
         'last_night',
         'reason',
+        'proof_path',
         'status',
         'reviewed_by',
         'reviewed_at',

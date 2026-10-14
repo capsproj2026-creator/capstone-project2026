@@ -50,6 +50,8 @@ class OrCrOcrService
             'kind' => $kind,
             'plate_number' => $parsed['plate_number'],
             'owner_name' => $parsed['owner_name'] ?? null,
+            'vehicle_model' => $parsed['vehicle_model'] ?? null,
+            'vehicle_color' => $parsed['vehicle_color'] ?? null,
             'has_lto' => (bool) ($parsed['has_lto'] ?? false),
             'has_document_keyword' => (bool) ($parsed['has_document_keyword'] ?? false),
             'warnings' => $warnings,

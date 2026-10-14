@@ -18,13 +18,19 @@ class StalledVehicleReport extends MongoModel
 
     public const TOW_HOURS = 3;
 
+    public const STATUS_PENDING = 'Pending';
+
     public const STATUS_ACTIVE = 'Active';
 
     public const STATUS_REMOVED = 'Removed';
 
+    public const STATUS_DECLINED = 'Declined';
+
     public const CAUSE_STALLED = 'stalled';
 
     public const CAUSE_KEY = 'key';
+
+    public const CAUSE_OTHER = 'other';
 
     protected $fillable = [
         'user_id',
@@ -32,7 +38,9 @@ class StalledVehicleReport extends MongoModel
         'plate_number',
         'location',
         'cause',
+        'other_reason',
         'notes',
+        'decline_reason',
         'reported_by',
         'reported_at',
         'status',
@@ -61,7 +69,17 @@ class StalledVehicleReport extends MongoModel
 
     public function causeLabel(): string
     {
-        return $this->cause === self::CAUSE_KEY ? 'Lost or broken key' : 'Stalled / will not start';
+        if ($this->cause === self::CAUSE_KEY) {
+            return 'Lost or broken key';
+        }
+
+        if ($this->cause === self::CAUSE_OTHER) {
+            $custom = trim((string) ($this->other_reason ?? ''));
+
+            return $custom !== '' ? $custom : 'Other';
+        }
+
+        return 'Stalled / will not start';
     }
 
     public function graceEndsAt(): CarbonInterface

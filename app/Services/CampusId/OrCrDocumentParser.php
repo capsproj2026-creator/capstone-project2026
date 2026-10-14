@@ -44,6 +44,10 @@ class OrCrDocumentParser
 
         $plate = $this->extractPlateNumber($raw);
         $ownerName = $this->extractOwnerName($raw);
+        $color = $kind === 'cr' ? $this->extractLabeledValue($raw, 'color') : null;
+        $make = $kind === 'cr' ? $this->extractLabeledValue($raw, 'make') : null;
+        $series = $kind === 'cr' ? ($this->extractLabeledValue($raw, 'series') ?: $this->extractLabeledValue($raw, 'model')) : null;
+        $model = trim(implode(' ', array_filter([$make, $series])));
         $warnings = [];
 
         if (! $hasLto) {
@@ -65,6 +69,8 @@ class OrCrDocumentParser
         return [
             'plate_number' => $plate,
             'owner_name' => $ownerName,
+            'vehicle_model' => $model !== '' ? $model : null,
+            'vehicle_color' => $color,
             'has_lto' => $hasLto,
             'has_document_keyword' => $hasDocumentKeyword,
             'warnings' => $warnings,
@@ -105,6 +111,23 @@ class OrCrDocumentParser
         }
 
         return $name;
+    }
+
+    private function extractLabeledValue(string $rawText, string $label): ?string
+    {
+        $pattern = '/\b'.preg_quote($label, '/').'\s*[:.\-]?\s*([A-Za-z0-9][A-Za-z0-9 \/-]{1,40})/i';
+        if (! preg_match($pattern, $rawText, $match)) {
+            return null;
+        }
+
+        $value = trim((string) preg_replace('/\s+/u', ' ', $match[1]));
+        $value = trim((string) preg_replace('/\b(plate|engine|chassis|file|mv|address|owner)\b.*$/i', '', $value));
+        $value = trim($value, " :.-");
+        if ($value === '' || strlen($value) < 2) {
+            return null;
+        }
+
+        return $value;
     }
 
     public function extractPlateNumber(string $rawText): ?string

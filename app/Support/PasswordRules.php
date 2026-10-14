@@ -34,6 +34,6 @@ class PasswordRules
 
     public static function hint(): string
     {
-        return '8–15 characters with uppercase, lowercase, number, and special character';
+        return 'Minimum 8 characters, maximum 15, with uppercase, lowercase, a number, and a symbol';
     }
 }

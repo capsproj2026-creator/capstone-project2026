@@ -130,12 +130,14 @@
                                 <td class="px-4 py-3">
                                     <div class="flex flex-col items-end gap-2">
                                         @unless ($v->rfid_uid)
-                                            <form method="POST" action="{{ route($routePrefix.'.visitors.assign-rfid', $v->id) }}" class="flex w-full max-w-[14rem] gap-1">
-                                                @csrf
-                                                <input type="text" name="rfid_uid" placeholder="RFID UID" required
-                                                    class="min-w-0 flex-1 rounded-lg border border-gray-200 px-2 py-1.5 text-xs">
-                                                <button type="submit" class="rounded-lg bg-blue-600 px-2.5 py-1.5 text-xs font-semibold text-white hover:bg-blue-700">Assign</button>
-                                            </form>
+                                            <button
+                                                type="button"
+                                                class="js-tap-rfid inline-flex items-center justify-center rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-blue-700"
+                                                data-assign-url="{{ route($routePrefix.'.visitors.assign-rfid', $v->id) }}"
+                                                data-visitor-name="{{ $v->displayName() }}"
+                                            >
+                                                Tap card to assign
+                                            </button>
                                         @else
                                             <form method="POST" action="{{ route($routePrefix.'.visitors.return-rfid', $v->id) }}" onsubmit="return confirm('Return this temporary RFID?')">
                                                 @csrf
@@ -181,6 +183,7 @@
             const refresh = () => window.location.reload();
 
             const tick = async () => {
+                if (window.visitorRfidModalOpen) return;
                 try {
                     const response = await fetch(liveUrl, {
                         headers: { Accept: 'application/json' },
@@ -216,4 +219,87 @@
             });
         })();
     </script>
+
+    @if ($canManage ?? false)
+        <div id="visitor-rfid-modal" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/50 p-4">
+            <form id="visitor-rfid-form" method="POST" action="" class="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
+                @csrf
+                <h3 class="text-lg font-bold text-gray-900">Assign RFID</h3>
+                <p id="visitor-rfid-subtitle" class="mt-1 text-sm text-gray-500">Ask the visitor to tap the card on the desk reader.</p>
+                <input type="hidden" name="rfid_uid" id="visitor-rfid-uid" required>
+                <div id="visitor-rfid-waiting" class="mt-4 rounded-xl border border-blue-200 bg-blue-50 px-4 py-6 text-center text-sm text-blue-800">Waiting for a card tap…</div>
+                <div id="visitor-rfid-detected" class="mt-4 hidden rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-4 text-sm text-emerald-800">
+                    Card read: <span id="visitor-rfid-value" class="font-mono font-semibold"></span>
+                </div>
+                <div class="mt-5 flex justify-end gap-2">
+                    <button type="button" id="visitor-rfid-cancel" class="rounded-xl border border-gray-200 px-4 py-2 text-sm font-semibold text-gray-700">Cancel</button>
+                    <button type="submit" id="visitor-rfid-submit" disabled class="rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white disabled:bg-blue-300">Assign</button>
+                </div>
+            </form>
+        </div>
+        <script>
+            (() => {
+                const modal = document.getElementById('visitor-rfid-modal');
+                const form = document.getElementById('visitor-rfid-form');
+                const uidInput = document.getElementById('visitor-rfid-uid');
+                const subtitle = document.getElementById('visitor-rfid-subtitle');
+                const waiting = document.getElementById('visitor-rfid-waiting');
+                const detected = document.getElementById('visitor-rfid-detected');
+                const valueEl = document.getElementById('visitor-rfid-value');
+                const submit = document.getElementById('visitor-rfid-submit');
+                const latestUrl = @json(route($routePrefix.'.visitors.latest-unregistered'));
+                let poll = null;
+                let openedAt = '';
+                const normalize = (raw) => String(raw || '').replace(/^\s*UID\s*:\s*/i, '').toUpperCase().replace(/[^A-F0-9]/g, '');
+                const close = () => {
+                    window.visitorRfidModalOpen = false;
+                    modal?.classList.add('hidden');
+                    modal?.classList.remove('flex');
+                    if (poll) clearInterval(poll);
+                    poll = null;
+                    if (uidInput) uidInput.value = '';
+                    if (submit) submit.disabled = true;
+                };
+                const showUid = (uid) => {
+                    if (!uid || uid.length < 6 || uidInput.value) return;
+                    uidInput.value = uid;
+                    if (valueEl) valueEl.textContent = uid;
+                    waiting?.classList.add('hidden');
+                    detected?.classList.remove('hidden');
+                    if (submit) submit.disabled = false;
+                };
+                const pull = async () => {
+                    if (!window.visitorRfidModalOpen || uidInput.value) return;
+                    try {
+                        const response = await fetch(latestUrl + '?since=' + encodeURIComponent(openedAt), {
+                            headers: { Accept: 'application/json' },
+                            credentials: 'same-origin',
+                            cache: 'no-store',
+                        });
+                        if (!response.ok) return;
+                        const data = await response.json();
+                        showUid(normalize(data.uid));
+                    } catch (error) {}
+                };
+                document.querySelectorAll('.js-tap-rfid').forEach((button) => {
+                    button.addEventListener('click', () => {
+                        form.action = button.dataset.assignUrl || '';
+                        if (subtitle) subtitle.textContent = 'Tap the visitor card for ' + (button.dataset.visitorName || 'this visit') + '. The UID is filled from the reader.';
+                        uidInput.value = '';
+                        submit.disabled = true;
+                        waiting?.classList.remove('hidden');
+                        detected?.classList.add('hidden');
+                        openedAt = new Date().toISOString();
+                        window.visitorRfidModalOpen = true;
+                        modal?.classList.remove('hidden');
+                        modal?.classList.add('flex');
+                        pull();
+                        poll = setInterval(pull, 1000);
+                    });
+                });
+                document.getElementById('visitor-rfid-cancel')?.addEventListener('click', close);
+                modal?.addEventListener('click', (event) => { if (event.target === modal) close(); });
+            })();
+        </script>
+    @endif
 @endsection

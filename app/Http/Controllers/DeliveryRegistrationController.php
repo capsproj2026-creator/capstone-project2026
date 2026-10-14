@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Visitor;
 use App\Services\VisitorService;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\View\View;
@@ -56,6 +57,23 @@ class DeliveryRegistrationController extends Controller
         $visitor = $visitors->checkInReturningDelivery($validated['plate_number']);
 
         return $this->toSuccess($visitor);
+    }
+
+    public function lookup(Request $request, VisitorService $visitors): JsonResponse
+    {
+        $validated = $request->validate([
+            'full_name' => ['required', 'string', 'min:2', 'max:120'],
+        ]);
+
+        $profile = $visitors->previousDeliveryProfile($validated['full_name']);
+        if (! $profile) {
+            return response()->json([
+                'ok' => false,
+                'message' => 'No earlier delivery was found for that name.',
+            ], 404);
+        }
+
+        return response()->json(['ok' => true] + $profile);
     }
 
     public function success(Request $request): View|RedirectResponse

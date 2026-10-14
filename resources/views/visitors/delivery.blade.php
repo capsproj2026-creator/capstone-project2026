@@ -89,21 +89,69 @@
 
             <div class="mt-6 space-y-3 rounded-xl border border-gray-200 bg-gray-50/50 p-4 sm:p-5">
                 <h2 class="text-sm font-semibold text-gray-900">Been here before?</h2>
-                <p class="text-xs text-gray-500">Enter the same motorcycle plate. Your name and company are reused.</p>
-                @if ($errors->has('plate_number') && old('returning'))
-                    <p class="text-sm text-red-700">{{ $errors->first('plate_number') }}</p>
-                @endif
-                <form method="POST" action="{{ route('delivery.returning') }}" class="flex flex-col gap-2 sm:flex-row">
-                    @csrf
-                    <input type="hidden" name="returning" value="1">
-                    <input type="text" name="plate_number" value="{{ old('returning') ? old('plate_number') : '' }}" required placeholder="Plate number" class="min-w-0 flex-1 rounded-lg border border-gray-200 bg-white px-3 py-2.5 text-sm uppercase text-gray-900 placeholder:text-gray-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20">
-                    <button type="submit" class="rounded-lg bg-[#1A365D] px-4 py-2.5 text-sm font-semibold text-white hover:bg-[#122844]">Find me</button>
-                </form>
+                <p class="text-xs text-gray-500">Enter the name you used last time. Your name, mobile, company, and plate are filled in. Today's delivery address is left blank.</p>
+                <p id="delivery-lookup-message" class="hidden text-sm"></p>
+                <div class="flex flex-col gap-2 sm:flex-row">
+                    <input type="text" id="delivery-lookup-name" placeholder="Your name" class="min-w-0 flex-1 rounded-lg border border-gray-200 bg-white px-3 py-2.5 text-sm text-gray-900 placeholder:text-gray-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20">
+                    <button type="button" id="delivery-lookup-btn" class="rounded-lg bg-[#1A365D] px-4 py-2.5 text-sm font-semibold text-white hover:bg-[#122844]">Fill my details</button>
+                </div>
             </div>
         </div>
     </div>
 
     <script>
+        (function () {
+            var button = document.getElementById('delivery-lookup-btn');
+            var nameInput = document.getElementById('delivery-lookup-name');
+            var message = document.getElementById('delivery-lookup-message');
+            var form = document.getElementById('delivery-form');
+            if (!button || !nameInput || !form) return;
+
+            var setMessage = function (text, ok) {
+                message.textContent = text;
+                message.className = 'text-sm ' + (ok ? 'text-emerald-700' : 'text-red-700');
+            };
+
+            button.addEventListener('click', function () {
+                var name = nameInput.value.trim();
+                if (name.length < 2) {
+                    setMessage('Enter the name you used last time.', false);
+                    return;
+                }
+                button.disabled = true;
+                fetch(@json(route('delivery.lookup')), {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Accept': 'application/json',
+                        'X-CSRF-TOKEN': form.querySelector('input[name="_token"]').value
+                    },
+                    body: JSON.stringify({ full_name: name })
+                }).then(function (response) {
+                    return response.json().then(function (data) {
+                        return { ok: response.ok, data: data };
+                    });
+                }).then(function (result) {
+                    if (!result.ok || !result.data.ok) {
+                        setMessage((result.data && result.data.message) || 'No earlier delivery was found for that name.', false);
+                        return;
+                    }
+                    form.full_name.value = result.data.full_name || '';
+                    form.contact_number.value = result.data.contact_number || '';
+                    form.company.value = result.data.company || '';
+                    form.company_other.value = result.data.company_other || '';
+                    form.plate_number.value = result.data.plate_number || '';
+                    form.recipient.value = '';
+                    setMessage('Your details were filled in. Enter today\'s delivery address.', true);
+                    form.recipient.focus();
+                }).catch(function () {
+                    setMessage('Could not look up that name. Try again.', false);
+                }).finally(function () {
+                    button.disabled = false;
+                });
+            });
+        })();
+
         window.addEventListener('pageshow', function (event) {
             var nav = performance.getEntriesByType('navigation')[0];
             var fromHistory = event.persisted || (nav && nav.type === 'back_forward');

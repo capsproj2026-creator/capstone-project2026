@@ -16,6 +16,7 @@ use App\Services\RfidAccessService;
 use App\Services\ViolationEnforcementService;
 use App\Support\OffenseStatus;
 use Carbon\Carbon;
+use Illuminate\Http\UploadedFile;
 use InvalidArgumentException;
 use Tests\TestCase;
 
@@ -242,6 +243,7 @@ class ParkingPolicyWorkflowTest extends TestCase
         $this->postForm($this->owner, route('user.overnight-parking.store'), [
             'first_night' => $tonight,
             'reason' => 'Official travel to Manila',
+            'proof' => UploadedFile::fake()->create('travel-order.pdf', 40, 'application/pdf'),
         ])->assertRedirect(route('user.overnight-parking'));
 
         $request = OvernightParkingRequest::query()->where('user_id', $this->owner->id)->first();
@@ -288,7 +290,7 @@ class ParkingPolicyWorkflowTest extends TestCase
         if ($this->admin) {
             $this->actingAs($this->admin)->get(route('admin.violations'))->assertOk()->assertSee('Offense Ladder Overview');
             $this->actingAs($this->admin)->get(route('admin.overnight-parking'))->assertOk()->assertSee('Employee requests');
-            $this->actingAs($this->admin)->get(route('admin.stalled-vehicles'))->assertOk()->assertSee('Report a stalled vehicle');
+            $this->actingAs($this->admin)->get(route('admin.stalled-vehicles'))->assertOk()->assertSee('Approve or decline');
             $this->actingAs($this->admin)->get(route('admin.endorsements', ['tab' => 'decided']))->assertOk();
             $this->actingAs($this->admin)->get(route('admin.settings', ['section' => 'general']))->assertOk()->assertSee('Endorse 2nd and 3rd Offenses to the GSU');
             $this->actingAs($this->admin)->get(route('admin.dashboard'))->assertOk();
@@ -329,7 +331,18 @@ class ParkingPolicyWorkflowTest extends TestCase
         $saved = StalledVehicleReport::query()->where('plate_number', $this->owner->plate_number)->first();
         $this->assertNotNull($saved);
         $this->assertSame((int) $this->owner->id, (int) $saved->user_id);
+        $this->assertSame(StalledVehicleReport::STATUS_PENDING, $saved->status);
         $this->assertSame('Lost or broken key', $saved->causeLabel());
+        $this->assertFalse(Notification::query()->where('user_id', $this->owner->id)->where('title', 'Stalled Vehicle Reported')->exists());
+
+        if (! $this->admin) {
+            $this->markTestSkipped('Admin user not found.');
+        }
+
+        $this->flushSession();
+        $this->postForm($this->admin, route('admin.stalled-vehicles.approve', $saved->id))
+            ->assertRedirect();
+        $this->assertSame(StalledVehicleReport::STATUS_ACTIVE, $saved->fresh()->status);
         $this->assertTrue(Notification::query()->where('user_id', $this->owner->id)->where('title', 'Stalled Vehicle Reported')->exists());
 
         $this->flushSession();

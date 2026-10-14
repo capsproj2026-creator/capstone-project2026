@@ -45,6 +45,7 @@ class OvernightParkingController extends Controller
             'last_night' => ['nullable', 'date_format:Y-m-d', 'after_or_equal:first_night'],
             'area_id' => ['nullable', 'integer'],
             'reason' => ['required', 'string', 'min:5', 'max:500'],
+            'proof' => ['required', 'file', 'mimes:jpg,jpeg,png,pdf', 'max:5120'],
         ], [
             'first_night.after_or_equal' => 'The first night cannot be in the past.',
         ]);
@@ -74,6 +75,8 @@ class OvernightParkingController extends Controller
             ? ParkingArea::visibleToRole('Staff')->firstWhere('id', (int) $data['area_id'])
             : null;
 
+        $proof = $request->file('proof')->store('overnight-proofs', 'private');
+
         OvernightParkingRequest::query()->create([
             'user_id' => (int) $user->id,
             'plate_number' => $plate,
@@ -82,6 +85,7 @@ class OvernightParkingController extends Controller
             'first_night' => $first,
             'last_night' => $last,
             'reason' => trim($data['reason']),
+            'proof_path' => $proof,
             'status' => OvernightParkingRequest::STATUS_PENDING,
             'created_at' => now(),
         ]);
