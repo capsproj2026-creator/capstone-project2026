@@ -12,8 +12,6 @@
             'access' => ['label' => 'Access Rules', 'icon' => 'key-round'],
             'policy' => ['label' => 'Policy', 'icon' => 'book-open'],
             'health' => ['label' => 'System Health', 'icon' => 'heart-pulse'],
-            'guards' => ['label' => 'Create Guard', 'icon' => 'shield'],
-            'vpaf' => ['label' => 'VPAF Accounts', 'icon' => 'shield'],
         ];
     @endphp
 
@@ -178,12 +176,6 @@
         @elseif ($section === 'health')
             @include('partials.admin.settings-health')
 
-        @elseif ($section === 'guards')
-            @include('partials.admin.settings-guard')
-
-        @elseif ($section === 'vpaf')
-            @include('partials.admin.settings-vpaf')
-
         @else
             @include('partials.admin.settings-parking-rules')
             @include('partials.admin.settings-stalled-vehicles')
@@ -214,6 +206,7 @@
 
     document.getElementById('open-create-admin')?.addEventListener('click', () => openModal('create-admin-modal'));
     document.getElementById('open-create-guard')?.addEventListener('click', () => openModal('create-guard-modal'));
+    document.getElementById('open-create-vpaf')?.addEventListener('click', () => openModal('create-vpaf-modal'));
 
     const violationForm = document.getElementById('violation-type-form');
     const violationMethod = document.getElementById('violation-form-method');
@@ -359,7 +352,7 @@
     document.querySelectorAll('[data-close-modal]').forEach((btn) => {
         btn.addEventListener('click', () => closeModal(btn.getAttribute('data-close-modal')));
     });
-    ['create-admin-modal', 'create-guard-modal', 'violation-type-modal', 'parking-rule-modal', 'campus-notice-modal', 'stalled-vehicle-modal'].forEach((id) => {
+    ['create-admin-modal', 'create-guard-modal', 'create-vpaf-modal', 'violation-type-modal', 'parking-rule-modal', 'campus-notice-modal', 'stalled-vehicle-modal'].forEach((id) => {
         document.getElementById(id)?.addEventListener('click', (e) => {
             if (e.target.id === id) closeModal(id);
         });
@@ -368,6 +361,7 @@
         if (e.key === 'Escape') {
             closeModal('create-admin-modal');
             closeModal('create-guard-modal');
+            closeModal('create-vpaf-modal');
             closeModal('violation-type-modal');
             closeModal('parking-rule-modal');
             closeModal('campus-notice-modal');
@@ -377,6 +371,8 @@
 
     if (@json(old('account_form') === 'guard' && $errors->any())) {
         openModal('create-guard-modal');
+    } else if (@json(old('account_form') === 'vpaf' && $errors->any())) {
+        openModal('create-vpaf-modal');
     } else if (@json($errors->any() && filled(old('job_title')))) {
         openModal('create-admin-modal');
     }

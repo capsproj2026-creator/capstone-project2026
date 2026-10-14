@@ -15,7 +15,7 @@ class GuardRegistrationController extends Controller
 {
     public function create(): RedirectResponse
     {
-        return redirect()->route('admin.settings', ['section' => 'guards']);
+        return redirect()->route('admin.settings', ['section' => 'admins']);
     }
 
     public function store(Request $request): RedirectResponse
@@ -69,7 +69,7 @@ class GuardRegistrationController extends Controller
         ]);
 
         return redirect()
-            ->route('admin.settings', ['section' => 'guards'])
+            ->route('admin.settings', ['section' => 'admins'])
             ->with('success', 'Guard account created successfully.');
     }
 }

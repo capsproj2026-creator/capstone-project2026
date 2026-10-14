@@ -24,14 +24,14 @@ use Illuminate\View\View;
 class SettingsController extends Controller
 {
     /** @var list<string> */
-    private const SECTIONS = ['general', 'admins', 'notifications', 'violations', 'access', 'policy', 'health', 'guards', 'vpaf'];
+    private const SECTIONS = ['general', 'admins', 'notifications', 'violations', 'access', 'policy', 'health'];
 
     public function index(Request $request, SystemSettingService $settings, RolePermissionService $permissions): View
     {
         $section = (string) $request->query('section', 'general');
 
-        if ($section === 'parking') {
-            $section = 'access';
+        if (in_array($section, ['parking', 'guards', 'vpaf'], true)) {
+            $section = $section === 'parking' ? 'access' : 'admins';
         }
 
         if (! in_array($section, self::SECTIONS, true)) {
@@ -60,15 +60,13 @@ class SettingsController extends Controller
                 ->whereIn('user_role_id', [
                     NavigationService::ROLE_ADMIN,
                     NavigationService::ROLE_GUARD,
+                    NavigationService::ROLE_VPAF,
                 ])
                 ->orderBy('user_role_id')
                 ->orderBy('name')
                 ->get(),
             'rolePermissionService' => $permissions,
             'healthSnapshot' => $section === 'health' ? app(SystemHealthService::class)->snapshot() : null,
-            'vpafAccounts' => $section === 'vpaf'
-                ? User::query()->where('user_role_id', NavigationService::ROLE_VPAF)->orderByDesc('id')->get()
-                : collect(),
         ]);
     }
 

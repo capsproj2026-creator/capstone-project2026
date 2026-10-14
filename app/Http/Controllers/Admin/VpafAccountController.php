@@ -14,7 +14,7 @@ class VpafAccountController extends Controller
 {
     public function create(): RedirectResponse
     {
-        return redirect()->route('admin.settings', ['section' => 'vpaf']);
+        return redirect()->route('admin.settings', ['section' => 'admins']);
     }
 
     public function store(Request $request): RedirectResponse
@@ -52,7 +52,7 @@ class VpafAccountController extends Controller
         ]);
 
         return redirect()
-            ->route('admin.settings', ['section' => 'vpaf'])
+            ->route('admin.settings', ['section' => 'admins'])
             ->with('success', 'VPAF account created. That user can sign in and approve endorsements.');
     }
 }
