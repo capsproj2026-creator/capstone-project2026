@@ -11,6 +11,9 @@
             'violations' => ['label' => 'Violations', 'icon' => 'triangle-alert'],
             'access' => ['label' => 'Access Rules', 'icon' => 'key-round'],
             'policy' => ['label' => 'Policy', 'icon' => 'book-open'],
+            'health' => ['label' => 'System Health', 'icon' => 'heart-pulse'],
+            'guards' => ['label' => 'Create Guard', 'icon' => 'shield'],
+            'vpaf' => ['label' => 'VPAF Accounts', 'icon' => 'shield'],
         ];
     @endphp
 
@@ -39,6 +42,8 @@
             </nav>
         </div>
         </div>
+
+        @include('partials.shell.flash')
 
         @if ($section === 'general')
             <form method="POST" action="{{ route('admin.settings.system') }}" class="mb-6">
@@ -169,6 +174,15 @@
 
         @elseif ($section === 'policy')
             @include('partials.admin.settings-policy')
+
+        @elseif ($section === 'health')
+            @include('partials.admin.settings-health')
+
+        @elseif ($section === 'guards')
+            @include('partials.admin.settings-guard')
+
+        @elseif ($section === 'vpaf')
+            @include('partials.admin.settings-vpaf')
 
         @else
             @include('partials.admin.settings-parking-rules')

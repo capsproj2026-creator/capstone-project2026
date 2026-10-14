@@ -12,7 +12,7 @@ use App\Models\ViolationType;
 use App\Services\NavigationService;
 use App\Services\RolePermissionService;
 use App\Services\SequenceService;
-use App\Services\SystemSettingService;
+use App\Services\SystemHealthService;
 use App\Support\CampusParkingPolicy;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -23,7 +23,7 @@ use Illuminate\View\View;
 class SettingsController extends Controller
 {
     /** @var list<string> */
-    private const SECTIONS = ['general', 'admins', 'notifications', 'violations', 'access', 'policy'];
+    private const SECTIONS = ['general', 'admins', 'notifications', 'violations', 'access', 'policy', 'health', 'guards', 'vpaf'];
 
     public function index(Request $request, SystemSettingService $settings, RolePermissionService $permissions): View
     {
@@ -64,6 +64,10 @@ class SettingsController extends Controller
                 ->orderBy('name')
                 ->get(),
             'rolePermissionService' => $permissions,
+            'healthSnapshot' => $section === 'health' ? app(SystemHealthService::class)->snapshot() : null,
+            'vpafAccounts' => $section === 'vpaf'
+                ? User::query()->where('user_role_id', NavigationService::ROLE_VPAF)->orderByDesc('id')->get()
+                : collect(),
         ]);
     }
 

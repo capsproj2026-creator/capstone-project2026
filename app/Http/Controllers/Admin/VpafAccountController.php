@@ -9,18 +9,12 @@ use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\Rule;
-use Illuminate\View\View;
 
 class VpafAccountController extends Controller
 {
-    public function create(): View
+    public function create(): RedirectResponse
     {
-        return view('admin.create-vpaf', [
-            'accounts' => User::query()
-                ->where('user_role_id', NavigationService::ROLE_VPAF)
-                ->orderByDesc('id')
-                ->get(),
-        ]);
+        return redirect()->route('admin.settings', ['section' => 'vpaf']);
     }
 
     public function store(Request $request): RedirectResponse
@@ -58,7 +52,7 @@ class VpafAccountController extends Controller
         ]);
 
         return redirect()
-            ->route('admin.vpaf.create')
+            ->route('admin.settings', ['section' => 'vpaf'])
             ->with('success', 'VPAF account created. That user can sign in and approve endorsements.');
     }
 }

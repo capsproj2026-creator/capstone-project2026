@@ -10,13 +10,12 @@ use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\Rule;
-use Illuminate\View\View;
 
 class GuardRegistrationController extends Controller
 {
-    public function create(): View
+    public function create(): RedirectResponse
     {
-        return view('admin.create-guard');
+        return redirect()->route('admin.settings', ['section' => 'guards']);
     }
 
     public function store(Request $request): RedirectResponse
@@ -70,7 +69,7 @@ class GuardRegistrationController extends Controller
         ]);
 
         return redirect()
-            ->route('admin.settings', ['section' => 'admins'])
+            ->route('admin.settings', ['section' => 'guards'])
             ->with('success', 'Guard account created successfully.');
     }
 }
