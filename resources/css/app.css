@@ -340,7 +340,7 @@
 
     .settings-subnav__tab {
         display: inline-flex;
-        flex: 0 0 auto;
+        flex: 1 1 0;
         align-items: center;
         justify-content: center;
         gap: 0.5rem;

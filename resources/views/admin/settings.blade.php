@@ -183,14 +183,6 @@
     </div>
 @endsection
 
-@push('styles')
-<style>
-    .settings-subnav__tab {
-        flex: 0 0 auto;
-    }
-</style>
-@endpush
-
 @push('scripts')
 <script>
 (() => {
