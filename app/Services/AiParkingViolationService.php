@@ -329,6 +329,7 @@ class AiParkingViolationService
             'status' => 'Active',
             'created_at' => now(),
             'camera_id' => $cameraId,
+            'camera_reason' => $type,
             'area_id' => $areaId,
             'area_name' => $areaName,
             'vehicle_details' => $vehicleDetails,
@@ -342,7 +343,20 @@ class AiParkingViolationService
         $newStrikes = app(ViolationEnforcementService::class)->syncStrikesFromLogs($user, $log, 'AI-'.$cameraId);
         $user->refresh();
 
-        $message = "Your vehicle ({$plate}) was auto-cited by AI parking ({$violationType}). Strikes: {$newStrikes}/".User::MAX_STRIKES.'. '
+        $clipKey = 'incident-clip:'.$cameraId;
+        if (! Cache::has($clipKey)) {
+            try {
+                $clip = app(IncidentClipService::class)->capture($cameraId, (string) $log->getKey(), 'ai');
+                if ($clip) {
+                    Cache::put($clipKey, true, 60);
+                }
+            } catch (\Throwable $e) {
+                Log::warning('AI incident clip failed: '.$e->getMessage());
+            }
+        }
+
+        $reasonLabel = self::REASON_LABELS[$type] ?? $type;
+        $message = "Your vehicle ({$plate}) was auto-cited by AI parking ({$violationType}: {$reasonLabel}). Strikes: {$newStrikes}/".User::MAX_STRIKES.'. '
             .\App\Support\ViolationSanctionPresenter::citationNotice($newStrikes);
 
         Notification::query()->create([

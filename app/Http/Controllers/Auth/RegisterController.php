@@ -9,6 +9,7 @@ use App\Models\User;
 use App\Models\Vehicle;
 use App\Services\CampusId\RegistrationCredentialVerifier;
 use App\Services\NavigationService;
+use App\Services\RegistrationAlertService;
 use App\Services\SequenceService;
 use App\Services\TemporaryRfidService;
 use App\Support\PasswordRules;
@@ -338,6 +339,12 @@ class RegisterController extends Controller
             'is_read' => false,
             'created_at' => now(),
         ]);
+
+        app(RegistrationAlertService::class)->notifyAdmins(
+            $user,
+            'New registration pending',
+            "{$user->displayName()} submitted a vehicle registration that needs immediate review.",
+        );
 
         Auth::login($user);
         $request->session()->regenerate();

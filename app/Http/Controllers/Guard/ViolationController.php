@@ -120,10 +120,29 @@ class ViolationController extends Controller
 
         $isRegistered = (bool) $user;
         $occurredAt = now();
+        $skipped = [];
 
         // One ViolationLog per selected type so strike / citation counts match selections.
         $logs = [];
         foreach ($types as $singleType) {
+            $existing = ViolationLog::query()
+                ->where('violation_type', $singleType)
+                ->where('created_at', '>=', now()->startOfDay())
+                ->where(function ($q) use ($user, $plateKey, $displayPlate) {
+                    if ($user) {
+                        $q->where('user_id', $user->id);
+                    }
+                    $q->orWhere('plate_key', $plateKey)
+                        ->orWhere('plate_number', $displayPlate);
+                })
+                ->first();
+
+            if ($existing) {
+                $skipped[] = $singleType;
+
+                continue;
+            }
+
             $logs[] = ViolationLog::query()->create([
                 'user_id' => $user?->id,
                 'violator_name' => $user?->fullname ?: 'Unregistered Vehicle',
@@ -145,7 +164,28 @@ class ViolationController extends Controller
             ]);
         }
 
+        if ($logs === []) {
+            $message = 'This plate already has the same citation today: '.implode(', ', $skipped).'. No additional strike was added.';
+            if ($request->expectsJson()) {
+                return response()->json([
+                    'ok' => false,
+                    'message' => $message,
+                    'existing' => true,
+                ], 409);
+            }
+
+            return redirect()->route('guard.violations', ['error' => 'already_cited']);
+        }
+
         $primaryLog = $logs[0];
+        $citationCount = count($logs);
+        $typeLabel = TrafficViolations::displayLabel(array_map(
+            static fn (ViolationLog $log) => (string) $log->violation_type,
+            $logs
+        ));
+        $title = $citationCount === 1
+            ? 'Violation Recorded: '.$typeLabel
+            : "{$citationCount} Violations Recorded: ".$typeLabel;
 
         $newStrikes = 0;
         $settings = app(\App\Services\SystemSettingService::class);
@@ -191,11 +231,12 @@ class ViolationController extends Controller
         $endorsed = $isRegistered && $newStrikes >= 2
             && app(ViolationEnforcementService::class)->endorsementsEnabled();
         $loggedWord = $citationCount === 1 ? 'violation' : 'violations';
+        $skippedNote = $skipped === [] ? '' : ' Already cited today and not counted again: '.implode(', ', $skipped).'.';
         $successMessage = $isRegistered
             ? ("{$citationCount} {$loggedWord} logged successfully.".($endorsed
                 ? ' This is a '.($newStrikes >= 3 ? '3rd' : '2nd').' offense and has been endorsed to the GSU.'
-                : ''))
-            : "{$citationCount} {$loggedWord} logged for unregistered plate {$displayPlate}. The owner will be emailed automatically when this plate is registered in the system.";
+                : '').$skippedNote)
+            : "{$citationCount} {$loggedWord} logged for unregistered plate {$displayPlate}. The owner will be emailed automatically when this plate is registered in the system.{$skippedNote}";
 
         if ($request->expectsJson()) {
             return response()->json([

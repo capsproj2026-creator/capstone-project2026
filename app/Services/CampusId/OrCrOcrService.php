@@ -17,6 +17,8 @@ class OrCrOcrService
      *     kind: string,
      *     plate_number: ?string,
      *     owner_name: ?string,
+     *     has_lto: bool,
+     *     has_document_keyword: bool,
      *     warnings: list<string>,
      *     message: string
      * }
@@ -28,12 +30,14 @@ class OrCrOcrService
 
         if ($mime === 'application/pdf' || ! str_starts_with($mime, 'image/')) {
             return [
-                'ok' => true,
+                'ok' => false,
                 'kind' => $kind,
                 'plate_number' => null,
                 'owner_name' => null,
-                'warnings' => ['Auto-check works best with a photo. Review this file before submitting.'],
-                'message' => 'Review this file before submitting.',
+                'has_lto' => false,
+                'has_document_keyword' => false,
+                'warnings' => ['Upload a clear photo of the LTO document. PDF files cannot be checked.'],
+                'message' => 'Upload a clear photo of the LTO document.',
             ];
         }
 
@@ -46,6 +50,8 @@ class OrCrOcrService
             'kind' => $kind,
             'plate_number' => $parsed['plate_number'],
             'owner_name' => $parsed['owner_name'] ?? null,
+            'has_lto' => (bool) ($parsed['has_lto'] ?? false),
+            'has_document_keyword' => (bool) ($parsed['has_document_keyword'] ?? false),
             'warnings' => $warnings,
             'message' => $warnings === []
                 ? 'Document keywords look consistent with an LTO file. Please still review before submitting.'

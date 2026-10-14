@@ -56,6 +56,22 @@
                     <p class="mt-1 text-sm font-semibold text-gray-900">{{ $result['purpose'] }}</p>
                 </div>
             @endif
+            <div class="rounded-lg bg-white/70 px-4 py-3 sm:col-span-2">
+                <p class="text-xs font-medium text-gray-500">Overnight stay</p>
+                @if (! empty($result['overnight_valid']))
+                    <p class="mt-1 text-sm font-semibold text-emerald-800">Allowed until {{ $result['overnight_window'] ?? 'the approved window ends' }}</p>
+                @elseif (($result['overnight_status'] ?? '') === 'pending')
+                    <p class="mt-1 text-sm font-semibold text-amber-800">Proof is uploaded, but GSU has not approved it yet.</p>
+                @else
+                    <p class="mt-1 text-sm font-semibold text-rose-800">Not allowed. Overnight parking needs an approved permit and proof.</p>
+                @endif
+                @if (! empty($result['overnight_reason']))
+                    <p class="mt-1 text-xs text-gray-600">{{ $result['overnight_reason'] }}</p>
+                @endif
+                @if (! empty($result['overnight_permit_id']))
+                    <a href="{{ route('guard.overnight.proof', $result['overnight_permit_id']) }}" class="mt-2 inline-block text-xs font-semibold text-blue-700 hover:underline">Open proof</a>
+                @endif
+            </div>
         </div>
     @endif
 </div>

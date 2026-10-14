@@ -18,6 +18,8 @@ class NavigationService
 
     public const ROLE_VISITOR = 5;
 
+    public const ROLE_VPAF = 6;
+
     public static function routesForRole(?string $roleName): array
     {
         $role = strtolower($roleName ?? 'user');
@@ -29,6 +31,8 @@ class NavigationService
             ['label' => 'Policy', 'route' => 'user.policy', 'icon' => 'book-open', 'access' => ['student', 'staff']],
 
             ['label' => 'Registrations', 'route' => 'admin.registrations', 'icon' => 'user-plus', 'access' => ['admin']],
+            ['label' => 'Notifications', 'route' => 'admin.notifications', 'icon' => 'bell', 'access' => ['admin']],
+            ['label' => 'Incident Clips', 'route' => 'admin.clips', 'icon' => 'camera', 'access' => ['admin']],
             ['label' => 'RFID Assignment', 'route' => 'admin.rfid', 'icon' => 'hash', 'access' => ['admin']],
             ['label' => 'User Management', 'route' => 'admin.users', 'icon' => 'users', 'access' => ['admin']],
             ['label' => 'Registered Plates', 'route' => 'admin.plates', 'icon' => 'car', 'access' => ['admin']],
@@ -43,6 +47,8 @@ class NavigationService
             ['label' => 'Live Cameras', 'route' => 'admin.live-cameras', 'icon' => 'camera', 'access' => ['admin']],
             ['label' => 'Reports', 'route' => 'admin.reports', 'icon' => 'bar-chart-3', 'access' => ['admin']],
             ['label' => 'System Health', 'route' => 'admin.system-health', 'icon' => 'heart-pulse', 'access' => ['admin']],
+            ['label' => 'Create Guard', 'route' => 'admin.guards.create', 'icon' => 'shield', 'access' => ['admin']],
+            ['label' => 'VPAF Accounts', 'route' => 'admin.vpaf.create', 'icon' => 'shield', 'access' => ['admin']],
             ['label' => 'Settings', 'route' => 'admin.settings', 'icon' => 'settings', 'access' => ['admin']],
 
             ['label' => 'Live Gate Monitor', 'route' => 'guard.gate', 'icon' => 'activity', 'access' => ['guard']],
@@ -58,12 +64,16 @@ class NavigationService
             ['label' => 'Live Cameras', 'route' => 'guard.live-cameras', 'icon' => 'camera', 'access' => ['guard']],
             ['label' => 'Stalled Vehicles', 'route' => 'guard.stalled-vehicles', 'icon' => 'wrench', 'access' => ['guard']],
             ['label' => 'Overnight Check', 'route' => 'guard.overnight-check', 'icon' => 'moon', 'access' => ['guard']],
+            ['label' => 'Incident Clips', 'route' => 'guard.clips', 'icon' => 'camera', 'access' => ['guard']],
 
             ['label' => 'Notifications', 'route' => 'user.notifications', 'icon' => 'bell', 'access' => ['student', 'staff']],
             ['label' => 'My Violations', 'route' => 'user.violations', 'icon' => 'triangle-alert', 'access' => ['student', 'staff']],
             ['label' => 'Entry/Exit History', 'route' => 'user.entry-exit', 'icon' => 'history', 'access' => ['student', 'staff']],
             ['label' => 'Parking', 'route' => 'user.parking', 'icon' => 'parking-square', 'access' => ['student', 'staff']],
             ['label' => 'Overnight Parking', 'route' => 'user.overnight-parking', 'icon' => 'moon', 'access' => ['staff']],
+
+            ['label' => 'Endorsements', 'route' => 'vpaf.endorsements', 'icon' => 'file-text', 'access' => ['vpaf']],
+            ['label' => 'Notifications', 'route' => 'vpaf.notifications', 'icon' => 'bell', 'access' => ['vpaf']],
         ];
 
         return array_values(array_filter($routes, function (array $item) use ($role): bool {
@@ -101,10 +111,12 @@ class NavigationService
             self::ROLE_ADMIN => 'admin.dashboard',
             self::ROLE_GUARD => 'guard.dashboard',
             self::ROLE_STUDENT, self::ROLE_STAFF => 'user.dashboard',
+            self::ROLE_VPAF => 'vpaf.endorsements',
             default => match (strtolower($user->roleName())) {
                 'admin' => 'admin.dashboard',
                 'guard' => 'guard.dashboard',
                 'student', 'staff' => 'user.dashboard',
+                'vpaf' => 'vpaf.endorsements',
                 default => 'home',
             },
         };
@@ -140,6 +152,14 @@ class NavigationService
 
         if ($roleId === self::ROLE_GUARD) {
             return 'guard.notifications';
+        }
+
+        if ($roleId === self::ROLE_ADMIN) {
+            return 'admin.notifications';
+        }
+
+        if ($roleId === self::ROLE_VPAF) {
+            return 'vpaf.notifications';
         }
 
         return null;

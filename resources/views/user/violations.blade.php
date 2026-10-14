@@ -1,4 +1,4 @@
-@extends('layouts.user')
+﻿@extends('layouts.user')
 
 @section('title', 'My Violations')
 
@@ -46,6 +46,9 @@
                         <tr class="hover:bg-gray-50/80">
                             <td class="px-6 py-4">
                                 <span class="rounded-full bg-red-50 px-2.5 py-1 text-xs font-medium text-red-700">{{ $row->violation_type }}</span>
+                                @if (filled($row->camera_reason))
+                                    <p class="mt-1 text-xs text-gray-500">{{ \App\Services\AiParkingViolationService::REASON_LABELS[$row->camera_reason] ?? $row->camera_reason }}</p>
+                                @endif
                             </td>
                             <td class="px-6 py-4 text-gray-700">{{ $row->description ?: 'No description provided.' }}</td>
                             <td class="px-6 py-4 text-xs text-gray-600">

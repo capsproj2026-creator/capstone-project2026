@@ -81,6 +81,7 @@ class CapstoneSeeder extends Seeder
             ['id' => 3, 'role_name' => 'Student'],
             ['id' => 4, 'role_name' => 'Staff'],
             ['id' => 5, 'role_name' => 'Visitors'],
+            ['id' => 6, 'role_name' => 'VPAF'],
         ];
 
         foreach ($roles as $role) {

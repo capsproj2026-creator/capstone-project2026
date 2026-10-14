@@ -135,6 +135,10 @@ class ViolationController extends Controller
             'strikeOverview' => $strikeOverview,
             'strikeOverviewCount' => $strikeOverviewCount,
             'typeCounts' => $typeCounts,
+            'pendingEndorsements' => SanctionEndorsement::query()
+                ->where('status', SanctionEndorsement::STATUS_PENDING_GSU)
+                ->get()
+                ->groupBy('user_id'),
         ]);
     }
 

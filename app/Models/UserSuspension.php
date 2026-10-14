@@ -36,14 +36,15 @@ class UserSuspension extends MongoModel
         ];
     }
 
-    public function user(): BelongsTo
-    {
-        return $this->belongsTo(User::class);
-    }
-
     public function isRevocation(): bool
     {
-        return $this->suspended_until === null;
+        if ((string) ($this->kind ?? '') === 'revocation') {
+            return true;
+        }
+
+        return (bool) $this->is_suspended
+            && $this->suspended_until === null
+            && (string) ($this->kind ?? '') !== 'suspension';
     }
 
     public function isActive(): bool
@@ -52,6 +53,15 @@ class UserSuspension extends MongoModel
             return false;
         }
 
-        return $this->suspended_until === null || $this->suspended_until->isFuture();
+        if ($this->suspended_until === null) {
+            return true;
+        }
+
+        return $this->suspended_until->gte(now());
+    }
+
+    public function user(): BelongsTo
+    {
+        return $this->belongsTo(User::class);
     }
 }

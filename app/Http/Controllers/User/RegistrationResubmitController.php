@@ -5,7 +5,7 @@ namespace App\Http\Controllers\User;
 use App\Http\Controllers\Controller;
 use App\Models\Notification;
 use App\Models\User;
-use App\Services\NavigationService;
+use App\Services\RegistrationAlertService;
 use App\Support\SafeUpload;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -88,7 +88,11 @@ class RegistrationResubmitController extends Controller
             'Gate_access' => User::GATE_ACCESS_PENDING,
         ]);
 
-        $this->notifyAdmins($user);
+        app(RegistrationAlertService::class)->notifyAdmins(
+            $user,
+            'Registration Resubmitted',
+            "{$user->displayName()} resubmitted corrected documents after a remedial decline. Please review in Registration Management.",
+        );
 
         Notification::query()->create([
             'user_id' => $user->id,
@@ -105,23 +109,4 @@ class RegistrationResubmitController extends Controller
             ->with('success', 'Documents submitted. Your registration is back under admin review.');
     }
 
-    private function notifyAdmins(User $applicant): void
-    {
-        $admins = User::query()
-            ->where('user_role_id', NavigationService::ROLE_ADMIN)
-            ->where('status', User::STATUS_GRANTED)
-            ->get();
-
-        foreach ($admins as $admin) {
-            Notification::query()->create([
-                'user_id' => $admin->id,
-                'sender_id' => $applicant->id,
-                'title' => 'Registration Resubmitted',
-                'message' => "{$applicant->displayName()} resubmitted corrected documents after a remedial decline. Please review in Registration Management.",
-                'type' => 'System',
-                'is_read' => false,
-                'created_at' => now(),
-            ]);
-        }
-    }
 }

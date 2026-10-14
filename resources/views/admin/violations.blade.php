@@ -131,6 +131,19 @@
                                 @foreach ($row->typeList() as $typeName)
                                     <span class="rounded-md bg-red-100 px-2 py-0.5 text-xs font-semibold text-red-700">{{ $typeName }}</span>
                                 @endforeach
+                                @php
+                                    $cameraReason = filled($row->camera_reason)
+                                        ? (\App\Services\AiParkingViolationService::REASON_LABELS[$row->camera_reason] ?? $row->camera_reason)
+                                        : null;
+                                    $pendingForUser = ($pendingEndorsements ?? collect())->get($row->user_id)
+                                        ?? ($pendingEndorsements ?? collect())->get((string) $row->user_id);
+                                @endphp
+                                @if ($cameraReason)
+                                    <span class="rounded-md bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-800">{{ $cameraReason }}</span>
+                                @endif
+                                @if ($pendingForUser && $pendingForUser->isNotEmpty())
+                                    <a href="{{ route('admin.endorsements') }}" class="text-xs font-semibold text-blue-700 hover:underline">Endorse to VPAF</a>
+                                @endif
                             </div>
                             <p class="mt-2 text-sm leading-relaxed text-gray-600">
                                 {{ $row->description ?: 'No description provided.' }}

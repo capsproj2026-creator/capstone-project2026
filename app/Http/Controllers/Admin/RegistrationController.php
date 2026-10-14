@@ -60,7 +60,7 @@ class RegistrationController extends Controller
             'pendingCount' => $pendingCount,
             'approvedCount' => $approvedCount,
             'declinedCount' => $declinedCount,
-            'requests' => $requestsQuery->get(),
+            'requests' => $requestsQuery->paginate(20)->withQueryString(),
         ]);
     }
 
@@ -136,6 +136,53 @@ class RegistrationController extends Controller
         return redirect()
             ->route('admin.registrations', ['status' => 'All'])
             ->with('success', 'User approved.');
+    }
+
+    public function revokeApproval(Request $request, int $id): RedirectResponse
+    {
+        $validated = $request->validate([
+            'reason' => ['required', 'string', 'min:3', 'max:500'],
+        ], [
+            'reason.required' => 'Please enter a reason before removing this approval.',
+            'reason.min' => 'Please enter a reason of at least 3 characters.',
+        ]);
+
+        $user = User::query()->with('role')->findOrFail($id);
+
+        if ($user->isLocked() || ! $user->isCampusVehicleOwner()) {
+            return redirect()
+                ->route('admin.registrations', ['status' => User::STATUS_GRANTED])
+                ->with('error', 'This account cannot have its approval removed here.');
+        }
+
+        if ($user->status !== User::STATUS_GRANTED) {
+            return redirect()
+                ->route('admin.registrations', ['status' => 'All'])
+                ->with('error', 'Only an approved registration can be returned to pending.');
+        }
+
+        $reason = trim($validated['reason']);
+
+        $user->update([
+            'status' => User::STATUS_PENDING,
+            'registration_state' => User::REGISTRATION_PENDING,
+            'Gate_access' => User::GATE_ACCESS_PENDING,
+            'rfid_uid' => null,
+        ]);
+
+        Notification::query()->create([
+            'user_id' => $user->id,
+            'sender_id' => auth()->id(),
+            'title' => 'Approval removed',
+            'message' => "Your registration was returned to pending. Reason: {$reason}",
+            'type' => 'System',
+            'is_read' => false,
+            'created_at' => now(),
+        ]);
+
+        return redirect()
+            ->route('admin.registrations', ['status' => User::STATUS_PENDING])
+            ->with('success', 'Approval removed. The registration is pending again.');
     }
 
     public function decline(Request $request, int $id): RedirectResponse

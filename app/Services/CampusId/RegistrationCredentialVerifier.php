@@ -48,6 +48,16 @@ class RegistrationCredentialVerifier
             $errors['full_name'] = 'The name on the form does not match the driver\'s license.';
         }
 
+        if (($license['driver_license_number'] ?? null) !== null
+            && ! $this->licensesMatch($formLicense, (string) $license['driver_license_number'])) {
+            $errors['driver_license_number'] = 'The license number on the form does not match the driver\'s license photo.';
+        }
+
+        $licensePlate = (string) ($license['plate_number'] ?? '');
+        if ($licensePlate !== '' && PlateLookup::normalize($licensePlate) !== PlateLookup::normalize($formPlate)) {
+            $errors['plate_number'] = 'The plate on the driver\'s license does not match the plate on the form.';
+        }
+
         if (($campusId['full_name'] ?? null) === null) {
             $errors['id_document'] = 'Could not read the name on the school ID. Use a clear photo of the full card.';
         } elseif (! $this->namesMatch($formName, (string) $campusId['full_name'])) {
@@ -58,22 +68,8 @@ class RegistrationCredentialVerifier
             $errors['id_number'] = 'The ID number on the form does not match the SN on the school ID.';
         }
 
-        if (($license['driver_license_number'] ?? null) !== null
-            && ! $this->licensesMatch($formLicense, (string) $license['driver_license_number'])) {
-            $errors['driver_license_number'] = 'The license number on the form does not match the driver\'s license photo.';
-        }
-
         foreach (['or' => $or, 'cr' => $cr] as $kind => $doc) {
-            $field = $kind === 'or' ? 'lto_or_photo' : 'lto_cr_photo';
-            $label = $kind === 'or' ? 'OR' : 'CR';
-            $owner = (string) ($doc['owner_name'] ?? '');
-            if ($owner !== '' && ! $this->namesMatch($formName, $owner)) {
-                $errors[$field] = "The owner name on the {$label} does not match the applicant name.";
-            }
-            $plate = (string) ($doc['plate_number'] ?? '');
-            if ($plate !== '' && PlateLookup::normalize($plate) !== PlateLookup::normalize($formPlate)) {
-                $errors['plate_number'] = "The plate on the {$label} does not match the plate on the form.";
-            }
+            $errors = array_merge($errors, $this->orCrErrors($kind, $doc, $formName, $formPlate));
         }
 
         if ($this->licenseTaken($formLicense, $ignoreUserId)) {
@@ -92,6 +88,40 @@ class RegistrationCredentialVerifier
 
         $request->attributes->set('credential_photo_hashes', $this->collectSha256($face['hashes'] ?? []));
         $request->attributes->set('credential_photo_ahashes', $this->collectAhashes($face['hashes'] ?? []));
+
+        return $errors;
+    }
+
+    /**
+     * @param  array{plate_number?: ?string, owner_name?: ?string, has_lto?: bool, has_document_keyword?: bool}  $doc
+     * @return array<string, string>
+     */
+    private function orCrErrors(string $kind, array $doc, string $formName, string $formPlate): array
+    {
+        $field = $kind === 'or' ? 'lto_or_photo' : 'lto_cr_photo';
+        $label = $kind === 'or' ? 'OR' : 'CR';
+
+        if (! ($doc['has_lto'] ?? false) && ! ($doc['has_document_keyword'] ?? false)) {
+            return [
+                $field => "This file does not look like an LTO {$label}. Upload a clear photo of the real document.",
+            ];
+        }
+
+        $owner = (string) ($doc['owner_name'] ?? '');
+        $plate = (string) ($doc['plate_number'] ?? '');
+        if ($owner === '' || $plate === '') {
+            return [
+                $field => "Could not read the plate or owner on the {$label}. Upload a clearer photo.",
+            ];
+        }
+
+        $errors = [];
+        if (! $this->namesMatch($formName, $owner)) {
+            $errors[$field] = "The owner name on the {$label} does not match the applicant name.";
+        }
+        if (PlateLookup::normalize($plate) !== PlateLookup::normalize($formPlate)) {
+            $errors['plate_number'] = "The plate on the {$label} does not match the plate on the form.";
+        }
 
         return $errors;
     }
@@ -225,12 +255,13 @@ class RegistrationCredentialVerifier
     }
 
     /**
-     * @return array{full_name: ?string, driver_license_number: ?string}
+     * @return array{full_name: ?string, driver_license_number: ?string, plate_number: ?string}
      */
     private function safeLicenseScan(?UploadedFile $file): array
     {
+        $empty = ['full_name' => null, 'driver_license_number' => null, 'plate_number' => null];
         if (! $file instanceof UploadedFile || ! str_starts_with((string) $file->getMimeType(), 'image/')) {
-            return ['full_name' => null, 'driver_license_number' => null];
+            return $empty;
         }
 
         try {
@@ -238,7 +269,7 @@ class RegistrationCredentialVerifier
         } catch (Throwable $e) {
             report($e);
 
-            return ['full_name' => null, 'driver_license_number' => null];
+            return $empty;
         }
     }
 
@@ -261,12 +292,18 @@ class RegistrationCredentialVerifier
     }
 
     /**
-     * @return array{plate_number: ?string, owner_name: ?string}
+     * @return array{plate_number: ?string, owner_name: ?string, has_lto: bool, has_document_keyword: bool}
      */
     private function safeOrCrScan(?UploadedFile $file, string $kind, string $plate): array
     {
+        $empty = [
+            'plate_number' => null,
+            'owner_name' => null,
+            'has_lto' => false,
+            'has_document_keyword' => false,
+        ];
         if (! $file instanceof UploadedFile) {
-            return ['plate_number' => null, 'owner_name' => null];
+            return $empty;
         }
 
         try {
@@ -274,7 +311,7 @@ class RegistrationCredentialVerifier
         } catch (Throwable $e) {
             report($e);
 
-            return ['plate_number' => null, 'owner_name' => null];
+            return $empty;
         }
     }
 

@@ -22,6 +22,7 @@ import select
 import socket
 import threading
 import time
+from collections import deque
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import quote
@@ -330,6 +331,7 @@ class StreamState:
         self.rtsp_online = False
         self.plate_crops: dict[int, bytes] = {}
         self.vehicle_crops: dict[int, bytes] = {}
+        self.recent: deque[tuple[float, bytes]] = deque()
 
     def set_frame(self, raw_jpeg, ai_jpeg, vehicle_count, detections, rtsp_online=None):
         with self.lock:
@@ -341,6 +343,14 @@ class StreamState:
             self.detections = detections
             if rtsp_online is not None:
                 self.rtsp_online = bool(rtsp_online)
+            jpeg = raw_jpeg or ai_jpeg
+            if jpeg:
+                now = time.time()
+                if not self.recent or now - self.recent[-1][0] >= 0.5:
+                    self.recent.append((now, jpeg))
+                cutoff = now - 60
+                while self.recent and self.recent[0][0] < cutoff:
+                    self.recent.popleft()
 
     def set_plate_crops(self, crops: dict[int, bytes]):
         with self.lock:
@@ -1637,6 +1647,12 @@ class MjpegHandler(BaseHTTPRequestHandler):
                 return True
         return False
 
+    def _local_clip_request(self, path: str) -> bool:
+        if path != "/save-clip":
+            return False
+        client = str(self.client_address[0] if self.client_address else "")
+        return client in {"127.0.0.1", "::1", "localhost"}
+
     def _send_json(self, code: int, payload: dict) -> None:
         body = json.dumps(payload).encode("utf-8")
         self.send_response(code)
@@ -1846,14 +1862,19 @@ class MjpegHandler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         path = self.path.split("?", 1)[0]
-        if path not in ("/test-scan", "/correct-plate"):
+        if path not in ("/test-scan", "/correct-plate", "/save-clip"):
             self.send_error(404)
             return
-        if not self._ai_authorized():
+        if not self._ai_authorized() and not self._local_clip_request(path):
             self._send_json(403, {"ok": False, "saved": False, "message": "Unauthorized."})
             return
         payload = self._read_json_body() or {}
         camera_id = str(payload.get("camera_id") or "").strip()
+        if path == "/save-clip":
+            result = save_incident_clip(camera_id, str(payload.get("filename") or ""))
+            code = 200 if result.get("ok") else 422
+            self._send_json(code, result)
+            return
         worker = self._resolve_worker(camera_id)
         if worker is None:
             self._send_json(404, {"ok": False, "saved": False, "message": "Unknown camera."})
@@ -1876,6 +1897,78 @@ class MjpegHandler(BaseHTTPRequestHandler):
         result["camera_id"] = worker.config.camera_id
         code = 200 if result.get("ok") else 503
         self._send_json(code, result)
+
+
+def save_incident_clip(camera_id: str, filename: str) -> dict:
+    """Write the last minute of JPEG frames for one camera to an MP4 file."""
+    state = None
+    resolved = camera_id
+    want = (camera_id or "").strip().upper()
+    for cid, candidate in STREAM_STATES.items():
+        if not want or str(cid).upper() == want:
+            state = candidate
+            resolved = str(cid)
+            if want:
+                break
+    if state is None:
+        return {"ok": False, "message": "Camera is not streaming."}
+
+    with state.lock:
+        frames = list(state.recent)
+    if not frames:
+        return {"ok": False, "message": "No recent frames to save."}
+
+    safe_name = os.path.basename(filename).strip() or f"clip-{int(time.time())}.mp4"
+    if not safe_name.lower().endswith(".mp4"):
+        safe_name += ".mp4"
+
+    clip_dir = Path(__file__).resolve().parents[2] / "storage" / "app" / "private" / "incident-clips"
+    clip_dir.mkdir(parents=True, exist_ok=True)
+    target = clip_dir / safe_name
+
+    import numpy as np
+
+    decoded = []
+    for _stamp, jpeg in frames:
+        frame = cv2.imdecode(np.frombuffer(jpeg, dtype=np.uint8), cv2.IMREAD_COLOR)
+        if frame is not None:
+            decoded.append(frame)
+    if not decoded:
+        return {"ok": False, "message": "Recent frames could not be decoded."}
+    if len(decoded) == 1:
+        decoded.append(decoded[0])
+
+    height, width = decoded[0].shape[:2]
+    duration = max(0.5, frames[-1][0] - frames[0][0])
+    fps = min(15.0, max(2.0, len(decoded) / duration))
+    writer = None
+    for codec in ("avc1", "H264", "mp4v"):
+        candidate = cv2.VideoWriter(str(target), cv2.VideoWriter_fourcc(*codec), fps, (width, height))
+        if candidate.isOpened():
+            writer = candidate
+            break
+        candidate.release()
+    if writer is None:
+        return {"ok": False, "message": "Could not open a video writer."}
+
+    try:
+        for frame in decoded:
+            if frame.shape[1] != width or frame.shape[0] != height:
+                frame = cv2.resize(frame, (width, height))
+            writer.write(frame)
+    finally:
+        writer.release()
+
+    if not target.is_file() or target.stat().st_size < 32:
+        return {"ok": False, "message": "Clip file was empty."}
+
+    return {
+        "ok": True,
+        "filename": safe_name,
+        "path": str(target),
+        "frames": len(decoded),
+        "camera_id": resolved,
+    }
 
 
 def start_stream_server():

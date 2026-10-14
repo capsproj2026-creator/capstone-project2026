@@ -8,6 +8,8 @@
         'subtitle' => 'Review and approve pending vehicle owner registrations',
     ])
 
+    @include('partials.shell.flash')
+
     @error('remarks')
         <div class="mb-4 flex gap-2 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
             <i data-lucide="alert-circle" class="h-4 w-4 shrink-0"></i>
@@ -181,16 +183,18 @@
                                         View profile
                                     </a>
                                     @if ($row->status === 'Pending' && ! $isIncompleteTemp)
-                                        {{-- TODO payment gate: hide/disable Approve until $row->payment_status === 'paid'
-                                        @if (($row->payment_status ?? null) !== 'paid')
-                                            <button type="button" disabled class="inline-flex w-full cursor-not-allowed items-center justify-center rounded-lg bg-gray-300 px-3 py-1.5 text-xs font-semibold text-gray-600">Approve (awaiting payment)</button>
-                                        @else
-                                        --}}
                                         <form method="POST" action="{{ route('admin.registrations.approve', $row->id) }}" class="m-0" onsubmit="return confirm('Approve this registration?')">
                                             @csrf
                                             <button type="submit" class="inline-flex w-full items-center justify-center rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700">Approve</button>
                                         </form>
-                                        {{-- @endif --}}
+                                    @endif
+                                    @if ($row->status === 'Granted')
+                                        <form method="POST" action="{{ route('admin.registrations.revoke', $row->id) }}" class="m-0 flex flex-col gap-1.5" onsubmit="return confirm('Remove this approval and return the application to pending?')">
+                                            @csrf
+                                            <input type="text" name="reason" required minlength="3" maxlength="500" placeholder="Why this approval is being removed"
+                                                class="w-full rounded-lg border border-gray-300 px-2 py-1.5 text-xs">
+                                            <button type="submit" class="inline-flex w-full items-center justify-center rounded-lg bg-amber-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-amber-700">Remove approval</button>
+                                        </form>
                                     @endif
                                     @if ($row->status === 'Pending')
                                         <button

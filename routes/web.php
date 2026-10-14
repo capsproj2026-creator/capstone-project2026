@@ -4,6 +4,8 @@ use App\Http\Controllers\AccessLogController;
 use App\Http\Controllers\Admin\DashboardController as AdminDashboardController;
 use App\Http\Controllers\Admin\EndorsementController;
 use App\Http\Controllers\Admin\GuardRegistrationController;
+use App\Http\Controllers\Admin\NotificationController as AdminNotificationController;
+use App\Http\Controllers\Admin\VpafAccountController;
 use App\Http\Controllers\Admin\RegistrationController;
 use App\Http\Controllers\Admin\RegisteredPlatesController;
 use App\Http\Controllers\Admin\ReportController;
@@ -27,6 +29,7 @@ use App\Http\Controllers\Guard\NotificationController as GuardNotificationContro
 use App\Http\Controllers\Guard\PlateLookupController;
 use App\Http\Controllers\Guard\UserMonitorController;
 use App\Http\Controllers\Guard\ViolationController as GuardViolationController;
+use App\Http\Controllers\CameraClipController;
 use App\Http\Controllers\LiveCameraController;
 use App\Http\Controllers\OvernightParkingController;
 use App\Http\Controllers\ParkingController;
@@ -42,6 +45,7 @@ use App\Http\Controllers\User\ViolationController as UserViolationController;
 use App\Http\Controllers\DeliveryRegistrationController;
 use App\Http\Controllers\LegalPageController;
 use App\Http\Controllers\VisitorPreRegistrationController;
+use App\Http\Controllers\Vpaf\EndorsementController as VpafEndorsementController;
 use App\Http\Controllers\VisitorController;
 use Illuminate\Support\Facades\Route;
 
@@ -135,6 +139,18 @@ Route::prefix('admin')->middleware(['auth', 'verified', 'granted', 'no.cache', '
     Route::get('/registrations', [RegistrationController::class, 'index'])->name('registrations');
     Route::post('/registrations/{id}/approve', [RegistrationController::class, 'approve'])->name('registrations.approve');
     Route::post('/registrations/{id}/decline', [RegistrationController::class, 'decline'])->name('registrations.decline');
+    Route::post('/registrations/{id}/revoke', [RegistrationController::class, 'revokeApproval'])->name('registrations.revoke');
+    Route::get('/notifications', [AdminNotificationController::class, 'index'])->name('notifications');
+    Route::post('/notifications/{action}', [AdminNotificationController::class, 'action'])->name('notifications.action');
+    Route::get('/clips', [CameraClipController::class, 'index'])->name('clips');
+    Route::post('/clips', [CameraClipController::class, 'save'])->name('clips.save');
+    Route::get('/clips/{id}/play', [CameraClipController::class, 'play'])->name('clips.play');
+    Route::get('/vpaf-accounts', [VpafAccountController::class, 'create'])
+        ->middleware('permission:manage_admins')
+        ->name('vpaf.create');
+    Route::post('/vpaf-accounts', [VpafAccountController::class, 'store'])
+        ->middleware('permission:manage_admins')
+        ->name('vpaf.store');
     Route::get('/users', [UserManagementController::class, 'index'])
         ->middleware('permission:manage_users')
         ->name('users');
@@ -345,6 +361,9 @@ Route::prefix('guard')->middleware(['auth', 'verified', 'granted', 'no.cache', '
         ->whereNumber('track')
         ->name('ai-parking.vehicle-crop');
     Route::get('/ai-parking/stream/{camera?}', [LiveCameraController::class, 'stream'])->name('ai-parking.stream');
+    Route::get('/clips', [CameraClipController::class, 'index'])->name('clips');
+    Route::post('/clips', [CameraClipController::class, 'save'])->name('clips.save');
+    Route::get('/clips/{id}/play', [CameraClipController::class, 'play'])->name('clips.play');
     Route::get('/plate-lookup', [PlateLookupController::class, 'index'])->name('plate-lookup');
     Route::post('/plate-lookup', [PlateLookupController::class, 'index'])->name('plate-lookup.submit');
     Route::post('/plate-lookup/search', [PlateLookupController::class, 'lookup'])
@@ -404,4 +423,11 @@ Route::prefix('user')->middleware(['auth', 'verified', 'portal', 'no.cache', 'ro
     Route::post('/overnight-parking/{id}/cancel', [UserOvernightParkingController::class, 'cancel'])
         ->whereNumber('id')
         ->name('overnight-parking.cancel');
+});
+
+Route::prefix('vpaf')->middleware(['auth', 'verified', 'granted', 'no.cache', 'role:VPAF'])->name('vpaf.')->group(function () {
+    Route::get('/', [VpafEndorsementController::class, 'index'])->name('endorsements');
+    Route::post('/endorsements/{id}', [VpafEndorsementController::class, 'decide'])->name('endorsements.decide');
+    Route::get('/notifications', [AdminNotificationController::class, 'index'])->name('notifications');
+    Route::post('/notifications/{action}', [AdminNotificationController::class, 'action'])->name('notifications.action');
 });

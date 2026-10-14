@@ -433,6 +433,10 @@ class User extends Authenticatable implements MustVerifyEmail
 
     public function hasGateAccess(): bool
     {
+        if ($this->activeParkingSanction()) {
+            return false;
+        }
+
         return in_array($this->Gate_access ?? '', [
             self::GATE_ACCESS_GRANTED,
             self::GATE_ACCESS_LEGACY,

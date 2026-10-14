@@ -4,6 +4,7 @@ namespace App\Providers;
 
 use App\Models\GateLog;
 use App\Models\Notification;
+use App\Models\UserRole;
 use App\Observers\GateLogObserver;
 use App\Services\NavigationService;
 use App\Services\SystemSettingService;
@@ -37,6 +38,7 @@ class AppServiceProvider extends ServiceProvider
     public function boot(): void
     {
         $this->configureApplicationTimezone();
+        $this->ensureVpafRole();
 
         Event::listen(DiagnosingHealth::class, function (): void {
             if (config('database.default') !== 'mongodb') {
@@ -108,7 +110,7 @@ class AppServiceProvider extends ServiceProvider
 
         View::share('appTimezone', AppDateTime::timezone());
 
-        View::composer('layouts.app', function ($view): void {
+        View::composer(['layouts.app', 'layouts.guard', 'layouts.portal'], function ($view): void {
             $user = Auth::user();
 
             if (! $user) {
@@ -154,6 +156,23 @@ class AppServiceProvider extends ServiceProvider
                 'notificationsUrl' => route($notificationsRoute),
             ]);
         });
+    }
+
+    private function ensureVpafRole(): void
+    {
+        try {
+            if (Cache::get('roles.vpaf.ready') === true) {
+                return;
+            }
+
+            UserRole::query()->updateOrCreate(
+                ['id' => NavigationService::ROLE_VPAF],
+                ['id' => NavigationService::ROLE_VPAF, 'role_name' => 'VPAF']
+            );
+            Cache::put('roles.vpaf.ready', true, 86400);
+        } catch (Throwable) {
+            // Database may be offline during boot.
+        }
     }
 
     private function configureApplicationTimezone(): void

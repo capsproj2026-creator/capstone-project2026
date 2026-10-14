@@ -244,6 +244,59 @@ class PlateLookup
      */
     public static function identity(?string $plate): array
     {
+        return self::attachOvernight(self::identityRecord($plate));
+    }
+
+    /**
+     * @param  array<string, mixed>  $row
+     * @return array<string, mixed>
+     */
+    private static function attachOvernight(array $row): array
+    {
+        $row['overnight_valid'] = false;
+        $row['overnight_status'] = 'none';
+        $row['overnight_window'] = null;
+        $row['overnight_reason'] = null;
+        $row['overnight_permit_id'] = null;
+
+        $userId = $row['user_id'] ?? null;
+        if (! $userId) {
+            return $row;
+        }
+
+        $permit = \App\Models\OvernightPermit::query()
+            ->where('user_id', $userId)
+            ->where('status', \App\Models\OvernightPermit::STATUS_APPROVED)
+            ->orderByDesc('starts_at')
+            ->get()
+            ->first(fn (\App\Models\OvernightPermit $item) => $item->coversNow());
+
+        if (! $permit) {
+            $permit = \App\Models\OvernightPermit::query()
+                ->where('user_id', $userId)
+                ->orderByDesc('id')
+                ->first();
+        }
+
+        if (! $permit) {
+            return $row;
+        }
+
+        $row['overnight_permit_id'] = $permit->id;
+        $row['overnight_status'] = (string) $permit->status;
+        $row['overnight_valid'] = $permit->coversNow();
+        $row['overnight_reason'] = $permit->reason;
+        $row['overnight_window'] = optional($permit->starts_at)->format('M j, Y g:i A')
+            .' – '.optional($permit->ends_at)->format('M j, Y g:i A');
+
+        return $row;
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private static function identityRecord(?string $plate): array
+    {
         $normalized = self::normalize($plate);
 
         // Fast path: flat registered_plates table (supports multiple vehicles per user).

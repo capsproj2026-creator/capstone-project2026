@@ -263,6 +263,7 @@ class SettingsController extends Controller
             ->whereIn('user_role_id', [
                 NavigationService::ROLE_ADMIN,
                 NavigationService::ROLE_GUARD,
+                NavigationService::ROLE_VPAF,
             ])
             ->where('id', $id)
             ->firstOrFail();
