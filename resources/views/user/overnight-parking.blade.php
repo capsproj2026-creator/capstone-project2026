@@ -60,10 +60,15 @@
                               class="mt-1 w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm shadow-sm">{{ old('reason') }}</textarea>
                 </div>
                 <div>
-                    <label for="proof" class="block text-xs font-medium text-gray-700">Proof</label>
-                    <input id="proof" type="file" name="proof" required accept="image/jpeg,image/png,application/pdf"
-                           class="mt-1 w-full text-sm text-gray-700">
-                    <p class="mt-1 text-[11px] text-gray-500">Upload a photo or PDF that shows why the vehicle must stay overnight.</p>
+                    <x-auth.file-input
+                        name="proof"
+                        id="proof"
+                        label="Proof"
+                        stacked
+                        required
+                        accept="image/jpeg,image/png,.jpg,.jpeg,.png,.pdf,application/pdf"
+                    />
+                    <p class="mt-1 text-[11px] text-gray-500">Upload a photo or PDF that shows why the vehicle must stay overnight. JPG, PNG, or PDF, up to 5 MB.</p>
                 </div>
                 <button type="submit" @disabled($plate === '')
                         class="inline-flex w-full items-center justify-center gap-1.5 rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700">

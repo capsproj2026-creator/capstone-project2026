@@ -910,7 +910,7 @@
         box-shadow: none !important;
     }
 
-    html.dark input:not([type='checkbox']):not([type='radio']),
+    html.dark input:not([type='checkbox']):not([type='radio']):not([type='file']),
     html.dark select,
     html.dark textarea {
         background-color: rgba(15, 23, 42, 0.65);
@@ -1136,7 +1136,7 @@
         background-color: rgba(51, 65, 85, 0.4) !important;
     }
 
-    html.dark input:not([type='checkbox']):not([type='radio']):focus,
+    html.dark input:not([type='checkbox']):not([type='radio']):not([type='file']):focus,
     html.dark select:focus,
     html.dark textarea:focus {
         border-color: rgba(77, 142, 247, 0.55);

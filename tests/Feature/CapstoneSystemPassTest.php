@@ -280,7 +280,7 @@ class CapstoneSystemPassTest extends TestCase
 
     public function test_password_change_rejects_same_password(): void
     {
-        $plain = 'TempPass1!xx';
+        $plain = 'TempPass1!xxAbc';
         $user = User::query()->create([
             'id' => ((int) (microtime(true) * 1000) + 7) % 2000000000,
             'fullname' => 'Password Test User',

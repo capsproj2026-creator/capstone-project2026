@@ -60,4 +60,39 @@ class OrCrDocumentParserTest extends TestCase
         $this->assertTrue(collect($result['warnings'])->contains(fn ($w) => str_contains($w, 'CERTIFICATE OF REGISTRATION')));
         $this->assertTrue(collect($result['warnings'])->contains(fn ($w) => str_contains($w, 'does not match')));
     }
+
+    public function test_cr_model_is_series_plus_body_type_not_make_or_year(): void
+    {
+        $parser = new OrCrDocumentParser;
+        $result = $parser->parse([
+            ['text' => 'LAND TRANSPORTATION OFFICE'],
+            ['text' => 'CERTIFICATE OF REGISTRATION'],
+            ['text' => 'MV FILE NO. 1301-000001234567'],
+            ['text' => 'PLATE NO. NAB 4821'],
+            ['text' => 'MAKE TOYOTA'],
+            ['text' => 'SERIES VIOS'],
+            ['text' => 'BODY TYPE SEDAN'],
+            ['text' => 'YEAR MODEL 2020'],
+            ['text' => 'COLOR PEARL WHITE'],
+        ], 'cr', 'NAB-4821');
+
+        $this->assertSame('VIOS SEDAN', $result['vehicle_model']);
+        $this->assertSame('PEARL WHITE', $result['vehicle_color']);
+        $this->assertSame('NAB 4821', $result['plate_number']);
+        $this->assertSame([], $result['warnings']);
+    }
+
+    public function test_cr_reads_glued_ocr_and_motorcycle_plate(): void
+    {
+        $parser = new OrCrDocumentParser;
+        $result = $parser->parse([
+            ['text' => 'CERTIFICATE OF REGISTRATION'],
+            ['text' => 'LTO'],
+            ['text' => 'MAKEHONDA SERIESCLICK 125I BODYTYPEMOTORCYCLE YEARMODEL2022 COLORRED PLATENO1234AB'],
+        ], 'cr');
+
+        $this->assertSame('CLICK 125I MOTORCYCLE', $result['vehicle_model']);
+        $this->assertSame('RED', $result['vehicle_color']);
+        $this->assertSame('1234 AB', $result['plate_number']);
+    }
 }

@@ -261,7 +261,7 @@
                             label="Password"
                             required
                             autocomplete="new-password"
-                            placeholder="{{ $passwordHint ?? '8–15 chars, mixed case, number, symbol' }}"
+                            placeholder="{{ $passwordHint ?? '15–50 characters, mixed case, number, symbol' }}"
                         />
                         <x-auth.password-input
                             name="password_confirmation"

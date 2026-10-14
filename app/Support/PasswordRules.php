@@ -7,7 +7,7 @@ use Illuminate\Validation\Rules\Password;
 class PasswordRules
 {
     /**
-     * 8–15 chars with upper, lower, number, and special character.
+     * 15–50 chars with upper, lower, number, and special character.
      */
     public static function required(): array
     {
@@ -22,9 +22,10 @@ class PasswordRules
         return [
             'required',
             'string',
-            'min:8',
-            'max:15',
-            Password::min(8)
+            'min:15',
+            'max:50',
+            Password::min(15)
+                ->max(50)
                 ->letters()
                 ->mixedCase()
                 ->numbers()
@@ -34,6 +35,6 @@ class PasswordRules
 
     public static function hint(): string
     {
-        return 'Minimum 8 characters, maximum 15, with uppercase, lowercase, a number, and a symbol';
+        return 'Minimum 15 characters, maximum 50, with uppercase, lowercase, a number, and a symbol';
     }
 }

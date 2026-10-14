@@ -95,12 +95,12 @@ class ForgotPasswordTest extends TestCase
                 '_token' => 'test-token',
                 'token' => $token,
                 'email' => $query['email'] ?? $this->email,
-                'password' => 'NewPass2!',
-                'password_confirmation' => 'NewPass2!',
+                'password' => 'NewCampus2!Passx',
+                'password_confirmation' => 'NewCampus2!Passx',
             ])->assertRedirect(route('login'))->assertSessionHas('success');
 
         $user->refresh();
-        $this->assertTrue(password_verify('NewPass2!', $user->password));
+        $this->assertTrue(password_verify('NewCampus2!Passx', $user->password));
         $this->assertFalse(password_verify('OldPass1!', $user->password));
         $this->assertSame(0, PasswordResetToken::query()->where('email', $this->email)->count());
     }

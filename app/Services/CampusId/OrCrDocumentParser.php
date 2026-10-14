@@ -42,12 +42,19 @@ class OrCrDocumentParser
                 || (bool) preg_match('/\bC\.?\s*R\.?\b/', $raw)
                 || (bool) preg_match('/cert(?:ificate)?\s*of\s*reg/i', $raw));
 
-        $plate = $this->extractPlateNumber($raw);
         $ownerName = $this->extractOwnerName($raw);
-        $color = $kind === 'cr' ? $this->extractLabeledValue($raw, 'color') : null;
-        $make = $kind === 'cr' ? $this->extractLabeledValue($raw, 'make') : null;
-        $series = $kind === 'cr' ? ($this->extractLabeledValue($raw, 'series') ?: $this->extractLabeledValue($raw, 'model')) : null;
-        $model = trim(implode(' ', array_filter([$make, $series])));
+        $cr = $kind === 'cr' ? $this->extractCrVehicle($raw) : [];
+        $plate = $cr['plate'] ?? $this->extractPlateNumber($raw);
+        $series = $cr['series'] ?? null;
+        $body = $cr['body'] ?? null;
+        $model = null;
+        $bodyAlreadyInSeries = $series && $body && preg_match('/\b'.preg_quote($body, '/').'\b/', $series) === 1;
+        if ($series && $body && ! $bodyAlreadyInSeries) {
+            $model = $series.' '.$body;
+        } elseif ($series || $body) {
+            $model = $series ?: $body;
+        }
+        $color = $cr['color'] ?? null;
         $warnings = [];
 
         if (! $hasLto) {
@@ -69,7 +76,7 @@ class OrCrDocumentParser
         return [
             'plate_number' => $plate,
             'owner_name' => $ownerName,
-            'vehicle_model' => $model !== '' ? $model : null,
+            'vehicle_model' => $model,
             'vehicle_color' => $color,
             'has_lto' => $hasLto,
             'has_document_keyword' => $hasDocumentKeyword,
@@ -113,21 +120,160 @@ class OrCrDocumentParser
         return $name;
     }
 
-    private function extractLabeledValue(string $rawText, string $label): ?string
+    /**
+     * LTO CR prints the vehicle as Series + Body Type, plus Color and Plate No.
+     * Year Model and Make are separate boxes and are not part of the model.
+     *
+     * @return array{plate: ?string, series: ?string, body: ?string, color: ?string}
+     */
+    private function extractCrVehicle(string $rawText): array
     {
-        $pattern = '/\b'.preg_quote($label, '/').'\s*[:.\-]?\s*([A-Za-z0-9][A-Za-z0-9 \/-]{1,40})/i';
-        if (! preg_match($pattern, $rawText, $match)) {
+        $text = strtoupper($rawText);
+        $labels = [
+            '/(?<![A-Z])YEAR\s*MODEL/i' => "\nYEAR MODEL ",
+            '/(?<![A-Z])TYPE\s*OF\s*BODY/i' => "\nTYPE OF BODY ",
+            '/(?<![A-Z])BODY\s*TYPE/i' => "\nBODY TYPE ",
+            '/(?<![A-Z])PLATE\s*(?:NO\.?|NUMBER|#)/i' => "\nPLATE NO ",
+            '/(?<![A-Z])SERIES/i' => "\nSERIES ",
+            '/(?<![A-Z])COLOU?R/i' => "\nCOLOR ",
+        ];
+        foreach ($labels as $pattern => $replacement) {
+            $text = preg_replace($pattern, $replacement, $text) ?? $text;
+        }
+
+        $keys = [
+            'YEAR MODEL' => 'year',
+            'TYPE OF BODY' => 'body',
+            'BODY TYPE' => 'body',
+            'PLATE NO' => 'plate',
+            'SERIES' => 'series',
+            'COLOR' => 'color',
+        ];
+        $parts = preg_split('/\n(YEAR MODEL|TYPE OF BODY|BODY TYPE|PLATE NO|SERIES|COLOR)\s*/', $text, -1, PREG_SPLIT_DELIM_CAPTURE) ?: [];
+        $fields = ['plate' => null, 'series' => null, 'body' => null, 'color' => null];
+
+        for ($i = 1; $i < count($parts) - 1; $i += 2) {
+            $key = $keys[$parts[$i]] ?? null;
+            if ($key === null || $key === 'year' || $fields[$key] !== null) {
+                continue;
+            }
+            $fields[$key] = $this->cleanCrValue($key, (string) $parts[$i + 1]);
+        }
+
+        return $fields;
+    }
+
+    private function cleanCrValue(string $key, string $chunk): ?string
+    {
+        $line = '';
+        foreach (preg_split('/\R/u', $chunk) ?: [] as $candidate) {
+            $candidate = trim($candidate, " \t:.-#");
+            if ($candidate !== '') {
+                $line = $candidate;
+                break;
+            }
+        }
+        if ($line === '') {
             return null;
         }
 
-        $value = trim((string) preg_replace('/\s+/u', ' ', $match[1]));
-        $value = trim((string) preg_replace('/\b(plate|engine|chassis|file|mv|address|owner)\b.*$/i', '', $value));
+        return match ($key) {
+            'plate' => $this->plateFromText($line),
+            'series' => $this->cleanSeries($line),
+            'body' => $this->cleanBodyType($line),
+            'color' => $this->cleanColor($line),
+            default => null,
+        };
+    }
+
+    private function cleanSeries(string $value): ?string
+    {
+        $value = preg_replace('/\b(BODY|TYPE|YEAR|MODEL|COLOR|COLOUR|MAKE|PLATE|CLASSIFICATION|FUEL|ENGINE|CHASSIS)\b.*$/i', '', $value) ?? $value;
+        $value = strtoupper(trim((string) preg_replace('/\s+/u', ' ', $value)));
         $value = trim($value, " :.-");
-        if ($value === '' || strlen($value) < 2) {
+        if ($value === '' || preg_match('/^(19|20)\d{2}$/', $value) || ! preg_match('/[A-Z]/', $value)) {
+            return null;
+        }
+        if (strlen($value) < 2 || strlen($value) > 30) {
             return null;
         }
 
         return $value;
+    }
+
+    private function cleanBodyType(string $value): ?string
+    {
+        $value = strtoupper(trim((string) preg_replace('/[^A-Z\s-]/', ' ', $value)));
+        $value = trim((string) preg_replace('/\s+/', ' ', $value));
+        $types = [
+            'SPORTS UTILITY VEHICLE',
+            'SPORT UTILITY',
+            'UTILITY VEHICLE',
+            'PICK-UP',
+            'PICK UP',
+            'PICKUP',
+            'HATCHBACK',
+            'MOTORCYCLE',
+            'MOTORYCLE',
+            'MOPED',
+            'SCOOTER',
+            'JEEPNEY',
+            'CONVERTIBLE',
+            'SEDAN',
+            'WAGON',
+            'COUPE',
+            'SUV',
+            'AUV',
+            'VAN',
+            'BUS',
+            'TRUCK',
+            'TRAILER',
+        ];
+        foreach ($types as $type) {
+            if ($value === $type || str_starts_with($value, $type.' ')) {
+                return match ($type) {
+                    'PICK UP', 'PICKUP' => 'PICK-UP',
+                    'MOTORYCLE' => 'MOTORCYCLE',
+                    default => $type,
+                };
+            }
+        }
+
+        return null;
+    }
+
+    private function cleanColor(string $value): ?string
+    {
+        $value = preg_replace('/\b(CLASSIFICATION|FUEL|MAKE|SERIES|BODY|YEAR|MODEL|OWNER|ADDRESS|PRIVATE|PUBLIC|GASOLINE|DIESEL)\b.*$/i', '', $value) ?? $value;
+        $value = strtoupper(trim((string) preg_replace('/[^A-Za-z\s-]/', ' ', $value)));
+        $words = array_values(array_filter(preg_split('/\s+/', $value) ?: []));
+        $words = array_slice($words, 0, 3);
+        if ($words === []) {
+            return null;
+        }
+        $color = implode(' ', $words);
+        if (strlen($color) < 3) {
+            return null;
+        }
+
+        return $color;
+    }
+
+    private function plateFromText(string $value): ?string
+    {
+        $value = strtoupper($value);
+        $patterns = [
+            '/\b([A-Z]{3})\s*-?\s*(\d{3,4})\b/',
+            '/\b(\d{3,4})\s*-?\s*([A-Z]{2,3})\b/',
+            '/\b([A-Z]{2})\s*-?\s*(\d{4})\b/',
+        ];
+        foreach ($patterns as $pattern) {
+            if (preg_match($pattern, $value, $match)) {
+                return $match[1].' '.$match[2];
+            }
+        }
+
+        return null;
     }
 
     public function extractPlateNumber(string $rawText): ?string
