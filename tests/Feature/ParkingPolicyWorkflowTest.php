@@ -269,6 +269,15 @@ class ParkingPolicyWorkflowTest extends TestCase
         }
         $this->assertSame(OvernightParkingRequest::STATUS_APPROVED, $request->fresh()->status);
 
+        if ($this->guard) {
+            $this->flushSession();
+            $this->actingAs($this->guard)
+                ->get(route('guard.overnight-check', ['plate' => $this->owner->plate_number]))
+                ->assertOk()
+                ->assertSee('Approved to park overnight')
+                ->assertSee($this->owner->plate_number);
+        }
+
         $check = $service->overnightCheck();
         $this->assertTrue($check['approved']->contains(fn ($row) => (int) $row['user']->id === (int) $this->owner->id));
         $this->assertFalse($check['unapproved']->contains(fn ($row) => (int) $row['user']->id === (int) $this->owner->id));

@@ -121,4 +121,61 @@ class OvernightParkingService
             'unapproved' => $rows->filter(fn (array $row) => $row['request'] === null)->values(),
         ];
     }
+
+    /**
+     * Approved requests that still cover tonight or a later night, plus a plate lookup.
+     *
+     * @return array{
+     *     active: Collection<int, OvernightParkingRequest>,
+     *     plate: string,
+     *     result: ?array{state: string, requests: Collection<int, OvernightParkingRequest>}
+     * }
+     */
+    public function approvalBoard(?string $plate): array
+    {
+        $night = $this->currentNight();
+        $active = OvernightParkingRequest::query()
+            ->with('user')
+            ->where('status', OvernightParkingRequest::STATUS_APPROVED)
+            ->where('last_night', '>=', $night)
+            ->orderBy('first_night')
+            ->get()
+            ->values();
+
+        $query = strtoupper(trim((string) $plate));
+        $needle = $this->compactPlate($query);
+        $result = null;
+        if ($needle !== '') {
+            $matches = OvernightParkingRequest::query()
+                ->with('user')
+                ->where('status', OvernightParkingRequest::STATUS_APPROVED)
+                ->orderByDesc('last_night')
+                ->get()
+                ->filter(fn (OvernightParkingRequest $request) => str_contains($this->compactPlate((string) $request->plate_number), $needle))
+                ->values();
+
+            $tonight = $matches->filter(fn (OvernightParkingRequest $request) => $request->coversNight($night))->values();
+            $upcoming = $matches->filter(fn (OvernightParkingRequest $request) => (string) $request->first_night > $night)->values();
+            if ($tonight->isNotEmpty()) {
+                $result = ['state' => 'approved', 'requests' => $tonight];
+            } elseif ($upcoming->isNotEmpty()) {
+                $result = ['state' => 'upcoming', 'requests' => $upcoming];
+            } elseif ($matches->isNotEmpty()) {
+                $result = ['state' => 'ended', 'requests' => $matches->take(1)];
+            } else {
+                $result = ['state' => 'none', 'requests' => collect()];
+            }
+        }
+
+        return [
+            'active' => $active,
+            'plate' => $query,
+            'result' => $result,
+        ];
+    }
+
+    private function compactPlate(string $plate): string
+    {
+        return strtoupper((string) preg_replace('/[^A-Z0-9]/', '', $plate));
+    }
 }

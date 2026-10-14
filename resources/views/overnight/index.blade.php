@@ -16,6 +16,90 @@
         <div class="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">{{ session('error') }}</div>
     @endif
 
+    <section class="mb-6 rounded-xl border border-gray-200 bg-white shadow-sm">
+        <div class="flex flex-col gap-3 border-b border-gray-100 px-5 py-4 sm:flex-row sm:items-end sm:justify-between">
+            <div>
+                <h2 class="text-base font-semibold text-gray-900">Approved to park overnight</h2>
+                <p class="mt-0.5 text-xs text-gray-500">Every GSU-approved request that covers tonight or a later night. Search a plate to confirm it is allowed.</p>
+            </div>
+            <form method="GET" action="{{ route($isAdmin ? 'admin.overnight-parking' : 'guard.overnight-check') }}" class="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center">
+                @if ($isAdmin)
+                    <input type="hidden" name="tab" value="{{ $tab }}">
+                @endif
+                <label for="overnight-plate" class="sr-only">Plate number</label>
+                <input id="overnight-plate" type="search" name="plate" value="{{ $approvals['plate'] }}" placeholder="Search plate number" maxlength="20"
+                       class="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm uppercase shadow-sm sm:w-52">
+                <button type="submit" class="inline-flex items-center justify-center rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700">Search</button>
+                @if ($approvals['plate'] !== '')
+                    <a href="{{ route($isAdmin ? 'admin.overnight-parking' : 'guard.overnight-check', $isAdmin ? ['tab' => $tab] : []) }}" class="text-center text-sm font-medium text-gray-600 hover:underline">Clear</a>
+                @endif
+            </form>
+        </div>
+
+        @if ($approvals['result'])
+            @php
+                $lookup = $approvals['result'];
+                $found = $lookup['requests']->first();
+            @endphp
+            <div class="border-b border-gray-100 px-5 py-4">
+                @if ($lookup['state'] === 'approved')
+                    <p class="text-sm font-semibold text-emerald-700">{{ $approvals['plate'] }} is approved to park overnight.</p>
+                    <p class="mt-1 text-sm text-gray-600">{{ $found?->user?->displayName() ?? 'Owner' }} · {{ $found?->nightsLabel() }}@if ($found?->area_name) · {{ $found->area_name }}@endif</p>
+                @elseif ($lookup['state'] === 'upcoming')
+                    <p class="text-sm font-semibold text-amber-800">{{ $approvals['plate'] }} is approved, but not for tonight.</p>
+                    <p class="mt-1 text-sm text-gray-600">{{ $found?->nightsLabel() }}</p>
+                @elseif ($lookup['state'] === 'ended')
+                    <p class="text-sm font-semibold text-red-700">{{ $approvals['plate'] }} is not approved to park overnight tonight.</p>
+                    <p class="mt-1 text-sm text-gray-600">The last approval was {{ $found?->nightsLabel() }}.</p>
+                @else
+                    <p class="text-sm font-semibold text-red-700">{{ $approvals['plate'] }} is not approved to park overnight.</p>
+                @endif
+            </div>
+        @endif
+
+        <div class="overflow-x-auto">
+            <table class="w-full text-left text-sm">
+                <thead class="border-b border-gray-200 bg-gray-50 text-gray-500">
+                    <tr>
+                        <th class="px-5 py-3 font-medium">Owner</th>
+                        <th class="px-5 py-3 font-medium">Plate</th>
+                        <th class="px-5 py-3 font-medium">Nights</th>
+                        <th class="px-5 py-3 font-medium">Status</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-100">
+                    @forelse ($approvals['active'] as $approvedRequest)
+                        <tr @class(['bg-emerald-50/60' => $approvals['plate'] !== '' && str_contains(strtoupper((string) preg_replace('/[^A-Z0-9]/', '', (string) $approvedRequest->plate_number)), strtoupper((string) preg_replace('/[^A-Z0-9]/', '', $approvals['plate'])))])>
+                            <td class="px-5 py-3">
+                                <p class="font-medium text-gray-900">{{ $approvedRequest->user?->displayName() ?? 'Unknown employee' }}</p>
+                                <p class="text-xs text-gray-500">{{ $approvedRequest->reason }}</p>
+                            </td>
+                            <td class="px-5 py-3"><code class="text-gray-700">{{ $approvedRequest->plate_number }}</code></td>
+                            <td class="px-5 py-3 text-gray-600">
+                                {{ $approvedRequest->nightsLabel() }}
+                                @if ($approvedRequest->area_name)
+                                    <span class="block text-xs text-gray-400">{{ $approvedRequest->area_name }}</span>
+                                @endif
+                            </td>
+                            <td class="px-5 py-3">
+                                @if ($approvedRequest->coversNight($check['night']))
+                                    <span class="rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700">Approved tonight</span>
+                                @else
+                                    <span class="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-800">Starts later</span>
+                                @endif
+                                @if ($approvedRequest->proof_path)
+                                    <a href="{{ route($isAdmin ? 'admin.overnight-parking.proof' : 'guard.overnight-parking.proof', $approvedRequest->id) }}" target="_blank" class="ml-2 text-xs font-semibold text-blue-700 hover:underline">Proof</a>
+                                @endif
+                            </td>
+                        </tr>
+                    @empty
+                        <tr><td colspan="4" class="px-5 py-10 text-center text-sm text-gray-500">No approved overnight requests right now.</td></tr>
+                    @endforelse
+                </tbody>
+            </table>
+        </div>
+    </section>
+
     {{-- Overnight check --}}
     <section class="mb-6 rounded-xl border border-gray-200 bg-white shadow-sm">
         <div class="flex flex-col gap-1 border-b border-gray-100 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">

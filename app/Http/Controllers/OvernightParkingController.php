@@ -48,6 +48,7 @@ class OvernightParkingController extends Controller
             'requests' => $requests,
             'pendingCount' => $pendingCount,
             'check' => $overnight->overnightCheck(),
+            'approvals' => $overnight->approvalBoard($request->query('plate')),
         ]);
     }
 
