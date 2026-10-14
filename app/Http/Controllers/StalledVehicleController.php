@@ -8,6 +8,7 @@ use App\Models\User;
 use App\Support\PlateLookup;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Validation\Rule;
 use Illuminate\View\View;
 
@@ -116,7 +117,14 @@ class StalledVehicleController extends Controller
             'removal_notes' => filled($data['removal_notes'] ?? null) ? trim($data['removal_notes']) : null,
         ]);
 
-        return back()->with('success', "{$report->plate_number} marked as removed from campus.");
+        $owner = $report->user_id ? User::query()->find((int) $report->user_id) : null;
+        if ($owner) {
+            $note = filled($report->removal_notes) ? ' Note: '.$report->removal_notes : '';
+            $this->notifyOwner($owner, 'Stalled Vehicle Removed',
+                "Your vehicle ({$report->plate_number}) was marked as removed from campus.".$note);
+        }
+
+        return back()->with('success', "{$report->plate_number} marked as removed from campus. The owner was notified.");
     }
 
     /**
@@ -153,6 +161,8 @@ class StalledVehicleController extends Controller
             'is_read' => false,
             'created_at' => now(),
         ]);
+
+        Cache::forget('layout.unread_notifications.'.$owner->id.'.'.(int) $owner->user_role_id);
     }
 
     private function routePrefix(Request $request): string

@@ -18,7 +18,7 @@ class OvernightParkingService
     public const ENDS_AT_HOUR = 5;
 
     /** Gate history scanned when deciding who is still inside campus. */
-    private const LOOKBACK_DAYS = 3;
+    private const LOOKBACK_DAYS = 14;
 
     /**
      * Y-m-d of the night in progress (or tonight, during the day). Night D runs D 10:00 p.m. → D+1 5:00 a.m.

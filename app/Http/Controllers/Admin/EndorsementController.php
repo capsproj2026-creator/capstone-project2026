@@ -23,6 +23,8 @@ class EndorsementController extends Controller
             $tab = 'gsu';
         }
 
+        app(ViolationEnforcementService::class)->syncOpenEndorsements();
+
         $statusesFor = [
             'gsu' => [SanctionEndorsement::STATUS_PENDING_GSU],
             'vpaf' => [SanctionEndorsement::STATUS_PENDING_VPAF],

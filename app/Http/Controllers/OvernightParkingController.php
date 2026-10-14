@@ -8,6 +8,7 @@ use App\Services\OvernightParkingService;
 use App\Services\SystemSettingService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\View\View;
 
 /**
@@ -83,6 +84,11 @@ class OvernightParkingController extends Controller
                 'is_read' => false,
                 'created_at' => now(),
             ]);
+
+            $owner = $overnightRequest->user;
+            if ($owner) {
+                Cache::forget('layout.unread_notifications.'.$owner->id.'.'.(int) $owner->user_role_id);
+            }
         }
 
         return back()->with('success', $approve ? 'Overnight parking approved.' : 'Overnight parking request denied.');

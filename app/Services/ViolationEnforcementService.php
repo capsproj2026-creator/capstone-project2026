@@ -9,6 +9,7 @@ use App\Models\UserSuspension;
 use App\Models\ViolationLog;
 use App\Notifications\AccountLockedNotification;
 use App\Notifications\ParkingPermitSuspendedNotification;
+use Illuminate\Support\Facades\Cache;
 use InvalidArgumentException;
 
 /**
@@ -29,13 +30,42 @@ class ViolationEnforcementService
     public function reconcileFromViolationHistory(User $user): void
     {
         $logCount = ViolationLog::query()->where('user_id', $user->id)->count();
-        $strikes = (int) ($user->strike_count ?? 0);
 
-        if ($logCount <= $strikes) {
+        if ($logCount < 2) {
+            if ($logCount > (int) ($user->strike_count ?? 0)) {
+                $this->applyStrikes($user, $logCount, null, null);
+            }
+
             return;
         }
 
         $this->applyStrikes($user, $logCount, null, null);
+    }
+
+    /**
+     * Open GSU cases for people who already have 2 or 3 citations.
+     * The old 3-strike lock skipped this, so those accounts never reached the queue.
+     */
+    public function syncOpenEndorsements(): void
+    {
+        if (! $this->endorsementsEnabled()) {
+            return;
+        }
+
+        $counts = ViolationLog::query()
+            ->whereNotNull('user_id')
+            ->get(['user_id'])
+            ->groupBy(fn (ViolationLog $log) => (int) $log->user_id)
+            ->map(fn ($rows) => $rows->count());
+
+        $userIds = $counts->filter(fn (int $count) => $count >= 2)->keys()->map(fn ($id) => (int) $id)->all();
+        if ($userIds === []) {
+            return;
+        }
+
+        User::query()->whereIn('id', $userIds)->get()->each(function (User $user) use ($counts) {
+            $this->applyStrikes($user, (int) $counts[(int) $user->id], null, null);
+        });
     }
 
     /**
@@ -75,11 +105,12 @@ class ViolationEnforcementService
             $this->closeLevel($user, 2);
         }
 
-        if (! $this->endorsementsEnabled() || $user->status === User::STATUS_LOCKED) {
+        if (! $this->endorsementsEnabled()) {
             return;
         }
 
         if ($strikes >= 2) {
+            $this->releaseLegacyAutomaticSanction($user);
             $this->ensureEndorsement($user, 2, $latest, $endorsedBy);
         }
 
@@ -296,6 +327,50 @@ class ViolationEnforcementService
             'is_read' => false,
             'created_at' => now(),
         ]);
+
+        Cache::forget('layout.unread_notifications.'.$user->id.'.'.(int) $user->user_role_id);
+    }
+
+    /**
+     * The previous rule locked the account at 3 citations. That lock is not a VPAF decision,
+     * so it is lifted and the case is left for GSU review.
+     */
+    private function releaseLegacyAutomaticSanction(User $user): void
+    {
+        $vpafApproved = SanctionEndorsement::query()
+            ->where('user_id', $user->id)
+            ->where('offense_level', '>=', 3)
+            ->where('status', SanctionEndorsement::STATUS_APPROVED)
+            ->exists();
+
+        if ($vpafApproved) {
+            return;
+        }
+
+        $legacy = UserSuspension::query()
+            ->where('user_id', $user->id)
+            ->get()
+            ->filter(function (UserSuspension $row) {
+                return empty($row->endorsement_id)
+                    && $row->suspended_until === null
+                    && trim((string) ($row->kind ?? '')) === '';
+            });
+
+        if ($legacy->isEmpty() && $user->status !== User::STATUS_LOCKED) {
+            return;
+        }
+
+        $legacy->each(fn (UserSuspension $row) => $row->delete());
+        $user->forgetParkingSanction();
+
+        if ($user->status === User::STATUS_LOCKED) {
+            $user->update([
+                'status' => User::STATUS_GRANTED,
+                'Gate_access' => User::GATE_ACCESS_GRANTED,
+            ]);
+            $user->status = User::STATUS_GRANTED;
+            $user->Gate_access = User::GATE_ACCESS_GRANTED;
+        }
     }
 
     private function mail(User $user, \Illuminate\Notifications\Notification $notification): void
