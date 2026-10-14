@@ -5,12 +5,12 @@
 @endif
 
 <div class="mb-6 overflow-hidden rounded-xl border border-gray-200 bg-white p-5 shadow-sm sm:p-6">
-    <div class="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+    <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div class="min-w-0">
             <h3 class="text-lg font-semibold text-gray-900">Admin User Management</h3>
             <p class="mt-1 text-sm text-gray-500">Manage administrators, guards, and VPAF accounts</p>
         </div>
-        <div class="flex w-full flex-col gap-2 sm:w-auto sm:flex-row lg:flex-col lg:items-stretch">
+        <div class="flex shrink-0 flex-wrap gap-2">
             <button
                 type="button"
                 id="open-create-admin"
