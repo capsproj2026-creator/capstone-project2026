@@ -34,4 +34,4 @@ Rows 4, 5, and 7 were corrected in View Results Tree after the first Summary Rep
 
 The 30-user login average was 148 ms at 3.1/sec. At 50 users the average was 197 ms at 1.7/sec. Error stayed 0.00%. No crash. A failure point was not reached.
 
-The after-test check of Reports, Registrations, one existing user, and System health was not in these screenshots.
+After the JMeter runs, the admin record check passed. Reports, Registrations, one existing user, and System health were reviewed. Existing records were unchanged.
