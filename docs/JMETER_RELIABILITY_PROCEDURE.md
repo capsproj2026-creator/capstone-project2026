@@ -30,25 +30,103 @@ Pass rule used below (matches the questionnaire):
 
 ---
 
-## Part 1 — Install JMeter (once per laptop)
+## Part 1 — Install Java 17, then JMeter (once per laptop)
 
-1. Install **Java 17 or newer**. In PowerShell:
+JMeter will not start without Java. This PC does not have Java yet.
+
+### 1.1 Install Java 17
+
+1. Press the Windows key, type **PowerShell**, and open **Windows PowerShell** (the normal one, not the one already inside Cursor).
+2. Paste this and press Enter:
+
+   ```powershell
+   winget install --id EclipseAdoptium.Temurin.17.JDK -e
+   ```
+
+3. If Windows asks “Do you want to allow this app to make changes?”, click **Yes**.
+4. Wait until the last lines say the install succeeded. A progress bar and the words `Successfully installed` are the sign it finished.
+5. **Close that PowerShell window completely.** Java is not visible in a window that was already open.
+6. Open a **new** PowerShell window and run:
 
    ```powershell
    java -version
    ```
 
-   If that fails, install Temurin 17 from [Adoptium](https://adoptium.net/) and open a **new** PowerShell window.
+7. You should see three lines. The first must contain **17**, for example:
 
-2. Download **Apache JMeter 5.6.3** (binaries, `.zip`) from [https://jmeter.apache.org/download_jmeter.cgi](https://jmeter.apache.org/download_jmeter.cgi).
+   ```text
+   openjdk version "17.0.16" 2025-07-15
+   OpenJDK Runtime Environment Temurin-17.0.16+8 (build 17.0.16+8)
+   OpenJDK 64-Bit Server VM Temurin-17.0.16+8 (build 17.0.16+8, mixed mode, sharing)
+   ```
 
-3. Unzip to `C:\JMeter` so this file exists:
+   The exact `17.0.x` number can be newer. That is still Java 17.
+
+8. If PowerShell says `java is not recognized`:
+   - Close every PowerShell window, open a new one, and run `java -version` again.
+   - If it still fails, restart the laptop once, then run `java -version` again.
+   - If it still fails, open [https://adoptium.net/temurin/releases/?version=17](https://adoptium.net/temurin/releases/?version=17), download **Windows x64 JDK .msi**, run the installer, leave the default options (including “set JAVA_HOME” and “add to PATH”), then open a new PowerShell and run `java -version`.
+
+### 1.2 Install Apache JMeter
+
+1. In the browser, open [https://jmeter.apache.org/download_jmeter.cgi](https://jmeter.apache.org/download_jmeter.cgi).
+2. Under **Binaries**, download the **zip** of Apache JMeter **5.6.3** (`apache-jmeter-5.6.3.zip`). Do not download the source zip.
+3. When the download finishes, open File Explorer and go to **Downloads**.
+4. Right-click `apache-jmeter-5.6.3.zip` → **Extract All**.
+5. Set the folder to `C:\JMeter` and click **Extract**.
+6. Confirm this file exists (double-click it only after the next step):
 
    `C:\JMeter\apache-jmeter-5.6.3\bin\jmeter.bat`
 
-4. Double-click `jmeter.bat`. The JMeter window opens. **Help → About** shows the version. Write that version on Part A.
+   If the zip extracted an extra folder, the file may be `C:\JMeter\apache-jmeter-5.6.3\apache-jmeter-5.6.3\bin\jmeter.bat`. Either path is fine. Use the one that actually contains `jmeter.bat`.
 
-5. Note your PC specs for Part A: **Settings → System → About** (processor and installed RAM). Network condition: **Other** (write “Public internet to www.iscvms.com”). If you are on CSPC Wi-Fi, you may write **LAN** and add “campus Wi-Fi to public HTTPS”.
+7. Double-click `jmeter.bat`. A black window stays open behind JMeter. **Leave that black window open.** Closing it closes JMeter.
+8. The JMeter window title starts with **Apache JMeter**. The left side is a tree. The only item at first is **Test Plan**.
+9. Click **Help → About Apache JMeter**. Write the version on Part A of the questionnaire (for example `5.6.3`). Click **Close**.
+
+### 1.3 Write the PC facts on Part A now
+
+1. Press the Windows key, type **About**, and open **About your PC**.
+2. Copy **Processor** and **Installed RAM** onto Part A, for example `Intel Core i5, 8 GB RAM`.
+3. Fill the rest of Part A:
+
+| Field on the PDF | Write this |
+|---|---|
+| Tester / Respondent Name | Your name, or leave blank |
+| Role being tested | Tick **Researcher** |
+| Date of Testing | Today’s date |
+| Target URL | `https://www.iscvms.com` (cross out `http://127.0.0.1:8000` on the form) |
+| Apache JMeter Version | The version from Help → About |
+| Machine Specs | Processor and RAM from About your PC |
+| Network Condition | Tick **Other** and write `Internet to www.iscvms.com`. Tick **LAN** instead if you are on CSPC Wi-Fi, and add `campus Wi-Fi`. |
+| Test Plan Name / File | `ISCVMS-Reliability.jmx` |
+| Modules Targeted | Tick all five: **Login**, **Registration**, **Portals**, **RFID API**, **Reports** |
+
+---
+
+## How the JMeter window works
+
+Learn these six actions before you build the tests. You will use them on every scenario.
+
+1. **Left tree.** Everything you add appears under **Test Plan**. Click an item to edit it on the right.
+2. **Right-click an item → Add.** That is how you create a Thread Group, an HTTP Request, a Cookie Manager, or a report.
+3. **Rename.** Click the item, then change the **Name** box at the top of the right panel.
+4. **Disable.** Right-click a Thread Group → **Disable**. The name turns grey. A grey group does not run. Right-click → **Enable** turns it back on. **Only one Thread Group may be enabled when you press Start.**
+5. **Start and Stop.** The green triangle in the toolbar starts the test. The red square stops it. While a test runs, the top-right corner shows a number that climbs, then stops. Wait until that number stops changing before you read the report.
+6. **Clear.** The broom icons on the toolbar erase old results. Click the broom **before every new scenario**. If you skip this, Scenario 2’s numbers get mixed with Scenario 1 and the questionnaire will be wrong.
+
+**Summary Report columns, and where they go on Part B:**
+
+| What you see in JMeter | What you write on the PDF |
+|---|---|
+| Label | Scenario / Sampler name |
+| # Samples | You do not copy this, but it should match users × loops (and × pages, if the group has several requests) |
+| Average | Avg Response (ms) |
+| Min and Max | Min / Max (ms), written like `420 / 2100` |
+| Error % | Error % |
+| Throughput | Throughput. It is requests per second. Write the number and `/sec`. |
+
+Click **Summary Report** in the left tree to see this table. If the table is empty, you either did not press Start, or you cleared the results too early.
 
 ---
 
