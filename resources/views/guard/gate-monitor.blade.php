@@ -1069,7 +1069,9 @@
                 paintGates(data.gates || []);
                 closeOpenModal();
                 form.reset();
-                alert(data.message || 'Open command sent.');
+                if (typeof window.appToast === 'function') {
+                    window.appToast(data.message || 'Open command sent.', 'success');
+                }
             } catch (err) {
                 if (errEl) {
                     errEl.textContent = 'Network error. Try again.';

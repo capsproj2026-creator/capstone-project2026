@@ -86,6 +86,7 @@ class CapstoneSystemPassTest extends TestCase
             'status' => User::STATUS_PENDING,
             'Gate_access' => User::GATE_ACCESS_PENDING,
             'payment_status' => 'unpaid',
+            'email_verified_at' => now(),
             'strike_count' => 0,
             'created_at' => now(),
         ]);
@@ -105,6 +106,34 @@ class CapstoneSystemPassTest extends TestCase
             ->first();
         $this->assertNotNull($notice);
         $this->assertStringNotContainsString('You now have campus access.', (string) $notice->message);
+
+        $pending->delete();
+    }
+
+    public function test_admin_cannot_approve_unverified_email_registration(): void
+    {
+        $pending = User::query()->create([
+            'id' => (int) (microtime(true) * 1000) % 2000000000,
+            'fullname' => 'Approve Unverified User',
+            'email' => 'approve.unverified.'.uniqid().'@example.com',
+            'password' => Hash::make('OldPass1!xx'),
+            'user_role_id' => 3,
+            'id_number' => 'AUV'.substr((string) time(), -6),
+            'status' => User::STATUS_PENDING,
+            'Gate_access' => User::GATE_ACCESS_PENDING,
+            'email_verified_at' => null,
+            'strike_count' => 0,
+            'created_at' => now(),
+        ]);
+
+        $this->actingAs($this->admin)
+            ->from(route('admin.registrations', ['status' => 'Pending']))
+            ->post(route('admin.registrations.approve', ['id' => $pending->id]))
+            ->assertRedirect(route('admin.registrations', ['status' => 'Pending']))
+            ->assertSessionHas('error', 'Cannot approve until this user verifies their email address.');
+
+        $pending->refresh();
+        $this->assertSame(User::STATUS_PENDING, $pending->status);
 
         $pending->delete();
     }

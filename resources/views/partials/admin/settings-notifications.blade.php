@@ -77,7 +77,10 @@
                         form="campus-notice-delete-{{ $item->id }}"
                         class="rounded-lg border border-gray-200 bg-white p-2 text-gray-500 hover:border-red-200 hover:bg-red-50 hover:text-red-600"
                         title="Delete"
-                        onclick="return confirm('Delete this General Information item? This cannot be undone.')"
+                        data-confirm="Delete this General Information item? This cannot be undone."
+                        data-confirm-title="Delete item"
+                        data-confirm-action="Delete"
+                        data-confirm-tone="danger"
                     >
                         <i data-lucide="trash-2" class="h-4 w-4"></i>
                     </button>

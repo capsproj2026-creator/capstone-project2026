@@ -1648,7 +1648,7 @@ class MjpegHandler(BaseHTTPRequestHandler):
         return False
 
     def _local_clip_request(self, path: str) -> bool:
-        if path != "/save-clip":
+        if path != "/save-clip" and not path.startswith("/incident-clip/"):
             return False
         client = str(self.client_address[0] if self.client_address else "")
         return client in {"127.0.0.1", "::1", "localhost"}
@@ -1758,6 +1758,27 @@ class MjpegHandler(BaseHTTPRequestHandler):
                 "any_online": any_online,
             }).encode("utf-8")
             self.wfile.write(body)
+            return
+
+        if path.startswith("/incident-clip/"):
+            if not self._ai_authorized() and not self._local_clip_request(path):
+                self.send_error(403)
+                return
+            name = os.path.basename(path[len("/incident-clip/"):].strip())
+            if not name or not name.lower().endswith(".mp4") or ".." in name:
+                self.send_error(404)
+                return
+            target = incident_clip_dir() / name
+            if not target.is_file():
+                self.send_error(404)
+                return
+            data = target.read_bytes()
+            self.send_response(200)
+            self.send_header("Content-Type", "video/mp4")
+            self.send_header("Cache-Control", "no-store, private")
+            self.send_header("Content-Length", str(len(data)))
+            self.end_headers()
+            self.wfile.write(data)
             return
 
         # Single JPEG snapshot (never hangs like MJPEG).
@@ -1899,6 +1920,12 @@ class MjpegHandler(BaseHTTPRequestHandler):
         self._send_json(code, result)
 
 
+def incident_clip_dir() -> Path:
+    path = Path(__file__).resolve().parents[2] / "storage" / "app" / "private" / "incident-clips"
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
 def save_incident_clip(camera_id: str, filename: str) -> dict:
     """Write the last minute of JPEG frames for one camera to an MP4 file."""
     state = None
@@ -1922,8 +1949,7 @@ def save_incident_clip(camera_id: str, filename: str) -> dict:
     if not safe_name.lower().endswith(".mp4"):
         safe_name += ".mp4"
 
-    clip_dir = Path(__file__).resolve().parents[2] / "storage" / "app" / "private" / "incident-clips"
-    clip_dir.mkdir(parents=True, exist_ok=True)
+    clip_dir = incident_clip_dir()
     target = clip_dir / safe_name
 
     import numpy as np

@@ -42,7 +42,7 @@ class CameraClipController extends Controller
         if (! $clip) {
             return redirect()
                 ->route($back)
-                ->with('error', 'No clip was saved. The camera needs a live picture from the last minute.');
+                ->with('error', $clips->failureMessage() ?? 'No clip was saved. The camera needs a live picture from the last minute.');
         }
 
         return redirect()

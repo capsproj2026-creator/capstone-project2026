@@ -152,6 +152,13 @@
                             </td>
                             <td class="reg-desktop-col min-w-0 px-3 py-3">
                                 <p class="truncate text-gray-600" title="{{ $email }}">{{ $email }}</p>
+                                @if ($email !== '—')
+                                    @if ($row->hasVerifiedEmail())
+                                        <p class="mt-0.5 text-[11px] font-medium text-emerald-700">Email verified</p>
+                                    @else
+                                        <p class="mt-0.5 text-[11px] font-medium text-amber-700">Email not verified</p>
+                                    @endif
+                                @endif
                             </td>
                             <td class="reg-desktop-col px-3 py-3 text-gray-600" title="{{ $registeredAt }}">
                                 @if ($registeredTime !== '')
@@ -183,10 +190,30 @@
                                         View profile
                                     </a>
                                     @if ($row->status === 'Pending' && ! $isIncompleteTemp)
-                                        <form method="POST" action="{{ route('admin.registrations.approve', $row->id) }}" class="m-0" onsubmit="return confirm('Approve this registration?')">
-                                            @csrf
-                                            <button type="submit" class="inline-flex w-full items-center justify-center rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700">Approve</button>
-                                        </form>
+                                        @if ($row->hasVerifiedEmail())
+                                            <form
+                                                method="POST"
+                                                action="{{ route('admin.registrations.approve', $row->id) }}"
+                                                class="m-0"
+                                                data-confirm="Approve this registration for {{ $row->fullname }}?"
+                                                data-confirm-title="Approve registration"
+                                                data-confirm-action="Approve"
+                                                data-confirm-tone="success"
+                                            >
+                                                @csrf
+                                                <button type="submit" class="inline-flex w-full items-center justify-center rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700">Approve</button>
+                                            </form>
+                                        @else
+                                            <button
+                                                type="button"
+                                                disabled
+                                                title="The applicant must verify their email before this registration can be approved."
+                                                class="inline-flex w-full cursor-not-allowed items-center justify-center rounded-lg bg-gray-200 px-3 py-1.5 text-xs font-semibold text-gray-500"
+                                            >
+                                                Approve
+                                            </button>
+                                            <p class="text-center text-[11px] font-medium text-amber-700">Wait for email verification</p>
+                                        @endif
                                     @endif
                                     @if ($row->status === 'Granted')
                                         <button

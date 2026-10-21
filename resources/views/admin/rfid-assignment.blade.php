@@ -238,7 +238,10 @@
                                             <input type="hidden" name="action" value="restore">
                                             <button type="submit"
                                                 class="inline-flex w-full items-center justify-center gap-1.5 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-700 hover:bg-emerald-100"
-                                                onclick="return confirm('Restore gate access for {{ addslashes($u->displayName()) }}?')">
+                                                data-confirm="Restore gate access for {{ $u->displayName() }}?"
+                                                data-confirm-title="Restore gate access"
+                                                data-confirm-action="Restore Access"
+                                                data-confirm-tone="success">
                                                 <i data-lucide="undo-2" class="h-3.5 w-3.5"></i>
                                                 Restore Access
                                             </button>
@@ -251,7 +254,10 @@
                                             <input type="hidden" name="action" value="deny">
                                             <button type="submit"
                                                 class="inline-flex w-full items-center justify-center gap-1.5 rounded-lg border border-red-200 bg-white px-3 py-2 text-xs font-semibold text-red-600 hover:bg-red-50"
-                                                onclick="return confirm('Deny gate access for {{ addslashes($u->displayName()) }}?')">
+                                                data-confirm="Deny gate access for {{ $u->displayName() }}?"
+                                                data-confirm-title="Deny gate access"
+                                                data-confirm-action="Deny Access"
+                                                data-confirm-tone="danger">
                                                 <i data-lucide="ban" class="h-3.5 w-3.5"></i>
                                                 Deny Access
                                             </button>

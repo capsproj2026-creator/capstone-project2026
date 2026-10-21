@@ -131,14 +131,20 @@
                                class="mt-1 w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm shadow-sm">
                         <div class="mt-3 flex flex-col gap-2 sm:flex-row">
                             <button type="submit" name="decision" value="{{ $approveValue }}"
-                                    onclick="return confirm(@js($approveLabel.'?'))"
+                                    data-confirm="{{ $approveLabel }}?"
+                                    data-confirm-title="Confirm decision"
+                                    data-confirm-action="{{ $approveLabel }}"
+                                    data-confirm-tone="{{ $isThird && $vpafStage ? 'danger' : 'success' }}"
                                     class="inline-flex items-center justify-center gap-1.5 rounded-lg px-4 py-2 text-sm font-semibold text-white"
                                     style="background-color: {{ $isThird && $vpafStage ? '#dc2626' : '#2563eb' }};">
                                 <i data-lucide="check" class="h-4 w-4"></i>
                                 {{ $approveLabel }}
                             </button>
                             <button type="submit" name="decision" value="{{ $rejectValue }}"
-                                    onclick="return confirm(@js($rejectLabel.'?'))"
+                                    data-confirm="{{ $rejectLabel }}?"
+                                    data-confirm-title="Confirm decision"
+                                    data-confirm-action="{{ $rejectLabel }}"
+                                    data-confirm-tone="danger"
                                     class="inline-flex items-center justify-center gap-1.5 rounded-lg border border-gray-200 bg-white px-4 py-2 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50">
                                 <i data-lucide="x" class="h-4 w-4"></i>
                                 {{ $rejectLabel }}

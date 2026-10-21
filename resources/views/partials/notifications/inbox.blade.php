@@ -14,7 +14,14 @@
                 Mark all as read
             </button>
         </form>
-        <form method="POST" action="{{ route($actionRoute, 'clear_all') }}" onsubmit="return confirm('Clear all notifications?')">
+        <form
+            method="POST"
+            action="{{ route($actionRoute, 'clear_all') }}"
+            data-confirm="Clear all notifications? This cannot be undone."
+            data-confirm-title="Clear notifications"
+            data-confirm-action="Clear all"
+            data-confirm-tone="danger"
+        >
             @csrf
             <button type="submit" class="inline-flex items-center gap-1.5 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm font-semibold text-red-700 hover:bg-red-100">
                 <i data-lucide="trash-2" class="h-4 w-4"></i>

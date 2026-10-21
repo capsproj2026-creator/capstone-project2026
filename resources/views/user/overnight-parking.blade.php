@@ -111,7 +111,14 @@
                             @endif
                         </div>
                         @if ($canCancel)
-                            <form method="POST" action="{{ route('user.overnight-parking.cancel', $req->id) }}" onsubmit="return confirm('Cancel this request?')">
+                            <form
+                                method="POST"
+                                action="{{ route('user.overnight-parking.cancel', $req->id) }}"
+                                data-confirm="Cancel this overnight parking request?"
+                                data-confirm-title="Cancel request"
+                                data-confirm-action="Cancel request"
+                                data-confirm-tone="danger"
+                            >
                                 @csrf
                                 <button type="submit" class="rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 shadow-sm hover:bg-gray-50">Cancel</button>
                             </form>

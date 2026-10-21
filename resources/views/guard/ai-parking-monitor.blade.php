@@ -713,7 +713,10 @@ window.__aiClosePlateModal = function () {
         e.preventDefault();
         const err = document.getElementById('plate-correct-error');
         const showErr = (msg) => {
-            if (!err) { alert(msg); return; }
+            if (!err) {
+                if (typeof window.appToast === 'function') window.appToast(msg, 'error');
+                return;
+            }
             err.textContent = msg;
             err.style.display = 'block';
         };

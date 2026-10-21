@@ -350,8 +350,16 @@
                     if (event.target.closest('form')) return;
                     const statuses = ['Available', 'Occupied', 'Reserved', 'Maintenance'];
                     const current = card.dataset.currentStatus || 'Available';
-                    const next = prompt(`Set status for ${card.dataset.slotNumber || 'slot'}:\n${statuses.join(' | ')}`, current);
-                    if (!next || !statuses.includes(next)) return;
+                    const slotLabel = card.dataset.slotNumber || 'slot';
+                    const next = typeof window.appChoice === 'function'
+                        ? await window.appChoice({
+                            title: `Set status for ${slotLabel}`,
+                            message: 'Choose the new parking space status.',
+                            options: statuses,
+                            current,
+                        })
+                        : null;
+                    if (!next || !statuses.includes(next) || next === current) return;
                     try {
                         const response = await fetch(updateSlotUrl, {
                             method: 'POST',
@@ -364,10 +372,22 @@
                             credentials: 'same-origin',
                             body: JSON.stringify({ slot_id: Number(card.dataset.slotId), status: next }),
                         });
-                        if (!response.ok) return;
+                        if (!response.ok) {
+                            if (typeof window.appToast === 'function') {
+                                window.appToast('Could not update slot status. Try again.', 'error');
+                            }
+                            return;
+                        }
                         applySlotStatus(card, next);
+                        if (typeof window.appToast === 'function') {
+                            window.appToast(`${slotLabel} set to ${next}.`, 'success');
+                        }
                         refresh();
-                    } catch (e) {}
+                    } catch (e) {
+                        if (typeof window.appToast === 'function') {
+                            window.appToast('Could not update slot status. Try again.', 'error');
+                        }
+                    }
                 });
             });
         }

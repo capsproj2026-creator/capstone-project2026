@@ -81,6 +81,12 @@ class RegistrationController extends Controller
                 ->with('error', 'This registration is no longer pending.');
         }
 
+        if (! $user->hasVerifiedEmail()) {
+            return redirect()
+                ->route('admin.registrations', ['status' => User::STATUS_PENDING])
+                ->with('error', 'Cannot approve until this user verifies their email address.');
+        }
+
         $updates = [
             'status' => User::STATUS_GRANTED,
             'registration_state' => User::REGISTRATION_GRANTED,

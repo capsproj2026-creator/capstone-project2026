@@ -147,7 +147,11 @@
                             </p>
                         </div>
                         <form method="POST" action="{{ route($prefix.'.stalled-vehicles.removed', $report->id) }}" class="flex shrink-0 flex-col gap-2 {{ $canReport ? '' : 'hidden' }}" style="min-width: 13rem;"
-                              onsubmit="return confirm('Mark {{ $report->plate_number }} as removed from campus?')">
+                              data-confirm="Mark {{ $report->plate_number }} as removed from campus?"
+                              data-confirm-title="Mark as removed"
+                              data-confirm-action="Mark removed"
+                              data-confirm-tone="success"
+                            >
                             @csrf
                             <input type="text" name="removal_notes" maxlength="300" placeholder="Repaired, towed, key found…"
                                    class="w-full rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs shadow-sm">

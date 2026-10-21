@@ -127,7 +127,14 @@
                                             <button type="submit" class="rounded-lg border border-blue-200 bg-white px-3 py-1.5 text-xs font-semibold text-blue-700 hover:bg-blue-50">Set Primary</button>
                                         </form>
                                     @endunless
-                                    <form method="POST" action="{{ route('profile.update') }}" onsubmit="return confirm('Remove this vehicle?');">
+                                    <form
+                                        method="POST"
+                                        action="{{ route('profile.update') }"
+                                        data-confirm="Remove this vehicle from your account?"
+                                        data-confirm-title="Remove vehicle"
+                                        data-confirm-action="Remove"
+                                        data-confirm-tone="danger"
+                                    >
                                         @csrf
                                         <input type="hidden" name="remove_vehicle" value="1">
                                         <input type="hidden" name="user_vehicle_id" value="{{ $uv->id }}">

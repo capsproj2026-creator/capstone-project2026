@@ -139,13 +139,27 @@
                                                 Tap card to assign
                                             </button>
                                         @else
-                                            <form method="POST" action="{{ route($routePrefix.'.visitors.return-rfid', $v->id) }}" onsubmit="return confirm('Return this temporary RFID?')">
+                                            <form
+                                                method="POST"
+                                                action="{{ route($routePrefix.'.visitors.return-rfid', $v->id) }}"
+                                                data-confirm="Return this temporary RFID?"
+                                                data-confirm-title="Return RFID"
+                                                data-confirm-action="Return RFID"
+                                                data-confirm-tone="warning"
+                                            >
                                                 @csrf
                                                 <button type="submit" class="rounded-lg border border-gray-200 px-3 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-50">Return RFID</button>
                                             </form>
                                         @endunless
                                         @if ($v->status !== 'Completed')
-                                            <form method="POST" action="{{ route($routePrefix.'.visitors.mark-exited', $v->id) }}" onsubmit="return confirm('Mark this visitor as exited? This cannot be undone.')">
+                                            <form
+                                                method="POST"
+                                                action="{{ route($routePrefix.'.visitors.mark-exited', $v->id) }}"
+                                                data-confirm="Mark this visitor as exited? This cannot be undone."
+                                                data-confirm-title="Mark as exited"
+                                                data-confirm-action="Mark exited"
+                                                data-confirm-tone="danger"
+                                            >
                                                 @csrf
                                                 <button type="submit" class="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-800 hover:bg-emerald-100">
                                                     Done / Mark as Exited

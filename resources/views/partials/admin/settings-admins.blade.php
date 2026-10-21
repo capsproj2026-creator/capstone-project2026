@@ -64,7 +64,10 @@
                     <form
                         method="POST"
                         action="{{ route('admin.settings.staff.destroy', $staff->id) }}"
-                        onsubmit="return confirm('Remove {{ addslashes($staff->name) }} from the system?')"
+                        data-confirm="Remove {{ $staff->name }} from the system? This cannot be undone."
+                        data-confirm-title="Remove account"
+                        data-confirm-action="Remove"
+                        data-confirm-tone="danger"
                     >
                         @csrf
                         @method('DELETE')

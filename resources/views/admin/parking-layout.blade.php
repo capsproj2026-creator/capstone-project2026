@@ -110,7 +110,10 @@
                                 <span class="shrink-0 text-[11px] font-medium text-gray-400">Locked</span>
                             @else
                                 <form method="POST" action="{{ route('admin.parking.areas.destroy', $zone->id) }}"
-                                      onsubmit="return confirm('Remove parking area {{ $zone->area_name }} and all of its spaces?')">
+                                      data-confirm="Remove parking area {{ $zone->area_name }} and all of its spaces?"
+                                      data-confirm-title="Remove parking area"
+                                      data-confirm-action="Remove"
+                                      data-confirm-tone="danger">
                                     @csrf
                                     <button type="submit" class="rounded-lg border border-rose-200 bg-white px-2.5 py-1 text-xs font-semibold text-rose-700 hover:bg-rose-50">
                                         Remove
@@ -176,7 +179,10 @@
                                 <span class="text-[11px] font-medium">Busy</span>
                             @else
                                 <form method="POST" action="{{ route('admin.parking.slots.destroy', $slot->id) }}"
-                                      onsubmit="return confirm('Remove parking space {{ $slotLabel }}?')">
+                                      data-confirm="Remove parking space {{ $slotLabel }}?"
+                                      data-confirm-title="Remove parking space"
+                                      data-confirm-action="Remove"
+                                      data-confirm-tone="danger">
                                     @csrf
                                     <button type="submit" class="text-xs font-semibold text-rose-700 hover:underline">Remove</button>
                                 </form>

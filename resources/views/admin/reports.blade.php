@@ -414,7 +414,23 @@
                 maxBarThickness: 48,
             }],
         },
-        options: baseOptions,
+        options: {
+            ...baseOptions,
+            scales: {
+                ...baseOptions.scales,
+                x: {
+                    ...baseOptions.scales.x,
+                    ticks: {
+                        color: tickColor(),
+                        // Show every location name; autoSkip was hiding alternate labels
+                        // (e.g. Exit) when bars were crowded with maxRotation: 0.
+                        autoSkip: false,
+                        maxRotation: 40,
+                        minRotation: 0,
+                    },
+                },
+            },
+        },
     }));
 
     const trends = chartData.violationTrends || { labels: [], series: [] };
