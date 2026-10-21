@@ -8,8 +8,6 @@
         'subtitle' => 'Create the login that approves or rejects GSU endorsements',
     ])
 
-    @include('partials.shell.flash')
-
     <div class="mb-5 flex max-w-3xl items-start gap-3 rounded-xl border border-amber-200 bg-amber-50 p-4 text-amber-900">
         <i data-lucide="shield-alert" class="mt-0.5 h-5 w-5 shrink-0"></i>
         <div>

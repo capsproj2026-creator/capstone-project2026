@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\CameraClip;
+use App\Services\AiCameraRegistry;
 use App\Services\IncidentClipService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -12,13 +13,16 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class CameraClipController extends Controller
 {
-    public function index(Request $request): View
+    public function index(Request $request, AiCameraRegistry $registry): View
     {
         $isGuard = str_contains((string) $request->route()?->getName(), 'guard.');
 
         return view('cameras.clips', [
+            'layout' => $isGuard ? 'layouts.guard' : 'layouts.portal',
             'clips' => CameraClip::query()->orderByDesc('created_at')->paginate(20),
             'playRoute' => $isGuard ? 'guard.clips.play' : 'admin.clips.play',
+            'saveRoute' => $isGuard ? 'guard.clips.save' : 'admin.clips.save',
+            'cameras' => $registry->cameras(),
         ]);
     }
 

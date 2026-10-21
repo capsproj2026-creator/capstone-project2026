@@ -8,8 +8,6 @@
         'subtitle' => 'Campus policy blocks overnight stays unless GSU approves proof that the stay is valid',
     ])
 
-    @include('partials.shell.flash')
-
     <div class="mb-6 max-w-3xl rounded-xl border border-gray-200 bg-white p-6">
         <form method="POST" action="{{ route('user.overnight.store') }}" enctype="multipart/form-data" class="space-y-4">
             @csrf

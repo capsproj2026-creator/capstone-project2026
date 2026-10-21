@@ -41,8 +41,6 @@
         </div>
         </div>
 
-        @include('partials.shell.flash')
-
         @if ($section === 'general')
             <form method="POST" action="{{ route('admin.settings.system') }}" class="mb-6">
                 @csrf

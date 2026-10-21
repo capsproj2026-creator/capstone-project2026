@@ -8,7 +8,6 @@
         'subtitle' => 'Endorsements waiting for your decision',
     ])
 
-    @include('partials.shell.flash')
     @include('partials.notifications.inbox')
 @endsection
 

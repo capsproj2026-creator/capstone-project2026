@@ -8,7 +8,6 @@
         'subtitle' => 'New registrations, overnight requests, and sanction updates',
     ])
 
-    @include('partials.shell.flash')
     @include('partials.notifications.inbox')
 @endsection
 

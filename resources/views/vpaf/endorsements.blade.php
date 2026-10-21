@@ -8,8 +8,6 @@
         'subtitle' => 'Approve or reject a GSU endorsement. Rejection keeps the citation and does not apply the sanction.',
     ])
 
-    @include('partials.shell.flash')
-
     <div class="space-y-4">
         @forelse ($pending as $endorsement)
             <article class="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">

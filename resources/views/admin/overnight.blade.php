@@ -8,8 +8,6 @@
         'subtitle' => 'Approve a stay only when the uploaded proof shows it is allowed',
     ])
 
-    @include('partials.shell.flash')
-
     <div class="overflow-hidden rounded-xl border border-gray-200 bg-white">
         <div class="overflow-x-auto">
             <table class="w-full text-left text-sm">

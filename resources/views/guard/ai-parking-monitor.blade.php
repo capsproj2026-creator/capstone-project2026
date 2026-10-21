@@ -316,6 +316,14 @@
                             · Vehicles:
                             <span class="js-cam-vehicles font-semibold text-gray-800" data-camera="{{ $camId }}">{{ $vehicles ?? '—' }}</span>
                         </p>
+                        <form method="POST" action="{{ route('guard.clips.save') }}" class="mt-3">
+                            @csrf
+                            <input type="hidden" name="camera_id" value="{{ $camId }}">
+                            <button type="submit" class="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-50">
+                                <i data-lucide="video" class="h-3.5 w-3.5"></i>
+                                Save incident clip
+                            </button>
+                        </form>
                     </div>
                 </article>
             @endforeach
