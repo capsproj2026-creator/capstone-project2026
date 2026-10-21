@@ -16,18 +16,34 @@ class CameraClipController extends Controller
     public function index(Request $request, AiCameraRegistry $registry): View
     {
         $isGuard = str_contains((string) $request->route()?->getName(), 'guard.');
+        $locations = [];
+        foreach ($registry->cameras() as $camera) {
+            $id = strtoupper((string) ($camera['id'] ?? ''));
+            if ($id === '') {
+                continue;
+            }
+            $locations[$id] = (string) ($camera['location'] ?? $camera['name'] ?? $id);
+        }
 
         return view('cameras.clips', [
             'layout' => $isGuard ? 'layouts.guard' : 'layouts.portal',
             'clips' => CameraClip::query()->orderByDesc('created_at')->paginate(20),
             'playRoute' => $isGuard ? 'guard.clips.play' : 'admin.clips.play',
-            'saveRoute' => $isGuard ? 'guard.clips.save' : 'admin.clips.save',
-            'cameras' => $registry->cameras(),
+            'saveRoute' => 'guard.clips.save',
+            'canSave' => $isGuard,
+            'cameras' => $isGuard ? $registry->cameras() : [],
+            'cameraLocations' => $locations,
         ]);
     }
 
     public function save(Request $request, IncidentClipService $clips): RedirectResponse
     {
+        abort_unless(
+            str_contains((string) $request->route()?->getName(), 'guard.'),
+            403,
+            'Only guards can save incident clips.'
+        );
+
         $validated = $request->validate([
             'camera_id' => ['required', 'string', 'max:64'],
         ]);
@@ -39,18 +55,14 @@ class CameraClipController extends Controller
             (int) $request->user()->id,
         );
 
-        $back = str_contains((string) $request->route()?->getName(), 'guard.')
-            ? 'guard.clips'
-            : 'admin.clips';
-
         if (! $clip) {
             return redirect()
-                ->route($back)
+                ->route('guard.clips')
                 ->with('error', $clips->failureMessage() ?? 'No clip was saved. The camera needs a live picture from the last minute.');
         }
 
         return redirect()
-            ->route($back)
+            ->route('guard.clips')
             ->with('success', 'Incident clip saved.');
     }
 

@@ -147,7 +147,6 @@ Route::prefix('admin')->middleware(['auth', 'verified', 'granted', 'no.cache', '
     Route::get('/notifications', [AdminNotificationController::class, 'index'])->name('notifications');
     Route::post('/notifications/{action}', [AdminNotificationController::class, 'action'])->name('notifications.action');
     Route::get('/clips', [CameraClipController::class, 'index'])->name('clips');
-    Route::post('/clips', [CameraClipController::class, 'save'])->name('clips.save');
     Route::get('/clips/{id}/play', [CameraClipController::class, 'play'])->name('clips.play');
     Route::get('/vpaf-accounts', [VpafAccountController::class, 'create'])
         ->middleware('permission:manage_admins')
