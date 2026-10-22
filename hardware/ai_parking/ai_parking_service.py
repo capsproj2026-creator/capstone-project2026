@@ -53,6 +53,9 @@ BASE_DIR = Path(__file__).resolve().parent
 MODEL_PATH = resolve_model_path()
 
 API_BASE = os.getenv("AI_LARAVEL_API_BASE", "http://127.0.0.1:8000").rstrip("/")
+# Apex iscvms.com 301s to www; urllib then retries POST as GET → Laravel 405.
+if API_BASE in {"https://iscvms.com", "http://iscvms.com"}:
+    API_BASE = "https://www.iscvms.com"
 AI_API_TOKEN = os.getenv("AI_PARKING_API_TOKEN", "").strip() or os.getenv(
     "AI_API_TOKEN", ""
 ).strip()
@@ -1988,6 +1991,9 @@ def save_incident_clip(camera_id: str, filename: str) -> dict:
     if not target.is_file() or target.stat().st_size < 32:
         return {"ok": False, "message": "Clip file was empty."}
 
+    # OpenCV leaves moov at EOF — browsers cannot seek until the whole file loads.
+    _mp4_faststart(target)
+
     return {
         "ok": True,
         "filename": safe_name,
@@ -1995,6 +2001,133 @@ def save_incident_clip(camera_id: str, filename: str) -> dict:
         "frames": len(decoded),
         "camera_id": resolved,
     }
+
+
+def _mp4_faststart(path: Path) -> bool:
+    """Rewrite MP4 so moov comes before mdat (HTML5 scrubbing / click-to-seek)."""
+    try:
+        import imageio_ffmpeg
+
+        ffmpeg = imageio_ffmpeg.get_ffmpeg_exe()
+    except Exception:
+        return _mp4_faststart_pure(path)
+
+    # Keep a real .mp4 suffix — ffmpeg on Windows rejects "*.mp4.faststart.tmp".
+    tmp = path.with_name(path.stem + ".faststart.mp4")
+    try:
+        import subprocess
+
+        proc = subprocess.run(
+            [
+                ffmpeg,
+                "-y",
+                "-i",
+                str(path),
+                "-c",
+                "copy",
+                "-movflags",
+                "+faststart",
+                str(tmp),
+            ],
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+        if proc.returncode != 0 or not tmp.is_file() or tmp.stat().st_size < 32:
+            if tmp.is_file():
+                tmp.unlink(missing_ok=True)
+            return _mp4_faststart_pure(path)
+        tmp.replace(path)
+        return True
+    except Exception:
+        if tmp.is_file():
+            tmp.unlink(missing_ok=True)
+        return _mp4_faststart_pure(path)
+
+
+def _mp4_faststart_pure(path: Path) -> bool:
+    """Move the top-level moov atom before mdat and patch chunk offsets."""
+    try:
+        data = bytearray(path.read_bytes())
+    except OSError:
+        return False
+
+    boxes: list[tuple[bytes, int, int]] = []
+    i = 0
+    n = len(data)
+    while i + 8 <= n:
+        size = int.from_bytes(data[i : i + 4], "big")
+        typ = bytes(data[i + 4 : i + 8])
+        hdr = 8
+        if size == 1:
+            if i + 16 > n:
+                break
+            size = int.from_bytes(data[i + 8 : i + 16], "big")
+            hdr = 16
+        elif size == 0:
+            size = n - i
+        if size < 8 or i + size > n:
+            break
+        boxes.append((typ, i, size))
+        i += size
+
+    moov = next((b for b in boxes if b[0] == b"moov"), None)
+    mdat = next((b for b in boxes if b[0] == b"mdat"), None)
+    if not moov or not mdat or moov[1] < mdat[1]:
+        return moov is not None and mdat is not None and moov[1] < mdat[1]
+
+    moov_typ, moov_off, moov_size = moov
+    moov_bytes = bytes(data[moov_off : moov_off + moov_size])
+    # After moving moov before mdat, every mdat-relative chunk offset shifts by moov_size.
+    shift = moov_size
+    moov_patched = bytearray(moov_bytes)
+
+    def _patch_offsets(atom: bytearray, tag: bytes, width: int) -> None:
+        idx = 0
+        while True:
+            found = atom.find(tag, idx)
+            if found < 0 or found + 8 > len(atom):
+                break
+            # Walk back to box size at start of this atom (tag is at +4).
+            box_start = found - 4
+            if box_start < 0:
+                idx = found + 4
+                continue
+            box_size = int.from_bytes(atom[box_start : box_start + 4], "big")
+            if box_size < 16 or box_start + box_size > len(atom):
+                idx = found + 4
+                continue
+            # stco/co64: size(4) + type(4) + version/flags(4) + entry_count(4) + entries
+            entry_count = int.from_bytes(atom[box_start + 12 : box_start + 16], "big")
+            pos = box_start + 16
+            for _ in range(entry_count):
+                if pos + width > box_start + box_size:
+                    break
+                val = int.from_bytes(atom[pos : pos + width], "big") + shift
+                atom[pos : pos + width] = val.to_bytes(width, "big")
+                pos += width
+            idx = box_start + box_size
+
+    _patch_offsets(moov_patched, b"stco", 4)
+    _patch_offsets(moov_patched, b"co64", 8)
+
+    out = bytearray()
+    for typ, off, size in boxes:
+        if typ == b"moov":
+            continue
+        if typ == b"mdat":
+            out.extend(moov_patched)
+        out.extend(data[off : off + size])
+
+    tmp = path.with_name(path.stem + ".faststart.mp4")
+    try:
+        tmp.write_bytes(out)
+        tmp.replace(path)
+        return True
+    except OSError:
+        if tmp.is_file():
+            tmp.unlink(missing_ok=True)
+        return False
 
 
 def start_stream_server():

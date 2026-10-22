@@ -101,20 +101,21 @@ class AiParkingOccupancyService
                 is_array($previous) ? ($previous['detections'] ?? []) : []
             );
             $ruleEvents = [];
+            // Stable bays still need owner enrich + role/vehicle rules. Gating only on
+            // plateChanged skipped citations after the first OCR lock (and after lot
+            // rule changes), which blocked auto incident clips too.
             if ($plateChanged || $this->detectionsMissingIdentity($liveDetections)) {
                 $liveDetections = $this->applyPlateCorrections($cameraId, $liveDetections);
                 $liveDetections = $this->enrichWithOwners($liveDetections);
                 $liveDetections = $this->dedupeDetectionsByTrack($liveDetections);
             }
-            if ($plateChanged) {
-                $ruleEvents = array_merge(
-                    app(AiParkingViolationService::class)->unauthorizedFromDetections($liveDetections, $cameraId),
-                    app(AiParkingViolationService::class)->wrongParkingFromDetections($liveDetections, $cameraId, $areaId)
-                );
-                if ($ruleEvents !== []) {
-                    app(AiParkingViolationService::class)->processEvents($ruleEvents, $cameraId);
-                    $this->rememberDayEvents($cameraId, $ruleEvents);
-                }
+            $ruleEvents = array_merge(
+                app(AiParkingViolationService::class)->unauthorizedFromDetections($liveDetections, $cameraId),
+                app(AiParkingViolationService::class)->wrongParkingFromDetections($liveDetections, $cameraId, $areaId)
+            );
+            if ($ruleEvents !== []) {
+                app(AiParkingViolationService::class)->processEvents($ruleEvents, $cameraId);
+                $this->rememberDayEvents($cameraId, $ruleEvents);
             }
             $liveDetections = $this->attachViolationStatus(
                 $liveDetections,
@@ -130,7 +131,7 @@ class AiParkingOccupancyService
             if ($slotSignature !== null) {
                 $snapshot['slot_signature'] = $slotSignature;
             }
-            if ($plateChanged) {
+            if ($plateChanged || $ruleEvents !== []) {
                 $snapshot['events'] = $this->dayViolationEvents($cameraId);
             }
             $snapshot = array_merge($snapshot, $this->summarizeMotion($liveDetections));

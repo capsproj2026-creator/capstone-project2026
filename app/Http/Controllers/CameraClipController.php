@@ -9,7 +9,7 @@ use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\View\View;
-use Symfony\Component\HttpFoundation\StreamedResponse;
+use Symfony\Component\HttpFoundation\BinaryFileResponse;
 
 class CameraClipController extends Controller
 {
@@ -27,7 +27,12 @@ class CameraClipController extends Controller
 
         return view('cameras.clips', [
             'layout' => $isGuard ? 'layouts.guard' : 'layouts.portal',
-            'clips' => CameraClip::query()->orderByDesc('created_at')->paginate(20),
+            'clips' => CameraClip::query()->orderByDesc('created_at')->paginate(12),
+            'clipStats' => [
+                'total' => CameraClip::query()->count(),
+                'ai' => CameraClip::query()->where('source', 'ai')->count(),
+                'manual' => CameraClip::query()->where('source', 'manual')->count(),
+            ],
             'playRoute' => $isGuard ? 'guard.clips.play' : 'admin.clips.play',
             'saveRoute' => 'guard.clips.save',
             'canSave' => $isGuard,
@@ -66,7 +71,7 @@ class CameraClipController extends Controller
             ->with('success', 'Incident clip saved.');
     }
 
-    public function play(int $id): StreamedResponse
+    public function play(int $id): BinaryFileResponse
     {
         $clip = CameraClip::query()->findOrFail($id);
         $path = (string) $clip->file_path;
@@ -74,8 +79,11 @@ class CameraClipController extends Controller
             abort(404);
         }
 
-        return Storage::disk('private')->response($path, basename($path), [
+        // BinaryFileResponse honors Range so the scrubber can jump without re-downloading.
+        return response()->file(Storage::disk('private')->path($path), [
             'Content-Type' => 'video/mp4',
+            'Accept-Ranges' => 'bytes',
+            'Cache-Control' => 'private, max-age=0, must-revalidate',
         ]);
     }
 }
