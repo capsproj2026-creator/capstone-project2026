@@ -210,19 +210,21 @@
                         <x-auth.input label="Contact Number" name="phone_number" required placeholder="09XX XXX XXXX" value="{{ old('phone_number') }}" />
                         <div>
                             <label for="id_number" class="mb-1.5 block text-sm font-medium text-gray-700">ID Number / SN <span class="text-red-500">*</span></label>
-                            <input
-                                type="text"
-                                name="id_number"
-                                id="id_number"
-                                value="{{ old('id_number') }}"
-                                required
-                                inputmode="text"
-                                pattern="[A-Za-z0-9]+"
-                                maxlength="50"
-                                placeholder="e.g. 23100XXXX"
-                                title="Use letters and numbers only (max 50)"
-                                class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm text-gray-900 shadow-sm placeholder:text-gray-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20 @error('id_number') border-red-500 focus:border-red-500 focus:ring-red-500/20 @enderror"
-                            >
+                            <div class="relative">
+                                <input
+                                    type="text"
+                                    name="id_number"
+                                    id="id_number"
+                                    value="{{ old('id_number') }}"
+                                    required
+                                    inputmode="text"
+                                    pattern="[A-Za-z0-9]+"
+                                    maxlength="50"
+                                    placeholder="e.g. 23100XXXX"
+                                    title="Use letters and numbers only (max 50)"
+                                    class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 pr-10 text-sm text-gray-900 shadow-sm placeholder:text-gray-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20 @error('id_number') border-red-500 focus:border-red-500 focus:ring-red-500/20 @enderror"
+                                >
+                            </div>
                             @error('id_number')
                                 <p class="mt-1 text-xs text-red-600">{{ $message }}</p>
                             @enderror
@@ -232,16 +234,18 @@
                     <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
                         <div>
                             <label for="email" class="mb-1.5 block text-sm font-medium text-gray-700">Email Address <span class="text-red-500">*</span></label>
-                            <input
-                                type="email"
-                                name="email"
-                                id="email"
-                                value="{{ old('email') }}"
-                                required
-                                autocomplete="email"
-                                placeholder="name@my.cspc.edu.ph"
-                                class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm text-gray-900 shadow-sm placeholder:text-gray-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20 @error('email') border-red-500 focus:border-red-500 focus:ring-red-500/20 @enderror"
-                            >
+                            <div class="relative">
+                                <input
+                                    type="email"
+                                    name="email"
+                                    id="email"
+                                    value="{{ old('email') }}"
+                                    required
+                                    autocomplete="email"
+                                    placeholder="name@my.cspc.edu.ph"
+                                    class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 pr-10 text-sm text-gray-900 shadow-sm placeholder:text-gray-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20 @error('email') border-red-500 focus:border-red-500 focus:ring-red-500/20 @enderror"
+                                >
+                            </div>
                             @error('email')
                                 <p class="mt-1 text-xs text-red-600">{{ $message }}</p>
                             @enderror

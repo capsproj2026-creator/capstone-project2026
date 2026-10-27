@@ -97,11 +97,30 @@ function placeClearButton(input, button) {
     button.style.top = `${Math.round(inputBox.top - parentBox.top + (inputBox.height - BUTTON_SIZE) / 2)}px`;
 }
 
+function clearAnchorFor(input) {
+    const parent = input.parentElement;
+    if (!parent) return null;
+
+    // Prefer a dedicated relative wrap around only the input (label stays outside).
+    const siblings = Array.from(parent.children).filter((el) => el !== input);
+    const onlyWrapsInput = siblings.every((el) => el.matches?.('button.sc-search-clear, [data-password-toggle]'));
+    if (onlyWrapsInput) {
+        parent.classList.add('relative');
+        return parent;
+    }
+
+    const wrap = document.createElement('div');
+    wrap.className = 'relative';
+    parent.insertBefore(wrap, input);
+    wrap.appendChild(input);
+    return wrap;
+}
+
 function enhanceClearableInput(input) {
     if (!isClearableInput(input) || input.dataset.searchClearBound === '1') return;
     input.dataset.searchClearBound = '1';
 
-    const parent = input.parentElement;
+    const parent = clearAnchorFor(input);
     if (!parent) return;
 
     const searchLike = isSearchLike(input);
