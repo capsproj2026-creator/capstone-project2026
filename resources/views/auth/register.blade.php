@@ -705,19 +705,55 @@
 
             const idInput = document.getElementById('id_document');
             const idStatus = document.getElementById('id_scan_status');
+            // Same person even when documents print First Middle Last vs Last First Middle.
             const namesLookSame = (left, right) => {
+                const skip = new Set(['DE','DEL','DELA','DA','SAN','SANTA','JR','SR','II','III','IV','SN','ID','NAME','STUDENT','FACULTY','EMPLOYEE']);
+                const tokens = (value) => String(value || '')
+                    .toUpperCase()
+                    .replace(/[^A-Z]+/g, ' ')
+                    .trim()
+                    .split(/\s+/)
+                    .filter((w) => w.length >= 2 && !skip.has(w))
+                    .filter((w, i, arr) => arr.indexOf(w) === i);
+                const tokenIn = (needle, haystack) => haystack.some((other) =>
+                    other === needle
+                    || (needle.length >= 4 && other.length >= 4 && (other.includes(needle) || needle.includes(other)))
+                );
+                const orderVariants = (parts) => {
+                    if (parts.length < 2) return [parts.join(' ')];
+                    const restThenLast = parts.slice(1).concat(parts[0]);
+                    const lastThenRest = [parts[parts.length - 1]].concat(parts.slice(0, -1));
+                    return Array.from(new Set([
+                        parts.join(' '),
+                        restThenLast.join(' '),
+                        lastThenRest.join(' '),
+                        [...parts].sort().join(' '),
+                    ]));
+                };
+
+                const ta = tokens(left);
+                const tb = tokens(right);
+                if (ta.length < 2 || tb.length < 2) return false;
+
+                const sortedKey = (parts) => [...parts].sort().join(' ');
+                if (sortedKey(ta) === sortedKey(tb)) return true;
+
+                for (const va of orderVariants(ta)) {
+                    for (const vb of orderVariants(tb)) {
+                        if (va === vb) return true;
+                    }
+                }
+
+                const shared = ta.filter((word) => tokenIn(word, tb)).length;
+                const needed = Math.max(2, Math.min(ta.length, tb.length) - 1);
+                if (shared >= needed) return true;
+
                 const compact = (value) => String(value || '').toUpperCase().replace(/[^A-Z]/g, '');
                 const a = compact(left);
                 const b = compact(right);
                 if (a.length < 6 || b.length < 6) return false;
                 if (a === b) return true;
-                const sorted = (s) => s.split('').sort().join('');
-                if (sorted(a) === sorted(b)) return true;
-                const tokens = (value) => String(value || '').toUpperCase().replace(/[^A-Z]+/g, ' ').trim().split(/\s+/).filter((w) => w.length >= 2);
-                const ta = tokens(left);
-                const tb = tokens(right);
-                const shared = ta.filter((word) => tb.some((other) => other === word || other.includes(word) || word.includes(other))).length;
-                return shared >= 2;
+                return a.split('').sort().join('') === b.split('').sort().join('');
             };
             idInput?.addEventListener('change', () => {
                 scanDocument({

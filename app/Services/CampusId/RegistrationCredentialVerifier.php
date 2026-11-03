@@ -138,8 +138,52 @@ class RegistrationCredentialVerifier
         ])->save();
     }
 
+    /**
+     * Same person even when documents print names in different orders:
+     * "First Middle Last", "Last First Middle", or "Last, First Middle".
+     */
     public function namesMatch(string $left, string $right): bool
     {
+        $a = $this->nameTokens($left);
+        $b = $this->nameTokens($right);
+        if (count($a) < 2 || count($b) < 2) {
+            return false;
+        }
+
+        // Exact same name parts in any order (First Middle Last == Last First Middle).
+        $sortedA = $a;
+        $sortedB = $b;
+        sort($sortedA);
+        sort($sortedB);
+        if ($sortedA === $sortedB) {
+            return true;
+        }
+
+        // One side is a rearrangement with the surname moved (3+ part Filipino names).
+        foreach ($this->orderVariants($a) as $variantA) {
+            foreach ($this->orderVariants($b) as $variantB) {
+                if ($variantA === $variantB) {
+                    return true;
+                }
+            }
+        }
+
+        // OCR may drop or garble one part; require almost all tokens from the shorter name.
+        $shared = 0;
+        foreach ($a as $token) {
+            if ($this->tokenInList($token, $b)) {
+                $shared++;
+            }
+        }
+
+        $shorter = min(count($a), count($b));
+        $needed = max(2, $shorter - 1);
+
+        if ($shared >= $needed) {
+            return true;
+        }
+
+        // Last resort: same letters ignoring spaces/punctuation/order (handles mild OCR swaps).
         $ca = $this->compactLetters($left);
         $cb = $this->compactLetters($right);
         if (strlen($ca) < 6 || strlen($cb) < 6) {
@@ -148,30 +192,12 @@ class RegistrationCredentialVerifier
         if ($ca === $cb) {
             return true;
         }
-        $sortedA = str_split($ca);
-        $sortedB = str_split($cb);
-        sort($sortedA);
-        sort($sortedB);
-        if ($sortedA === $sortedB) {
-            return true;
-        }
+        $lettersA = str_split($ca);
+        $lettersB = str_split($cb);
+        sort($lettersA);
+        sort($lettersB);
 
-        $a = $this->nameTokens($left);
-        $b = $this->nameTokens($right);
-        if (count($a) < 2 || count($b) < 2) {
-            return false;
-        }
-
-        $shared = 0;
-        foreach ($a as $token) {
-            if ($this->tokenInList($token, $b)) {
-                $shared++;
-            }
-        }
-
-        $needed = min(count($a), count($b), 3);
-
-        return $shared >= 2 && $shared >= $needed - 1;
+        return $lettersA === $lettersB;
     }
 
     private function compactLetters(string $value): string
@@ -186,7 +212,10 @@ class RegistrationCredentialVerifier
     {
         $compact = strtoupper((string) preg_replace('/[^A-Z]+/i', ' ', $value));
         $parts = preg_split('/\s+/', trim($compact)) ?: [];
-        $skip = ['DE', 'DEL', 'DELA', 'DA', 'SAN', 'SANTA', 'JR', 'SR', 'II', 'III'];
+        $skip = [
+            'DE', 'DEL', 'DELA', 'DA', 'SAN', 'SANTA', 'JR', 'SR', 'II', 'III', 'IV',
+            'SN', 'ID', 'NAME', 'STUDENT', 'FACULTY', 'EMPLOYEE',
+        ];
         $out = [];
         foreach ($parts as $part) {
             if (strlen($part) < 2 || in_array($part, $skip, true)) {
@@ -196,6 +225,38 @@ class RegistrationCredentialVerifier
         }
 
         return array_values(array_unique($out));
+    }
+
+    /**
+     * Common printed orders for the same Filipino personal name.
+     *
+     * @param  list<string>  $tokens
+     * @return list<string> joined variants
+     */
+    private function orderVariants(array $tokens): array
+    {
+        $tokens = array_values($tokens);
+        $count = count($tokens);
+        if ($count < 2) {
+            return [implode(' ', $tokens)];
+        }
+
+        $variants = [implode(' ', $tokens)];
+
+        // Last First Middle...  →  First Middle... Last
+        $restThenLast = array_slice($tokens, 1);
+        $restThenLast[] = $tokens[0];
+        $variants[] = implode(' ', $restThenLast);
+
+        // First Middle... Last  →  Last First Middle...
+        $lastThenRest = array_merge([$tokens[$count - 1]], array_slice($tokens, 0, $count - 1));
+        $variants[] = implode(' ', $lastThenRest);
+
+        $sorted = $tokens;
+        sort($sorted);
+        $variants[] = implode(' ', $sorted);
+
+        return array_values(array_unique($variants));
     }
 
     /**
