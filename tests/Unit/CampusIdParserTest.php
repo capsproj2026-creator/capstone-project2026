@@ -104,6 +104,28 @@ class CampusIdParserTest extends TestCase
         $this->assertStringContainsString('full name', strtolower($result['warnings'][0]));
     }
 
+    public function test_accepts_last_comma_first_format_without_a_middle_name(): void
+    {
+        $result = $this->parser->parse([
+            ['text' => 'SN: 231002254', 'confidence' => 0.92, 'height' => 18, 'center_y' => 0.35],
+            ['text' => 'SABATER, JOSHUA', 'confidence' => 0.94, 'height' => 27, 'center_y' => 0.64],
+        ]);
+
+        $this->assertSame('Sabater, Joshua', $result['full_name']);
+        $this->assertTrue($result['name_complete']);
+    }
+
+    public function test_accepts_last_first_middle_separated_by_commas(): void
+    {
+        $result = $this->parser->parse([
+            ['text' => 'SN: 231002254', 'confidence' => 0.92, 'height' => 18, 'center_y' => 0.35],
+            ['text' => 'SABATER, JOSHUA, FUERTES', 'confidence' => 0.95, 'height' => 27, 'center_y' => 0.64],
+        ]);
+
+        $this->assertSame('Sabater, Joshua, Fuertes', $result['full_name']);
+        $this->assertTrue($result['name_complete']);
+    }
+
     public function test_accepts_short_three_word_name(): void
     {
         $result = $this->parser->parse([
@@ -166,6 +188,18 @@ class CampusIdParserTest extends TestCase
             ['text' => 'FAKE HEADER NAME', 'confidence' => 0.99, 'height' => 30, 'center_y' => 0.10],
             ['text' => 'ADDRESS LOOKALIKE PERSON', 'confidence' => 0.99, 'height' => 28, 'center_y' => 0.85],
             ['text' => 'ADRIAN ADAMS MANZANAL', 'confidence' => 0.96, 'height' => 28, 'center_y' => 0.60],
+            ['text' => 'DADUYA', 'confidence' => 0.98, 'height' => 24, 'center_y' => 0.66],
+        ]);
+
+        $this->assertSame('Adrian Adams Manzanal Daduya', $result['full_name']);
+        $this->assertTrue($result['name_complete']);
+    }
+
+    public function test_splits_glued_given_names_from_school_id_ocr(): void
+    {
+        $result = $this->parser->parse([
+            ['text' => 'SN: 231002119', 'confidence' => 0.93, 'height' => 16, 'center_y' => 0.28],
+            ['text' => 'ADRIANADAMS MANZANAL', 'confidence' => 0.96, 'height' => 28, 'center_y' => 0.60],
             ['text' => 'DADUYA', 'confidence' => 0.98, 'height' => 24, 'center_y' => 0.66],
         ]);
 

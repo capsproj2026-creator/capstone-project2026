@@ -15,6 +15,26 @@ class LicenseParserTest extends TestCase
         $this->parser = new LicenseParser;
     }
 
+    public function test_reads_last_first_middle_when_each_part_is_separated_by_a_comma(): void
+    {
+        $result = $this->parser->parse([
+            ['text' => 'SABATER, JOSHUA, FUERTES'],
+            ['text' => 'License No. N01-12-345678'],
+        ]);
+
+        $this->assertSame('Joshua Fuertes Sabater', $result['full_name']);
+    }
+
+    public function test_reads_compound_surname_with_a_separate_middle_name(): void
+    {
+        $result = $this->parser->parse([
+            ['text' => 'DELA CRUZ, JUAN, SANTOS'],
+            ['text' => 'N01-12-345678'],
+        ]);
+
+        $this->assertSame('Juan Santos Dela Cruz', $result['full_name']);
+    }
+
     public function test_parses_philippine_drivers_license_fields(): void
     {
         $result = $this->parser->parse([
@@ -221,6 +241,31 @@ class LicenseParserTest extends TestCase
         ]);
 
         $this->assertSame('N03-12-123456', $result['driver_license_number']);
+    }
+
+    public function test_splits_glued_license_address_street_and_village(): void
+    {
+        $result = $this->parser->parse([
+            ['text' => 'REYES, MARIA ANTONIA CRUZ'],
+            ['text' => 'Address'],
+            ['text' => '45MATIPIDST, TEACHERSVILLAGEWEST, QUEZON CITY, 1101'],
+            ['text' => 'N01-12-345678'],
+        ]);
+
+        $this->assertSame('Maria Antonia Cruz Reyes', $result['full_name']);
+        $this->assertSame('45 MATIPID ST, TEACHERS VILLAGE WEST, QUEZON CITY, 1101', $result['address']);
+    }
+
+    public function test_trims_leading_space_and_splits_glued_license_given_names(): void
+    {
+        $result = $this->parser->parse([
+            ['text' => ' REYES, MARIAANTONIA CRUZ'],
+            ['text' => 'Address'],
+            ['text' => '123 ZONE 4, NABUA, CAMARINES SUR'],
+            ['text' => 'N01-12-345678'],
+        ]);
+
+        $this->assertSame('Maria Antonia Cruz Reyes', $result['full_name']);
     }
 
     public function test_duplicate_ocr_passes_do_not_crowd_out_the_city_line(): void

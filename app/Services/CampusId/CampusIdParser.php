@@ -182,10 +182,10 @@ class CampusIdParser
         }
 
         $parts = array_map(fn (array $line) => $line['text'], $nameGroup);
-        $fullName = $this->titleCase(implode(' ', $parts));
+        $fullName = OcrSpacing::humanizeName(implode(' ', $parts));
 
         return [
-            'value' => $fullName,
+            'value' => $fullName !== '' ? $fullName : null,
             'complete' => $this->isCompleteName($nameGroup, $fullName),
         ];
     }
@@ -199,15 +199,25 @@ class CampusIdParser
             return false;
         }
 
-        $totalWords = $this->wordCount($fullName);
-        if ($totalWords < 3) {
-            return false;
-        }
-
         foreach ($nameGroup as $line) {
             if ($line['confidence'] < 0.48) {
                 return false;
             }
+        }
+
+        $totalWords = $this->wordCount($fullName);
+        $commaParts = array_values(array_filter(
+            array_map('trim', preg_split('/\s*,\s*/u', $fullName) ?: []),
+            fn (string $part): bool => $part !== ''
+        ));
+
+        // "Last, First" and "Last, First, Middle" already include the surname and given name.
+        if (count($commaParts) >= 2 && $totalWords >= 2) {
+            return true;
+        }
+
+        if ($totalWords < 3) {
+            return false;
         }
 
         $lineCount = count($nameGroup);
@@ -326,7 +336,9 @@ class CampusIdParser
 
     private function looksLikeNameLine(string $text): bool
     {
-        if (preg_match('/^[A-Za-z][A-Za-z\'.\- ]+,\s*[A-Za-z][A-Za-z\'.\- ]+$/u', $text)
+        $text = rtrim($text, " \t,.");
+
+        if (preg_match('/^[A-Za-z][A-Za-z\'.\- ]*(,\s*[A-Za-z][A-Za-z\'.\- ]*)+$/u', $text)
             && ! preg_match('/\b(city|street|barangay|province|village)\b/i', $text)) {
             foreach (self::SKIP_LINE_PATTERNS as $pattern) {
                 if (preg_match($pattern, $text)) {
@@ -385,10 +397,4 @@ class CampusIdParser
         return strlen($upper) / strlen($letters);
     }
 
-    private function titleCase(string $value): string
-    {
-        $value = mb_strtolower(trim($value), 'UTF-8');
-
-        return mb_convert_case($value, MB_CASE_TITLE, 'UTF-8');
-    }
 }

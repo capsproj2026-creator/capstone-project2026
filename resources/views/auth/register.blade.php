@@ -601,6 +601,7 @@
 
             const licenseInput = document.getElementById('driver_license');
             const licenseStatus = document.getElementById('license_scan_status');
+            let scannedSchoolName = '';
 
             const applyLicenseScan = (data) => {
                 fillField(document.getElementById('full_name'), data.full_name);
@@ -614,7 +615,9 @@
                 }
 
                 const warnings = Array.isArray(data.warnings) ? data.warnings.filter(Boolean) : [];
-                if (warnings.length > 0) {
+                if (data.full_name && scannedSchoolName && !namesLookSame(data.full_name, scannedSchoolName)) {
+                    setStatus(licenseStatus, 'The name on the driver\'s license does not match the school ID. Use your own license.', 'error');
+                } else if (warnings.length > 0) {
                     setStatus(licenseStatus, `Filled what we could. ${warnings.join(' ')} Review your information below.`, 'warning');
                 } else {
                     setStatus(licenseStatus, 'Details filled from your license. Please review your information below.', 'success');
@@ -680,10 +683,6 @@
                         return;
                     }
                     const warnings = Array.isArray(data.warnings) ? data.warnings.filter(Boolean) : [];
-                    const formName = document.getElementById('full_name')?.value || '';
-                    if (data.owner_name && formName && !namesLookSame(formName, data.owner_name)) {
-                        warnings.push('Owner name on this document does not match the applicant name.');
-                    }
                     if (warnings.length) {
                         setStatus(statusEl, warnings.join(' '), 'warning');
                     } else if (kind === 'cr' && (data.vehicle_model || data.vehicle_color || data.plate_number)) {
@@ -705,55 +704,125 @@
 
             const idInput = document.getElementById('id_document');
             const idStatus = document.getElementById('id_scan_status');
-            // Same person even when documents print First Middle Last vs Last First Middle.
+            // Keep in sync with App\Support\PersonName. Order and format do not matter
+            // when the school ID and driver's license name the same person.
             const namesLookSame = (left, right) => {
-                const skip = new Set(['DE','DEL','DELA','DA','SAN','SANTA','JR','SR','II','III','IV','SN','ID','NAME','STUDENT','FACULTY','EMPLOYEE']);
-                const tokens = (value) => String(value || '')
+                const skip = new Set(['DE','DEL','DELA','DELOS','DELAS','DA','DAS','DOS','LA','LAS','LOS','SAN','SANTA','STA','STO','VAN','VON','Y','JR','SR','II','III','IV','SN','ID','NAME','STUDENT','FACULTY','EMPLOYEE']);
+                const prefixes = ['DELOS','DELAS','DELA','SANTA','DEL','DE'];
+                const fold = (value) => String(value || '')
+                    .replace(/[ÁÀÄÂÃÅ]/g, 'A').replace(/[áàäâãå]/g, 'a')
+                    .replace(/[ÉÈËÊ]/g, 'E').replace(/[éèëê]/g, 'e')
+                    .replace(/[ÍÌÏÎ]/g, 'I').replace(/[íìïî]/g, 'i')
+                    .replace(/[ÓÒÖÔÕ]/g, 'O').replace(/[óòöôõ]/g, 'o')
+                    .replace(/[ÚÙÜÛ]/g, 'U').replace(/[úùüû]/g, 'u')
+                    .replace(/Ñ/g, 'N').replace(/ñ/g, 'n')
                     .toUpperCase()
                     .replace(/[^A-Z]+/g, ' ')
-                    .trim()
-                    .split(/\s+/)
-                    .filter((w) => w.length >= 2 && !skip.has(w))
-                    .filter((w, i, arr) => arr.indexOf(w) === i);
-                const tokenIn = (needle, haystack) => haystack.some((other) =>
-                    other === needle
-                    || (needle.length >= 4 && other.length >= 4 && (other.includes(needle) || needle.includes(other)))
-                );
-                const orderVariants = (parts) => {
-                    if (parts.length < 2) return [parts.join(' ')];
-                    const restThenLast = parts.slice(1).concat(parts[0]);
-                    const lastThenRest = [parts[parts.length - 1]].concat(parts.slice(0, -1));
-                    return Array.from(new Set([
-                        parts.join(' '),
-                        restThenLast.join(' '),
-                        lastThenRest.join(' '),
-                        [...parts].sort().join(' '),
-                    ]));
+                    .trim();
+                const tokens = (value) => fold(value).split(/\s+/).filter((word) => word && !skip.has(word) && (word.length >= 2 || /^[A-Z]$/.test(word)));
+                const collapse = (token) => token.replace(/(.)\1+/g, '$1');
+                const particle = (longer, shorter) => shorter.length >= 4 && longer.length > shorter.length && prefixes.some((prefix) => longer.startsWith(prefix) && longer.slice(prefix.length) === shorter);
+                const initial = (mark, word) => mark.length === 1 && word.length >= 2 && word[0] === mark;
+                const truncation = (a, b) => {
+                    if (a.length === b.length) return false;
+                    const shorter = a.length < b.length ? a : b;
+                    const longer = shorter === a ? b : a;
+                    if (!longer.startsWith(shorter)) return false;
+                    const diff = longer.length - shorter.length;
+                    return (shorter.length >= 6 && diff <= 2) || (shorter.length === 3 && diff === 1);
+                };
+                const singleEdit = (a, b) => {
+                    if (Math.abs(a.length - b.length) !== 1) return false;
+                    const shorter = a.length < b.length ? a : b;
+                    const longer = shorter === a ? b : a;
+                    if (shorter.length < 3 || shorter.length > 4) return false;
+                    let matched = 0;
+                    for (let i = 0; i < longer.length && matched < shorter.length; i++) {
+                        if (longer[i] === shorter[matched]) matched++;
+                    }
+                    return matched === shorter.length;
+                };
+                const distance = (a, b) => {
+                    const rows = Array.from({ length: a.length + 1 }, (_, i) => [i]);
+                    for (let j = 1; j <= b.length; j++) rows[0][j] = j;
+                    for (let i = 1; i <= a.length; i++) {
+                        for (let j = 1; j <= b.length; j++) {
+                            const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+                            rows[i][j] = Math.min(rows[i - 1][j] + 1, rows[i][j - 1] + 1, rows[i - 1][j - 1] + cost);
+                        }
+                    }
+                    return rows[a.length][b.length];
+                };
+                const score = (a, b) => {
+                    if (a === b) return 100;
+                    if (a.length >= 3 && b.length >= 3 && collapse(a) === collapse(b)) return 90;
+                    if (particle(a, b) || particle(b, a)) return 80;
+                    if ((a === 'MA' && b === 'MARIA') || (a === 'MARIA' && b === 'MA')) return 75;
+                    const edit = distance(a, b);
+                    if (edit === 1 && a.length >= 6 && b.length >= 6) return 70;
+                    if (edit === 2 && a.length >= 10 && b.length >= 10) return 65;
+                    if (initial(a, b) || initial(b, a)) return 60;
+                    if (singleEdit(a, b)) return 55;
+                    if (truncation(a, b)) return 50;
+                    return 0;
+                };
+                const sameSpelling = (a, b) => a === b || (a.length >= 6 && b.length >= 6 && collapse(a) === collapse(b));
+                const matchingConcat = (token, parts, indexes) => {
+                    for (let i = 0; i < indexes.length; i++) {
+                        for (let j = 0; j < indexes.length; j++) {
+                            if (i === j) continue;
+                            const glued = parts[indexes[i]] + parts[indexes[j]];
+                            if (sameSpelling(token, glued)) return [indexes[i], indexes[j]];
+                            for (let k = 0; k < indexes.length; k++) {
+                                if (k === i || k === j) continue;
+                                if (sameSpelling(token, glued + parts[indexes[k]])) return [indexes[i], indexes[j], indexes[k]];
+                            }
+                        }
+                    }
+                    return null;
+                };
+                const absorbGlued = (host, parts, usedHost, usedParts) => {
+                    let unused = parts.map((_, index) => index).filter((index) => !usedParts[index] && parts[index].length >= 3);
+                    host.forEach((token, index) => {
+                        if (usedHost[index] || token.length < 6 || !unused.length) return;
+                        const match = matchingConcat(token, parts, unused);
+                        if (!match) return;
+                        usedHost[index] = true;
+                        match.forEach((partIndex) => { usedParts[partIndex] = true; });
+                        unused = unused.filter((partIndex) => !match.includes(partIndex));
+                    });
                 };
 
                 const ta = tokens(left);
                 const tb = tokens(right);
-                if (ta.length < 2 || tb.length < 2) return false;
-
-                const sortedKey = (parts) => [...parts].sort().join(' ');
-                if (sortedKey(ta) === sortedKey(tb)) return true;
-
-                for (const va of orderVariants(ta)) {
-                    for (const vb of orderVariants(tb)) {
-                        if (va === vb) return true;
+                if (!ta.length || !tb.length) return false;
+                const usedA = [];
+                const usedB = [];
+                [...ta.keys()].sort((i, j) => ta[j].length - ta[i].length).forEach((i) => {
+                    let best = -1;
+                    let bestScore = 0;
+                    tb.forEach((token, j) => {
+                        if (usedB[j]) return;
+                        const value = score(ta[i], token);
+                        if (value > bestScore) {
+                            bestScore = value;
+                            best = j;
+                        }
+                    });
+                    if (best >= 0) {
+                        usedA[i] = true;
+                        usedB[best] = true;
                     }
-                }
+                });
+                absorbGlued(ta, tb, usedA, usedB);
+                absorbGlued(tb, ta, usedB, usedA);
 
-                const shared = ta.filter((word) => tokenIn(word, tb)).length;
-                const needed = Math.max(2, Math.min(ta.length, tb.length) - 1);
-                if (shared >= needed) return true;
-
-                const compact = (value) => String(value || '').toUpperCase().replace(/[^A-Z]/g, '');
-                const a = compact(left);
-                const b = compact(right);
-                if (a.length < 6 || b.length < 6) return false;
-                if (a === b) return true;
-                return a.split('').sort().join('') === b.split('').sort().join('');
+                const shorter = ta.length <= tb.length ? ta : tb;
+                const used = ta.length <= tb.length ? usedA : usedB;
+                const shorterPaired = used.filter(Boolean).length;
+                const partsMatched = Math.max(usedA.filter(Boolean).length, usedB.filter(Boolean).length);
+                const shorterHasRealWord = shorter.some((token, index) => used[index] && token.length >= 3);
+                return shorterPaired === shorter.length && partsMatched >= 2 && shorterHasRealWord;
             };
             idInput?.addEventListener('change', () => {
                 scanDocument({
@@ -763,6 +832,7 @@
                     statusEl: idStatus,
                     onSuccess: (data) => {
                         if (data.id_number) fillField(document.getElementById('id_number'), data.id_number, true);
+                        if (data.full_name) scannedSchoolName = data.full_name;
                         const formName = document.getElementById('full_name')?.value || '';
                         if (data.full_name && !formName) fillField(document.getElementById('full_name'), data.full_name);
                         const warnings = Array.isArray(data.warnings) ? data.warnings.filter(Boolean) : [];

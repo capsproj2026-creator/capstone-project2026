@@ -51,6 +51,24 @@ class PersonNameMatchTest extends TestCase
             ['Maria Clara Santos', 'Santos, Maria Clara'],
             // OCR sometimes keeps an SN label near the name.
             ['Joshua Fuertes Sabater', 'SN SABATER JOSHUA FUERTES'],
+            // License field order: Last, First, Middle.
+            ['Joshua Fuertes Sabater', 'SABATER, JOSHUA, FUERTES'],
+            ['Juan Santos Dela Cruz', 'DELA CRUZ, JUAN, SANTOS'],
+            ['Juan Santos Dela Cruz', 'DELA CRUZ, JUAN SANTOS'],
+            // Middle initial, omitted middle name, suffix, and accents.
+            ['Joshua Fuertes Sabater', 'Joshua F. Sabater'],
+            ['Joshua Fuertes Sabater', 'Sabater, Joshua F.'],
+            ['Joshua Fuertes Sabater', 'Joshua Sabater'],
+            ['Joshua Fuertes Sabater', 'Joshua Sabater Jr.'],
+            ['Jose Garcia', 'José García'],
+            // Particles written together or apart.
+            ['Juan Dela Cruz', 'Delacruz, Juan'],
+            ['Juan Dela Cruz', 'De La Cruz, Juan'],
+            ['Maria Clara Santos', 'Ma. Clara Santos'],
+            ['Jon Reyes', 'John Reyes'],
+            // Given names reordered, or OCR glued into one word.
+            ['Maria Clara Santos', 'Clara Maria Santos'],
+            ['Joshua Fuertes Sabater', 'JOSHUAFUERTESSABATER'],
         ];
     }
 
@@ -72,6 +90,11 @@ class PersonNameMatchTest extends TestCase
             ['Joshua Fuertes Sabater', 'Juan Dela Cruz'],
             ['Joshua Fuertes Sabater', 'Sabater'],
             ['Anna Reyes', 'Anna Santos'],
+            // Same given names, different surname or middle name.
+            ['John Michael Santos', 'John Michael Reyes'],
+            ['Joshua Fuertes Sabater', 'Joshua Santos Sabater'],
+            ['Juan Cruz', 'Juan Cruzado'],
+            ['Maria Santos', 'Mario Santos'],
         ];
     }
 }

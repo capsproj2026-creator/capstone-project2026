@@ -331,14 +331,9 @@ class LicenseParser
     private function extractFullName(array $lines): ?string
     {
         foreach ($lines as $line) {
-            if (! $this->isLastFirstNameLine($line)) {
-                continue;
-            }
-            if (preg_match('/^([A-Za-z][A-Za-z\'.\- ]+),\s*([A-Za-z][A-Za-z\'.\- ]+)$/u', $line, $match)) {
-                $last = $this->titleCase($match[1]);
-                $rest = $this->titleCase($match[2]);
-
-                return trim($this->splitGluedGivenNames($rest).' '.$last);
+            $commaName = $this->parseCommaPersonalName($line);
+            if ($commaName !== null) {
+                return $commaName;
             }
         }
 
@@ -352,43 +347,12 @@ class LicenseParser
                 continue;
             }
 
-            return $this->splitGluedGivenNames($this->titleCase($line));
+            $name = OcrSpacing::humanizeName($line);
+
+            return $name !== '' ? $name : null;
         }
 
         return null;
-    }
-
-    private function splitGluedGivenNames(string $value): string
-    {
-        $known = ['MARIA', 'ANTONIA', 'ANTONIO', 'ANNA', 'ANNE', 'JOSE', 'JUAN', 'CRUZ', 'FUERTES'];
-        $parts = preg_split('/\s+/u', trim($value)) ?: [];
-        $out = [];
-        foreach ($parts as $part) {
-            $upper = strtoupper((string) preg_replace('/[^A-Za-z]/', '', $part));
-            $split = false;
-            foreach ($known as $first) {
-                if (! str_starts_with($upper, $first) || strlen($upper) < strlen($first) + 4) {
-                    continue;
-                }
-                $rest = substr($upper, strlen($first));
-                foreach ($known as $second) {
-                    if ($rest === $second || str_starts_with($rest, $second)) {
-                        $out[] = $this->titleCase($first);
-                        $out[] = $this->splitGluedGivenNames($this->titleCase($rest));
-                        $split = true;
-                        break;
-                    }
-                }
-                if ($split) {
-                    break;
-                }
-            }
-            if (! $split) {
-                $out[] = $part;
-            }
-        }
-
-        return trim(implode(' ', array_filter($out)));
     }
 
     /**
@@ -668,17 +632,7 @@ class LicenseParser
 
     private function normalizeOcrAddressFragment(string $line): string
     {
-        $text = preg_replace('/(?<=[A-Za-z0-9])\.(?=[A-Za-z0-9])/u', ' ', $line) ?? $line;
-        // OCR reads the letter O as zero inside words ("Z0NE", "CRIST0"); house numbers stay digits.
-        $text = preg_replace('/(?<=[A-Za-z])0(?=[A-Za-z])|(?<=[A-Za-z]{2})0\b/u', 'O', $text) ?? $text;
-        $text = str_ireplace(
-            ['LOURDESYOUNG', 'CAMARINESSUR', 'CAMARINESNORTE', 'NAGACITY'],
-            ['LOURDES YOUNG', 'CAMARINES SUR', 'CAMARINES NORTE', 'NAGA CITY'],
-            $text
-        );
-        $text = preg_replace('/\s+/u', ' ', $text) ?? $text;
-
-        return trim($text);
+        return OcrSpacing::humanizeAddress($line);
     }
 
     private function compactAddressToken(string $value): string
@@ -718,9 +672,35 @@ class LicenseParser
         return trim($stripped);
     }
 
+    /**
+     * Philippine licenses print "Last, First Middle" or "Last, First, Middle".
+     */
+    private function parseCommaPersonalName(string $line): ?string
+    {
+        if (! $this->isLastFirstNameLine($line)) {
+            return null;
+        }
+
+        $parts = preg_split('/\s*,\s*/u', trim($line)) ?: [];
+        $parts = array_values(array_filter(array_map('trim', $parts), fn (string $part): bool => $part !== ''));
+        if (count($parts) < 2) {
+            return null;
+        }
+
+        $last = OcrSpacing::humanizeName((string) array_shift($parts));
+        $rest = OcrSpacing::humanizeName(implode(' ', $parts));
+        $name = trim($rest.' '.$last);
+
+        return $name !== '' ? $name : null;
+    }
+
     private function isLastFirstNameLine(string $line): bool
     {
-        if (! preg_match('/^([A-Za-z][A-Za-z\'.\- ]+),\s*([A-Za-z][A-Za-z\'.\- ]+)$/u', $line)) {
+        if (! preg_match('/^[A-Za-z][A-Za-z\'.\- ]*(,\s*[A-Za-z][A-Za-z\'.\- ]*)+$/u', $line)) {
+            return false;
+        }
+
+        if (preg_match('/\b(last|first|middle)\s+name\b/i', $line)) {
             return false;
         }
 
@@ -810,10 +790,4 @@ class LicenseParser
         return str_word_count($text) >= 2;
     }
 
-    private function titleCase(string $value): string
-    {
-        $value = mb_strtolower(trim($value), 'UTF-8');
-
-        return mb_convert_case($value, MB_CASE_TITLE, 'UTF-8');
-    }
 }
