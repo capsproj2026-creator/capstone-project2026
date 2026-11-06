@@ -47,8 +47,21 @@
 #ifndef ACTUATOR_SERVO
 #define ACTUATOR_SERVO 2
 #endif
+#ifndef ACTUATOR_LINEAR
+#define ACTUATOR_LINEAR 3
+#endif
 #ifndef ACTUATOR_MODE
 #define ACTUATOR_MODE ACTUATOR_SERVO
+#endif
+// BTS7960 on the Entry boom. RPWM = GPIO 33, LPWM = GPIO 32.
+// Full 200 mm stroke at 7 mm/s is about 29000 ms. Raise this if the arm
+// stops short; lower it if the motor buzzes against the end stop.
+#ifndef ACTUATOR_TRAVEL_MS
+#define ACTUATOR_TRAVEL_MS 15000UL
+#endif
+// Set to 1 if extend and retract run the wrong way.
+#ifndef ACTUATOR_SWAP_DIR
+#define ACTUATOR_SWAP_DIR 0
 #endif
 
 #if ACTUATOR_MODE == ACTUATOR_SERVO
@@ -130,6 +143,8 @@
 #define PIN_RED   26
 #define PIN_BUZZER 27
 #define PIN_GATE  14
+#define PIN_RPWM  33
+#define PIN_LPWM  32
 
 // Tight timeouts so a dead API fails fast; healthy LAN replies well under these.
 const uint16_t HTTP_CONNECT_MS = 4000;
@@ -190,6 +205,12 @@ String lastHandledOpenId = "";
 unsigned long lastRfidRecoverMs = 0;
 unsigned long forceConfigHoldStartMs = 0;
 bool gateIsOpen = false;
+#if ACTUATOR_MODE == ACTUATOR_LINEAR
+enum LinearPhase : uint8_t { LINEAR_STOP = 0, LINEAR_EXTEND, LINEAR_HOLD, LINEAR_RETRACT };
+LinearPhase actuatorPhase = LINEAR_STOP;
+unsigned long actuatorPhaseUntil = 0;
+unsigned long linearHoldMs = 10000UL;
+#endif
 bool apiOnline = false;
 bool rfidOk = false;
 bool portalBusy = false;
@@ -666,6 +687,41 @@ bool ensureWifiConnected() {
   return false;
 }
 
+#if ACTUATOR_MODE == ACTUATOR_LINEAR
+static void linearCoast() {
+  digitalWrite(PIN_RPWM, LOW);
+  digitalWrite(PIN_LPWM, LOW);
+}
+
+static void linearDrive(bool extend) {
+#if ACTUATOR_SWAP_DIR
+  extend = !extend;
+#endif
+  // Drop the outgoing direction first so RPWM and LPWM are never both high.
+  if (extend) {
+    digitalWrite(PIN_LPWM, LOW);
+    digitalWrite(PIN_RPWM, HIGH);
+  } else {
+    digitalWrite(PIN_RPWM, LOW);
+    digitalWrite(PIN_LPWM, HIGH);
+  }
+}
+
+static void serviceLinearActuator() {
+  if (actuatorPhase == LINEAR_EXTEND && millis() >= actuatorPhaseUntil) {
+    linearCoast();
+    actuatorPhase = LINEAR_HOLD;
+    gateIsOpen = true;
+    gateCloseAtMs = millis() + linearHoldMs;
+    Serial.printf("Actuator at open end — holding %lu ms\n", linearHoldMs);
+  } else if (actuatorPhase == LINEAR_RETRACT && millis() >= actuatorPhaseUntil) {
+    linearCoast();
+    actuatorPhase = LINEAR_STOP;
+    Serial.println("Actuator stopped — gate closed");
+  }
+}
+#endif
+
 void initGateActuator() {
 #if ACTUATOR_MODE == ACTUATOR_SERVO
   pinMode(PIN_GATE, OUTPUT);
@@ -694,6 +750,14 @@ void initGateActuator() {
   pinMode(PIN_GATE, OUTPUT);
   digitalWrite(PIN_GATE, LOW);
   Serial.println("Actuator: RELAY");
+#elif ACTUATOR_MODE == ACTUATOR_LINEAR
+  pinMode(PIN_RPWM, OUTPUT);
+  pinMode(PIN_LPWM, OUTPUT);
+  linearCoast();
+  actuatorPhase = LINEAR_STOP;
+  Serial.printf("Actuator: BTS7960 RPWM GPIO %d, LPWM GPIO %d, travel %lu ms\n",
+                PIN_RPWM, PIN_LPWM, (unsigned long) ACTUATOR_TRAVEL_MS);
+  Serial.println("R_EN and L_EN stay tied to 3.3V. Set ACTUATOR_SWAP_DIR 1 if the arm runs backwards.");
 #else
   Serial.println("Actuator: NONE (RFID only — shared boom is on Entry ESP32)");
 #endif
@@ -760,7 +824,7 @@ void setupGateHardware() {
   Serial.printf("API target: %s\n", runtimeApiBase().c_str());
 #if defined(GATE_ID) && defined(DIRECTION)
   if (String(GATE_ID) == "GATE-IN-1") {
-    Serial.println("ROLE: ENTRY — RC522 + servo GPIO 14. Opens boom for Entry scans and Exit grants.");
+    Serial.println("ROLE: ENTRY — RC522 + BTS7960 RPWM GPIO 33 / LPWM GPIO 32.");
   } else if (String(GATE_ID) == "GATE-OUT-1") {
     Serial.println("ROLE: EXIT — RC522 only. No servo. Laravel tells Entry ESP32 to open the boom.");
   }
@@ -971,8 +1035,13 @@ bool pollHeartbeat() {
   }
 
   Serial.printf("Heartbeat: OPEN command — %s\n", response.c_str());
+#if ACTUATOR_MODE == ACTUATOR_LINEAR
+  if (actuatorPhase == LINEAR_EXTEND || actuatorPhase == LINEAR_HOLD) {
+    Serial.println("Actuator already opening or open — keeping this cycle");
+#else
   if (gateIsOpen && gateCloseAtMs > millis()) {
     Serial.println("Servo already UP — keeping the current countdown");
+#endif
     if (openId[0] != '\0') {
       lastHandledOpenId = openId;
     }
@@ -983,11 +1052,22 @@ bool pollHeartbeat() {
   }
   digitalWrite(PIN_RED, LOW);
   digitalWrite(PIN_GREEN, HIGH);
+#if ACTUATOR_MODE == ACTUATOR_LINEAR
+  linearHoldMs = hold;
+#endif
   openGateActuator();
   gateIsOpen = true;
+#if ACTUATOR_MODE == ACTUATOR_LINEAR
+  gateCloseAtMs = 0;
+#else
   gateCloseAtMs = millis() + hold;
+#endif
   gateCycleEndsMs = millis() + SCAN_BLOCK_MS;
+#if ACTUATOR_MODE == ACTUATOR_LINEAR
+  Serial.printf("Actuator EXTEND — holds open %lu ms after it reaches the top\n", hold);
+#else
   Serial.printf("Servo UP — remote open; auto DOWN in %lu ms\n", hold);
+#endif
   return true;
 }
 
@@ -1014,19 +1094,30 @@ void handleResult(const ScanResult &result, bool forceOpen) {
 void grantAccess(unsigned long holdOverride) {
   digitalWrite(PIN_RED, LOW);
   digitalWrite(PIN_GREEN, HIGH);
-  openGateActuator();
-  gateIsOpen = true;
   unsigned long hold = (unsigned long) GATE_ENTRY_OPEN_MS;
   if (holdOverride >= 1000UL && holdOverride <= 60000UL) {
     hold = holdOverride;
   }
+#if ACTUATOR_MODE == ACTUATOR_LINEAR
+  linearHoldMs = hold;
+#endif
+  openGateActuator();
+  gateIsOpen = true;
+#if ACTUATOR_MODE == ACTUATOR_LINEAR
+  gateCloseAtMs = 0;
+#else
   gateCloseAtMs = millis() + hold;
+#endif
   gateCycleEndsMs = millis() + SCAN_BLOCK_MS;
 #if ACTUATOR_MODE == ACTUATOR_NONE
   Serial.printf("Access Granted (Exit) — Entry boom opens via Laravel for %lu ms\n",
                 (unsigned long) GATE_EXIT_OPEN_MS);
 #else
+#if ACTUATOR_MODE == ACTUATOR_LINEAR
+  Serial.printf("Access Granted (Entry) — actuator EXTEND, hold %lu ms, then RETRACT\n", hold);
+#else
   Serial.printf("Access Granted (Entry) — servo UP now, auto DOWN in %lu ms\n", hold);
+#endif
 #endif
 }
 
@@ -1074,6 +1165,11 @@ void openGateActuator() {
   writeGateServoAngle(SERVO_OPEN_ANGLE);
 #elif ACTUATOR_MODE == ACTUATOR_RELAY
   digitalWrite(PIN_GATE, HIGH);
+#elif ACTUATOR_MODE == ACTUATOR_LINEAR
+  linearDrive(true);
+  actuatorPhase = LINEAR_EXTEND;
+  actuatorPhaseUntil = millis() + ACTUATOR_TRAVEL_MS;
+  Serial.printf("Actuator EXTEND — RPWM GPIO %d for %lu ms\n", PIN_RPWM, (unsigned long) ACTUATOR_TRAVEL_MS);
 #else
   Serial.println("No local servo (Exit board). Laravel will open the Entry ESP32 servo.");
 #endif
@@ -1087,11 +1183,24 @@ void closeGateActuator() {
   }
 #elif ACTUATOR_MODE == ACTUATOR_RELAY
   digitalWrite(PIN_GATE, LOW);
+#elif ACTUATOR_MODE == ACTUATOR_LINEAR
+  if (actuatorPhase == LINEAR_EXTEND || actuatorPhase == LINEAR_HOLD) {
+    linearDrive(false);
+    actuatorPhase = LINEAR_RETRACT;
+    actuatorPhaseUntil = millis() + ACTUATOR_TRAVEL_MS;
+    Serial.printf("Actuator RETRACT — LPWM GPIO %d for %lu ms\n", PIN_LPWM, (unsigned long) ACTUATOR_TRAVEL_MS);
+  } else if (actuatorPhase != LINEAR_RETRACT) {
+    linearCoast();
+    actuatorPhase = LINEAR_STOP;
+  }
 #endif
   gateIsOpen = false;
 }
 
 void updateGateCycle() {
+#if ACTUATOR_MODE == ACTUATOR_LINEAR
+  serviceLinearActuator();
+#endif
   if (!gateIsOpen || gateCloseAtMs == 0) {
     return;
   }
@@ -1100,6 +1209,6 @@ void updateGateCycle() {
     closeGateActuator();
     digitalWrite(PIN_GREEN, LOW);
     gateCloseAtMs = 0;
-    Serial.println("Servo DOWN — gate closed after open window");
+    Serial.println("Gate close started — actuator retracting");
   }
 }

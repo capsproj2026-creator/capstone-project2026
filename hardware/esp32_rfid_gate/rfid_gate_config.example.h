@@ -22,6 +22,10 @@
 #define HEARTBEAT_MS         1500UL
 #define SERVO_TEST_ON_BOOT       0
 
+// BTS7960 boom. Full 200 mm at 7 mm/s is about 29000. Set ACTUATOR_SWAP_DIR to 1 if backwards.
+#define ACTUATOR_TRAVEL_MS   15000UL
+#define ACTUATOR_SWAP_DIR        0
+
 #define SERVO_OPEN_ANGLE      90
 #define SERVO_CLOSE_ANGLE      0
 #define SERVO_CLOSE_DELAY_MS 800UL
